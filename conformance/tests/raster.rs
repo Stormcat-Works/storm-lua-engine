@@ -14,7 +14,7 @@ fn accepted_screen_contract_matches_direct_and_lua_paths() -> Result<(), Box<dyn
     assert_eq!(root["format"], 1);
     assert_eq!(root["contract"], "storm-lua-screen-rgba-v1");
     let cases = root["cases"].as_array().ok_or("cases missing")?;
-    assert_eq!(cases.len(), 731);
+    assert_eq!(cases.len(), 743);
     let mut names = HashSet::new();
     let mut failures = Vec::new();
     for case in cases {

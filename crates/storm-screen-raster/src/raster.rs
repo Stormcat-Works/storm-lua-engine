@@ -146,8 +146,9 @@ impl ScreenRaster {
             }
             p = [[x + dx * lo, y + dy * lo], [x + dx * hi, y + dy * hi]];
         }
-        let [x1, y1] = p[0].map(|v| js_round(v * 256.0));
-        let [x2, y2] = p[1].map(|v| js_round(v * 256.0));
+        let (w, h) = (self.width, self.height);
+        let [x1, y1] = [snap_units(p[0][0], w), snap_units(p[0][1], h)];
+        let [x2, y2] = [snap_units(p[1][0], w), snap_units(p[1][1], h)];
         if x1 == x2 && y1 == y2 {
             return;
         }
@@ -220,7 +221,7 @@ impl ScreenRaster {
         }
         let mut snapped = [[0.0; 2]; 16];
         for (out, point) in snapped.iter_mut().zip(points) {
-            *out = point.map(snap);
+            *out = [snap(point[0], self.width), snap(point[1], self.height)];
         }
         let pts = &snapped[..points.len()];
         if !finite(pts.iter().flatten().copied()) {
@@ -267,7 +268,8 @@ impl ScreenRaster {
             self.outline(&[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
             return;
         }
-        let (x0, x1, y0, y1) = (snap(x), snap(x + w), snap(y), snap(y + h));
+        let (x0, x1) = (snap(x, self.width), snap(x + w, self.width));
+        let (y0, y1) = (snap(y, self.height), snap(y + h, self.height));
         if !finite([x0, x1, y0, y1]) {
             return;
         }
@@ -298,7 +300,7 @@ impl ScreenRaster {
             ];
         }
         if fill {
-            self.convex(&points[..n], 0.0, 1.0);
+            self.convex(&points[..n], 0.0, -1.0);
         } else {
             self.outline(&points[..n]);
         }
@@ -426,8 +428,36 @@ fn js_round(v: f64) -> f64 {
         floor + 1.0
     }
 }
-fn snap(v: f64) -> f64 {
-    js_round(v * 256.0) / 256.0
+/// 1/256px単位の頂点スナップ。`size`はxなら画面幅、yなら画面高さです。
+///
+/// 格子点どうしのちょうど中間（k+1/512）に乗った値は上下の格子点までの距離が等しく、
+/// スクリプト座標上の丸め規則ではなく、画面へ届くまでのf32演算で丸める向きが決まります。
+/// 投影（半画素オフセットを含む）、viewportの乗算と加算、最近接偶数丸めの固定小数点化を
+/// 順に再現します。同じ値でも画面の大きさで向きが変わります
+/// （幅64では59+1/512が下へ、幅96では上へ丸まります）。
+/// f32へ収まらない値は画面から遠く、丸める向きが結果に影響しないため従来の丸めを使います。
+fn snap_units(v: f64, size: u32) -> f64 {
+    // 辺長は4096以下なのでf32で正確です。
+    let size = size as f32;
+    let scale = 2.0_f32 / size;
+    let half = size / 2.0;
+    let ndc = (v as f32) * scale + (-1.0 + 0.5 * scale);
+    let screen = ndc * half + half;
+    if !screen.is_finite() {
+        return js_round(v * 256.0);
+    }
+    // f32の値を256倍して128を引く演算はf64で正確です。
+    let units = f64::from(screen) * 256.0 - 128.0;
+    let low = units.floor();
+    let fraction = units - low;
+    if fraction > 0.5 || (fraction == 0.5 && low % 2.0 != 0.0) {
+        low + 1.0
+    } else {
+        low
+    }
+}
+fn snap(v: f64, size: u32) -> f64 {
+    snap_units(v, size) / 256.0
 }
 fn floor_div(n: f64, d: f64) -> f64 {
     let remainder = ((n % d) + d) % d;

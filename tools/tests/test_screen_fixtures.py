@@ -19,7 +19,7 @@ class ScreenContractTests(unittest.TestCase):
             "expectedRgbaRle": [[1, 255, 255, 255, 255]],
         }]}
     def test_all_accepted_cases_and_font_hash(self):
-        self.assertEqual(checker.verify(), 731)
+        self.assertEqual(checker.verify(), 743)
     def test_complete_rgba_is_valid(self):
         self.assertEqual(checker.validate_corpus(self.corpus), 1)
     def test_duplicate_case_is_not_a_second_test(self):

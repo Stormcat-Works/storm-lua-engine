@@ -32,8 +32,8 @@ export class VehicleVm extends ScriptVm {
     return this.control('vehicle',{action:'callTick',name:callbackName(name),arguments:encodeLuaValues(args)}).outcome;
   }
   /** Execute a named draw callback with the regular screen/raster and debugger continuation. */
-  callDraw(name: string, width: number, height: number, args: readonly LuaValue[] = []): Outcome {
-    return this.control('vehicle',{action:'callDraw',name:callbackName(name),arguments:encodeLuaValues(args),width:unsigned(width,'width'),height:unsigned(height,'height')}).outcome;
+  callDraw(name: string, width: number, height: number, args: readonly LuaValue[] = [], margin = 0): Outcome {
+    return this.control('vehicle',{action:'callDraw',name:callbackName(name),arguments:encodeLuaValues(args),width:unsigned(width,'width'),height:unsigned(height,'height'),margin:unsigned(margin,'margin')}).outcome;
   }
   /** Owned, lossless property snapshot, including changes made by native development controls. */
   properties(): PropertyEntry[] { return decodeProperties(this.control('vehicle',{action:'properties'}).data); }

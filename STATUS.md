@@ -43,3 +43,8 @@ Storm Minのpublic SDK参照は専用ブランチへpush済みですが、同pri
 **最適化後Source Mapはv0.2.5またはv0.3.0へ分離**します。由来情報を考慮せず実装された最適化器の大規模変更であり、v0.2.0の完成条件に含めません。Addonコンパイラ、require方式の統合・gameとloaderの分離、追加map API、全consumerの移行完了も今回の必須条件ではありません。
 
 初回公開の事実と当時の測定は[0.1.0検証記録](docs/verification/release-0.1.0.md)を参照してください。
+
+
+## Storm Code統合API（未公開）
+
+共有parserによるsource inspection、独立したLBビルド、開発用overflow viewportを実装・検証。[記録](docs/verification/storm-code-integration-20260930.md)。通常build、通常game描画、最適化探索、minify後mapは変更しない。

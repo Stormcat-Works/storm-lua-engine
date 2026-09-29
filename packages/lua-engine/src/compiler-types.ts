@@ -191,3 +191,15 @@ export interface ProjectCompileResult {
   zeroCostNewlines?: number;
 }
 
+
+/** Lossless static values, or expressions that require real Lua execution. */
+export type SourceLiteral = {kind:'nil'} | {kind:'bool';value:boolean} | {kind:'integer';value:string} |
+  {kind:'number';bits:string} | {kind:'bytes';value:number[]} |
+  {kind:'table';entries:[SourceLiteral,SourceLiteral][]} | {kind:'dynamic'};
+/** UTF-8 byte spans over the exact original source (not UTF-16 editor offsets). */
+export interface SourceStatement {
+  kind:'call'|'do'|'other';start:number;end:number;line:number;
+  function:string|null;method:boolean;arguments:SourceLiteral[];body:SourceStatement[];
+}
+export interface SourceComment {start:number;end:number;line:number;text:string;long:boolean}
+export interface SourceInspection {ok:boolean;error:string|null;statements:SourceStatement[];comments:SourceComment[];replacedRoots:string[]}

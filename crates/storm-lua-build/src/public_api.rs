@@ -898,6 +898,71 @@ pub fn compile_project(
     )
 }
 
+/// LB include-once build. Separate from the existing return-valued static linker.
+pub fn compile_lifeboat(
+    project: &LuaProject,
+    options: &ApiProjectCompileOptions,
+) -> ApiProjectCompileResult {
+    let core = match options.compile.to_core() {
+        Ok(value) => value,
+        Err(error) => return ApiProjectCompileResult::compile_failure(error),
+    };
+    let link = crate::lifeboat::link_lifeboat(project);
+    let Some(source) = link.linked_source.as_deref() else {
+        return ApiProjectCompileResult::structural_failure(link.diagnostics);
+    };
+    let analysis = storm_lua_analysis::analyze(
+        &LuaProject {
+            entry: "linked".into(),
+            modules: BTreeMap::from([("linked".into(), source.into())]),
+            ambient: BTreeMap::new(),
+        },
+        &storm_lua_analysis::AnalyzeOptions {
+            mode: storm_lua_analysis::AnalyzeMode::Runtime,
+            environment: core.environment,
+            host_bindings: core.host_bindings.clone(),
+            ..Default::default()
+        },
+    );
+    let mut diagnostics = remap_diagnostics_to_modules(analysis.diagnostics, &link.ranges);
+    for diagnostic in &mut diagnostics {
+        if matches!(
+            diagnostic.code,
+            "sw-unavailable-global"
+                | "syntax-error"
+                | "sw-screen-outside-ondraw"
+                | "sw-input-outside-ontick"
+        ) {
+            diagnostic.severity = Severity::Error;
+        }
+    }
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return ApiProjectCompileResult::structural_failure(diagnostics);
+    }
+    if !options.minify.unwrap_or(true) {
+        return ApiProjectCompileResult {
+            ok: true,
+            code: Some(source.into()),
+            map: generate_source_map(project, &link),
+            used_modules: link.used_modules,
+            injected_ambient: link.injected_ambient,
+            diagnostics,
+            ..Default::default()
+        };
+    }
+    let compiled = finish_compile_result(source, &core, compile_code(source, &core));
+    diagnostics.extend(remap_diagnostics_to_modules(
+        compiled.diagnostics.clone(),
+        &link.ranges,
+    ));
+    ApiProjectCompileResult::from_minified(
+        compiled,
+        link.used_modules,
+        link.injected_ambient,
+        diagnostics,
+    )
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

@@ -161,7 +161,8 @@
     "normal": [
       "storm-lua-analysis",
       "storm-lua-build",
-      "storm-lua-minify"
+      "storm-lua-minify",
+      "storm-lua-syntax"
     ],
     "dev": [],
     "external": [

@@ -51,6 +51,21 @@ pub struct StormComment {
     pub text: String,
 }
 
+/// A real comment token for source tooling; never a string-content match.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SourceComment {
+    /// Inclusive UTF-8 byte offset.
+    pub start: usize,
+    /// Exclusive UTF-8 byte offset.
+    pub end: usize,
+    /// One-based source line.
+    pub line: u32,
+    /// Full comment text, including delimiters.
+    pub text: String,
+    /// True for a Lua long-bracket comment.
+    pub long: bool,
+}
+
 /// A lexical failure with a human-readable location and message.
 #[derive(Debug)]
 pub struct LexError(pub String);
@@ -130,6 +145,7 @@ pub struct Lexer<'a> {
     col: u32,
     capture_storm_comments: bool,
     storm_comments: Vec<StormComment>,
+    source_comments: Option<Vec<SourceComment>>,
 }
 
 impl<'a> Lexer<'a> {
@@ -142,7 +158,18 @@ impl<'a> Lexer<'a> {
             col: 1,
             capture_storm_comments: false,
             storm_comments: Vec::new(),
+            source_comments: None,
         }
+    }
+
+    /// Capture real comments for source editing. Optimization lexing remains unchanged.
+    pub fn with_comment_capture(mut self) -> Self {
+        self.source_comments = Some(Vec::new());
+        self
+    }
+    /// Captured comments in lexical order.
+    pub fn comments(&self) -> &[SourceComment] {
+        self.source_comments.as_deref().unwrap_or(&[])
     }
 
     /// `--@storm` で始まる行コメントのみ位置つきで保持するモードを有効にする
@@ -213,8 +240,18 @@ impl<'a> Lexer<'a> {
             if self.s[self.i..].starts_with(b"--") {
                 let level = self.long_bracket(self.i + 2);
                 if let Some(lv) = level {
+                    let (start, line) = (self.i, self.line);
                     self.adv(2);
                     self.read_long(lv)?;
+                    if let Some(comments) = &mut self.source_comments {
+                        comments.push(SourceComment {
+                            start,
+                            end: self.i,
+                            line,
+                            text: String::from_utf8_lossy(&self.s[start..self.i]).into_owned(),
+                            long: true,
+                        });
+                    }
                     continue;
                 }
                 let start = self.i;
@@ -222,6 +259,15 @@ impl<'a> Lexer<'a> {
                 let col = self.col;
                 while self.i < self.s.len() && self.s[self.i] != b'\n' {
                     self.adv(1);
+                }
+                if let Some(comments) = &mut self.source_comments {
+                    comments.push(SourceComment {
+                        start,
+                        end: self.i,
+                        line,
+                        text: String::from_utf8_lossy(&self.s[start..self.i]).into_owned(),
+                        long: false,
+                    });
                 }
                 if self.capture_storm_comments {
                     let text = String::from_utf8_lossy(&self.s[start..self.i]).into_owned();

@@ -64,3 +64,8 @@ control_namespace/controlNamespaceはVehicleのextended限定・明示設定。�
 Compilerのanalyze(project,{mode:'runtime'})は、Engineで直接実行する名前付きチャンク向けの解析である。構文・グローバル名・環境・既存lintは維持するが、ビルド用のrequire配置・静的依存グラフ・戻り値付きモジュール規則を適用しない。requireの文字列や動的式は実行ホストのloaderが実行時に解決し、その段階で未存在等のエラーを返す。runtime modeはbuild-time ambientを拒否し、開発用の名前はextendedとhostBindingsで明示する。
 
 省略時のmode:'build'は既存のリンク前解析のままであり、旧consumerのビルド契約を緩めない。runtime解析成功はゲーム向けビルド成功を意味しない。Parserは共有であり、runtime診断のために別Luaパーサーや文面フィルターを作らない。
+
+
+## Development overflow viewport (unreleased)
+
+Vehicle callDraw accepts an optional integer margin. The raster remains Engine-owned, translates geometry into an expanded viewport, and keeps screen.getWidth/getHeight and host map requests at their logical sizes. Zero margin is the unchanged game frame contract. The output is GameRGBA, not premultiplied RGBA, and the frame remains subject to the same allocation limits. Normal draw delegates to zero margin; debugger continuation replays only new commands into the same viewport. Host rotation is a presentation transform of rendered pixels, not another primitive rasterizer.

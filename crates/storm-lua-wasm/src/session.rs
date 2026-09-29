@@ -211,15 +211,30 @@ impl Session {
         width: u32,
         height: u32,
     ) -> Result<Status, BridgeError> {
+        self.call_draw_with_margin(name, arguments, width, height, 0)
+    }
+    pub(crate) fn call_draw_with_margin(
+        &mut self,
+        name: &str,
+        arguments: &[storm_lua_vm::value::LuaValue],
+        width: u32,
+        height: u32,
+        margin: u32,
+    ) -> Result<Status, BridgeError> {
         self.idle()?;
         self.vm.vehicle()?;
+        let twice = margin.checked_mul(2).ok_or(ScreenError::InvalidSize)?;
+        let output = (
+            width.checked_add(twice).ok_or(ScreenError::InvalidSize)?,
+            height.checked_add(twice).ok_or(ScreenError::InvalidSize)?,
+        );
         self.advance_epoch()?;
         if self
             .raster
             .as_ref()
-            .is_none_or(|r| r.dimensions() != (width, height))
+            .is_none_or(|r| r.dimensions() != output || r.margin() != margin)
         {
-            let mut raster = ScreenRaster::new(width, height)?;
+            let mut raster = ScreenRaster::with_margin(width, height, margin)?;
             raster.set_map_provider(self.map_host.map(map_provider));
             self.raster = Some(raster);
         }

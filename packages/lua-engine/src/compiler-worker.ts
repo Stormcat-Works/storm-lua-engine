@@ -5,7 +5,7 @@ import type {AnalyzeOptions, CompileOptions, LuaProject, ProjectCompileOptions} 
 /** Worker生成・終了はホストが所有します。接続時にもLua VMは作成しません。 */
 export interface CompilerEndpoint extends EventTarget { postMessage(message: unknown): void }
 const protocol = 'storm-lua-compiler-v1';
-type Operation = 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
+type Operation = 'inspectSource' | 'stripDevelopment' | 'buildLifeboat' | 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -45,6 +45,9 @@ export class CompilerWorkerClient {
       catch (error) { this.#pending.delete(id); reject(error); }
     });
   }
+  inspectSource(source: string): Promise<ReturnType<Compiler['inspectSource']>> { return this.request('inspectSource',[source]); }
+  stripDevelopment(source: string): Promise<string> { return this.request('stripDevelopment',[source]); }
+  buildLifeboat(project: LuaProject, options: ProjectCompileOptions = {}): Promise<ReturnType<Compiler['buildLifeboat']>> { return this.request('buildLifeboat',[project,options]); }
   minify(source: string, options: CompileOptions = {}): Promise<ReturnType<Compiler['minify']>> { return this.request('minify', [source, options]); }
   build(project: LuaProject, options: ProjectCompileOptions = {}): Promise<ReturnType<Compiler['build']>> { return this.request('build', [project, options]); }
   analyze(project: LuaProject, options: AnalyzeOptions = {}): Promise<ReturnType<Compiler['analyze']>> { return this.request('analyze', [project, options]); }
@@ -81,6 +84,13 @@ export function serveCompiler(endpoint: CompilerEndpoint, options: CompilerInitO
         const args = data['args'];
         let result: unknown;
         switch (data['operation']) {
+          case 'inspectSource':
+            if(typeof args[0] !== 'string') throw new TypeError('inspectSource requires text');
+            result=api.inspectSource(args[0]); break;
+          case 'stripDevelopment':
+            if(typeof args[0] !== 'string') throw new TypeError('stripDevelopment requires text');
+            result=api.stripDevelopment(args[0]); break;
+          case 'buildLifeboat': result=api.buildLifeboat(args[0] as LuaProject,args[1] as ProjectCompileOptions); break;
           case 'minify':
             if (typeof args[0] !== 'string') throw new TypeError('minify source must be text');
             result = api.minify(args[0], args[1] as CompileOptions); break;

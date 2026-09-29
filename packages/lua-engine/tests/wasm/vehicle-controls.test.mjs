@@ -71,3 +71,15 @@ test('load and draw never overwrite host input that has not been consumed by a t
     }finally{vm.dispose();}
   }
 });
+
+test('overflow keeps logical screen size and includes negative-coordinate pixels',()=>{
+ const vm=engine.createVehicle();
+ try{
+  vm.load('function onDraw()screen.setColor(255,0,0);screen.drawRectF(-2,-1,3,2);debug.log(screen.getWidth(),screen.getHeight())end');
+  vm.callDraw('onDraw',32,32,[],4);const frame=vm.frame();
+  assert.equal(frame.width,40);assert.equal(frame.height,40);
+  assert.deepEqual(Array.from(frame.pixels.slice((3*40+2)*4,(3*40+2)*4+4)),[255,0,0,255]);
+  assert.equal(new TextDecoder().decode(vm.drainLogRecords()[0].bytes),'32\t32');
+  assert.throws(()=>vm.callDraw('onDraw',32,32,[],4096));
+ }finally{vm.dispose();}
+});

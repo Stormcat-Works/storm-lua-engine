@@ -9,6 +9,7 @@ pub mod numeric;
 pub mod parser;
 pub mod print;
 pub mod size;
+pub mod source_tools;
 
 pub use ast::{Ast, IfArm, Node, NodeId, SymbolId, TableField};
 pub use lexer::{LexError, Lexer, StormComment, Token, TokenKind};

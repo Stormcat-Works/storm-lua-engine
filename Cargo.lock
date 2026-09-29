@@ -657,6 +657,7 @@ dependencies = [
  "storm-lua-analysis",
  "storm-lua-build",
  "storm-lua-minify",
+ "storm-lua-syntax",
  "wasm-bindgen",
 ]
 

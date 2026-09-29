@@ -288,11 +288,12 @@ pub(crate) fn vehicle(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> 
     session::with(handle, |session| {
         let status = match request["action"].as_str() {
             Some("callTick") => session.call_tick(name, &arguments)?,
-            Some("callDraw") => session.call_draw(
+            Some("callDraw") => session.call_draw_with_margin(
                 name,
                 &arguments,
                 number(&request["width"])?,
                 number(&request["height"])?,
+                request.get("margin").map(number).transpose()?.unwrap_or(0),
             )?,
             _ => return Err(invalid("unknown vehicle operation")),
         };

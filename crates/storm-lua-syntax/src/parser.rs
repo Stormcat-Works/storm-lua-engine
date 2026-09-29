@@ -27,9 +27,14 @@ impl std::error::Error for ParseError {}
 pub struct NodePositions {
     /// index = NodeId。
     positions: Vec<(u32, u32)>,
+    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
 }
 
 impl NodePositions {
+    /// Statement's inclusive/exclusive UTF-8 byte span, valid only on the parsed AST.
+    pub fn span(&self, id: NodeId) -> Option<(usize, usize)> {
+        self.spans.get(&id).copied()
+    }
     /// Return the one-based line and byte-column for a parsed node, or None for an unknown ID.
     pub fn get(&self, id: NodeId) -> Option<(u32, u32)> {
         self.positions.get(id as usize).copied()
@@ -43,6 +48,7 @@ pub struct Parser {
     ast: Ast,
     capture_positions: bool,
     positions: Vec<(u32, u32)>,
+    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
 }
 
 const STOPS_END: &[&str] = &["end"];
@@ -80,6 +86,7 @@ impl Parser {
             ast: Ast::new(),
             capture_positions: false,
             positions: Vec::new(),
+            spans: std::collections::BTreeMap::new(),
         })
     }
 
@@ -103,6 +110,7 @@ impl Parser {
             self.ast,
             NodePositions {
                 positions: self.positions,
+                spans: self.spans,
             },
         )
     }
@@ -179,7 +187,13 @@ impl Parser {
             if self.accept(";") {
                 continue;
             }
-            ss.push(self.stat()?);
+            let start = self.cur().p;
+            let statement = self.stat()?;
+            if self.capture_positions {
+                let last = &self.ts[self.i - 1];
+                self.spans.insert(statement, (start, last.p + last.v.len()));
+            }
+            ss.push(statement);
         }
         let id = self.ast.block(ss);
         self.mark(id, line, col);

@@ -14,6 +14,7 @@ pub const MAX_RASTER_BYTES: usize = 16 * 1024 * 1024;
 pub struct ScreenRaster {
     width: u32,
     height: u32,
+    margin: u32,
     pixels: Vec<u8>,
     color: Rgba8,
     map_provider: Option<Rc<dyn MapProvider>>,
@@ -37,11 +38,26 @@ impl ScreenRaster {
         Ok(Self {
             width,
             height,
+            margin: 0,
             pixels,
             color: Rgba8([255; 4]),
             map_provider: None,
             map_colors: [None; 8],
         })
+    }
+    /// Development viewport with an integer overflow margin.
+    pub fn with_margin(width: u32, height: u32, margin: u32) -> Result<Self, ScreenError> {
+        let twice = margin.checked_mul(2).ok_or(ScreenError::InvalidSize)?;
+        let mut raster = Self::new(
+            width.checked_add(twice).ok_or(ScreenError::InvalidSize)?,
+            height.checked_add(twice).ok_or(ScreenError::InvalidSize)?,
+        )?;
+        raster.margin = margin;
+        Ok(raster)
+    }
+    /// Output overflow margin in pixels.
+    pub fn margin(&self) -> u32 {
+        self.margin
     }
     /// drawClear コマンドとは独立した、新規フレームの開始処理。
     pub fn begin_frame(&mut self) {
@@ -384,6 +400,41 @@ impl ScreenSink for ScreenRaster {
         if command.text_bytes() > 1024 * 1024 {
             return Err(ScreenError::LimitExceeded);
         }
+        let offset = f64::from(self.margin);
+        let translated;
+        let command = if self.margin == 0 {
+            command
+        } else {
+            translated = match command {
+                DrawCommand::Line(p) => DrawCommand::Line(p.map(|[x, y]| [x + offset, y + offset])),
+                DrawCommand::Rect(v, fill) => {
+                    let mut v = *v;
+                    v[0] += offset;
+                    v[1] += offset;
+                    DrawCommand::Rect(v, *fill)
+                }
+                DrawCommand::Circle(v, fill) => {
+                    let mut v = *v;
+                    v[0] += offset;
+                    v[1] += offset;
+                    DrawCommand::Circle(v, *fill)
+                }
+                DrawCommand::Triangle(p, fill) => {
+                    DrawCommand::Triangle(p.map(|[x, y]| [x + offset, y + offset]), *fill)
+                }
+                DrawCommand::Text(p, text) => {
+                    DrawCommand::Text([p[0] + offset, p[1] + offset], text.clone())
+                }
+                DrawCommand::TextBox(v, text) => {
+                    let mut v = *v;
+                    v[0] += offset;
+                    v[1] += offset;
+                    DrawCommand::TextBox(v, text.clone())
+                }
+                other => other.clone(),
+            };
+            &translated
+        };
         match command {
             DrawCommand::Map(coordinates) => self.draw_map(*coordinates)?,
             DrawCommand::MapColor(kind, color) => self.map_colors[*kind as usize] = Some(*color),
@@ -485,19 +536,29 @@ impl ScreenRaster {
             .as_ref()
             .ok_or(ScreenError::MissingMapProvider)?;
         let request = MapRequest {
-            width: self.width,
-            height: self.height,
+            width: self.width - self.margin * 2,
+            height: self.height - self.margin * 2,
             center: [coordinates[0], coordinates[1]],
             zoom: coordinates[2],
             colors: self.map_colors,
         };
         let pixels = provider.render(&request)?;
-        if pixels.len() != self.pixels.len() {
+        if pixels.len() != request.width as usize * request.height as usize * 4 {
             return Err(ScreenError::Host(
                 "map provider returned an invalid RGBA byte length".into(),
             ));
         }
-        self.pixels.copy_from_slice(&pixels);
+        if self.margin == 0 {
+            self.pixels.copy_from_slice(&pixels);
+        } else {
+            let stride = request.width as usize * 4;
+            for y in 0..request.height as usize {
+                let dst =
+                    ((y + self.margin as usize) * self.width as usize + self.margin as usize) * 4;
+                self.pixels[dst..dst + stride]
+                    .copy_from_slice(&pixels[y * stride..(y + 1) * stride]);
+            }
+        }
         Ok(())
     }
 }

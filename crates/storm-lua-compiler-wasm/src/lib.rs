@@ -258,3 +258,26 @@ pub fn pass_ids() -> Result<JsValue, JsValue> {
     to_js(storm_lua_minify::pass_ids::OPTIMIZATION_PASS_IDS)
         .map_err(|error| JsValue::from_str(&format!("failed to encode pass identifiers: {error}")))
 }
+
+/// Source inspection for bounded IDE declaration editing, without running Lua.
+#[wasm_bindgen(js_name = inspectSource)]
+pub fn inspect_source(source: &str) -> Result<JsValue, JsValue> {
+    to_js(&storm_lua_syntax::source_tools::inspect_source(source))
+        .map_err(|error| JsValue::from_str(&format!("failed to encode source inspection: {error}")))
+}
+
+/// LB include-once build, independent of default static module semantics.
+#[wasm_bindgen(js_name = buildLifeboat)]
+pub fn build_lifeboat(project: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
+    let project = decode_project(project)?;
+    let options = decode_project_compile_options(options)?;
+    to_js(&storm_lua_build::public_api::compile_lifeboat(
+        &project, &options,
+    ))
+    .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+/// Remove real development directives while retaining byte and line positions.
+#[wasm_bindgen(js_name = stripDevelopment)]
+pub fn strip_development(source: &str) -> Result<String, JsValue> {
+    storm_lua_build::lifeboat::strip_development(source).map_err(|e| JsValue::from_str(&e))
+}

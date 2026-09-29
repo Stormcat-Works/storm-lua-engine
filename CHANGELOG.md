@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- IDE用のトークン/AST宣言検査、明示的LB include-onceビルドと開発専用区間除去、描画の開発用overflow viewportを追加。通常build・通常game描画・最適化探索・minify後ソースマップは変更しない。
+
 - Lua実行で利用できる可変長引数のみの`function(...)`をCompilerも正しく受理する。旧TypeScriptパーサー由来の閉じ括弧の消費漏れを修正。
 
 - 識別子位置で記号や予約語を受理していた構文解析を修正し、`local =`等を構文エラーとして報告する。

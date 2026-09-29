@@ -14,6 +14,7 @@ workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+storm-lua-syntax = { workspace = true }
 storm-lua-analysis = { workspace = true }
 storm-lua-build = { workspace = true }
 storm-lua-minify = { workspace = true }

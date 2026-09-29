@@ -33,3 +33,10 @@ Nativeゲートは共有tmpfs満杯で一度中断し、自作業の生成物だ
 ## 範囲外
 
 LifeBoatの全API・ビルドsection処理、アプリのsource generation/Terminal接続、最適化後ソースマップ、実ゲーム比較はこの検証の対象外。Rustの標準library/raster等の所有者をアプリへ移していない。タグ、npm公開、Playground配備を行わない。
+
+
+## Design接続時の追加構文修正
+
+`local f=function(...)return ... end`と`function onTick(...)end`が、実Luaでは正常完了するのにCompilerではsyntax-errorになることを実行して確認した。原因は旧TSパーサーから意図的に継承されていた閉じ括弧の消費漏れ。正しいLua文法へ修正し、可変長のみ/通常引数と併用/不正な継続パラメータ、minify後の実Native出力、実Compiler WASMを検証した。
+
+追加後の全回帰はNative487 PASS、WASM60 PASS、SDK JS30 PASS。fmt、clippy、Compiler WASM再ビルド、3ブラウザ、隔離パッケージconsumerも再実行してPASS。先の485/59件は追加修正前の実測として上表に残す。

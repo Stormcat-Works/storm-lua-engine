@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Lua実行で利用できる可変長引数のみの`function(...)`をCompilerも正しく受理する。旧TypeScriptパーサー由来の閉じ括弧の消費漏れを修正。
+
 - 識別子位置で記号や予約語を受理していた構文解析を修正し、`local =`等を構文エラーとして報告する。
 
 - Vehicleの名前付きtick/draw callback、extended限定の明示controlNamespace、更新済みpropertyスナップショットを追加。同一Lua呼び出し内の状態変更をWASM再入なしに標準APIへ反映する。

@@ -99,3 +99,12 @@ test('runtime analysis accepts host-resolved dynamic includes but preserves synt
   assert.ok(compiler.analyze(project).diagnostics.some(d=>d.code==='require-not-top-level'));
   assert.ok(compiler.analyze({entry:'main',modules:{main:'local ='}},options).diagnostics.some(d=>d.code==='syntax-error'));
 });
+
+test('variadic-only functions accepted by Lua are accepted by both compiler analysis and minification',async()=>{
+  const compiler=await loadCompiler({wasmBinary:await readFile(new URL('../../dist/compiler-wasm/compiler_bg.wasm',import.meta.url))});
+  const source='local f=function(...)return ... end function onTick(...)local a,b=f(3,7);output.setNumber(1,a);output.setNumber(2,b)end';
+  const result=compiler.analyze({entry:'main',modules:{main:source}},{mode:'runtime',environment:'game'});
+  assert.equal(result.ok,true);assert.equal(result.diagnostics.some(d=>d.code==='syntax-error'),false);
+  assert.equal(compiler.minify(source).ok,true);
+  assert.ok(compiler.analyze({entry:'main',modules:{main:'function f(...,x)end'}}).diagnostics.some(d=>d.code==='syntax-error'));
+});

@@ -160,3 +160,19 @@ fn runtime_analysis_keeps_syntax_and_environment_checks_without_static_require_r
         .iter()
         .any(|d| d.code == "sw-unavailable-global"));
 }
+
+#[test]
+fn valid_variadic_only_functions_match_the_runtime_after_minification(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source="local forward=function(...)return ... end function onTick(...)local a,b=forward(3,7);output.setNumber(1,a);output.setNumber(2,b)end";
+    let compiled = storm_lua_build::minify(source, &Default::default());
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let Some(code) = compiled.code else {
+        return Err("missing compiled code".into());
+    };
+    let mut vm = Microcontroller::new(Default::default())?;
+    vm.load(code.as_bytes(), "@variadic.lua")?;
+    vm.tick(&Default::default())?;
+    assert_eq!(&vm.output().numbers[..2], &[3.0, 7.0]);
+    Ok(())
+}

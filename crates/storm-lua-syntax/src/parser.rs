@@ -1,7 +1,6 @@
 //! Lua parsing into the syntax arena, with optional source positions.
 
 // Canonical Lua parser。Phase 0〜1で最終TS版と構造parityを確立済み。
-// `function(...)`（可変長のみ・名前なし）は TS 版が閉じ括弧を消費しない既存挙動のまま再現する。
 
 use std::fmt;
 
@@ -377,7 +376,7 @@ impl Parser {
         if !self.accept(")") {
             if self.accept("...") {
                 variadic = true;
-                // TS 版と同じく閉じ括弧を消費しない（function(...) はエラーになる既存挙動）
+                self.pop(Some(")"))?;
             } else {
                 ps.push(self.identifier()?);
                 loop {
@@ -721,6 +720,35 @@ mod identifier_tests {
             assert!(
                 parse_source(source).is_err(),
                 "accepted invalid identifier: {source}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod variadic_parameter_tests {
+    use super::parse_source;
+    #[test]
+    fn variadic_only_parameters_consume_the_closing_parenthesis() {
+        for source in [
+            "local f=function(...)return ... end",
+            "function onTick(...)end",
+            "local function forward(...)return (...)end",
+            "function named(first,...)return first,... end",
+        ] {
+            assert!(
+                parse_source(source).is_ok(),
+                "rejected valid variadic parameters: {source}"
+            );
+        }
+        for source in [
+            "function f(...,x)end",
+            "function f(... end",
+            "function f(a,...,b)end",
+        ] {
+            assert!(
+                parse_source(source).is_err(),
+                "accepted malformed variadic parameters: {source}"
             );
         }
     }

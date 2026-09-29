@@ -28,6 +28,7 @@ function httpReply(port,path,reply) assert(port==8080 and path=='/status');g_sav
     addon.start();addon.tick(400);addon.dispatch('onChatMessage',[7n,'tester','hello']);
     check(calls[0][0]===9223372036854775807n && calls[0][1][1]===255 && calls[0][2]===null,'lossless host arguments');
     check(logs.length===2 && logs[0].source==='debug.log' && logs[1].source==='print','structured automatic logs');
+    check(logs[0].location?.chunk==='=addon-smoke' && logs[0].location.line===9 && logs[1].location?.line===11,'log emission locations');
     const requests=addon.drainHttpRequests();check(requests.length===1,'HTTP request delivery');
     addon.httpReply(requests[0].token,new Uint8Array([0,255]));
     let duplicate=false;try {addon.httpReply(requests[0].token,'again');} catch(error) {duplicate=error.code===4;}
@@ -54,5 +55,5 @@ function httpReply(port,path,reply) assert(port==8080 and path=='/status');g_sav
     check(maps.length===1 && maps[0].center[0]===4 && maps[0].colors.ocean[2]===64 && maps[0].colors.land===undefined,'map request contract');
     check(pixels[0]===255 && pixels[4]===0 && pixels[6]===64,'map order and draw color');
   } finally {vehicle.dispose();}
-  return {addon:true,hostServer:true,mapProvider:true,http:true,structuredLogs:true};
+  return {addon:true,hostServer:true,mapProvider:true,http:true,structuredLogs:true,logLocations:true};
 }

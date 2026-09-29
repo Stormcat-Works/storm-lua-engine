@@ -1,7 +1,11 @@
 /** コンシューマ公開面のコンパイル時チェック。このファイルが実行されたりパッケージングされたりすることはありません。 */
-import { type LuaEngine, type MapProvider, luaTable } from '../../src/index.js';
+import { type LuaEngine, type LogLocation, type MapProvider, luaTable } from '../../src/index.js';
 declare const engine: LuaEngine;
-const vehicle=engine.createVehicle({onLog:record=>{ const source:'print'|'debug.log'=record.source;void source; }});
+const vehicle=engine.createVehicle({onLog:record=>{
+  const source:'print'|'debug.log'=record.source;void source;
+  const location:LogLocation|undefined=record.location;
+  if(location){const line:number=location.line;const chunk:string=location.chunk;void line;void chunk;}
+}});
 const addon=engine.createAddon({server:{getPlayers:()=>[luaTable({})]}});
 const vehicleMode:'vehicle'=vehicle.mode;
 const addonMode:'addon'=addon.mode;

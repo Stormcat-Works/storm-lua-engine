@@ -1,6 +1,6 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.2.0の主要機能実装とローカル候補の完成確認1〜5は完了。残るのは別承認の公開工程です。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+現在地は[STATUS](STATUS.md)。**v0.2.0は公開済み。後続機能は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -26,6 +26,13 @@
 手順と実行条件は[release](docs/release.md)。Playground CLIはリポジトリから使う確認用CLIとして提供し、独立npx packageや各OSの単体binaryを今回の条件に加えません。
 
 [公開記録](docs/verification/release-0.2.0.md)に対象commit・CI・registry導入・本番確認を記録しました。Storm Min自身のnpm公開は別工程で、private CIの課金制限は未実行理由として明示しています。
+
+## ログ発生位置（後続版）
+
+- Rust/構造化WASM/TS: 実装・検証済み。[検証記録](docs/verification/log-locations-20260929.md)。
+- 本文と位置の上限、取得不能な位置、旧レコード受理と不正位置拒否を検証する。
+- Named include、alias、tick/draw、reset、Addon、停止/失敗、非短縮map、Nativeのdebug feature無効を実際に実行する。
+- consumerのTerminalリンク・実行世代保存はconsumer側。新しいSDK版の公開・タグは別の承認工程。
 
 ## 後続項目
 

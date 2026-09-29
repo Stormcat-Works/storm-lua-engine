@@ -45,6 +45,8 @@ console.log('Isolated installed package: Lua execution, raster, export paths and
   console.log(run(process.execPath,['consumer.mjs'],temporary).trim());
   await writeFile(join(temporary,'source-loading.mjs'),await readFile(join(root,'examples/consumer/source-loading.mjs')));
   console.log(run(process.execPath,['source-loading.mjs'],temporary).trim());
+  await writeFile(join(temporary,'log-locations.mjs'),await readFile(join(root,'examples/consumer/log-locations.mjs')));
+  console.log(run(process.execPath,['log-locations.mjs'],temporary).trim());
   // Source-map decoding belongs to this consumer, not the runtime-only SDK package.
   // npm ci caches integrity-addressed tarballs, not necessarily registry metadata.
   // Reuse the exact test-only lock entries in a child consumer; the tested SDK is

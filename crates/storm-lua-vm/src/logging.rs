@@ -10,6 +10,14 @@ pub enum LogSource {
     /// 制限付きのdebug.log（Luaの標準debugライブラリではありません）。
     Debug,
 }
+/// 呼び出し時点のLuaチャンク名と実行行。最適化前ソースへの対応はホストが管理します。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogLocation {
+    /// 実行時の完全なチャンク名。ファイルを自動的に読み込むパスではありません。
+    pub chunk: String,
+    /// Luaが報告した1始まりの実行行。列位置や消失したフレームは推測しません。
+    pub line: u32,
+}
 /// 所有権を持つログデータ。非UTF-8バイト列も有効であり、暗黙に修復されることはありません。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogRecord {
@@ -17,6 +25,8 @@ pub struct LogRecord {
     pub source: LogSource,
     /// タブ区切りの値列（改行は付加されません）。
     pub bytes: Vec<u8>,
+    /// ログ生成時の最も近いLua呼び出し元。位置を取得できない場合はNone。
+    pub location: Option<LogLocation>,
 }
 #[derive(Default)]
 pub(crate) struct LogBuffer {
@@ -25,6 +35,23 @@ pub(crate) struct LogBuffer {
 }
 fn limit(message: &str) -> mlua::Error {
     mlua::Error::external(VmError::new(ErrorKind::Limit, message))
+}
+// Inspect only while the original call stack exists. No line hooks or script-visible
+// debug functions are needed. Skip C frames, but never invent a lost tail frame.
+fn caller_location(lua: &Lua) -> Option<LogLocation> {
+    for level in 1..=16 {
+        let frame = lua.inspect_stack(level)?;
+        let source = frame.source();
+        if source.what == "C" {
+            continue;
+        }
+        let line = u32::try_from(frame.curr_line())
+            .ok()
+            .filter(|line| *line > 0)?;
+        let chunk = source.source?.into_owned();
+        return Some(LogLocation { chunk, line });
+    }
+    None
 }
 fn function(
     lua: &Lua,
@@ -55,18 +82,22 @@ fn function(
             }
             line.extend_from_slice(&bytes);
         }
+        let location = caller_location(lua);
+        let record_bytes =
+            line.len() + location.as_ref().map_or(0, |location| location.chunk.len());
         let mut buffer = buffer.try_borrow_mut().map_err(|_| {
             mlua::Error::external(VmError::new(ErrorKind::Busy, "log buffer is borrowed"))
         })?;
-        if buffer.records.len() >= 128 || buffer.bytes + line.len() > 65536 {
+        if buffer.records.len() >= 128 || buffer.bytes + record_bytes > 65536 {
             return Err(limit(
                 "log buffer limit exceeded; drain logs between callbacks",
             ));
         }
-        buffer.bytes += line.len();
+        buffer.bytes += record_bytes;
         buffer.records.push(LogRecord {
             source,
             bytes: line,
+            location,
         });
         Ok(())
     })
@@ -112,5 +143,45 @@ impl crate::runner::Vm {
         let mut buffer = self.logs.borrow_mut();
         buffer.bytes = 0;
         std::mem::take(&mut buffer.records)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_host_call_has_no_invented_lua_location() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let env = lua.create_table()?;
+        let buffer = Rc::new(RefCell::new(LogBuffer::default()));
+        install(&lua, &env, Rc::clone(&buffer), true)?;
+        let print: mlua::Function = env.raw_get("print")?;
+        print.call::<()>("host")?;
+        let records = &buffer.borrow().records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].bytes, b"host");
+        assert_eq!(records[0].location, None);
+        Ok(())
+    }
+
+    #[test]
+    fn locations_do_not_require_the_debugger_feature_or_line_hooks() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let env = lua.create_table()?;
+        let buffer = Rc::new(RefCell::new(LogBuffer::default()));
+        install(&lua, &env, Rc::clone(&buffer), true)?;
+        lua.load("local alias=print\n  alias('line two')")
+            .set_name("@plain.lua")
+            .set_environment(env)
+            .exec()?;
+        assert_eq!(
+            buffer.borrow().records[0].location,
+            Some(LogLocation {
+                chunk: "@plain.lua".into(),
+                line: 2,
+            })
+        );
+        Ok(())
     }
 }

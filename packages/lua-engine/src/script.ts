@@ -1,7 +1,14 @@
 /** 両方のLuaプロファイルで共有されるクライアントライフサイクル、デバッガ、および明示的なホスト配信ルート。 */
 import { Bridge, EngineError, byteArray, object, unsigned, type Outcome } from './bridge.js';
 import { decodeDebugValue, decodeStack, decodeVariables, type DebugHandle, type DebugValue, type StackFrame, type Variable, type TableEntry, type Breakpoint, type StepMode } from './debug.js';
-export interface LogRecord { readonly source: 'print' | 'debug.log'; readonly bytes: Uint8Array }
+/** Execution-time source identity; never an instruction to fetch a filesystem path. */
+export interface LogLocation { readonly chunk: string; readonly line: number }
+export interface LogRecord {
+  readonly source: 'print' | 'debug.log';
+  readonly bytes: Uint8Array;
+  /** Absent when the runtime cannot identify an active Lua caller (or an older runtime). */
+  readonly location?: LogLocation;
+}
 export type LogHandler = (record: LogRecord) => void;
 export interface HttpToken { readonly generation: bigint; readonly id: number }
 export interface HttpRequest { readonly token: HttpToken; readonly port: number; readonly request: Uint8Array }
@@ -51,7 +58,17 @@ export abstract class ScriptVm {
     return data.map(value => {
       const record = object(value); const source = record['source'];
       if (source !== 'print' && source !== 'debug.log') throw new TypeError('Invalid log source');
-      return {source,bytes:byteArray(record['bytes'])};
+      const rawLocation = record['location'];
+      let location: LogLocation | undefined;
+      if (rawLocation !== undefined && rawLocation !== null) {
+        const raw = object(rawLocation);
+        if (typeof raw['chunk'] !== 'string') throw new TypeError('Invalid log source chunk');
+        if (typeof raw['line'] !== 'number') throw new TypeError('Invalid log source line');
+        const line = unsigned(raw['line'], 'log source line');
+        if (line === 0) throw new TypeError('Log source line must be positive');
+        location = {chunk: raw['chunk'], line};
+      }
+      return {source,bytes:byteArray(record['bytes']),...(location === undefined ? {} : {location})};
     });
   }
   private deliver(sink: LogHandler): number {

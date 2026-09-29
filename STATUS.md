@@ -2,6 +2,12 @@
 
 2026-09-27 — **Storm Lua Engine v0.2.0をnpm/GitHubへ公開し、Playground・ガイド・2記事の本番公開まで完了。** 版番号はworkspace、npm SDK、Playgroundとも0.2.0です。範囲と公開手順は[release](docs/release.md)、残件は[TASKS](TASKS.md)、利用ガイドは[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)です。
 
+## 後続ブランチの作業（未公開）
+
+`feat/storm-code-integration`でログ発生位置を実装・検証済み。Rustの生成時記録、WASMの構造化配送、TSのoptionalなlocationを接続する。契約は[runtime-host](docs/specs/runtime-host.md#ログ発生位置未公開の後続版)。これは公開済みv0.2.0の機能ではなく、Storm Code本体のTerminalへの接続はconsumer側の後続作業。最適化後ソースマップはこの作業に含めない。
+
+検証: Native478件、実WASM53件、SDK JS29件、3ブラウザ、隔離パッケージconsumer、fmt/clippy/default check/rustdoc/architectureを通過。[記録](docs/verification/log-locations-20260929.md)。
+
 ## v0.2.0に含む実装
 
 | 領域 | 現在の範囲 |

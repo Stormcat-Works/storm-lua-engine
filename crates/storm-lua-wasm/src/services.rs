@@ -242,7 +242,14 @@ pub(crate) fn http(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
 pub(crate) fn logs(handle: u32, structured: bool) -> Result<Status, BridgeError> {
     session::with(handle, |session| {
         let logs = session.vm.drain_log_records();
-        let records:Vec<_>=logs.into_iter().map(|r| if structured {json!({"source":match r.source {LogSource::Print=>"print",LogSource::Debug=>"debug.log"},"bytes":r.bytes})} else {json!(r.bytes)}).collect();
+        let records: Vec<_> = logs.into_iter().map(|record| {
+            if structured {
+                let location = record.location.map(|location| json!({"chunk": location.chunk, "line": location.line}));
+                json!({"source": match record.source {LogSource::Print => "print", LogSource::Debug => "debug.log"}, "bytes": record.bytes, "location": location})
+            } else {
+                json!(record.bytes)
+            }
+        }).collect();
         codec::respond(&Value::Array(records))?;
         Ok(Status::Ok)
     })

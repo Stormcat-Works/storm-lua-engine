@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- ログ生成時のチャンク名と実行行をRust LogRecord、構造化WASM、TS LogRecord.locationへ追加。Luaへのdebug API公開や常時line hookを追加しない。
+- 取得不能な位置は省略し、旧ランタイムの位置なしログもTSで受理する。最適化後ソースマップを提供する変更ではない。
+- ログの64KiB蓄積上限へチャンク名のbytesも含める。RustでLogRecordを直接構成する利用者はlocationフィールドが必要。
+
 ## 0.2.0 — 2026-09-27
 
 Compiler SDK、実行環境の選択、開発用ソース読み込み、Playgroundをまとめたリリースです。

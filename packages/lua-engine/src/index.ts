@@ -4,7 +4,7 @@ export { LuaEngine, VehicleVm, loadRuntime, fromEmscripten } from './runtime.js'
 export { AddonVm } from './addon.js';
 export type { VehicleOptions, RuntimeInitOptions } from './runtime.js';
 export type { AddonOptions, AddonEvent, MenuProperty } from './addon.js';
-export type { ScriptOptions, LogRecord, LogHandler, HttpToken, HttpRequest } from './script.js';
+export type { ScriptOptions, LogRecord, LogLocation, LogHandler, HttpToken, HttpRequest } from './script.js';
 export type { MapRequest, MapProvider, Rgba, ServerFunction, ServerFunctions } from './host.js';
 export { EngineError } from './bridge.js';
 export type { Outcome } from './bridge.js';

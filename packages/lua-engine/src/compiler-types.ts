@@ -146,6 +146,8 @@ export type AmbientMember =
   { kind: 'module'; source: string } | { kind: 'environmentOnly' };
 
 export interface AnalyzeOptions {
+  /** build (default): static linker parity; runtime: named chunks with host-resolved includes. */
+  mode?: 'build' | 'runtime';
   environment?: EnvironmentProfile;
   hostBindings?: string[];
   target?: CompilerTarget;

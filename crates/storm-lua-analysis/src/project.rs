@@ -113,6 +113,16 @@ fn first_segment(key: &str) -> &str {
 ///
 /// `module-not-found` / `require-cycle` は依存 DFS（P1b）側の責務であり、ここでは発火しない。
 pub fn validate_project(project: &LuaProject) -> ProjectValidation {
+    validate_project_mode(project, true)
+}
+
+/// Validate source chunks for execution, not for the static linker.
+/// The host owns dynamic include resolution; no module return values are assumed.
+pub(crate) fn validate_runtime_project(project: &LuaProject) -> ProjectValidation {
+    validate_project_mode(project, false)
+}
+
+fn validate_project_mode(project: &LuaProject, static_link: bool) -> ProjectValidation {
     let mut diagnostics = Vec::new();
     let mut modules = BTreeMap::new();
 
@@ -154,7 +164,11 @@ pub fn validate_project(project: &LuaProject) -> ProjectValidation {
 
         match parse_source_with_positions(source) {
             Ok((ast, root, positions)) => {
-                let (requires, require_diagnostics) = scan_requires(&ast, root, &positions, key);
+                let (requires, require_diagnostics) = if static_link {
+                    scan_requires(&ast, root, &positions, key)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
                 diagnostics.extend(require_diagnostics);
                 let (ambient_usages, ambient_diagnostics) =
                     scan_ambient_refs(&ast, root, &positions, key, &project.ambient);

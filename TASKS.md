@@ -51,3 +51,8 @@
 | 全収集コーパス回帰・包括的性能評価 | 今回実施した代表回帰を全件と表現しない。測定なしの速度向上を主張しない |
 
 Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへIDE、共同編集、クラウド同期、ゲーム世界・仮物理を追加しません。過去版の確認件数と初回移管時の結果は各verificationに保持します。
+
+
+## Storm Code向け実行ホスト操作（未公開）
+
+名前付きtick/draw、即時property/input状態操作、typed property snapshot、runtime専用analyzeを実装。静的ビルド契約は維持する。独立consumerとNative/WASMで検証し、Storm Codeでの利用は同製品の段階移行へ記録する。未公開の識別可能なSDKスナップショットと既存npm版を混同しない。

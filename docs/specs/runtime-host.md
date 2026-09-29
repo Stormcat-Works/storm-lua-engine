@@ -44,3 +44,23 @@ RustのLogRecord.locationはOption<LogLocation>、構造化WASMのlocationはobj
 チャンク名はソース識別子であり、ファイル読出しの許可ではない。ホストは実行時のソース世代に対応づける。未加工の名前付きチャンクには変換マップは不要。非短縮リンクは正確に同じcode/mapの組を使用し、最適化後の元ファイル位置をこの情報だけで復元できるとは扱わない。ラッパー関数は実際にログを呼ぶラッパー内の行を示す。列・同じ行の複数呼び出し・失われた末尾呼び出しの位置は推測しない。
 
 ログ上限は本文1行16KiB、最大128件、未配送の本文とチャンク名の合計64KiB。位置メタデータもメモリ上限へ含める。上限超過時はエラーとし、取り出し済み/残存ログを成功時以外でも検査できる。Native/WASM、停止/失敗、include/reset、Addon、位置なし、バイト列、非短縮マップ、3ブラウザで検証する。
+
+
+## 名前付きVehicle callbackと開発用状態操作（未公開）
+
+ホストはcall_tick/callTickまたはcall_draw/callDrawで、任意名のグローバル関数を通常のtick/drawフェーズと同じ命令予算・I/O・画面制約で実行できる。元のonTick/onDrawを置換せず、関数名をコードへ埋め込むloadもしない。名前付き描画の一時停止・再開では同一呼び出しのコマンド列を継続する。存在しないcallbackはMissingであり、成功した描画として偽装しない。
+
+control_namespace/controlNamespaceはVehicleのextended限定・明示設定。未使用の単一ルート識別子を指定すると、そのテーブルへsetProperty、setInputNumber、setInputBool、getInputNumber、getInputBoolを登録する。既存の標準グローバルや重複/親子競合するホストbinding、requireLoaderとの競合は構築時に拒否する。設定しない場合、これらの関数は存在しない。
+
+状態操作はEngineが所有する同じproperty/input状態を変更する。Luaから戻るまで更新を遅延せず、同じチャンク・callback内の後続の標準API読み取りが更新を見る。JSホストcallbackからWASMへ再入する操作ではない。setPropertyはバイト列ラベルとnumber/Boolean/byte string/nilを受け、nilは削除。プロパティ数4096・ラベルと値の合計1MiB以内。入力channelは整数1..32、numberの転送時のみf32化し、propertyのf64は縮小しない。getInput系は開発用入力状態の取得であり、ゲームAPIのフェーズ制約を変更しない。
+
+実行後のWASM固定I/Oブロックは状態操作後の入力も反映する。次のtickへホストが別の入力を書けばその入力が新しい開始値になる。properties()は更新済みの損失のない所有スナップショットを返す。resetは現在のpropertyを引き継いでnamespaceを新しい状態へ結び直し、完了済みloadを再実行する。古いVMのStateを捕捉したクロージャを再利用しない。
+
+アプリ固有のsim/LB API、GUIメタデータ、登録tick hook、パス解決、任意のtick/drawスケジュールはこのAPIの利用者が所有する。ゲーム環境の関数集合やデバッグAPIは追加しない。新しいsle_vehicle exportはABIの固定I/Oレイアウトを変更せず、古いSDK操作もそのまま利用できる。
+
+
+## 開発実行向けの静的診断（未公開）
+
+Compilerのanalyze(project,{mode:'runtime'})は、Engineで直接実行する名前付きチャンク向けの解析である。構文・グローバル名・環境・既存lintは維持するが、ビルド用のrequire配置・静的依存グラフ・戻り値付きモジュール規則を適用しない。requireの文字列や動的式は実行ホストのloaderが実行時に解決し、その段階で未存在等のエラーを返す。runtime modeはbuild-time ambientを拒否し、開発用の名前はextendedとhostBindingsで明示する。
+
+省略時のmode:'build'は既存のリンク前解析のままであり、旧consumerのビルド契約を緩めない。runtime解析成功はゲーム向けビルド成功を意味しない。Parserは共有であり、runtime診断のために別Luaパーサーや文面フィルターを作らない。

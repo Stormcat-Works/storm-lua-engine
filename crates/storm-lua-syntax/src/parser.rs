@@ -136,6 +136,16 @@ impl Parser {
         let t = &self.ts[self.i];
         v.is_none_or(|vv| t.v == vv) && k.is_none_or(|kk| t.k == kk)
     }
+    fn identifier(&mut self) -> Result<String, ParseError> {
+        if self.cur_k() != TokenKind::Id {
+            let token = self.cur();
+            return Err(ParseError(format!(
+                "expected identifier, got {} at {}:{}",
+                token.v, token.line, token.col
+            )));
+        }
+        Ok(self.pop(None)?.v)
+    }
     fn pop(&mut self, v: Option<&str>) -> Result<Token, ParseError> {
         let t = self.ts[self.i].clone();
         if let Some(vv) = v {
@@ -185,13 +195,13 @@ impl Parser {
             return Ok(id);
         }
         if self.accept("goto") {
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             let id = self.ast.goto(&name);
             self.mark(id, line, col);
             return Ok(id);
         }
         if self.accept("::") {
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             self.pop(Some("::"))?;
             let id = self.ast.label(&name);
             self.mark(id, line, col);
@@ -248,7 +258,7 @@ impl Parser {
             return Ok(id);
         }
         if self.accept("for") {
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             if self.accept("=") {
                 let a = self.expr()?;
                 self.pop(Some(","))?;
@@ -267,7 +277,7 @@ impl Parser {
             }
             let mut names = vec![name];
             while self.accept(",") {
-                names.push(self.pop(None)?.v);
+                names.push(self.identifier()?);
             }
             self.pop(Some("in"))?;
             let es = self.expr_list()?;
@@ -287,15 +297,15 @@ impl Parser {
         }
         if self.accept("local") {
             if self.accept("function") {
-                let name = self.pop(None)?.v;
+                let name = self.identifier()?;
                 let fn_ = self.func_body()?;
                 let id = self.ast.localfunc(&name, fn_);
                 self.mark(id, line, col);
                 return Ok(id);
             }
-            let mut names = vec![self.pop(None)?.v];
+            let mut names = vec![self.identifier()?];
             while self.accept(",") {
-                names.push(self.pop(None)?.v);
+                names.push(self.identifier()?);
             }
             let es = if self.accept("=") {
                 self.expr_list()?
@@ -339,12 +349,12 @@ impl Parser {
 
     fn func_name(&mut self) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
-        let name = self.pop(None)?.v;
+        let name = self.identifier()?;
         let mut e = self.ast.name(&name);
         self.mark(e, line, col);
         while self.accept(".") {
             let (line, col) = (self.cur().line, self.cur().col);
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             let key = self.ast.str(quote_lua(&name));
             self.mark(key, line, col);
             e = self.ast.index(e, key, true);
@@ -352,7 +362,7 @@ impl Parser {
         }
         if self.accept(":") {
             let (line, col) = (self.cur().line, self.cur().col);
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             e = self.ast.methodname(e, &name);
             self.mark(e, line, col);
         }
@@ -369,7 +379,7 @@ impl Parser {
                 variadic = true;
                 // TS 版と同じく閉じ括弧を消費しない（function(...) はエラーになる既存挙動）
             } else {
-                ps.push(self.pop(None)?.v);
+                ps.push(self.identifier()?);
                 loop {
                     if !self.accept(",") {
                         break;
@@ -378,7 +388,7 @@ impl Parser {
                         variadic = true;
                         break;
                     }
-                    ps.push(self.pop(None)?.v);
+                    ps.push(self.identifier()?);
                 }
                 self.pop(Some(")"))?;
             }
@@ -468,7 +478,7 @@ impl Parser {
             } else if self.cur_k() == TokenKind::Id
                 && self.ts.get(self.i + 1).is_some_and(|t| t.v == "=")
             {
-                let k = self.pop(None)?.v;
+                let k = self.identifier()?;
                 self.pop(Some("="))?;
                 let v = self.expr()?;
                 fs.push(TableField::Name(self.ast.strings.intern(&k), v));
@@ -493,7 +503,7 @@ impl Parser {
         let (line0, col0) = (self.cur().line, self.cur().col);
         let mut e: NodeId;
         if self.at(None, Some(TokenKind::Id)) {
-            let name = self.pop(None)?.v;
+            let name = self.identifier()?;
             e = self.ast.name(&name);
             self.mark(e, line0, col0);
         } else if self.accept("(") {
@@ -516,13 +526,13 @@ impl Parser {
                 e = self.ast.index(e, key, false);
                 self.mark(e, line, col);
             } else if self.accept(".") {
-                let name = self.pop(None)?.v;
+                let name = self.identifier()?;
                 let key = self.ast.str(quote_lua(&name));
                 self.mark(key, line, col);
                 e = self.ast.index(e, key, true);
                 self.mark(e, line, col);
             } else if self.accept(":") {
-                let method = self.pop(None)?.v;
+                let method = self.identifier()?;
                 let args = self.args()?;
                 e = self.ast.call(e, args, Some(method));
                 self.mark(e, line, col);
@@ -686,6 +696,31 @@ mod position_tests {
             assert!(
                 positions.get(id).is_some(),
                 "missing position for node {id}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::parse_source;
+    #[test]
+    fn rejects_non_names_at_identifier_positions() {
+        for source in [
+            "local =",
+            "local 1",
+            "local function true()end",
+            "function false()end",
+            "function f(1)end",
+            "for true=1,3 do end",
+            "goto 3",
+            "::true::",
+            "a.3()",
+            "a:3()",
+        ] {
+            assert!(
+                parse_source(source).is_err(),
+                "accepted invalid identifier: {source}"
             );
         }
     }

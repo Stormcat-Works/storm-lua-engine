@@ -1,5 +1,6 @@
 //! CPUラスタライズから独立したマイクロコントローラーLua APIおよびコールバックのライフサイクル。
 mod bindings;
+mod controls;
 #[cfg(feature = "debug")]
 mod debugger;
 use std::{
@@ -31,6 +32,9 @@ pub struct MicrocontrollerConfig {
     pub bindings: storm_lua_vm::bindings::HostBindings,
     /// Development include-once require, explicit and available only in extended.
     pub require_loader: Option<storm_lua_vm::source::RequireLoader>,
+    /// Optional native state-control namespace for an extended development harness.
+    /// Never installed in the game environment or selected implicitly.
+    pub control_namespace: Option<String>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -41,6 +45,7 @@ enum Phase {
 }
 struct State {
     input: CompositeSignal,
+    input_changed: bool,
     output: CompositeSignal,
     properties: PropertyBag,
     phase: Phase,
@@ -60,6 +65,7 @@ pub struct Microcontroller {
     dev_logs: bool,
     environment: storm_lua_spec::environment::EnvironmentProfile,
     bindings: storm_lua_vm::bindings::HostBindings,
+    control_namespace: Option<String>,
 }
 impl Microcontroller {
     /// 未開始のコントローラーを作成します。loadを呼び出す前にホストオプションを設定してください。
@@ -71,6 +77,7 @@ impl Microcontroller {
         let mut vm = Vm::with_environment(config.limits, config.environment)?;
         let state = Rc::new(RefCell::new(State {
             input: CompositeSignal::default(),
+            input_changed: false,
             output: CompositeSignal::default(),
             properties: config.properties,
             phase: Phase::Idle,
@@ -79,7 +86,28 @@ impl Microcontroller {
             commands: CommandBuffer::new(65536, 1024 * 1024),
         }));
         vm.configure(|lua, env| bindings::install(lua, env, Rc::clone(&state)))?;
-        vm.install_bindings(&config.bindings)?;
+        let bindings = controls::with_controls(
+            &config.bindings,
+            config.control_namespace.as_deref(),
+            config.environment,
+            &state,
+        )?;
+        if let Some(loader) = &config.require_loader {
+            loader.validate_configuration(config.environment, &bindings)?;
+        }
+        if let Some(namespace) = &config.control_namespace {
+            vm.configure(|_, env| {
+                use storm_lua_vm::backend::{BackendError, Value};
+                if !matches!(env.raw_get::<Value>(namespace.as_str())?, Value::Nil) {
+                    return Err(BackendError::external(VmError::new(
+                        ErrorKind::InvalidArgument,
+                        "controlNamespace must not replace an existing builtin",
+                    )));
+                }
+                Ok(())
+            })?;
+        }
+        vm.install_bindings(&bindings)?;
         if let Some(loader) = &config.require_loader {
             vm.install_require_loader(loader)?;
         }
@@ -94,6 +122,7 @@ impl Microcontroller {
             dev_logs: false,
             environment: config.environment,
             bindings: config.bindings,
+            control_namespace: config.control_namespace,
         })
     }
     /// Execute another named chunk in the existing environment. Completed loads
@@ -120,18 +149,39 @@ impl Microcontroller {
     }
     /// 1 tickを実行します。出力チャンネルは明示的に上書きされるまで値を保持します。
     pub fn tick(&mut self, input: &CompositeSignal) -> Result<RunOutcome, VmError> {
+        self.call_tick("onTick", &[], input)
+    }
+    /// Execute a named global with tick-phase I/O and the normal callback budget.
+    /// This does not replace onTick or evaluate dynamically constructed source.
+    pub fn call_tick(
+        &mut self,
+        name: &str,
+        arguments: &[storm_lua_vm::value::LuaValue],
+        input: &CompositeSignal,
+    ) -> Result<RunOutcome, VmError> {
         self.vm.ensure_idle()?;
         {
             let mut state = self.state.borrow_mut();
             state.input = *input;
             state.phase = Phase::Tick;
         }
-        let result = self.vm.call("onTick");
+        let result = self.vm.call_with(name, arguments);
         self.finish(result)
     }
     /// 1台のモニターに対してonDrawを実行します。複数回の呼び出しは意図的に同一のLua状態を共有します。
     /// ここではラスタライザを選択しません。呼び出し側がコマンドストリームを消費します。
     pub fn draw(&mut self, width: u32, height: u32) -> Result<RunOutcome, VmError> {
+        self.call_draw("onDraw", &[], width, height)
+    }
+    /// Execute a named global with draw-phase screen dimensions and commands.
+    /// Suspension/resumption preserves this same invocation and command prefix.
+    pub fn call_draw(
+        &mut self,
+        name: &str,
+        arguments: &[storm_lua_vm::value::LuaValue],
+        width: u32,
+        height: u32,
+    ) -> Result<RunOutcome, VmError> {
         self.vm.ensure_idle()?;
         if width == 0 || height == 0 || width > 4096 || height > 4096 {
             return Err(VmError::new(
@@ -145,7 +195,7 @@ impl Microcontroller {
             state.size = (width, height);
             state.commands.clear();
         }
-        let result = self.vm.call("onDraw");
+        let result = self.vm.call_with(name, arguments);
         self.finish(result)
     }
     fn finish(&mut self, result: Result<RunOutcome, VmError>) -> Result<RunOutcome, VmError> {
@@ -159,6 +209,19 @@ impl Microcontroller {
             }
         }
         result
+    }
+    /// Snapshot the current input, including changes made by explicit development controls.
+    pub fn input(&self) -> CompositeSignal {
+        self.state.borrow().input
+    }
+    /// Drain an input update made by development controls. None leaves pending host input intact.
+    pub fn take_input_changes(&mut self) -> Option<CompositeSignal> {
+        let mut state = self.state.borrow_mut();
+        if !state.input_changed {
+            return None;
+        }
+        state.input_changed = false;
+        Some(state.input)
     }
     /// ネイティブ信号の小さなスナップショットをコピーします（JSON変換は不要）。
     pub fn output(&self) -> CompositeSignal {
@@ -178,6 +241,9 @@ impl Microcontroller {
     /// アイドル境界で実行時プロパティをすべて置換します。既存のLuaローカル変数には影響しません。
     pub fn set_properties(&mut self, properties: PropertyBag) -> Result<(), VmError> {
         self.vm.ensure_idle()?;
+        if self.control_namespace.is_some() {
+            controls::validate_properties(&properties)?;
+        }
         self.state.borrow_mut().properties = properties;
         Ok(())
     }
@@ -223,6 +289,7 @@ impl Microcontroller {
             limits: self.limits,
             environment: self.environment,
             bindings: self.bindings.clone(),
+            control_namespace: self.control_namespace.clone(),
             require_loader: self.require_loader.clone(),
         };
         let mut next = Self::new(config)?;

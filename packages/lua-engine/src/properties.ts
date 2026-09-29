@@ -1,3 +1,4 @@
+import {byteArray, object} from './bridge.js';
 /** コールドパスの値は、情報落ちするJSON数値を通さず、バイト列およびf64のビット表現をそのまま保持します。 */
 export type PropertyValue =
   | { readonly kind: 'number'; readonly value: number }
@@ -41,4 +42,32 @@ export function encodeProperties(properties: Properties): Uint8Array {
   const result = encoder.encode(JSON.stringify(payload));
   if (result.length > 4 * 1024 * 1024) throw new RangeError('Property request exceeds 4 MiB');
   return result;
+}
+
+/** Decode a property snapshot without losing binary strings or binary64 values. */
+export function decodeProperties(input: unknown): PropertyEntry[] {
+  if(!Array.isArray(input) || input.length>4096) throw new TypeError('Invalid property list');
+  let bytes=0;const labels=new Set<string>();
+  return input.map(entry=>{
+    const v=object(entry);const label=byteArray(v['label']);
+    if(label.length>1024*1024) throw new RangeError('Property label exceeds 1 MiB');
+    const key=JSON.stringify(Array.from(label));
+    if(labels.has(key)) throw new TypeError('Duplicate property label');
+    labels.add(key);bytes+=label.length;
+    let value:PropertyValue;
+    switch(v['kind']){
+      case 'number':value={kind:'number',value:numberFromBits(v['bits'])};break;
+      case 'bool':
+        if(typeof v['value']!=='boolean') throw new TypeError('Invalid property Boolean');
+        value={kind:'bool',value:v['value']};break;
+      case 'text':{
+        const data=byteArray(v['bytes']);bytes+=data.length;
+        if(data.length>1024*1024) throw new RangeError('Property text exceeds 1 MiB');
+        value={kind:'text',bytes:data};break;
+      }
+      default:throw new TypeError('Unknown property kind');
+    }
+    if(bytes>4*1024*1024) throw new RangeError('Property snapshot exceeds byte budget');
+    return {label,value};
+  });
 }

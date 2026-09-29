@@ -2,13 +2,18 @@ import { environmentWire } from './environment.js';
 import { adaptModule, Bridge, EngineError, object, unsigned, type Backend, type Outcome } from './bridge.js';
 import { RawIoView, type CompositeIoViews } from './raw.js';
 import { FrameLease } from './frame.js';
-import { encodeProperties, type Properties } from './properties.js';
+import { decodeProperties, encodeProperties, type PropertyEntry, type Properties } from './properties.js';
 import { ScriptVm, type ScriptOptions, type LogHandler } from './script.js';
 import { AddonVm, type AddonOptions } from './addon.js';
 import { HostDispatcher, type MapProvider } from './host.js';
-import { encodeLuaValue } from './values.js';
+import { encodeLuaValue, encodeLuaValues, type LuaValue } from './values.js';
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8',{fatal:true});
-export interface VehicleOptions extends ScriptOptions { readonly properties?: Properties; readonly mapProvider?: MapProvider }
+export interface VehicleOptions extends ScriptOptions {
+  readonly properties?: Properties;
+  readonly mapProvider?: MapProvider;
+  /** Opt-in native state controls for an extended harness. Must name an unused root table. */
+  readonly controlNamespace?: string;
+}
 /** ビークルモードは Composite I/O と描画を所有し、アドオンのサーバーAPIは持ちません。 */
 export class VehicleVm extends ScriptVm {
   readonly mode = 'vehicle' as const;
@@ -21,12 +26,27 @@ export class VehicleVm extends ScriptVm {
   get io(): CompositeIoViews { this.alive(); this.bridge.assertIdle(); return this.#io.borrow(); }
   tick(): Outcome { return this.execute(() => { this.#io.validateInputs(); return this.bridge.call('tick',this.handle); }); }
   draw(width: number, height: number): Outcome { return this.execute(() => this.bridge.call('draw',this.handle,unsigned(width,'width'),unsigned(height,'height'))); }
+  /** Execute an arbitrary named global in the normal tick phase, without changing onTick. */
+  callTick(name: string, args: readonly LuaValue[] = []): Outcome {
+    this.alive();this.bridge.assertIdle();this.#io.validateInputs();
+    return this.control('vehicle',{action:'callTick',name:callbackName(name),arguments:encodeLuaValues(args)}).outcome;
+  }
+  /** Execute a named draw callback with the regular screen/raster and debugger continuation. */
+  callDraw(name: string, width: number, height: number, args: readonly LuaValue[] = []): Outcome {
+    return this.control('vehicle',{action:'callDraw',name:callbackName(name),arguments:encodeLuaValues(args),width:unsigned(width,'width'),height:unsigned(height,'height')}).outcome;
+  }
+  /** Owned, lossless property snapshot, including changes made by native development controls. */
+  properties(): PropertyEntry[] { return decodeProperties(this.control('vehicle',{action:'properties'}).data); }
   frame(): FrameLease { this.alive(); return new FrameLease(this.bridge,this.handle,this.alive); }
   setProperties(properties: Properties): void {
     this.execute(() => this.bridge.upload(encodeProperties(properties),(pointer,length) => this.bridge.call('set_properties',this.handle,pointer,length)));
   }
   /** Recreate the VM and replay all completed loads in order. Clears the require cache. */
   reset(): void { this.execute(() => this.bridge.call('reset',this.handle)); }
+}
+function callbackName(name: string): string {
+  if(typeof name!=='string'||name.length===0||encoder.encode(name).length>1024||name.includes('\0')) throw new TypeError('Invalid callback name');
+  return name;
 }
 function budgets(options: ScriptOptions): [number,number] {
   if (options.onLog !== undefined && typeof options.onLog !== 'function') throw new TypeError('onLog must be a function');
@@ -47,6 +67,10 @@ export class LuaEngine {
   createVehicle(options: VehicleOptions = {}): VehicleVm {
     const [instructions,memory] = budgets(options);
     const environment = environmentWire(options.environment, options.bindings, options.requireLoader);
+    if(options.controlNamespace !== undefined) {
+      if(options.environment !== 'extended' || typeof options.controlNamespace !== 'string' ||
+        !/^[A-Za-z_][A-Za-z_0-9]*$/.test(options.controlNamespace)) throw new TypeError('controlNamespace requires extended and a root identifier');
+    }
     let key = 0, handle = 0;
     try {
       if (options.mapProvider !== undefined || options.requireLoader !== undefined || Object.keys(options.bindings?.functions ?? {}).length) {
@@ -54,7 +78,7 @@ export class LuaEngine {
         if (!this.hosts || !(this.bridge.capabilities & 16)) throw new EngineError(6,'This runtime cannot call JS host services');
         key = this.hosts.register({...(options.requireLoader === undefined ? {} : {source: options.requireLoader}), ...(options.mapProvider === undefined ? {} : {map: options.mapProvider}), ...(options.bindings?.functions === undefined ? {} : {functions: options.bindings.functions})});
       }
-      const config = encoder.encode(JSON.stringify({...environment, properties: JSON.parse(decoder.decode(encodeProperties(options.properties ?? {}))) as unknown}));
+      const config = encoder.encode(JSON.stringify({...environment, ...(options.controlNamespace === undefined ? {} : {controlNamespace: options.controlNamespace}), properties: JSON.parse(decoder.decode(encodeProperties(options.properties ?? {}))) as unknown}));
       handle = this.bridge.upload(config, (pointer,length) => this.bridge.query('new_vehicle',instructions,memory,key,pointer,length));
       const vm = new VehicleVm(this.bridge,handle,options.onLog,() => { if (key) this.hosts?.remove(key); });
       if (options.mapProvider !== undefined) this.bridge.call('set_map_host',handle,key);

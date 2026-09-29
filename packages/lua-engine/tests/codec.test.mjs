@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {encodeCommands} from '../dist/commands.js';
 import {decodeDebugValue} from '../dist/debug.js';
-import {encodeProperties,numberBits,numberFromBits} from '../dist/properties.js';
+import {decodeProperties,encodeProperties,numberBits,numberFromBits} from '../dist/properties.js';
 
 test('properties preserve binary64 non-finite and signed zero values',()=>{
   for(const n of [0,-0,NaN,Infinity,-Infinity,16777217,Math.PI]) assert.ok(Object.is(numberFromBits(numberBits(n)),n));
@@ -24,4 +24,13 @@ test('binary commands are self-delimiting and keep fractional f64 coordinates',(
   assert.equal(view.getUint16(0,true),1);assert.equal(view.getUint32(4,true),4);
   assert.equal(view.getUint16(12,true),3);assert.equal(view.getFloat64(20,true),0.1);
   assert.throws(()=>encodeCommands([{kind:'color',rgba:[256,0,0,255]}]));
+});
+
+test('property snapshots retain raw labels and numeric bit patterns and reject malformed entries',()=>{
+  const raw=[{label:[0,255],kind:'text',bytes:[255,0]},{label:[1],kind:'number',bits:numberBits(-0)}];
+  const properties=decodeProperties(raw);
+  assert.deepEqual(properties[0],{label:new Uint8Array([0,255]),value:{kind:'text',bytes:new Uint8Array([255,0])}});
+  assert.ok(Object.is(properties[1].value.value,-0));
+  for(const invalid of [{},[raw[0],raw[0]],[{label:[1],kind:'bool',value:1}],
+    [{label:[256],kind:'text',bytes:[]}],[{label:[1],kind:'number',bits:'bad'}]])assert.throws(()=>decodeProperties(invalid));
 });

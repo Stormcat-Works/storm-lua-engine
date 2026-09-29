@@ -8,6 +8,10 @@
 
 検証: Native478件、実WASM53件、SDK JS29件、3ブラウザ、隔離パッケージconsumer、fmt/clippy/default check/rustdoc/architectureを通過。[記録](docs/verification/log-locations-20260929.md)。
 
+## Storm Code実行ホストの接続準備（未公開）
+
+同じ専用ブランチで、名前付きVehicle tick/draw、extended限定controlNamespace、更新後propertyスナップショット、analyzeのruntime/build区分を追加。Designと通常実行で標準APIを再実装せず利用するための公開操作。新しい状態操作を行った場合だけ固定I/Oへ戻し、描画やloadが未消費のホスト入力を上書きしない。識別子位置で記号や予約語を受理していた既存構文不具合も修正した。詳細はruntime-host仕様。[検証記録](docs/verification/vehicle-host-controls-20260929.md): Native485、WASM59、SDK JS30、3ブラウザ、梱包consumerと各静的ゲート通過。
+
 ## v0.2.0に含む実装
 
 | 領域 | 現在の範囲 |

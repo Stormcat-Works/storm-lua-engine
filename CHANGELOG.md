@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 識別子位置で記号や予約語を受理していた構文解析を修正し、`local =`等を構文エラーとして報告する。
+
+- Vehicleの名前付きtick/draw callback、extended限定の明示controlNamespace、更新済みpropertyスナップショットを追加。同一Lua呼び出し内の状態変更をWASM再入なしに標準APIへ反映する。
+
 - ログ生成時のチャンク名と実行行をRust LogRecord、構造化WASM、TS LogRecord.locationへ追加。Luaへのdebug API公開や常時line hookを追加しない。
 - 取得不能な位置は省略し、旧ランタイムの位置なしログもTSで受理する。最適化後ソースマップを提供する変更ではない。
 - ログの64KiB蓄積上限へチャンク名のbytesも含める。RustでLogRecordを直接構成する利用者はlocationフィールドが必要。

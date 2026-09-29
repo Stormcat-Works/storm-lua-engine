@@ -6,7 +6,7 @@ import {hostSmoke} from '../../../../tools/host-smoke.mjs';
 const engine=await api.loadRuntime({wasmBinary:await readFile(new URL('../../dist/wasm/storm_lua_wasm.wasm',import.meta.url))});
 
 test('addon server calls, snapshots, maps, HTTP and structured logs cross real WASM',()=>{
-  assert.deepEqual(hostSmoke(engine,api),{addon:true,hostServer:true,mapProvider:true,http:true,structuredLogs:true});
+  assert.deepEqual(hostSmoke(engine,api),{addon:true,hostServer:true,mapProvider:true,http:true,structuredLogs:true,logLocations:true});
 });
 test('host exceptions and Promise returns become explicit failures, not success stubs',()=>{
   for(const server of [{fail:()=>{throw new Error('service unavailable');}},{fail:async()=>[1n]},{fail:async()=>{throw new Error("async failure");}}]){

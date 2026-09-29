@@ -25,3 +25,9 @@ engine.createAddon({server:{getPlayers:async()=>[luaTable({})]}});
 // @ts-expect-error 地形プロバイダが Promise を返すことはできません。
 const asyncMap:MapProvider=async()=>new Uint8Array();
 void asyncMap;
+
+const harness=engine.createVehicle({environment:'extended',controlNamespace:'controls'});
+harness.callTick('setup',[1n,'text']);harness.callDraw('preview',32,32,[true]);
+for(const property of harness.properties()){const bytes:string|Uint8Array=property.label;void bytes;}
+// @ts-expect-error Named Vehicle drawing is not an Addon operation.
+addon.callDraw('preview',32,32);

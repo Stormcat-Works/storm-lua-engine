@@ -318,3 +318,10 @@ pub extern "C" fn sle_new_vehicle(
         })
     }) as u32
 }
+
+/// Execute a named Vehicle callback or inspect current typed properties. No source rewriting.
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_vehicle(handle: u32, pointer: usize, length: u32) -> i32 {
+    bridge::call(|| bridge::with_upload(pointer, length, |bytes| services::vehicle(handle, bytes)))
+}

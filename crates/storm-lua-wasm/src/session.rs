@@ -144,7 +144,11 @@ impl Session {
         Ok(())
     }
     pub(crate) fn sync_output(&mut self) {
-        if let (Script::Vehicle(vm), Some(io)) = (&self.vm, &mut self.io) {
+        if let (Script::Vehicle(vm), Some(io)) = (&mut self.vm, &mut self.io) {
+            if let Some(input) = vm.take_input_changes() {
+                io.input_numbers = input.numbers;
+                io.input_booleans = input.booleans.map(u8::from);
+            }
             let signal = vm.output();
             io.output_numbers = signal.numbers;
             for (dst, src) in io.output_booleans.iter_mut().zip(signal.booleans) {
@@ -168,6 +172,13 @@ impl Session {
         Ok(Status::Ok)
     }
     pub(crate) fn tick(&mut self) -> Result<Status, BridgeError> {
+        self.call_tick("onTick", &[])
+    }
+    pub(crate) fn call_tick(
+        &mut self,
+        name: &str,
+        arguments: &[storm_lua_vm::value::LuaValue],
+    ) -> Result<Status, BridgeError> {
         self.idle()?;
         let io = self.io.as_ref().ok_or_else(|| {
             BridgeError::new(
@@ -186,11 +197,20 @@ impl Session {
             booleans: io.input_booleans.map(|v| v == 1),
         };
         self.drawing = false;
-        let result = self.vm.vehicle()?.tick(&input);
+        let result = self.vm.vehicle()?.call_tick(name, arguments, &input);
         self.sync_output();
         result.map(outcome).map_err(convert)
     }
     pub(crate) fn draw(&mut self, width: u32, height: u32) -> Result<Status, BridgeError> {
+        self.call_draw("onDraw", &[], width, height)
+    }
+    pub(crate) fn call_draw(
+        &mut self,
+        name: &str,
+        arguments: &[storm_lua_vm::value::LuaValue],
+        width: u32,
+        height: u32,
+    ) -> Result<Status, BridgeError> {
         self.idle()?;
         self.vm.vehicle()?;
         self.advance_epoch()?;
@@ -210,7 +230,7 @@ impl Session {
         raster.begin_frame();
         self.replayed = 0;
         self.drawing = true;
-        let result = self.vm.vehicle()?.draw(width, height);
+        let result = self.vm.vehicle()?.call_draw(name, arguments, width, height);
         self.sync_output();
         let replay = self.refresh_frame();
         match result {

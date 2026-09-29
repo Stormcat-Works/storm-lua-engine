@@ -89,3 +89,13 @@ test('property scanning and explicit specialization share the compiler implement
 test('ambiguous initialization fails explicitly', async () => {
   await assert.rejects(loadCompiler({ wasmBinary, wasmUrl: 'unused.wasm' }), /Choose wasmBinary or wasmUrl/);
 });
+
+test('runtime analysis accepts host-resolved dynamic includes but preserves syntax diagnostics',async()=>{
+  const compiler=await loadCompiler({wasmBinary:await readFile(new URL('../../dist/compiler-wasm/compiler_bg.wasm',import.meta.url))});
+  const project={entry:'main',modules:{main:'function onTick()require(property.getText("file"))end'}};
+  const options={mode:'runtime',environment:'extended',hostBindings:['require']};
+  const result=compiler.analyze(project,options);
+  assert.equal(result.ok,true);assert.equal(result.diagnostics.some(d=>d.severity==='error'),false);
+  assert.ok(compiler.analyze(project).diagnostics.some(d=>d.code==='require-not-top-level'));
+  assert.ok(compiler.analyze({entry:'main',modules:{main:'local ='}},options).diagnostics.some(d=>d.code==='syntax-error'));
+});

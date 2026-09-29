@@ -131,6 +131,11 @@ pub(crate) fn create_vehicle(
             environment: environment(&request)?,
             bindings: bindings(&request, host_key)?,
             require_loader: require_loader(&request, host_key)?,
+            control_namespace: match request.get("controlNamespace") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(name)) => Some(name.clone()),
+                _ => return Err(invalid("controlNamespace must be text")),
+            },
         },
     )
     .map_err(convert)?;
@@ -252,5 +257,46 @@ pub(crate) fn logs(handle: u32, structured: bool) -> Result<Status, BridgeError>
         }).collect();
         codec::respond(&Value::Array(records))?;
         Ok(Status::Ok)
+    })
+}
+
+/// Named callbacks keep phase/budget behavior in the Microcontroller owner.
+pub(crate) fn vehicle(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
+    let request = codec::parse(bytes)?;
+    if request["action"] == "properties" {
+        return session::with(handle, |session| {
+            let properties = session.vm.vehicle()?.properties();
+            let entries: Vec<_> = properties.iter().map(|(label, value)| {
+                use storm_lua_spec::property::PropertyValue;
+                match value {
+                    PropertyValue::Number(n) => json!({"label":label,"kind":"number","bits":format!("{:016x}",n.to_bits())}),
+                    PropertyValue::Bool(b) => json!({"label":label,"kind":"bool","value":b}),
+                    PropertyValue::Text(bytes) => json!({"label":label,"kind":"text","bytes":bytes}),
+                }
+            }).collect();
+            codec::respond(&json!(entries))?;
+            Ok(Status::Ok)
+        });
+    }
+    let name = request["name"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 1024 && !s.contains('\0'))
+        .ok_or_else(|| {
+            invalid("callback name must be nonempty text without NUL, at most 1024 bytes")
+        })?;
+    let arguments = value_codec::values(&request["arguments"])?;
+    session::with(handle, |session| {
+        let status = match request["action"].as_str() {
+            Some("callTick") => session.call_tick(name, &arguments)?,
+            Some("callDraw") => session.call_draw(
+                name,
+                &arguments,
+                number(&request["width"])?,
+                number(&request["height"])?,
+            )?,
+            _ => return Err(invalid("unknown vehicle operation")),
+        };
+        codec::respond(&Value::Null)?;
+        Ok(status)
     })
 }

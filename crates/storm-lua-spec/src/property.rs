@@ -29,6 +29,12 @@ impl PropertyBag {
     pub fn remove(&mut self, label: &[u8]) -> Option<PropertyValue> {
         self.0.remove(label)
     }
+    /// Borrow the complete typed entries without decoding labels or text bytes.
+    pub fn iter(&self) -> impl Iterator<Item = (&[u8], &PropertyValue)> {
+        self.0
+            .iter()
+            .map(|(label, value)| (label.as_slice(), value))
+    }
     /// プロパティ定義の数。
     pub fn len(&self) -> usize {
         self.0.len()

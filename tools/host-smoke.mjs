@@ -55,5 +55,13 @@ function httpReply(port,path,reply) assert(port==8080 and path=='/status');g_sav
     check(maps.length===1 && maps[0].center[0]===4 && maps[0].colors.ocean[2]===64 && maps[0].colors.land===undefined,'map request contract');
     check(pixels[0]===255 && pixels[4]===0 && pixels[6]===64,'map order and draw color');
   } finally {vehicle.dispose();}
+  const controls=engine.createVehicle({environment:'extended',controlNamespace:'harness'});
+  try {
+    controls.load('harness.setProperty("gain",16777217);function check(v)harness.setInputNumber(1,v);output.setNumber(1,property.getNumber("gain")-16777216);output.setNumber(2,input.getNumber(1))end function paint()screen.setColor(255,0,0);screen.drawRectF(0,0,1,1)end','@controls.lua');
+    controls.callTick('check',[16777217]);
+    check(controls.io.outputNumbers[0]===1&&controls.io.outputNumbers[1]===16777216,'named callback and native state controls');
+    controls.callDraw('paint',32,32);check(controls.frame().pixels[0]===255,'named draw');
+    check(controls.properties()[0].value.value===16777217,'typed property snapshot');
+  }finally{controls.dispose();}
   return {addon:true,hostServer:true,mapProvider:true,http:true,structuredLogs:true,logLocations:true};
 }

@@ -22,7 +22,7 @@ pub mod structure;
 #[doc(hidden)]
 pub mod sw_restrict;
 
-pub use analyze::{analyze, AnalyzeOptions, AnalyzeResult};
+pub use analyze::{analyze, AnalyzeMode, AnalyzeOptions, AnalyzeResult};
 pub use diagnostic::{Diagnostic, Range, Severity};
 pub use project::{AmbientMember, AmbientNamespace, LuaProject};
 pub use property_scan::{scan_properties, PropertyScanResult};

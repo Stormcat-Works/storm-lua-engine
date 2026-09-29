@@ -15,10 +15,24 @@ use crate::structure::analyze_structure;
 use crate::sw_restrict;
 use storm_lua_syntax::lexer::Lexer;
 
+/// Whether source is checked for a static build or for direct VM execution.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnalyzeMode {
+    /// Existing static require/ambient linkage contract; matches build diagnostics.
+    #[default]
+    Build,
+    /// Independent source chunks with runtime host name resolution.
+    Runtime,
+}
+
 /// `analyze` のオプション（設計 §5.1）。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalyzeOptions {
+    /// Runtime mode does not apply static require placement, return-value or dependency rules.
+    #[serde(default)]
+    pub mode: AnalyzeMode,
     /// Same script-visible profile used by runtime and build.
     #[serde(default)]
     pub environment: storm_lua_spec::environment::EnvironmentProfile,
@@ -172,10 +186,24 @@ pub fn analyze(project: &LuaProject, options: &AnalyzeOptions) -> AnalyzeResult 
             )],
         };
     }
-    let structural = analyze_structure(project);
-    let mut diagnostics = structural.diagnostics;
+    if options.mode == AnalyzeMode::Runtime && !project.ambient.is_empty() {
+        return AnalyzeResult {
+            ok: false,
+            diagnostics: vec![Diagnostic::error(
+                codes::INVALID_ENVIRONMENT,
+                "Runtime analysis uses explicit hostBindings, not build-time ambient injection.",
+            )],
+        };
+    }
+    let (mut diagnostics, modules) = if options.mode == AnalyzeMode::Runtime {
+        let validation = crate::project::validate_runtime_project(project);
+        (validation.diagnostics, validation.modules)
+    } else {
+        let structural = analyze_structure(project);
+        (structural.diagnostics, structural.modules)
+    };
 
-    let written_globals = collect_written_global_names(structural.modules.values());
+    let written_globals = collect_written_global_names(modules.values());
     let mut ambient_roots: HashSet<String> = project.ambient.keys().cloned().collect();
     ambient_roots.extend(
         options
@@ -184,7 +212,7 @@ pub fn analyze(project: &LuaProject, options: &AnalyzeOptions) -> AnalyzeResult 
             .filter_map(|p| p.split('.').next())
             .map(str::to_owned),
     );
-    for (key, analysis) in &structural.modules {
+    for (key, analysis) in &modules {
         diagnostics.extend(lint_module(key, analysis, &written_globals, &ambient_roots));
         diagnostics.extend(sw_restrict::scan_module_in_environment(
             key,
@@ -209,7 +237,7 @@ pub fn analyze(project: &LuaProject, options: &AnalyzeOptions) -> AnalyzeResult 
         }
     }
 
-    let parsed_module_keys: HashSet<&str> = structural.modules.keys().map(String::as_str).collect();
+    let parsed_module_keys: HashSet<&str> = modules.keys().map(String::as_str).collect();
     let (ignore_targets, directive_diagnostics) =
         scan_storm_directives(&project.modules, &parsed_module_keys);
     diagnostics = apply_ignore_annotations(diagnostics, &ignore_targets);

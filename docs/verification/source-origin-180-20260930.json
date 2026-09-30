@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-30",
+  "developmentVersion": "0.3.0",
+  "baselineRevision": "393c280c0cbc9c136dfa6a66f7fdc9ed0b95f755",
+  "implementationRevision": "46dd51dccb842ad2e8419a9b64a0924afe3309e7",
+  "goal": {
+    "zeroUnknownConfigurations": 180,
+    "met": true
+  },
+  "coverage": {
+    "before": {
+      "configurations": 240,
+      "zeroUnknown": 94,
+      "entirelyUnknown": 16,
+      "medianUnknownFraction": 0.04439866187868212,
+      "weightedUnknownFraction": 0.2876972506913942,
+      "atMost70PercentUnknown": 176
+    },
+    "after": {
+      "configurations": 240,
+      "zeroUnknown": 180,
+      "entirelyUnknown": 8,
+      "medianUnknownFraction": 0.0,
+      "weightedUnknownFraction": 0.08031966813079551,
+      "atMost70PercentUnknown": 228
+    },
+    "codeIdentical": 240,
+    "regressed": 0,
+    "improved": 120,
+    "sourceGroupOnlyWhitespaceOrSemicolon": true
+  },
+  "casesWithAnyZero": 28,
+  "casesWithAllEightZero": 14,
+  "zeroUnknownAndNoSyntheticConfigurations": 54,
+  "inputIdentity": {
+    "snapshots": 30,
+    "allMatchPreviouslyRecordedSha256": true,
+    "configurationGrid": "safe/smallest x exact/tolerant x zeroCostNewlines false/true",
+    "noInputChanges": true
+  },
+  "classifiedBytes": {
+    "bytes": 491760,
+    "unknown": 39498,
+    "source_bytes": 224058,
+    "derived_bytes": 218924,
+    "synthetic_bytes": 9280,
+    "group_bytes": 7386,
+    "group_nonseparator_bytes": 0,
+    "name_bytes": 87888
+  },
+  "nativePassed": 615,
+  "newRegressionTests": 27,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerSubsetPassed": 17,
+  "outputByteEqualityComparisons": 240,
+  "unmetTargetTraceComparisons": 240,
+  "wasmRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "82e5c3018e653cabc8f29f9047ea762e53870fd22481aaeab3f5cbd28f9ddd1e",
+      "candidate": "449bf6cb1d808c91ed5bdc1709ff8aa355b069637362a181562aa6b740be3b2a"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "nativeTrackingPerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2228.56239,
+      "trackedMedianMs": 2600.987293
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 259.70518300000003,
+      "trackedMedianMs": 383.556534
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2984.2149799999997,
+      "trackedMedianMs": 4560.868814
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 3066.5436019999997,
+      "trackedMedianMs": 4629.621665000001
+    }
+  ],
+  "wasmUntrackedPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "82e5c3018e653cabc8f29f9047ea762e53870fd22481aaeab3f5cbd28f9ddd1e",
+      "candidate": "449bf6cb1d808c91ed5bdc1709ff8aa355b069637362a181562aa6b740be3b2a"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 2798.542465999999,
+        "candidate": 2831.1640700000135,
+        "ratio": 1.011656640696484
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 300.9420530000061,
+        "candidate": 307.03396200000134,
+        "ratio": 1.0202427973733372
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 2940.965903999997,
+        "candidate": 2873.3499440000014,
+        "ratio": 0.9770089276084325
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 2832.808158,
+        "candidate": 2821.013533000005,
+        "ratio": 0.9958364194318325
+      }
+    ]
+  },
+  "passInventory": {
+    "registered": 67,
+    "partial": 39,
+    "pending": 28
+  },
+  "hostedCi": {
+    "run": 36702888911,
+    "revision": "46dd51dccb842ad2e8419a9b64a0924afe3309e7",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "probe-lock": 0,
+    "probe-final-build": 0,
+    "native-matrix": 0,
+    "coverage-summary": 0,
+    "native-perf": 0,
+    "compiler-build": 0,
+    "sdk": 0,
+    "wasm": 0,
+    "compiler-tests": 0,
+    "browsers": 0,
+    "wasm-compare": 0,
+    "consumer": 0,
+    "diff-check": 0,
+    "hosted-ci": 0
+  },
+  "coverageCaveat": "Zero Unknown means every output byte has a source, explicit derived or explicit synthetic attribution. It is not complete character identity, variable reconstruction or a released Source Map v3 API. Block/group source spans in this corpus cover separators only.",
+  "publicMinifySourceMap": "not implemented"
+}

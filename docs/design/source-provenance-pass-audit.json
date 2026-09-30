@@ -1,350 +1,417 @@
 {
   "schemaVersion": 1,
   "developmentVersion": "0.3.0",
-  "scope": "Inventory plus initial propagation review; partial is not a completed semantic audit. A no-op fixture is not proof of every transformation.",
+  "scope": "Implemented source provenance for all 67 registered optimization passes and the current production branches. This is a tested compiler capability, not a proof that arbitrary programs or all future optimizer changes are bug-free.",
   "fallback": "Unannotated writes invalidate their node origin; new nodes are unknown unless attributed explicitly.",
   "passes": [
     {
       "id": "constant-folding",
-      "status": "partial",
-      "notes": "Boolean coercion retains both negation origins; unchanged traversal preserves source constructs."
+      "status": "implemented",
+      "notes": "Arithmetic, logical coercions, literal builtins, fraction/reciprocal and sign rewrites, and control-flow simplification retain expression or selected-operand origins. Missing operands of collapsed values stay unknown.",
+      "matrixTest": "provenance_pass_matrix::constant_folding"
     },
     {
       "id": "numeric-literal-approximation",
-      "status": "partial",
-      "notes": "Existing numeric replacements and structural copy-through preserve source expressions; compound rescaling passes are separate."
+      "status": "implemented",
+      "notes": "Approximate and exact-preserving numeric normalization keeps literal ranges through local/expression traversal; exact-sensitive contexts remain governed by the original optimization gates.",
+      "matrixTest": "provenance_pass_matrix::numeric_literal_approximation"
     },
     {
       "id": "binding-unit-rescaling",
-      "status": "partial",
-      "notes": "Copies preserve origins; compensation factors and initializers retain their actual source operands."
+      "status": "implemented",
+      "notes": "Initial values, compensation factors and original use expressions are attributed independently; unchanged surrounding nodes retain their own locations.",
+      "matrixTest": "provenance_pass_matrix::binding_unit_rescaling"
     },
     {
       "id": "interval-origin-shifting",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Copied point/width operands, rewritten binding references, zero bounds and conjunctions retain their defining comparisons. Only inserted storage syntax is synthetic.",
+      "matrixTest": "provenance_pass_matrix::interval_origin_shifting"
     },
     {
       "id": "integer-loop-call-folding",
-      "status": "partial",
-      "notes": "Rebuilt context retains origins; removed floor calls return the original argument node."
+      "status": "implemented",
+      "notes": "Removed floor calls return their original induction-variable argument, while context and rejected noninteger/out-of-range loops preserve their original attribution.",
+      "matrixTest": "provenance_pass_matrix::integer_loop_call_folding"
     },
     {
       "id": "color-unpack-specialization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Expanded arguments use the actual table values; generated direct callee expressions point to the helper callee and the expanded call retains its call site and helper relation. Removed declarations have no output.",
+      "matrixTest": "provenance_pass_matrix::color_unpack_specialization"
     },
     {
       "id": "constant-argument-specialization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Every common actual argument and the replaced parameter read are distinguished. Missing arguments have explicit implicit-nil attribution; surviving parameter slots are reindexed to original declaration positions.",
+      "matrixTest": "provenance_pass_matrix::constant_argument_specialization"
     },
     {
       "id": "literal-call-folding",
-      "status": "partial",
-      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+      "status": "implemented",
+      "notes": "User-function and builtin literal results retain call, body and actual-argument contributions. Rejected folds restore their unchanged provenance, and missing contributing input remains unknown.",
+      "matrixTest": "provenance_pass_matrix::literal_call_folding"
     },
     {
       "id": "split-sign-recomposition-elimination",
-      "status": "partial",
-      "notes": "Unchanged block traversal and surviving statements retain source origins after split/recompose sequence removal. Generated square-rewrite expressions remain pending and unknown."
+      "status": "implemented",
+      "notes": "Deleted split/recompose sequences retain surrounding blocks; square-to-abs recomposition attributes new algebra to the original expression without using a block fallback.",
+      "matrixTest": "provenance_pass_matrix::split_sign_recomposition_elimination"
     },
     {
       "id": "equivalent-trailing-argument-omission",
-      "status": "partial",
-      "notes": "Retained call keeps original call range and remaining argument nodes. Removed arguments get no generated interval. Normalization-only temporary ASTs are not reported as final origins."
+      "status": "implemented",
+      "notes": "Retained call punctuation and arguments keep call/operand positions. Omitted arguments have no generated interval. Temporary normalization-only ASTs are separate from final product attribution.",
+      "matrixTest": "provenance_pass_matrix::equivalent_trailing_argument_omission"
     },
     {
       "id": "table-parameter-scalarization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Expanded actuals retain their table values; absent keys have explicit nil provenance. Rewritten field reads, generated scalar parameters and surviving original parameters keep distinct source slots.",
+      "matrixTest": "provenance_pass_matrix::table_parameter_scalarization"
     },
     {
       "id": "sparse-boolean-decode-scalarization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Alpha copies, specialized bit expressions, current/old/pulse reads and filtered declaration slots retain their actual source constructs. New state/parameter storage is explicitly synthetic.",
+      "matrixTest": "provenance_pass_matrix::sparse_boolean_decode_scalarization"
     },
     {
       "id": "numeric-boolean-bit-specialization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Bit masks, shifts, normalization units, rewritten definitions and direct/inverse consumers retain the corresponding source operands and original reads.",
+      "matrixTest": "provenance_pass_matrix::numeric_boolean_bit_specialization"
     },
     {
       "id": "quotient-remainder-fusion",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "The floor quotient retains the original quotient and contributing modulo operands; retained remainder and replacement assignment keep distinct source statements.",
+      "matrixTest": "provenance_pass_matrix::quotient_remainder_fusion"
     },
     {
       "id": "destructive-radix-helper-synthesis",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Shared arithmetic nodes carry all selected remainder/quotient sites and divisor contributions. Each helper invocation retains its original pair; helper storage/control is synthetic.",
+      "matrixTest": "provenance_pass_matrix::destructive_radix_helper_synthesis"
     },
     {
       "id": "destructive-radix-terminal-reuse",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Each replaced terminal quotient preserves its original use expression, and the new helper call retains the replaced remainder operation. Helper-reference plumbing is synthetic.",
+      "matrixTest": "provenance_pass_matrix::destructive_radix_terminal_reuse"
     },
     {
       "id": "quotient-chain-fusion",
-      "status": "partial",
-      "notes": "Retained block boundaries, fused assignment origins and all contributing divisor occurrences are tracked. Unknown factors remain unknown."
+      "status": "implemented",
+      "notes": "Fused assignments and divisor products retain every original divisor occurrence and initial value. Unknown factors do not become attributed through a known parent.",
+      "matrixTest": "provenance_pass_matrix::quotient_chain_fusion"
     },
     {
       "id": "captured-single-use-hoisting",
-      "status": "partial",
-      "notes": "Copied expressions keep defining ranges; copied root records the use site as a related range."
+      "status": "implemented",
+      "notes": "Copied expression subtrees preserve defining ranges and related original use locations. Moved statements and unaffected surrounding blocks remain attributed.",
+      "matrixTest": "provenance_pass_matrix::captured_single_use_hoisting"
     },
     {
       "id": "immutable-global-expression-reuse",
-      "status": "partial",
-      "notes": "Each replaced use expression and the reused definition remain distinct; unknown use locations are not inferred."
+      "status": "implemented",
+      "notes": "Each replaced use preserves its own expression plus the reused definition. Missing operands of the replaced use are not hidden by its enclosing expression range.",
+      "matrixTest": "provenance_pass_matrix::immutable_global_expression_reuse"
     },
     {
       "id": "multiplicative-carrier-reassociation",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Remaining factors keep their positions; the carrier reference relates the actually replaced factor occurrences and its definition. Reassociated operators keep the original product expression.",
+      "matrixTest": "provenance_pass_matrix::multiplicative_carrier_reassociation"
     },
     {
       "id": "coefficient-carrier-synthesis",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Per-use factor subsets, shared coefficients and product operators retain their contributing operands. New storage is synthetic; signed and reordered products are tested.",
+      "matrixTest": "provenance_pass_matrix::coefficient_carrier_synthesis"
     },
     {
       "id": "destructive-result-globalization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Converted parameter references retain their old names/locations; removed returns and parameters have no output. Rewritten call/initialization sequences distinguish the caller target, arguments and callee.",
+      "matrixTest": "provenance_pass_matrix::destructive_result_globalization"
     },
     {
       "id": "immutable-carrier-synthesis",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Copied shared expressions keep their original subtrees. Per-use replacement references retain their own source expressions, and missing use operands remain unknown. New carrier storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::immutable_carrier_synthesis"
     },
     {
       "id": "callback-exclusive-function-slotting",
-      "status": "partial",
-      "notes": "Copied callback functions preserve original identities despite sharing runtime slots."
+      "status": "implemented",
+      "notes": "Alpha copies preserve original callback function/declaration/reference identities independently of the runtime slot they share.",
+      "matrixTest": "provenance_pass_matrix::callback_exclusive_function_slotting"
     },
     {
       "id": "screen-button-outlining",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Shared hit/active/action/color/draw operations and per-site arguments retain their selected source contributions. Invocation sites remain distinct; only helper/state-control plumbing is synthetic.",
+      "matrixTest": "provenance_pass_matrix::screen_button_outlining"
     },
     {
       "id": "else-default-hoisting",
-      "status": "partial",
-      "notes": "Moved assignments and modified conditionals keep their original statements."
+      "status": "implemented",
+      "notes": "Moved default assignments preserve their original statements and modified decisions keep their source conditions rather than acquiring the insertion location.",
+      "matrixTest": "provenance_pass_matrix::else_default_hoisting"
     },
     {
       "id": "conditional-call-lowering",
-      "status": "partial",
-      "notes": "New selection operators and call wrappers derive from the original decision; existing operands keep their origins."
+      "status": "implemented",
+      "notes": "Merged call wrappers and logical selection operators derive from the original decision; callees and arguments keep their own original positions.",
+      "matrixTest": "provenance_pass_matrix::conditional_call_lowering"
     },
     {
       "id": "conditional-assignment-lowering",
-      "status": "partial",
-      "notes": "If/elseif and no-else lowering tracks new logical operators and assignments separately from their operands."
+      "status": "implemented",
+      "notes": "If/elseif/no-else cases attribute new logical operators and destination statements separately from surviving operands and branch values.",
+      "matrixTest": "provenance_pass_matrix::conditional_assignment_lowering"
     },
     {
       "id": "write-only-table-field-cleanup",
-      "status": "partial",
-      "notes": "Unchanged nodes keep their origins. Rebuilt surviving assignments and nil values retain their source constructs."
+      "status": "implemented",
+      "notes": "Unchanged inspected nodes retain their origins. Partial assignment deletion preserves the surviving assignment and explicit nil; deleted writes have no generated intervals.",
+      "matrixTest": "provenance_pass_matrix::write_only_table_field_cleanup"
     },
     {
       "id": "immutable-table-flattening",
-      "status": "partial",
-      "notes": "Nested scalar leaves retain initializer and separate lookup-use ranges. Missing keys use lookup origin; unknown source leaves stay unknown. Survivor declaration slots and unaffected subtrees are preserved."
+      "status": "implemented",
+      "notes": "Nested scalar leaves preserve initializer and separate lookup-use ranges. Missing-key nil points to its lookup, survivor declaration slots are remapped, and unknown source leaves remain unknown.",
+      "matrixTest": "provenance_pass_matrix::immutable_table_flattening"
     },
     {
       "id": "closed-namespace-scalarization",
-      "status": "partial",
-      "notes": "Scalarized fields retain each access and original named/quoted initializer key. Equal values do not merge field identities; retained local slots and root separators keep origins."
+      "status": "implemented",
+      "notes": "Each scalarized field preserves its original access and named/quoted initializer key. Equal values do not merge field identities; surviving declarations retain the correct slots.",
+      "matrixTest": "provenance_pass_matrix::closed_namespace_scalarization"
     },
     {
       "id": "uniform-table-fill-scalarization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Scalar assignment/value reads retain fill and lookup positions. Outside-range nil and overlapping range guards retain bounds; unchanged traversal and declarations stay attributed.",
+      "matrixTest": "provenance_pass_matrix::uniform_table_fill_scalarization"
     },
     {
       "id": "one-use-function-fusion",
-      "status": "partial",
-      "notes": "Alpha-cloned body and parameter-name slots retain original occurrences and associated call site. Tail local/assignment destinations retain caller origin plus return contributor; unknown copied children remain unknown."
+      "status": "implemented",
+      "notes": "Alpha-cloned body, arguments and internal locals retain definition-side positions with separate caller relations. Tail-return destinations use caller locations and related original return statements.",
+      "matrixTest": "provenance_pass_matrix::one_use_function_fusion"
     },
     {
       "id": "expression-helper-inlining",
-      "status": "partial",
-      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+      "status": "implemented",
+      "notes": "Expression copies preserve definition-side nodes, actual argument origins and parameter/call relations; installation never uses text matching or a reused NodeId as proof of provenance.",
+      "matrixTest": "provenance_pass_matrix::expression_helper_inlining"
     },
     {
       "id": "tiny-literal-inlining",
-      "status": "partial",
-      "notes": "Literal substitutions retain initializer and per-read origins, including shadowing and shifted declaration slots."
+      "status": "implemented",
+      "notes": "Substitution retains defining literals and per-read occurrences, including shadowed bindings. Surviving multi-name declaration slots are explicitly remapped.",
+      "matrixTest": "provenance_pass_matrix::tiny_literal_inlining"
     },
     {
       "id": "single-use-local-sinking",
-      "status": "partial",
-      "notes": "Initializer copies retain definition and read locations; chained substitutions and surviving declaration slots are tested. Unknown children stay unknown."
+      "status": "implemented",
+      "notes": "Initializer subtrees preserve defining and use positions through chained substitutions. Removed bindings have no output and shifted survivor slots keep their original names.",
+      "matrixTest": "provenance_pass_matrix::single_use_local_sinking"
     },
     {
       "id": "dead-local-elimination",
-      "status": "partial",
-      "notes": "Retained nodes keep origins, removed bindings get no output, and surviving binding slots are explicitly remapped."
+      "status": "implemented",
+      "notes": "Surviving initializers/statements retain their origins, discarded declarations receive no output, and retained binding slots are explicitly reindexed.",
+      "matrixTest": "provenance_pass_matrix::dead_local_elimination"
     },
     {
       "id": "terminal-scope-flattening",
-      "status": "partial",
-      "notes": "Existing child nodes keep their original locations when the do wrapper is removed."
+      "status": "implemented",
+      "notes": "Removing eligible do wrappers preserves the original surviving child statements and their locations; local-bearing or jump-sensitive scopes remain unchanged.",
+      "matrixTest": "provenance_pass_matrix::terminal_scope_flattening"
     },
     {
       "id": "ordered-screen-call-factoring",
-      "status": "partial",
-      "notes": "Shared calls retain their source sites; new wrapper structure is explicitly generated."
+      "status": "implemented",
+      "notes": "Shared calls preserve their source sites and operands while new helper/wrapper structure is explicitly generated.",
+      "matrixTest": "provenance_pass_matrix::ordered_screen_call_factoring"
     },
     {
       "id": "constant-wrapper-merging",
-      "status": "partial",
-      "notes": "Merged calls and argument formulas retain original constants and functions."
+      "status": "implemented",
+      "notes": "Merged wrapper calls and argument formulas retain the original constants and functions; caller locations remain separate from the merged definition.",
+      "matrixTest": "provenance_pass_matrix::constant_wrapper_merging"
     },
     {
       "id": "affine-wrapper-merging",
-      "status": "partial",
-      "notes": "Formulas reference both original wrappers. Selector constants are explicitly generated."
+      "status": "implemented",
+      "notes": "Affine formulas preserve contributions from the original wrappers and each call; synthesized selector/control constants are explicitly generated.",
+      "matrixTest": "provenance_pass_matrix::affine_wrapper_merging"
     },
     {
       "id": "root-local-globalization",
-      "status": "partial",
-      "notes": "New assignment/function nodes derive from the original declaration; each new name is explicitly copied from the old binding slot."
+      "status": "implemented",
+      "notes": "New assignment/function nodes retain the original declaration and each converted name is transferred from its old binding slot.",
+      "matrixTest": "provenance_pass_matrix::root_local_globalization"
     },
     {
       "id": "function-local-globalization",
-      "status": "partial",
-      "notes": "Converted reads and declarations retain distinct original names even when scratch slots are shared. Only inserted implicit nil is synthetic."
+      "status": "implemented",
+      "notes": "Converted reads and declarations preserve distinct original occurrences even when runtime slots are shared. Only a newly inserted implicit nil is synthetic.",
+      "matrixTest": "provenance_pass_matrix::function_local_globalization"
     },
     {
       "id": "hybrid-function-local-globalization",
-      "status": "partial",
-      "notes": "The shared rewrite preserves converted names and retained locals; frequency thresholds are tested."
+      "status": "implemented",
+      "notes": "The shared origin-aware conversion handles frequency thresholds; retained locals and converted names preserve their own positions.",
+      "matrixTest": "provenance_pass_matrix::hybrid_function_local_globalization"
     },
     {
       "id": "global-store-cleanup",
-      "status": "partial",
-      "notes": "Retained unread-global assignments keep statement origins, including unchanged and partial-deletion paths."
+      "status": "implemented",
+      "notes": "Unchanged, partially reduced and retained assignments keep their source statements. Removed stores have no generated range; traversal does not erase unrelated origins.",
+      "matrixTest": "provenance_pass_matrix::global_store_cleanup"
     },
     {
       "id": "single-use-global-forwarding",
-      "status": "partial",
-      "notes": "Cloned defining expressions keep origins and record original use sites; speculative appended nodes roll back with their metadata."
+      "status": "implemented",
+      "notes": "Copied defining expressions preserve their subtrees and original use relations; speculative appended nodes and metadata are truncated together on rejection.",
+      "matrixTest": "provenance_pass_matrix::single_use_global_forwarding"
     },
     {
       "id": "equal-scratch-value-coalescing",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Renamed reads retain their old identifier occurrences, reduced definitions retain their statements, and rejected trials leave both syntax and origin tables unchanged.",
+      "matrixTest": "provenance_pass_matrix::equal_scratch_value_coalescing"
     },
     {
       "id": "unwritten-global-nil-propagation",
-      "status": "partial",
-      "notes": "Generated nil roots derive from the replaced name; ordinary context copies retain origins."
+      "status": "implemented",
+      "notes": "Only game-contract-unavailable globals are replaced. Their nil roots derive from the original name; dynamic or external bindings remain unchanged.",
+      "matrixTest": "provenance_pass_matrix::unwritten_global_nil_propagation"
     },
     {
       "id": "temporary-global-packing",
-      "status": "partial",
-      "notes": "Each renamed occurrence retains its original name range independently of other bindings sharing the slot."
+      "status": "implemented",
+      "notes": "Every renamed occurrence retains its original name and range independently of other bindings sharing the generated slot.",
+      "matrixTest": "provenance_pass_matrix::temporary_global_packing"
     },
     {
       "id": "output-sequence-loop-synthesis",
-      "status": "partial",
-      "notes": "Unchanged/copy-through context retains origins. The synthesized loops and data entries are not yet fully attributed."
+      "status": "implemented",
+      "notes": "Stored values keep their individual operand origins, channel/value/replay expressions retain the selected source series, and loop/storage control is explicitly synthetic.",
+      "matrixTest": "provenance_pass_matrix::output_sequence_loop_synthesis"
     },
     {
       "id": "common-offset-absorption",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Reassociated sums and per-use operands retain source expressions; the adjustment preserves original binding reads and offset operands. Inserted storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::common_offset_absorption"
     },
     {
       "id": "ordered-screen-loop-synthesis",
-      "status": "partial",
-      "notes": "Source blocks and unaffected statements survive traversal. Synthesized loop/data/helper origins are still pending."
+      "status": "implemented",
+      "notes": "Affine/constant/table argument columns retain contributing source operands, copied commands keep source locations, and loop/data-storage control is explicitly generated.",
+      "matrixTest": "provenance_pass_matrix::ordered_screen_loop_synthesis"
     },
     {
       "id": "periodic-screen-loop-synthesis",
-      "status": "partial",
-      "notes": "Shared traversal preserves source block boundaries; periodic generated constructs remain pending."
+      "status": "implemented",
+      "notes": "Periodic argument formulas retain their contributing source series separately from generated loop control; rejected fits and unchanged traversals preserve original attribution.",
+      "matrixTest": "provenance_pass_matrix::periodic_screen_loop_synthesis"
     },
     {
       "id": "available-expression-reuse",
-      "status": "partial",
-      "notes": "Each replacement keeps its use location and the reaching definition."
+      "status": "implemented",
+      "notes": "Replacements preserve their own use expressions plus the reaching definition; a missing use operand does not acquire the known parent position.",
+      "matrixTest": "provenance_pass_matrix::available_expression_reuse"
     },
     {
       "id": "signed-expression-factoring",
-      "status": "partial",
-      "notes": "Normalized sign bases and per-use carrier reads retain their own expressions plus shared definition relation. Carrier storage is explicitly synthetic; existing code and unknown uses are not masked."
+      "status": "implemented",
+      "notes": "Normalized sign bases and per-use carrier reads retain their own expressions and a shared definition relation. Carrier storage is synthetic and unknown uses remain unknown.",
+      "matrixTest": "provenance_pass_matrix::signed_expression_factoring"
     },
     {
       "id": "one-use-expression-helper-reversal",
-      "status": "partial",
-      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+      "status": "implemented",
+      "notes": "The shared expression-copy/substitution path retains body/argument origins and call/parameter relations when reversing a one-use helper.",
+      "matrixTest": "provenance_pass_matrix::one_use_expression_helper_reversal"
     },
     {
       "id": "final-dead-store-elimination",
-      "status": "partial",
-      "notes": "Surviving assignments, conditional branches and do blocks retain their origins across liveness traversal."
+      "status": "implemented",
+      "notes": "Surviving assignments, conditional branches and do blocks retain their origins across liveness traversal; eliminated stores do not acquire output positions.",
+      "matrixTest": "provenance_pass_matrix::final_dead_store_elimination"
     },
     {
       "id": "redundant-parentheses-elimination",
-      "status": "partial",
-      "notes": "Removed wrappers do not overwrite surviving child origins."
+      "status": "implemented",
+      "notes": "Removed wrappers do not replace surviving child origins; required parentheses remain attributed to their actual retained expression.",
+      "matrixTest": "provenance_pass_matrix::redundant_parentheses_elimination"
     },
     {
       "id": "scope-renaming",
-      "status": "partial",
-      "notes": "Each old identifier slot remains associated with its original spelling and range; the AST comparison excludes this metadata."
+      "status": "implemented",
+      "notes": "Each original identifier slot retains its spelling and source occurrence independently of interned symbols or generated short-name reuse.",
+      "matrixTest": "provenance_pass_matrix::scope_renaming"
     },
     {
       "id": "api-alias-optimization",
-      "status": "partial",
-      "notes": "Rebuilt source subtrees keep explicit origins; alias references derive from the original builtin access; alias definitions are explicitly synthetic."
+      "status": "implemented",
+      "notes": "Rebuilt source subtrees and alias uses retain original builtin-access positions; only new alias storage definitions are synthetic.",
+      "matrixTest": "provenance_pass_matrix::api_alias_optimization"
     },
     {
       "id": "closed-table-field-renaming",
-      "status": "partial",
-      "notes": "Named fields, dot accesses and method occurrences retain per-site original names. Quoted identifiers use exact original literal ranges without inventing name spellings. Missing quoted-key origins invalidate enclosing fallback instead of claiming table-wide precision."
+      "status": "implemented",
+      "notes": "Named keys, dot accesses and method sites retain per-occurrence names; quoted keys retain literal precision without invented original identifier spellings.",
+      "matrixTest": "provenance_pass_matrix::closed_table_field_renaming"
     },
     {
       "id": "closed-namespace-devirtualization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "implemented",
+      "notes": "Static field/alias rewrites retain original key/use locations, surviving predeclaration slots are reindexed, removed guards/stores have no output, and new scalar storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::closed_namespace_devirtualization"
     },
     {
       "id": "exact-numeric-literal-pooling",
-      "status": "partial",
-      "notes": "Pooled uses, shared values and exact arithmetic forms retain sources. Storage is explicitly generated. Missing inputs remain unknown."
+      "status": "implemented",
+      "notes": "Shared literal uses and exact arithmetic representations retain actual numeric inputs and each source use. New storage is synthetic; missing inputs remain unknown.",
+      "matrixTest": "provenance_pass_matrix::exact_numeric_literal_pooling"
     },
     {
       "id": "ordered-draw-record-packing",
-      "status": "partial",
-      "notes": "Shared pair-dictionary path records palettes, payloads and replayed arguments separately from generated decoder code. Other portfolio paths still need an audit."
+      "status": "implemented",
+      "notes": "Regular, baseline, enhanced, dense and shared portfolios record replay/callee/argument origins, table cells, encoded payloads, dictionaries and predictive seeds. Decoder control is distinguished from source data.",
+      "matrixTest": "provenance_pass_matrix::ordered_draw_record_packing"
     },
     {
       "id": "repeated-draw-sequence-outlining",
-      "status": "partial",
-      "notes": "Retained commands and each invocation keep source sites. Helper storage is explicitly generated."
+      "status": "implemented",
+      "notes": "Retained commands and each helper invocation preserve original sites and argument contributions; generated helper storage/control is synthetic.",
+      "matrixTest": "provenance_pass_matrix::repeated_draw_sequence_outlining"
     },
     {
       "id": "adjacent-local-declaration-packing",
-      "status": "partial",
-      "notes": "Merged declaration keeps related original declarations and remaps each appended binding slot explicitly."
+      "status": "implemented",
+      "notes": "Merged declarations retain related original declarations and every appended binding slot is explicitly copied from its original occurrence.",
+      "matrixTest": "provenance_pass_matrix::adjacent_local_declaration_packing"
     },
     {
       "id": "conditional-return-lowering",
-      "status": "partial",
-      "notes": "Full and guard-return chains retain original decisions and separate fallback return locations."
+      "status": "implemented",
+      "notes": "Full returns and guard-return chains retain original decisions, operand branches and separate fallback-return locations.",
+      "matrixTest": "provenance_pass_matrix::conditional_return_lowering"
     }
   ],
   "additionalStages": [
     {
       "stage": "property-hardcoding",
-      "status": "partial",
-      "notes": "New value roots derive from the original property call."
+      "status": "implemented",
+      "notes": "New specialized values derive from the original property call; unaffected source nodes and supported property types retain their existing contracts."
     },
     {
       "stage": "lexical-minification",
@@ -361,5 +428,18 @@
       "status": "implemented",
       "notes": "Shared block-statement filtering changes only affected block attribution; inspecting unrelated nodes no longer invalidates their origins. Owning complex passes still require their separate audits."
     }
-  ]
+  ],
+  "completionContract": {
+    "knownInput": "Parsed/attributed input constructs remain Source or Derived; deliberate compiler-generated structures are Synthetic. Removed constructs have no generated interval.",
+    "missingInput": "Missing attribution is never recovered by source-text matching, reused node numbers, a wider parent anchor, or a synthetic-label fallback. Unknown remains a supported result for incomplete input provenance.",
+    "testing": "Every pass has a non-noop production-entry fixture, tracking-on/off AST and byte equality, both separator modes, JSON roundtrip and an erased-input negative. Additional semantic branches, partial-missing inputs, real compiler combinations and record codec portfolios are tested.",
+    "runtimeBoundary": "Compile-time source relationships do not reconstruct optimized-away variables, stack frames or a specific dynamic replay-loop iteration."
+  },
+  "evidence": {
+    "registeredMatrix": "crates/storm-lua-minify/src/provenance_pass_matrix.rs",
+    "semanticFixtureAdapter": "crates/storm-lua-minify/src/provenance_audit_support.rs",
+    "branchAndIntegrationTests": "crates/storm-lua-minify/src/provenance_branch_tests.rs",
+    "recordPortfolios": "crates/storm-lua-minify/src/passes/draw_records/round3_tests.rs",
+    "releaseApiStatus": "Standard optimized Source Map v3, source-link composition and high-level SDK/Playground integration remain P4/P5 tasks."
+  }
 }

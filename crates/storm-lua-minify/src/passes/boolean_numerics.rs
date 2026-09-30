@@ -190,6 +190,7 @@ fn build_candidate(
         reason = "Definition collection validated this numeric-bit expression and the source arena has not changed"
     )]
     let (value_id, shift) = numeric_bit(ast, def.expression).expect("collect で検証済み");
+    let generated = new_ast.nodes.len();
     let one = new_ast.push(Node::Num("1".into()));
     let replacement = if shift == 0 {
         new_ast.bin("&", value_id, one)
@@ -198,6 +199,29 @@ fn build_candidate(
         let shifted = new_ast.bin(">>", value_id, shift_lit);
         new_ast.bin("&", shifted, one)
     };
+    if new_ast.nodes.tracks_origins() {
+        let Node::Bin(_, masked, zero) = ast.node(def.expression) else {
+            unreachable!()
+        };
+        let Node::Bin(_, _, mask) = ast.node(*masked) else {
+            unreachable!()
+        };
+        for n in generated..new_ast.nodes.len() {
+            super::origins::derive(
+                &mut new_ast,
+                n as NodeId,
+                ast,
+                &[*mask, *zero],
+                "numeric-bit-representation",
+            );
+        }
+        new_ast.nodes.derive_from(
+            replacement,
+            &ast.nodes,
+            def.expression,
+            "numeric-bit-definition",
+        );
+    }
     let rewriter = Rewriter {
         ast,
         res,
@@ -228,16 +252,44 @@ impl Rewriter<'_> {
         if let Some(consumer) = numeric_boolean_consumer(self.ast, self.res, id, self.def_bid) {
             let sym = new_ast.strings.intern(self.binding_name);
             let name_id = new_ast.push(Node::Name(sym));
+            let Node::Bin(_, left, no) = self.ast.node(id) else {
+                unreachable!()
+            };
+            let Node::Bin(_, name, yes) = self.ast.node(*left) else {
+                unreachable!()
+            };
+            new_ast
+                .nodes
+                .derive_from(name_id, &self.ast.nodes, *name, "numeric-bit-read");
+            new_ast
+                .nodes
+                .relate_from(name_id, &self.ast.nodes, id, "numeric-bit-consumer");
             return match consumer {
                 Consumer::Direct => name_id,
                 Consumer::Inverse => {
                     let one = new_ast.push(Node::Num("1".into()));
-                    new_ast.bin("-", one, name_id)
+                    super::origins::derive(
+                        new_ast,
+                        one,
+                        self.ast,
+                        &[*yes, *no],
+                        "numeric-bit-inversion-unit",
+                    );
+                    let result = new_ast.bin("-", one, name_id);
+                    new_ast.nodes.derive_from(
+                        result,
+                        &self.ast.nodes,
+                        id,
+                        "numeric-bit-inverse-consumer",
+                    );
+                    result
                 }
             };
         }
         let (new_node, _) = map_children(&node, &mut |child| self.rewrite(new_ast, child));
-        new_ast.nodes[id as usize] = new_node;
+        new_ast
+            .nodes
+            .rewrite(id, new_node, "numeric-bit-specialization");
         id
     }
 }
@@ -315,8 +367,8 @@ pub fn specialize_numeric_booleans(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn specializes_direct_and_inverse_consumers() {

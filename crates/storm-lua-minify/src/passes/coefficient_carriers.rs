@@ -311,36 +311,95 @@ pub fn synthesize_coefficient_carriers(
                         })
                         .collect::<Vec<_>>();
                     let carrier_node = candidate.push(Node::Name(carrier_symbol));
+                    super::origins::derive(
+                        &mut candidate,
+                        carrier_node,
+                        &source,
+                        &[
+                            occurrence.factors[occurrence.binding_factor].node,
+                            occurrence.factors[occurrence.constant_factor].node,
+                        ],
+                        "coefficient-carrier-read",
+                    );
+                    let first_formula = candidate.nodes.len();
                     factors.push(Factor {
                         sign: 1,
                         node: carrier_node,
                     });
                     if let Some(replacement) = build_product(&mut candidate, &factors) {
-                        candidate.nodes[occurrence.node as usize] =
-                            candidate.node(replacement).clone();
+                        if candidate.nodes.tracks_origins() {
+                            for id in first_formula..candidate.nodes.len() {
+                                candidate.nodes.derive_from(
+                                    id as NodeId,
+                                    &source.nodes,
+                                    occurrence.node,
+                                    "coefficient-product-reassociation",
+                                );
+                            }
+                        }
+                        let value = candidate.node(replacement).clone();
+                        candidate.nodes.rewrite(
+                            occurrence.node,
+                            value,
+                            "coefficient-product-reassociation",
+                        );
                     }
                 }
                 let binding_node = candidate.push(Node::Name(group.binding_name));
+                let first_occurrence = &group.occurrences[0];
+                let source_binding = first_occurrence.factors[first_occurrence.binding_factor].node;
+                candidate.nodes.derive_from(
+                    binding_node,
+                    &source.nodes,
+                    source_binding,
+                    "coefficient-binding",
+                );
                 let mut coefficient_factors = vec![Factor {
                     sign: group.binding_sign,
                     node: binding_node,
                 }];
                 let constant = candidate.push(source.node(group.constant).clone());
+                candidate.nodes.derive_from(
+                    constant,
+                    &source.nodes,
+                    group.constant,
+                    "coefficient-constant",
+                );
                 coefficient_factors.push(Factor {
                     sign: group.constant_sign,
                     node: constant,
                 });
+                let first_formula = candidate.nodes.len();
                 let Some(coefficient) = build_product(&mut candidate, &coefficient_factors) else {
                     continue;
                 };
+                if candidate.nodes.tracks_origins() {
+                    for id in first_formula..candidate.nodes.len() {
+                        super::origins::derive(
+                            &mut candidate,
+                            id as NodeId,
+                            &source,
+                            &[source_binding, group.constant],
+                            "coefficient-definition",
+                        );
+                    }
+                }
                 let carrier_target = candidate.push(Node::Name(carrier_symbol));
+                candidate
+                    .nodes
+                    .mark_synthetic(carrier_target, "coefficient-storage");
                 let assignment =
                     candidate.push(Node::Assign(vec![carrier_target], vec![coefficient]));
+                candidate
+                    .nodes
+                    .mark_synthetic(assignment, "coefficient-storage");
                 let Node::Block(mut top) = candidate.node(root).clone() else {
                     unreachable!()
                 };
                 top.insert(group.declaration + 1, assignment);
-                candidate.nodes[root as usize] = Node::Block(top);
+                candidate
+                    .nodes
+                    .rewrite(root, Node::Block(top), "coefficient-storage-insertion");
                 let size = renamed_size(&candidate, root);
                 if size < baseline && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
                     best = Some((candidate, size));
@@ -364,7 +423,7 @@ pub fn synthesize_coefficient_carriers(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     #[test]
     fn synthesizes_repeated_coefficient() {
@@ -372,5 +431,6 @@ mod tests {
         let (mut ast, root) = parse_source(source).unwrap();
         let result = synthesize_coefficient_carriers(&mut ast, root, true, 8);
         assert!(result.details.as_ref().unwrap()[0].contains("synthesized=1"));
+        let _ = Printer::new(&ast, false).output(root);
     }
 }

@@ -9,13 +9,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::config::NumericTolerance;
 use crate::pass::PassResult;
+#[cfg(test)]
+use crate::provenance_audit_support::Printer;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::numeric::{num_val, short_num, shortest_exact_hex_float_literal};
 use storm_lua_syntax::print::render_num;
-#[cfg(test)]
-use storm_lua_syntax::print::Printer;
 use storm_lua_syntax::size::measure_expr;
 
 const EXACT_BINARY: &[&str] = &["&", "|", "~", "<<", ">>", "//", "%"];
@@ -472,7 +472,7 @@ pub fn shorten_numeric_literals(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::parse_source;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

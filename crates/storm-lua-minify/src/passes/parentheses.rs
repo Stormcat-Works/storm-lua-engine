@@ -112,8 +112,8 @@ fn map_children_normal(node: &Node, f: &mut dyn FnMut(NodeId, Role) -> NodeId) -
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn run(src: &str) -> (String, u64) {
         let (mut ast, root) = parse_source(src).unwrap();

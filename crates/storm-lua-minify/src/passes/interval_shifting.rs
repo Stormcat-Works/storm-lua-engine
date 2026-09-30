@@ -28,7 +28,11 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_subtree(target, source, child)
     });
-    target.push(mapped)
+    let copied = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copied, &source.nodes, node, "interval-origin-copy");
+    copied
 }
 
 fn measured(ast: &Ast, root: NodeId, measure_renamed: bool) -> usize {
@@ -115,7 +119,7 @@ fn upper_width(
     None
 }
 
-fn build_and(ast: &mut Ast, terms: Vec<NodeId>) -> NodeId {
+fn build_and(ast: &mut Ast, terms: Vec<NodeId>, source: &Ast, original: NodeId) -> NodeId {
     let mut iter = terms.into_iter();
     #[expect(
         clippy::expect_used,
@@ -124,6 +128,8 @@ fn build_and(ast: &mut Ast, terms: Vec<NodeId>) -> NodeId {
     let mut result = iter.next().expect("at least two interval terms");
     for term in iter {
         result = ast.bin("and", result, term);
+        ast.nodes
+            .derive_from(result, &source.nodes, original, "interval-conjunction");
     }
     result
 }
@@ -228,7 +234,14 @@ fn apply_candidate(source: &Ast, candidate: &Candidate) -> Ast {
             .skip(2)
             .map(|condition| clone_subtree(&mut ast, source, *condition)),
     );
-    let expression = build_and(&mut ast, conditions);
+    let Node::Block(original_statements) = source.node(candidate.block) else {
+        unreachable!()
+    };
+    let original_return = original_statements[candidate.statement];
+    let Node::Return(original_expressions) = source.node(original_return) else {
+        unreachable!()
+    };
+    let expression = build_and(&mut ast, conditions, source, original_expressions[0]);
     let replacement = ast.push(Node::Return(vec![expression]));
     let Node::Block(statements) = ast.node(candidate.block).clone() else {
         unreachable!()
@@ -236,7 +249,58 @@ fn apply_candidate(source: &Ast, candidate: &Candidate) -> Ast {
     let mut statements = statements;
     statements[candidate.statement] = replacement;
     statements.insert(candidate.statement, assignment);
-    ast.nodes[candidate.block as usize] = Node::Block(statements);
+    let Node::Bin(op, l, r) = source.node(without_parens(source, candidate.conditions[0])) else {
+        unreachable!()
+    };
+    let lower = if op == ">=" { *r } else { *l };
+    for name in [
+        lower_for_subtraction,
+        assign_target,
+        lower_for_zero,
+        lower_for_width,
+    ] {
+        ast.nodes
+            .derive_from(name, &source.nodes, lower, "shifted-interval-binding");
+    }
+    super::origins::derive(
+        &mut ast,
+        shifted,
+        source,
+        &[candidate.point, lower],
+        "interval-origin-subtraction",
+    );
+    ast.nodes
+        .mark_synthetic(assignment, "interval-origin-storage");
+    super::origins::derive(
+        &mut ast,
+        zero,
+        source,
+        &[candidate.point, lower],
+        "interval-zero-bound",
+    );
+    ast.nodes.derive_from(
+        first,
+        &source.nodes,
+        candidate.conditions[0],
+        "interval-lower-bound",
+    );
+    ast.nodes.derive_from(
+        second,
+        &source.nodes,
+        candidate.conditions[1],
+        "interval-upper-bound",
+    );
+    ast.nodes.derive_from(
+        replacement,
+        &source.nodes,
+        original_return,
+        "shifted-interval-return",
+    );
+    ast.nodes.rewrite(
+        candidate.block,
+        Node::Block(statements),
+        "interval-origin-shifting",
+    );
     ast
 }
 
@@ -300,8 +364,8 @@ pub fn shift_interval_origins(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

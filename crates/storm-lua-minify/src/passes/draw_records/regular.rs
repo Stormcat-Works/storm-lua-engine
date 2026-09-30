@@ -49,28 +49,67 @@ fn predicted(calls: &[Call], period: usize, count: usize) -> Option<(Shape, Vec<
     ))
 }
 
-fn emit(source: &Ast, target: &mut Ast, plan: &Loop, index: SymbolId) -> NodeId {
+fn emit(source: &Ast, target: &mut Ast, plan: &Loop, index: SymbolId, calls: &[Call]) -> NodeId {
     let mut body = Vec::new();
-    for (&callee, arguments) in plan.targets.iter().zip(&plan.shape.args) {
+    for (slot, (&callee, arguments)) in plan.targets.iter().zip(&plan.shape.args).enumerate() {
         let callee = copy_callee(source, target, callee);
         let args = arguments
             .iter()
-            .map(|arg| match arg {
-                Arg::Constant(a) => a.emit(target),
-                Arg::Series(series) => {
-                    let row = name(target, index);
-                    series.emit(target, row)
+            .enumerate()
+            .map(|(column, arg)| {
+                let first = target.nodes.len();
+                let result = match arg {
+                    Arg::Constant(a) => a.emit(target),
+                    Arg::Series(series) => {
+                        let row = name(target, index);
+                        series.emit(target, row)
+                    }
+                    _ => unreachable!("inline loops have no stored columns"),
+                };
+                if target.nodes.tracks_origins() {
+                    let inputs = calls
+                        .iter()
+                        .skip(slot)
+                        .step_by(plan.shape.targets.len())
+                        .map(|c| c.origin_arguments[column])
+                        .collect::<Vec<_>>();
+                    for id in first..target.nodes.len() {
+                        provenance::derive(
+                            target,
+                            id as NodeId,
+                            source,
+                            &inputs,
+                            "regular-draw-argument",
+                        );
+                    }
                 }
-                _ => unreachable!("inline loops have no stored columns"),
+                result
             })
             .collect();
         let call = target.push(Node::Call(callee, args, None));
-        body.push(target.push(Node::Callstat(call)));
+        let stmt = target.push(Node::Callstat(call));
+        if target.nodes.tracks_origins() {
+            let inputs = calls
+                .iter()
+                .skip(slot)
+                .step_by(plan.shape.targets.len())
+                .map(|c| c.origin_call)
+                .collect::<Vec<_>>();
+            provenance::derive(target, call, source, &inputs, "regular-draw-replay");
+            provenance::derive(target, stmt, source, &inputs, "regular-draw-replay");
+        }
+        body.push(stmt);
     }
     let body = target.push(Node::Block(body));
     let start = num(target, 0);
     let end = num(target, plan.count as i64 - 1);
-    target.push(Node::Fornum(index, start, end, None, body))
+    {
+        let loop_ = target.push(Node::Fornum(index, start, end, None, body));
+        for id in [body, start, end, loop_] {
+            target.nodes.mark_synthetic(id, "regular-draw-loop-control");
+        }
+        loop_
+    }
 }
 
 fn cost(source: &Ast, plan: &Loop) -> usize {
@@ -85,7 +124,7 @@ fn cost(source: &Ast, plan: &Loop) -> usize {
     };
     let i = ast.strings.intern("i");
     let input = ast.clone();
-    let loop_ = emit(&input, &mut ast, &mock, i);
+    let loop_ = emit(&input, &mut ast, &mock, i, &[]);
     measure_stmt(&ast, loop_)
         + plan
             .targets
@@ -208,7 +247,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
             while at < n {
                 if let Some(plan) = &choices[at] {
                     let index = fresh(ast, &mut taken, "draw_row", &mut serial);
-                    output.push(emit(&source, ast, plan, index));
+                    output.push(emit(&source, ast, plan, index, &calls[at..plan.stop]));
                     loops += 1;
                     at = plan.stop;
                 } else {
@@ -218,7 +257,8 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
             }
             cursor += n;
         }
-        ast.nodes[block as usize] = Node::Block(output);
+        ast.nodes
+            .rewrite(block, Node::Block(output), "regular-draw-run-replacement");
     }
     if loops > 0 {
         remove_unused_forwarders(ast, root);

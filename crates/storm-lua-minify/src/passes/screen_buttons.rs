@@ -14,6 +14,9 @@ use storm_lua_syntax::size::measure_size;
 struct Site {
     block: NodeId,
     start: usize,
+    condition: NodeId,
+    action_statement: NodeId,
+    draw_statement: NodeId,
     x: NodeId,
     y: NodeId,
     label: NodeId,
@@ -200,6 +203,9 @@ fn collect_sites(
                 sites.push(Site {
                     block: node,
                     start,
+                    condition: arms[0].cond,
+                    action_statement: yes[0],
+                    draw_statement: trailing,
                     x,
                     y,
                     label: draw_args[2],
@@ -239,16 +245,28 @@ fn replace_xy(
 ) -> NodeId {
     let key = expr_key(source, res, node);
     if key == x_key {
-        return target.push(Node::Name(x_symbol));
+        let result = target.push(Node::Name(x_symbol));
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "button-x-parameter");
+        return result;
     }
     if key == y_key {
-        return target.push(Node::Name(y_symbol));
+        let result = target.push(Node::Name(y_symbol));
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "button-y-parameter");
+        return result;
     }
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         replace_xy(target, source, res, child, x_key, y_key, x_symbol, y_symbol)
     });
-    target.push(mapped)
+    let result = target.push(mapped);
+    target
+        .nodes
+        .derive_from(result, &source.nodes, node, "button-expression-copy");
+    result
 }
 
 pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> PassResult {
@@ -346,6 +364,55 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
             let fun = candidate.push(Node::Function(vec![xs, ys, label, value], false, body));
             let helper_target = candidate.push(Node::Name(helper));
             let definition = candidate.push(Node::Funcstat(helper_target, fun));
+            if candidate.nodes.tracks_origins() {
+                for id in [active_assign_target, body, fun, helper_target, definition] {
+                    candidate
+                        .nodes
+                        .mark_synthetic(id, "button-helper-storage-control");
+                }
+                let conditions = chosen.iter().map(|s| s.condition).collect::<Vec<_>>();
+                let actions = chosen
+                    .iter()
+                    .map(|s| s.action_statement)
+                    .collect::<Vec<_>>();
+                let draws = chosen.iter().map(|s| s.draw_statement).collect::<Vec<_>>();
+                let xsources = chosen.iter().map(|s| s.x).collect::<Vec<_>>();
+                let ysources = chosen.iter().map(|s| s.y).collect::<Vec<_>>();
+                let labels = chosen.iter().map(|s| s.label).collect::<Vec<_>>();
+                let values = chosen.iter().map(|s| s.value).collect::<Vec<_>>();
+                let ons = chosen.iter().map(|s| s.on).collect::<Vec<_>>();
+                let offs = chosen.iter().map(|s| s.off).collect::<Vec<_>>();
+                for (id, inputs) in [
+                    (active_read, &conditions),
+                    (active_expr, &conditions),
+                    (s_active, &conditions),
+                    (active_cond, &conditions),
+                    (pulse_cond, &actions),
+                    (value_read, &values),
+                    (assign, &actions),
+                    (pulse_body, &actions),
+                    (pulse_if, &actions),
+                    (color_if, &conditions),
+                    (on_stat, &ons),
+                    (on_body, &ons),
+                    (off_stat, &offs),
+                    (off_body, &offs),
+                    (x_read, &xsources),
+                    (draw_x, &draws),
+                    (y_read, &ysources),
+                    (label_read, &labels),
+                    (draw_call, &draws),
+                    (draw_stat, &draws),
+                ] {
+                    super::origins::derive(
+                        &mut candidate,
+                        id,
+                        &source,
+                        inputs,
+                        "screen-button-outlining",
+                    );
+                }
+            }
             let mut by_block: HashMap<NodeId, Vec<&Site>> = HashMap::new();
             for site in chosen {
                 by_block.entry(site.block).or_default().push(site);
@@ -364,20 +431,42 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
                             vec![site.x, site.y, site.label, site.value],
                             None,
                         ));
-                        out.push(candidate.push(Node::Callstat(call)));
+                        candidate
+                            .nodes
+                            .mark_synthetic(fnn, "screen-button-helper-reference");
+                        super::origins::derive(
+                            &mut candidate,
+                            call,
+                            &source,
+                            &[statements[i], statements[i + 1]],
+                            "screen-button-invocation",
+                        );
+                        let stmt = candidate.push(Node::Callstat(call));
+                        super::origins::derive(
+                            &mut candidate,
+                            stmt,
+                            &source,
+                            &[statements[i], statements[i + 1]],
+                            "screen-button-invocation",
+                        );
+                        out.push(stmt);
                         i += 2;
                     } else {
                         out.push(statements[i]);
                         i += 1;
                     }
                 }
-                candidate.nodes[block as usize] = Node::Block(out);
+                candidate
+                    .nodes
+                    .rewrite(block, Node::Block(out), "screen-button-extraction");
             }
             let Node::Block(mut top) = candidate.node(root).clone() else {
                 unreachable!()
             };
             top.insert(0, definition);
-            candidate.nodes[root as usize] = Node::Block(top);
+            candidate
+                .nodes
+                .rewrite(root, Node::Block(top), "screen-button-helper-insertion");
             let size = renamed_size(&candidate, root);
             if size < baseline && best.as_ref().is_none_or(|(_, b, _)| size < *b) {
                 best = Some((candidate, size, count));
@@ -404,7 +493,7 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
     #[test]
     fn outlines_three_buttons() {
         let src = r#"value=0 active=false pulse=false
@@ -437,5 +526,6 @@ end
         let (mut ast, root) = parse_source(src).unwrap();
         let r = outline_screen_buttons(&mut ast, root, true);
         assert!(r.details.unwrap()[0].contains("outlined=3"));
+        let _ = Printer::new(&ast, false).output(root);
     }
 }

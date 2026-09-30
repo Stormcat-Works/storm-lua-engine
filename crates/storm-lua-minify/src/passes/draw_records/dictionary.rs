@@ -90,8 +90,31 @@ pub(super) fn compress_literal(ast: &mut Ast, literal: NodeId) -> bool {
     if dictionary.is_empty() {
         return false;
     }
+    let first = ast.nodes.len();
+    let origin = ast.nodes.capture_origin(literal);
     let replacement = emit(ast, &text, &dictionary);
+    if ast.nodes.tracks_origins() {
+        // Identify marker nodes structurally from newly generated gsub calls,
+        // never by searching equal strings or looking at unrelated source.
+        let markers = (first..ast.nodes.len())
+            .filter_map(|n| match ast.node(n as NodeId) {
+                Node::Call(_, args, Some(method)) if method == "gsub" => Some(args[0]),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        for n in first..ast.nodes.len() {
+            let n = n as NodeId;
+            if matches!(ast.node(n), Node::Str(_)) && !markers.contains(&n) {
+                ast.nodes
+                    .finish_rewrite(n, origin.clone(), "payload-dictionary-data");
+            } else {
+                ast.nodes.mark_synthetic(n, "payload-dictionary-decoder");
+            }
+        }
+    }
     ast.nodes[literal as usize] = ast.node(replacement).clone();
+    ast.nodes
+        .finish_rewrite(literal, origin, "payload-dictionary-expansion");
     true
 }
 
@@ -122,6 +145,51 @@ mod tests {
                 panic!()
             };
             assert_eq!(value.as_bytes().as_ref(), text.as_bytes());
+        }
+    }
+
+    #[test]
+    fn dictionary_data_and_decoder_have_distinct_origins_and_missing_data_stays_unknown() {
+        use storm_lua_syntax::provenance::{GeneratedOrigins, OriginKind};
+        let text = "AB%CD\\EF'G\"HI".repeat(80);
+        let source = format!("return {}", quote_lua(&text));
+        let (original, root) =
+            storm_lua_syntax::parse_source_with_origins("dictionary.lua", &source).unwrap();
+        let Node::Block(stmts) = original.node(root) else {
+            panic!()
+        };
+        let Node::Return(values) = original.node(stmts[0]) else {
+            panic!()
+        };
+        let literal = values[0];
+        for missing in [false, true] {
+            let mut ast = original.clone();
+            if missing {
+                let value = ast.node(literal).clone();
+                ast.nodes[literal as usize] = value;
+            }
+            assert!(compress_literal(&mut ast, literal));
+            let printed = storm_lua_syntax::Printer::new(&ast, false).output_with_positions(root);
+            let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+            origins.validate_for_code(&printed.code).unwrap();
+            if missing {
+                assert!(origins.unknown_bytes() > 0);
+            } else {
+                assert_eq!(origins.unknown_bytes(), 0);
+                assert!(origins.origins.iter().any(|o| o.transformation.as_deref()
+                    == Some("payload-dictionary-data")
+                    && o.kind == OriginKind::Derived));
+                assert!(origins.origins.iter().any(|o| o.transformation.as_deref()
+                    == Some("payload-dictionary-decoder")
+                    && o.kind == OriginKind::Synthetic));
+            }
+            let lua = Lua::new();
+            let values: mlua::MultiValue = lua.load(&printed.code).eval().unwrap();
+            assert_eq!(values.len(), 1);
+            let mlua::Value::String(actual) = &values[0] else {
+                panic!()
+            };
+            assert_eq!(actual.as_bytes().as_ref(), text.as_bytes());
         }
     }
 }

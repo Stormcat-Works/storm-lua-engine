@@ -98,9 +98,9 @@ pub fn transform_property_reads(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
     use std::collections::BTreeMap;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
 
     fn config() -> PropertyConfig {
         PropertyConfig {

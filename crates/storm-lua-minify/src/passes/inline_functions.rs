@@ -377,7 +377,11 @@ pub fn specialize_constant_arguments(
             .enumerate()
             .filter_map(|(index, argument)| (!spec.remove.contains(&index)).then_some(argument))
             .collect();
-        target.nodes[node as usize] = Node::Call(function, filtered, method);
+        target.nodes.rewrite(
+            node,
+            Node::Call(function, filtered, method),
+            "constant-argument-specialization",
+        );
     }
 
     for info in &infos {
@@ -405,6 +409,44 @@ pub fn specialize_constant_arguments(
                 Some(value) => source.node(*value).clone(),
                 None => Node::Nil,
             };
+            if let Some(_value) = value {
+                let inputs = info
+                    .parameter_bids
+                    .iter()
+                    .position(|b| *b == bid)
+                    .map(|index| {
+                        calls[&info.bid]
+                            .iter()
+                            .filter_map(|&call| match source.node(call) {
+                                Node::Call(_, args, _) => args.get(index).copied(),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                super::origins::derive(
+                    &mut target,
+                    node,
+                    &source,
+                    &inputs,
+                    "specialized-argument-sites",
+                );
+            } else {
+                target
+                    .nodes
+                    .derive_from(node, &source.nodes, node, "specialized-implicit-nil");
+                for &call in &calls[&info.bid] {
+                    target.nodes.relate_from(
+                        node,
+                        &source.nodes,
+                        call,
+                        "specialized-omitted-arguments",
+                    );
+                }
+            }
+            target
+                .nodes
+                .relate_from(node, &source.nodes, node, "specialized-parameter-read");
         }
         let filtered_parameters = info
             .parameters
@@ -413,8 +455,23 @@ pub fn specialize_constant_arguments(
             .enumerate()
             .filter_map(|(index, parameter)| (!spec.remove.contains(&index)).then_some(parameter))
             .collect();
-        target.nodes[info.function as usize] =
-            Node::Function(filtered_parameters, info.variadic, info.body);
+        target.nodes.rewrite(
+            info.function,
+            Node::Function(filtered_parameters, info.variadic, info.body),
+            "constant-parameter-removal",
+        );
+        for (new_index, old_index) in (0..info.parameters.len())
+            .filter(|i| !spec.remove.contains(i))
+            .enumerate()
+        {
+            target.nodes.copy_name_from(
+                info.function,
+                storm_lua_syntax::NameSite::Parameter(new_index as u32),
+                &source.nodes,
+                info.function,
+                storm_lua_syntax::NameSite::Parameter(old_index as u32),
+            );
+        }
     }
 
     // Numeric folding is separately gated by the caller. Exact mode passes
@@ -523,6 +580,7 @@ fn rewrite_literal_calls(
                         target.node(candidate).clone(),
                         "literal-call-folding",
                     );
+                    super::origins::derive(target, node, source, &[node], "literal-call-folding");
                     *folded += 1;
                     return;
                 }
@@ -836,8 +894,8 @@ pub fn inline_expression_functions(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str, which: u8) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

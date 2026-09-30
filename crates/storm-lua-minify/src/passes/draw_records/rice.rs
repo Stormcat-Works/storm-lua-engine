@@ -132,12 +132,15 @@ fn read_bit(ast: &mut Ast, data: SymbolId, cursor: SymbolId) -> NodeId {
 
 /// Emit a helper-private reader and row decoder. Prefix is executed on every
 /// helper invocation, including each translated tile, so no state leaks frames.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn decoder(
     ast: &mut Ast,
     columns: &[Column],
     data: SymbolId,
     vars: &[SymbolId],
     serial: usize,
+    shape: &Shape,
+    trace: &mut Option<provenance::Trace>,
 ) -> (Vec<NodeId>, Vec<NodeId>) {
     let cursor = ast.strings.intern(&format!("__draw_bit_{serial}"));
     let read = ast.strings.intern(&format!("__draw_read_{serial}"));
@@ -176,7 +179,16 @@ pub(super) fn decoder(
     prefix.push(ast.push(Node::Localfunc(read, function)));
     let seeds = columns
         .iter()
-        .map(|s| num(ast, if s.delta { s.bias } else { 0 }))
+        .enumerate()
+        .map(|(column, s)| {
+            let node = num(ast, if s.delta { s.bias } else { 0 });
+            if s.delta {
+                if let Some(trace) = trace.as_mut() {
+                    trace.column(node as usize..node as usize + 1, shape, column, true);
+                }
+            }
+            node
+        })
         .collect();
     prefix.push(ast.push(Node::Local(vars.to_vec(), seeds)));
     let mut body = Vec::new();
@@ -197,7 +209,12 @@ pub(super) fn decoder(
             let previous = name(ast, vars[i]);
             bin(ast, "+", previous, delta)
         } else {
-            offset(ast, decoded, spec.bias)
+            let first = ast.nodes.len();
+            let result = offset(ast, decoded, spec.bias);
+            if let Some(trace) = trace.as_mut() {
+                trace.column(first..ast.nodes.len(), shape, i, false);
+            }
+            result
         };
         let lhs = name(ast, vars[i]);
         body.push(ast.push(Node::Assign(vec![lhs], vec![result])));

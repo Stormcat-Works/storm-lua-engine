@@ -29,3 +29,12 @@ mod provenance_table_function_tests;
 
 #[cfg(test)]
 mod provenance_complete_tests;
+
+#[cfg(test)]
+mod provenance_audit_support;
+
+#[cfg(test)]
+mod provenance_pass_matrix;
+
+#[cfg(test)]
+mod provenance_branch_tests;

@@ -18,6 +18,7 @@ use storm_lua_syntax::size::{measure_expr, measure_size};
 struct Carrier {
     symbol: SymbolId,
     factor_keys: Vec<String>,
+    expression: NodeId,
 }
 
 #[derive(Clone)]
@@ -25,6 +26,8 @@ struct Opportunity {
     node: NodeId,
     remaining: Vec<NodeId>,
     carrier_symbol: SymbolId,
+    definition: NodeId,
+    replaced: Vec<NodeId>,
     estimate: usize,
 }
 
@@ -135,6 +138,7 @@ fn collect_carriers(
             }
             carriers.push(Carrier {
                 symbol: binding.name,
+                expression,
                 factor_keys: product
                     .iter()
                     .map(|factor| {
@@ -203,6 +207,13 @@ fn inspect(
                     node,
                     remaining,
                     carrier_symbol: carrier.symbol,
+                    definition: carrier.expression,
+                    replaced: product
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| !remaining_indices.contains(i))
+                        .map(|(_, n)| *n)
+                        .collect(),
                     estimate: original_length - replacement_len,
                 });
             }
@@ -231,6 +242,19 @@ fn inspect(
 fn apply_opportunity(source: &Ast, opportunity: &Opportunity) -> Ast {
     let mut candidate = clone_ast(source);
     let carrier = candidate.push(Node::Name(opportunity.carrier_symbol));
+    super::origins::derive(
+        &mut candidate,
+        carrier,
+        source,
+        &opportunity.replaced,
+        "multiplicative-carrier-substitution",
+    );
+    candidate.nodes.relate_from(
+        carrier,
+        &source.nodes,
+        opportunity.definition,
+        "multiplicative-carrier-definition",
+    );
     let mut product = opportunity.remaining[0];
     for factor in opportunity
         .remaining
@@ -240,8 +264,19 @@ fn apply_opportunity(source: &Ast, opportunity: &Opportunity) -> Ast {
         .chain([carrier])
     {
         product = candidate.bin("*", product, factor);
+        candidate.nodes.derive_from(
+            product,
+            &source.nodes,
+            opportunity.node,
+            "multiplicative-carrier-reassociation",
+        );
     }
-    candidate.nodes[opportunity.node as usize] = candidate.node(product).clone();
+    let value = candidate.node(product).clone();
+    candidate.nodes.rewrite(
+        opportunity.node,
+        value,
+        "multiplicative-carrier-reassociation",
+    );
     candidate
 }
 
@@ -307,8 +342,8 @@ pub fn reuse_multiplicative_carriers(ast: &mut Ast, root: NodeId) -> PassResult 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

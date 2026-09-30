@@ -145,7 +145,17 @@ pub(super) fn emit_helper_recording(
         accumulators = (0..shape.columns)
             .map(|n| ast.strings.intern(&format!("__draw_a_{serial}_{n}")))
             .collect::<Vec<_>>();
-        let initial = firsts.iter().map(|&v| num(ast, v)).collect();
+        let initial = firsts
+            .iter()
+            .enumerate()
+            .map(|(column, &v)| {
+                let node = num(ast, v);
+                if let Some(trace) = trace.as_mut() {
+                    trace.column(node as usize..node as usize + 1, shape, column, true);
+                }
+                node
+            })
+            .collect();
         prefix.push(ast.push(Node::Local(accumulators.clone(), initial)));
         inner.as_ref()
     } else {
@@ -155,7 +165,8 @@ pub(super) fn emit_helper_recording(
     let mut decoded = Vec::new();
     match codec {
         Codec::Rice { columns, .. } => {
-            let (setup, decode) = super::rice::decoder(ast, columns, data, &vars, serial);
+            let (setup, decode) =
+                super::rice::decoder(ast, columns, data, &vars, serial, shape, trace);
             prefix.extend(setup);
             body.extend(decode);
         }

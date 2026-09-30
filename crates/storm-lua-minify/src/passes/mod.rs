@@ -61,3 +61,5 @@ pub mod draw_sequences;
 
 /// Pack independent neighboring local declarations.
 pub mod adjacent_locals;
+
+mod origins;

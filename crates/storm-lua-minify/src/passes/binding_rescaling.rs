@@ -428,8 +428,8 @@ pub fn rescale_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

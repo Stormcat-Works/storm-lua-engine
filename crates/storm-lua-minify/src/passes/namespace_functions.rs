@@ -392,7 +392,8 @@ fn remove_vacuous_scopes(ast: &mut Ast, node: NodeId) {
         }
         flattened.push(stmt);
     }
-    ast.nodes[node as usize] = Node::Block(flattened);
+    ast.nodes
+        .rewrite(node, Node::Block(flattened), "namespace-scope-flattening");
 }
 
 pub fn devirtualize_closed_namespaces(ast: &mut Ast, root: NodeId, rename: bool) -> PassResult {
@@ -530,7 +531,33 @@ pub fn devirtualize_closed_namespaces(ast: &mut Ast, root: NodeId, rename: bool)
     }
     for site in &uses.sites {
         if let Some(symbol) = names.get(&(site.owner, site.key.clone())) {
-            trial.nodes[site.node as usize] = Node::Name(*symbol);
+            trial.nodes.rewrite(
+                site.node,
+                Node::Name(*symbol),
+                "closed-namespace-devirtualization",
+            );
+            if let Node::Index(_, key, _) = ast.node(site.node) {
+                if ast
+                    .nodes
+                    .name_origin(*key, storm_lua_syntax::NameSite::Member)
+                    .is_some()
+                {
+                    trial.nodes.copy_name_from(
+                        site.node,
+                        storm_lua_syntax::NameSite::Reference,
+                        &ast.nodes,
+                        *key,
+                        storm_lua_syntax::NameSite::Member,
+                    );
+                } else {
+                    trial.nodes.copy_expression_to_name_from(
+                        site.node,
+                        storm_lua_syntax::NameSite::Reference,
+                        &ast.nodes,
+                        *key,
+                    );
+                }
+            }
         }
     }
     // Namespace predeclarations have no values/effects. Remove only their
@@ -538,16 +565,30 @@ pub fn devirtualize_closed_namespaces(ast: &mut Ast, root: NodeId, rename: bool)
     for &node in inventory.order.keys() {
         if let Node::Local(symbols, values) = ast.node(node) {
             if values.is_empty() {
-                let kept = symbols
+                let kept_indices = res.node_bids[node as usize]
                     .iter()
-                    .zip(&res.node_bids[node as usize])
+                    .enumerate()
                     .filter(|(_, b)| !owners.get(b).is_some_and(|owner| eligible.contains(owner)))
-                    .map(|(sym, _)| *sym)
+                    .map(|(index, _)| index)
                     .collect::<Vec<_>>();
+                let kept = kept_indices.iter().map(|&i| symbols[i]).collect::<Vec<_>>();
                 if kept.is_empty() {
                     removed.insert(node);
                 } else {
-                    trial.nodes[node as usize] = Node::Local(kept, Vec::new());
+                    trial.nodes.rewrite(
+                        node,
+                        Node::Local(kept.clone(), Vec::new()),
+                        "namespace-predeclaration-removal",
+                    );
+                    for (new_index, &old_index) in kept_indices.iter().enumerate() {
+                        trial.nodes.copy_name_from(
+                            node,
+                            storm_lua_syntax::NameSite::Binding(new_index as u32),
+                            &ast.nodes,
+                            node,
+                            storm_lua_syntax::NameSite::Binding(old_index as u32),
+                        );
+                    }
                 }
             }
         }
@@ -558,10 +599,16 @@ pub fn devirtualize_closed_namespaces(ast: &mut Ast, root: NodeId, rename: bool)
     );
     if !symbols.is_empty() {
         let declaration = trial.push(Node::Local(symbols, Vec::new()));
-        let Node::Block(stmts) = &mut trial.nodes[root as usize] else {
+        trial
+            .nodes
+            .mark_synthetic(declaration, "namespace-scalar-storage");
+        let Node::Block(mut stmts) = trial.node(root).clone() else {
             return unchanged();
         };
         stmts.insert(0, declaration);
+        trial
+            .nodes
+            .rewrite(root, Node::Block(stmts), "namespace-storage-insertion");
     }
     remove_vacuous_scopes(&mut trial, root);
     let before = measure_size(ast, root);

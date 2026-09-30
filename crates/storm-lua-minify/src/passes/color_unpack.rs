@@ -311,7 +311,58 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
         ));
         let set_color = candidate.push(Node::Index(screen_name, key, true));
         let new_call = candidate.push(Node::Call(set_color, args, method.clone()));
-        candidate.nodes[*node as usize] = Node::Callstat(new_call);
+        let info = &helpers[&bid];
+        let Node::Function(_, _, body) = source.node(info.function) else {
+            unreachable!()
+        };
+        let Node::Block(stmts) = source.node(*body) else {
+            unreachable!()
+        };
+        let Node::Callstat(original_call) = source.node(stmts[0]) else {
+            unreachable!()
+        };
+        let Node::Call(original_fn, _, _) = source.node(*original_call) else {
+            unreachable!()
+        };
+        candidate.nodes.derive_from(
+            set_color,
+            &source.nodes,
+            *original_fn,
+            "color-unpack-callee",
+        );
+        if let Node::Index(object, member, _) = source.node(*original_fn) {
+            candidate
+                .nodes
+                .derive_from(screen_name, &source.nodes, *object, "color-unpack-callee");
+            candidate
+                .nodes
+                .derive_from(key, &source.nodes, *member, "color-unpack-callee");
+        } else {
+            candidate.nodes.derive_from(
+                screen_name,
+                &source.nodes,
+                *original_fn,
+                "color-unpack-callee-expansion",
+            );
+            candidate.nodes.derive_from(
+                key,
+                &source.nodes,
+                *original_fn,
+                "color-unpack-callee-expansion",
+            );
+        }
+        candidate
+            .nodes
+            .derive_from(new_call, &source.nodes, *call, "color-unpack-expansion");
+        candidate.nodes.relate_from(
+            new_call,
+            &source.nodes,
+            *original_call,
+            "color-unpack-helper",
+        );
+        candidate
+            .nodes
+            .rewrite(*node, Node::Callstat(new_call), "color-unpack-expansion");
         *replaced.entry(bid).or_default() += 1;
     }
     for (bid, info) in &helpers {
@@ -343,8 +394,8 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn expands_array_color_helper() {

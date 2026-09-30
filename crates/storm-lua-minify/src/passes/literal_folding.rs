@@ -353,17 +353,7 @@ fn boolean_coercion(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
 // These operands, not an enclosing statement, determine the computed value.
 // A missing input origin therefore remains missing on the result.
 fn computed_origin(ast: &mut Ast, result: NodeId, inputs: &[NodeId], reason: &str) {
-    if !ast.nodes.tracks_origins()
-        || inputs.is_empty()
-        || inputs.iter().any(|&id| ast.nodes.origin(id).is_none())
-    {
-        return;
-    }
-    let origin = ast.nodes.capture_origin(inputs[0]);
-    ast.nodes.finish_rewrite(result, origin, reason);
-    for &input in &inputs[1..] {
-        ast.nodes.relate_within(result, input, reason);
-    }
+    super::origins::within(ast, result, inputs, reason);
 }
 
 fn positive_term(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
@@ -540,6 +530,19 @@ fn fold_node(
     target
         .nodes
         .finish_rewrite(node, origin, "constant-folding");
+    // A collapsed value no longer emits its operands. Do not replace missing
+    // operand attribution with the old enclosing expression's known anchor.
+    if target.nodes.tracks_origins()
+        && source.node(node) != target.node(node)
+        && matches!(
+            target.node(node),
+            Node::Name(_) | Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
+        )
+        && !super::origins::known(source, node)
+    {
+        let value = target.node(node).clone();
+        target.nodes[node as usize] = value;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1213,8 +1216,8 @@ pub fn constant_fold(ast: &mut Ast, root: NodeId, aggressive: bool) -> PassResul
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn run(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

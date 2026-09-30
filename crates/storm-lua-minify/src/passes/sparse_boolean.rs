@@ -483,6 +483,63 @@ fn alpha_clone_node(
     alpha: &HashMap<BindingId, SymbolId>,
     literal_binding: Option<(BindingId, i64)>,
 ) -> NodeId {
+    let result = alpha_clone_node_inner(target, source, res, node, alpha, literal_binding);
+    target
+        .nodes
+        .derive_from(result, &source.nodes, node, "sparse-decode-alpha-copy");
+    use storm_lua_syntax::NameSite;
+    match source.node(node) {
+        Node::Name(_) if matches!(target.node(result), Node::Name(_)) => {
+            target.nodes.copy_name_from(
+                result,
+                NameSite::Reference,
+                &source.nodes,
+                node,
+                NameSite::Reference,
+            )
+        }
+        Node::Local(names, _) | Node::Forin(names, _, _) => {
+            for i in 0..names.len() {
+                target.nodes.copy_name_from(
+                    result,
+                    NameSite::Binding(i as u32),
+                    &source.nodes,
+                    node,
+                    NameSite::Binding(i as u32),
+                );
+            }
+        }
+        Node::Localfunc(..) | Node::Fornum(..) => target.nodes.copy_name_from(
+            result,
+            NameSite::Binding(0),
+            &source.nodes,
+            node,
+            NameSite::Binding(0),
+        ),
+        Node::Function(names, _, _) => {
+            for i in 0..names.len() {
+                target.nodes.copy_name_from(
+                    result,
+                    NameSite::Parameter(i as u32),
+                    &source.nodes,
+                    node,
+                    NameSite::Parameter(i as u32),
+                );
+            }
+        }
+        _ => {}
+    }
+    result
+}
+
+fn alpha_clone_node_inner(
+    target: &mut Ast,
+    source: &Ast,
+    res: &Resolution,
+    node: NodeId,
+    alpha: &HashMap<BindingId, SymbolId>,
+    literal_binding: Option<(BindingId, i64)>,
+) -> NodeId {
     if matches!(source.node(node), Node::Name(_)) {
         if let Some(node_bid) = bid(res, node) {
             if let Some((binding, value)) = literal_binding {
@@ -491,7 +548,11 @@ fn alpha_clone_node(
                 }
             }
             if let Some(symbol) = alpha.get(&node_bid) {
-                return target.push(Node::Name(*symbol));
+                let result = target.push(Node::Name(*symbol));
+                target
+                    .nodes
+                    .derive_from(result, &source.nodes, node, "sparse-array-read");
+                return result;
             }
         }
     }
@@ -598,7 +659,7 @@ fn shorten_bit(target: &mut Ast, node: NodeId, k: i64) -> NodeId {
         Node::Paren(inner) => *inner,
         _ => left,
     };
-    let Node::Bin(bitop, value, _) = target.node(bit).clone() else {
+    let Node::Bin(bitop, value, mask_expression) = target.node(bit).clone() else {
         return node;
     };
     if bitop != "&" || k < 1 {
@@ -613,6 +674,7 @@ fn shorten_bit(target: &mut Ast, node: NodeId, k: i64) -> NodeId {
         return node;
     }
 
+    let first_generated = target.nodes.len();
     let mask_node = target.push(Node::Num(short_num(mask).into()));
     let bit_expr = target.push(Node::Bin("&".into(), value, mask_node));
     let zero = target.push(Node::Num("0".into()));
@@ -629,6 +691,18 @@ fn shorten_bit(target: &mut Ast, node: NodeId, k: i64) -> NodeId {
     let zero2 = target.push(Node::Num("0".into()));
     let modulo_candidate = target.push(Node::Bin(">".into(), modulo, zero2));
 
+    if target.nodes.tracks_origins() {
+        for id in first_generated..target.nodes.len() {
+            super::origins::within(
+                target,
+                id as NodeId,
+                &[mask_expression, right],
+                "sparse-bit-specialization",
+            );
+        }
+        super::origins::within(target, mask_candidate, &[node], "sparse-bit-comparison");
+        super::origins::within(target, modulo_candidate, &[node], "sparse-bit-comparison");
+    }
     let mut candidates = [node, mask_candidate, modulo_candidate];
     candidates.sort_by_key(|candidate| measure_expr(target, *candidate));
     candidates[0]
@@ -649,12 +723,20 @@ fn rewrite_static_arrays(
                 let k = num_val(text) as i64;
                 if bid(res, *object) == Some(p.current_bid) {
                     if let Some(symbol) = current_names.get(&k) {
-                        return target.push(Node::Name(*symbol));
+                        let result = target.push(Node::Name(*symbol));
+                        target
+                            .nodes
+                            .derive_from(result, &source.nodes, node, "sparse-array-read");
+                        return result;
                     }
                 }
                 if bid(res, *object) == Some(p.pulse_bid) {
                     if let Some(symbol) = pulse_names.get(&k) {
-                        return target.push(Node::Name(*symbol));
+                        let result = target.push(Node::Name(*symbol));
+                        target
+                            .nodes
+                            .derive_from(result, &source.nodes, node, "sparse-array-read");
+                        return result;
                     }
                 }
             }
@@ -667,11 +749,16 @@ fn rewrite_static_arrays(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_static_arrays(target, source, res, child, p, current_names, pulse_names)
     });
-    target.push(mapped)
+    let result = target.push(mapped);
+    target
+        .nodes
+        .derive_from(result, &source.nodes, node, "sparse-array-copy");
+    result
 }
 
 fn remove_definition_and_initializers(
     target: &mut Ast,
+    source: &Ast,
     res: &Resolution,
     root: NodeId,
     h: &Helper,
@@ -708,18 +795,33 @@ fn remove_definition_and_initializers(
                         continue;
                     }
                     if keep.len() != bids.len() {
-                        target.nodes[statement as usize] = Node::Local(
-                            keep.iter().map(|i| names[*i]).collect(),
-                            keep.iter()
-                                .filter_map(|i| expressions.get(*i).copied())
-                                .collect(),
+                        target.nodes.rewrite(
+                            statement,
+                            Node::Local(
+                                keep.iter().map(|i| names[*i]).collect(),
+                                keep.iter()
+                                    .filter_map(|i| expressions.get(*i).copied())
+                                    .collect(),
+                            ),
+                            "sparse-array-storage-removal",
                         );
+                        for (new_index, &old_index) in keep.iter().enumerate() {
+                            target.nodes.copy_name_from(
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(new_index as u32),
+                                &source.nodes,
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(old_index as u32),
+                            );
+                        }
                     }
                 }
             }
             out.push(statement);
         }
-        target.nodes[node as usize] = Node::Block(out);
+        target
+            .nodes
+            .rewrite(node, Node::Block(out), "sparse-array-storage-removal");
     }
 }
 
@@ -786,6 +888,18 @@ pub fn sparse_boolean_decode_scalarization(
             names.push(target.strings.intern(&format!("__drop{index}")));
         }
         let local = target.push(Node::Local(names, call_args.clone()));
+        target
+            .nodes
+            .mark_synthetic(local, "sparse-helper-argument-storage");
+        for i in 0..h.parameters.len() {
+            target.nodes.copy_name_from(
+                local,
+                storm_lua_syntax::NameSite::Binding(i as u32),
+                &source.nodes,
+                h.function,
+                storm_lua_syntax::NameSite::Parameter(i as u32),
+            );
+        }
         pre.push(local)
     }
     // Clone helper setup before the decode loop, alpha-renaming helper locals.
@@ -820,7 +934,23 @@ pub fn sparse_boolean_decode_scalarization(
                 .filter_map(|index| expressions.get(*index).copied())
                 .map(|value| alpha_clone_node(&mut target, &source, &res, value, &alpha, None))
                 .collect();
-            pre.push(target.push(Node::Local(new_names, new_values)));
+            let local = target.push(Node::Local(new_names, new_values));
+            target.nodes.derive_from(
+                local,
+                &source.nodes,
+                statement,
+                "sparse-helper-table-removal",
+            );
+            for (new_index, &old_index) in keep.iter().enumerate() {
+                target.nodes.copy_name_from(
+                    local,
+                    storm_lua_syntax::NameSite::Binding(new_index as u32),
+                    &source.nodes,
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(old_index as u32),
+                );
+            }
+            pre.push(local);
         } else {
             pre.push(alpha_clone_node(
                 &mut target,
@@ -858,6 +988,9 @@ pub fn sparse_boolean_decode_scalarization(
         needed.iter().map(|k| new_names[k]).collect(),
         values,
     ));
+    target
+        .nodes
+        .mark_synthetic(new_local, "sparse-decoded-bit-storage");
     pre.push(new_local);
     // Pulse RHS: rewrite old[i] -> current scalar, current[i] -> new scalar,
     // and the pulse loop induction variable -> literal k.
@@ -879,15 +1012,27 @@ pub fn sparse_boolean_decode_scalarization(
                 && bid(res, *key) == Some(loop_bid)
             {
                 if bid(res, *object) == Some(p.old_bid) {
-                    return target.push(Node::Name(current_symbol));
+                    let result = target.push(Node::Name(current_symbol));
+                    target
+                        .nodes
+                        .derive_from(result, &source.nodes, node, "sparse-old-bit-read");
+                    return result;
                 }
                 if bid(res, *object) == Some(p.current_bid) {
-                    return target.push(Node::Name(new_symbol));
+                    let result = target.push(Node::Name(new_symbol));
+                    target
+                        .nodes
+                        .derive_from(result, &source.nodes, node, "sparse-new-bit-read");
+                    return result;
                 }
             }
         }
         if matches!(source.node(node), Node::Name(_)) && bid(res, node) == Some(loop_bid) {
-            return target.push(Node::Num(short_num(k as f64).into()));
+            let result = target.push(Node::Num(short_num(k as f64).into()));
+            target
+                .nodes
+                .derive_from(result, &source.nodes, node, "sparse-pulse-index");
+            return result;
         }
         let original = source.node(node).clone();
         let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |c| {
@@ -903,7 +1048,11 @@ pub fn sparse_boolean_decode_scalarization(
                 new_symbol,
             )
         });
-        target.push(mapped)
+        let result = target.push(mapped);
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "sparse-pulse-copy");
+        result
     }
     let pulse_loop_bid = bid(&res, p.pulse_loop).unwrap_or(0);
     let mut rhs_pulse = Vec::new();
@@ -922,16 +1071,28 @@ pub fn sparse_boolean_decode_scalarization(
     }
     let mut assign_targets = Vec::new();
     for k in &pulse_static {
-        assign_targets.push(target.push(Node::Name(pulse_names[k])));
+        let name = target.push(Node::Name(pulse_names[k]));
+        target.nodes.mark_synthetic(name, "sparse-pulse-storage");
+        assign_targets.push(name);
     }
     for k in &needed {
-        assign_targets.push(target.push(Node::Name(current_names[k])));
+        let name = target.push(Node::Name(current_names[k]));
+        target.nodes.mark_synthetic(name, "sparse-current-storage");
+        assign_targets.push(name);
     }
     let mut assign_values = rhs_pulse;
     for k in &needed {
-        assign_values.push(target.push(Node::Name(new_names[k])));
+        let name = target.push(Node::Name(new_names[k]));
+        target
+            .nodes
+            .derive_from(name, &source.nodes, h.value, "sparse-decoded-value");
+        assign_values.push(name);
     }
-    pre.push(target.push(Node::Assign(assign_targets, assign_values)));
+    let assignment = target.push(Node::Assign(assign_targets, assign_values));
+    target
+        .nodes
+        .mark_synthetic(assignment, "sparse-state-update");
+    pre.push(assignment);
     // Rewrite the matched block, replacing exactly snapshot/decode/pulse by pre.
     for block in walk(&source, root)
         .into_iter()
@@ -951,7 +1112,9 @@ pub fn sparse_boolean_decode_scalarization(
             out.push(ss[i]);
             i += 1;
         }
-        target.nodes[block as usize] = Node::Block(out);
+        target
+            .nodes
+            .rewrite(block, Node::Block(out), "sparse-pipeline-rewrite");
     }
     // Static reads outside the pattern become scalars. Process parents without
     // cloning already-rewritten block identities.
@@ -968,9 +1131,14 @@ pub fn sparse_boolean_decode_scalarization(
             &current_names,
             &pulse_names,
         );
-        target.nodes[node as usize] = target.node(replacement).clone();
+        let value = target.node(replacement).clone();
+        let origin = target.nodes.capture_origin(replacement);
+        target.nodes[node as usize] = value;
+        target
+            .nodes
+            .finish_rewrite(node, origin, "sparse-array-rewrite");
     }
-    remove_definition_and_initializers(&mut target, &res, root, h, &p);
+    remove_definition_and_initializers(&mut target, &source, &res, root, h, &p);
     super::locals::eliminate_dead_locals(&mut target, root);
     let new_len = measure_size(&target, root);
     if new_len < original {
@@ -996,7 +1164,7 @@ pub fn sparse_boolean_decode_scalarization(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     #[test]
     fn rejects_dynamic_sparse_table_uses() {
@@ -1004,5 +1172,6 @@ mod tests {
         let (mut ast, root) = parse_source(source).unwrap();
         let result = sparse_boolean_decode_scalarization(&mut ast, root, true);
         assert_eq!(result.saved.unwrap_or(0), 0);
+        let _ = Printer::new(&ast, false).output(result.root);
     }
 }

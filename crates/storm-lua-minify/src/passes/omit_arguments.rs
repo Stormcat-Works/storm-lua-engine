@@ -248,8 +248,8 @@ pub fn omit_equivalent_trailing_arguments(ast: &mut Ast, root: NodeId) -> PassRe
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn compact_normalization_matches_full_arena_with_shadowing_and_captures() {
@@ -293,7 +293,7 @@ mod tests {
             }
             assert_eq!(
                 normalized_body(&ast, &res, info.body, &replacements),
-                Printer::new(&full, false).output(info.body)
+                storm_lua_syntax::Printer::new(&full, false).output(info.body)
             );
         }
     }

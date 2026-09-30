@@ -433,8 +433,8 @@ pub fn slot_callback_exclusive_functions(ast: &mut Ast, root: NodeId) -> PassRes
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn slots_tick_and_draw_exclusive_helpers() {

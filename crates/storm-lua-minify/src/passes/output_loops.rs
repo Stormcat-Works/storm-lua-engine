@@ -20,6 +20,7 @@ const OUTPUT_CALLS: &[&str] = &["output.setNumber", "output.setBool"];
 
 #[derive(Clone)]
 struct OutputCall {
+    expression: NodeId,
     function: NodeId,
     args: Vec<NodeId>,
     builtin: String,
@@ -40,6 +41,7 @@ fn output_call(ast: &Ast, analyzer: &EffectAnalyzer<'_>, statement: NodeId) -> O
         return None;
     }
     Some(OutputCall {
+        expression: *expression,
         function: *function,
         args: args.clone(),
         builtin,
@@ -139,6 +141,7 @@ fn build_candidate(
     let table_name = format!("__stormmin_output_values_{}", *sequence);
     let index_name = format!("__stormmin_output_index_{}", *sequence);
     let table = ast.table(values.into_iter().map(TableField::Arr).collect());
+    ast.nodes.mark_synthetic(table, "output-loop-value-storage");
     let target = ast.name(&table_name);
     let assignment = ast.assign(vec![target], vec![table]);
 
@@ -152,6 +155,39 @@ fn build_candidate(
     let start = ast.num("1".to_string());
     let end = ast.num(calls.len().to_string());
     let loop_statement = ast.fornum(&index_name, start, end, None, body);
+    if ast.nodes.tracks_origins() {
+        for id in [
+            target,
+            assignment,
+            table_ref,
+            key,
+            body,
+            start,
+            end,
+            loop_statement,
+        ] {
+            ast.nodes.mark_synthetic(id, "output-loop-control");
+        }
+        let channels = calls.iter().map(|c| c.args[0]).collect::<Vec<_>>();
+        super::origins::derive(
+            ast,
+            channel,
+            source,
+            &channels,
+            "output-loop-channel-series",
+        );
+        let originals = calls.iter().map(|c| c.args[1]).collect::<Vec<_>>();
+        super::origins::derive(
+            ast,
+            lookup,
+            source,
+            &originals,
+            "output-loop-value-selection",
+        );
+        let sites = calls.iter().map(|c| c.expression).collect::<Vec<_>>();
+        super::origins::derive(ast, call, source, &sites, "output-loop-replay");
+        super::origins::derive(ast, statement, source, &sites, "output-loop-replay");
+    }
     *sequence += 1;
     Some(vec![assignment, loop_statement])
 }
@@ -310,7 +346,7 @@ pub fn synthesize_output_loops(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

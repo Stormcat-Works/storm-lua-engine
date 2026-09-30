@@ -178,12 +178,17 @@ fn clone_replacing_reads(
         && node_bid(resolution, node) == Some(duplicate_bid)
         && !is_write(resolution, node)
     {
-        return ast.push(Node::Name(keeper_symbol));
+        let copied = ast.push(Node::Name(keeper_symbol));
+        let origin = ast.nodes.capture_origin(node);
+        ast.nodes.finish_rename(copied, origin);
+        return copied;
     }
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_replacing_reads(ast, resolution, child, duplicate_bid, keeper_symbol)
     });
-    ast.push(mapped)
+    let copied = ast.push(mapped);
+    super::origins::within(ast, copied, &[node], "scratch-value-coalescing");
+    copied
 }
 
 fn statement_size(ast: &Ast, statement: NodeId) -> usize {
@@ -216,6 +221,12 @@ fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
                 .iter()
                 .map(|index| expressions[*index])
                 .collect(),
+        );
+        super::origins::within(
+            ast,
+            reduced,
+            &[base_statements[plan.assignment_index]],
+            "scratch-definition-reduction",
         );
         let rewritten = plan
             .scanned
@@ -251,7 +262,8 @@ fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
             statements[plan.assignment_index] = reduced;
             let start = plan.assignment_index + 1;
             statements.splice(start..start + rewritten.len(), rewritten);
-            ast.nodes[block as usize] = Node::Block(statements);
+            ast.nodes
+                .rewrite(block, Node::Block(statements), "scratch-value-coalescing");
             return true;
         }
         ast.nodes.truncate(checkpoint);
@@ -307,7 +319,7 @@ pub fn coalesce_equal_scratch_values(ast: &mut Ast, root: NodeId) -> PassResult 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

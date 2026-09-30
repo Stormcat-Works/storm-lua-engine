@@ -102,7 +102,7 @@ fn transform_node(ast: &mut Ast, res: &Resolution, id: NodeId, fused: &mut usize
         transform_node(ast, res, child, fused)
     });
     if changed {
-        ast.nodes[id as usize] = mapped;
+        ast.nodes.rewrite(id, mapped, "quotient-remainder-fusion");
     }
     id
 }
@@ -122,7 +122,20 @@ fn transform_block(ast: &mut Ast, res: &Resolution, block_id: NodeId, fused: &mu
         if let Some(&second) = nested.get(index + 1) {
             if let Some((target, source, divisor)) = matching_pair(ast, res, first, second) {
                 let floor_division = ast.bin("//", source, divisor);
+                let Node::Assign(_, expressions) = ast.node(second) else {
+                    unreachable!()
+                };
+                let original_expression = expressions[0];
+                super::origins::within(
+                    ast,
+                    floor_division,
+                    &[original_expression, source, divisor],
+                    "quotient-remainder-fusion",
+                );
+                ast.nodes
+                    .relate_within(floor_division, first, "quotient-remainder-fusion");
                 let replacement = ast.assign(vec![target], vec![floor_division]);
+                super::origins::within(ast, replacement, &[second], "quotient-remainder-fusion");
                 output.push(first);
                 output.push(replacement);
                 *fused += 1;
@@ -133,7 +146,8 @@ fn transform_block(ast: &mut Ast, res: &Resolution, block_id: NodeId, fused: &mu
         output.push(first);
         index += 1;
     }
-    ast.nodes[block_id as usize] = Node::Block(output);
+    ast.nodes
+        .rewrite(block_id, Node::Block(output), "quotient-remainder-fusion");
     block_id
 }
 
@@ -184,8 +198,8 @@ pub fn fuse_quotient_remainder(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

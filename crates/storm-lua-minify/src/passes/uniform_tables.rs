@@ -215,30 +215,83 @@ fn build_scalar_read(
     };
     let (lower, upper) = index_range(source, res, *key, ranges)?;
     if upper < fill.lower || lower > fill.upper {
-        return Some(target.push(Node::Nil));
+        let nil = target.push(Node::Nil);
+        target
+            .nodes
+            .derive_from(nil, &source.nodes, index, "uniform-fill-outside-range");
+        target
+            .nodes
+            .relate_from(nil, &source.nodes, fill.loop_node, "uniform-fill-range");
+        return Some(nil);
     }
     let Node::Name(symbol) = source.node(*object) else {
         return None;
     };
     let scalar = target.push(Node::Name(*symbol));
+    target
+        .nodes
+        .derive_from(scalar, &source.nodes, index, "uniform-fill-read");
+    target.nodes.copy_name_from(
+        scalar,
+        storm_lua_syntax::NameSite::Reference,
+        &source.nodes,
+        *object,
+        storm_lua_syntax::NameSite::Reference,
+    );
+    target
+        .nodes
+        .relate_from(scalar, &source.nodes, fill.value, "uniform-fill-value");
     if lower >= fill.lower && upper <= fill.upper {
         return Some(scalar);
     }
+    let Node::Fornum(_, original_start, original_end, _, _) = source.node(fill.loop_node) else {
+        unreachable!()
+    };
     let mut conditions = Vec::new();
     if lower < fill.lower {
         let lower_node = target.push(Node::Num(fill.lower.to_string().into()));
-        conditions.push(target.push(Node::Bin(">=".to_string(), *key, lower_node)));
+        target.nodes.derive_from(
+            lower_node,
+            &source.nodes,
+            *original_start,
+            "uniform-fill-bound",
+        );
+        let check = target.push(Node::Bin(">=".to_string(), *key, lower_node));
+        target
+            .nodes
+            .derive_from(check, &source.nodes, index, "uniform-fill-range-check");
+        conditions.push(check);
     }
     if upper > fill.upper {
         let upper_node = target.push(Node::Num(fill.upper.to_string().into()));
-        conditions.push(target.push(Node::Bin("<=".to_string(), *key, upper_node)));
+        target.nodes.derive_from(
+            upper_node,
+            &source.nodes,
+            *original_end,
+            "uniform-fill-bound",
+        );
+        let check = target.push(Node::Bin("<=".to_string(), *key, upper_node));
+        target
+            .nodes
+            .derive_from(check, &source.nodes, index, "uniform-fill-range-check");
+        conditions.push(check);
     }
     let mut guarded = scalar;
     for condition in conditions.into_iter().rev() {
         guarded = target.push(Node::Bin("and".to_string(), condition, guarded));
+        target
+            .nodes
+            .derive_from(guarded, &source.nodes, index, "uniform-fill-guard");
     }
     let nil = target.push(Node::Nil);
-    Some(target.push(Node::Bin("or".to_string(), guarded, nil)))
+    target
+        .nodes
+        .derive_from(nil, &source.nodes, index, "uniform-fill-outside-range");
+    let result = target.push(Node::Bin("or".to_string(), guarded, nil));
+    target
+        .nodes
+        .derive_from(result, &source.nodes, index, "uniform-fill-guard");
+    Some(result)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -350,6 +403,12 @@ fn rewrite_node(
             unreachable!()
         };
         let target_name = target.push(Node::Name(*symbol));
+        target.nodes.derive_from(
+            target_name,
+            &source.nodes,
+            *object,
+            "uniform-fill-scalar-storage",
+        );
         let value = rewrite_node(
             target,
             source,
@@ -359,7 +418,11 @@ fn rewrite_node(
             initializers,
             ranges,
         )?;
-        target.nodes[node as usize] = Node::Assign(vec![target_name], vec![value]);
+        target.nodes.rewrite(
+            node,
+            Node::Assign(vec![target_name], vec![value]),
+            "uniform-fill-assignment",
+        );
         return Some(node);
     }
     if let Node::Local(names, expressions) = source.node(node).clone() {
@@ -393,7 +456,9 @@ fn rewrite_node(
                 rewritten.push(expression);
             }
         }
-        target.nodes[node as usize] = Node::Local(names, rewritten);
+        target
+            .nodes
+            .rewrite(node, Node::Local(names, rewritten), "uniform-fill-storage");
         return Some(node);
     }
     if let Node::Assign(targets, expressions) = source.node(node) {
@@ -416,7 +481,12 @@ fn rewrite_node(
             if let Some(bid) = res.node_bid.get(*object as usize).copied().flatten() {
                 if let Some(fill) = candidates.get(&bid) {
                     let read = build_scalar_read(target, source, res, node, fill, ranges)?;
-                    target.nodes[node as usize] = target.node(read).clone();
+                    let value = target.node(read).clone();
+                    target.nodes[node as usize] = value;
+                    let origin = target.nodes.capture_origin(read);
+                    target
+                        .nodes
+                        .finish_rewrite(node, origin, "uniform-fill-read");
                     return Some(node);
                 }
             }
@@ -438,13 +508,17 @@ fn rewrite_node(
                 out.push(statement);
             }
         }
-        target.nodes[node as usize] = Node::Block(out);
+        target
+            .nodes
+            .rewrite(node, Node::Block(out), "uniform-fill-scalarization");
     } else {
         let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
             rewrite_node(target, source, res, child, candidates, initializers, ranges)
                 .unwrap_or(child)
         });
-        target.nodes[node as usize] = mapped;
+        target
+            .nodes
+            .rewrite(node, mapped, "uniform-fill-scalarization");
     }
     Some(node)
 }
@@ -543,8 +617,8 @@ pub fn scalarize_uniform_fill_tables(ast: &mut Ast, root: NodeId) -> PassResult 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn scalarizes_uniform_fill_and_preserves_outside_nil() {

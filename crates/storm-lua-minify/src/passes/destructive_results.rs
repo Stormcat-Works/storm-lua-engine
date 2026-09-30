@@ -217,13 +217,20 @@ fn rewrite_expression(
     if matches!(source.node(node), Node::Name(_))
         && res.node_bid.get(node as usize).copied().flatten() == Some(parameter_bid)
     {
-        return target.name(target_name);
+        let result = target.name(target_name);
+        let snapshot = source.nodes.capture_origin(node);
+        target.nodes.finish_rename(result, snapshot);
+        return result;
     }
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_expression(target, source, res, child, parameter_bid, target_name)
     });
-    target.push(mapped)
+    let result = target.push(mapped);
+    target
+        .nodes
+        .derive_from(result, &source.nodes, node, "destructive-result-copy");
+    result
 }
 
 fn matching_call_assignment(
@@ -281,8 +288,16 @@ fn transform_node(
                 )
             })
             .collect();
-        target.nodes[*body as usize] = Node::Block(rewritten);
-        target.nodes[node as usize] = Node::Function(Vec::new(), false, *body);
+        target.nodes.rewrite(
+            *body,
+            Node::Block(rewritten),
+            "destructive-result-return-removal",
+        );
+        target.nodes.rewrite(
+            node,
+            Node::Function(Vec::new(), false, *body),
+            "destructive-result-parameter-removal",
+        );
         return node;
     }
     if matches!(source.node(node), Node::Block(_)) {
@@ -292,7 +307,9 @@ fn transform_node(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         transform_node(target, source, res, child, candidate)
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "destructive-result-globalization");
     node
 }
 
@@ -322,15 +339,55 @@ fn transform_block(
                 candidate.parameter_bid,
                 &candidate.target_name,
             );
-            output.push(target.assign(vec![target_name], vec![argument]));
+            let Node::Assign(original_targets, expressions) = source.node(statement) else {
+                unreachable!()
+            };
+            let original_call = expressions[0];
+            let Node::Call(original_fn, _, _) = source.node(original_call) else {
+                unreachable!()
+            };
+            target.nodes.derive_from(
+                target_name,
+                &source.nodes,
+                original_targets[0],
+                "destructive-result-initialization",
+            );
+            let assign = target.assign(vec![target_name], vec![argument]);
+            target.nodes.derive_from(
+                assign,
+                &source.nodes,
+                statement,
+                "destructive-result-initialization",
+            );
+            output.push(assign);
             let function = target.name(&function_name);
+            target.nodes.derive_from(
+                function,
+                &source.nodes,
+                *original_fn,
+                "destructive-result-callee",
+            );
             let call = target.call(function, Vec::new(), None);
-            output.push(target.callstat(call));
+            target.nodes.derive_from(
+                call,
+                &source.nodes,
+                original_call,
+                "destructive-result-call",
+            );
+            let stmt = target.callstat(call);
+            target
+                .nodes
+                .derive_from(stmt, &source.nodes, statement, "destructive-result-call");
+            output.push(stmt);
         } else {
             output.push(transform_node(target, source, res, statement, candidate));
         }
     }
-    target.nodes[block as usize] = Node::Block(output);
+    target.nodes.rewrite(
+        block,
+        Node::Block(output),
+        "destructive-result-globalization",
+    );
     block
 }
 
@@ -398,8 +455,8 @@ pub fn globalize_destructive_results(ast: &mut Ast, root: NodeId) -> PassResult 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

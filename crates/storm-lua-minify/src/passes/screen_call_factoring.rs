@@ -271,7 +271,7 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     #[test]
     fn factors_profitable_repeated_color_call() {

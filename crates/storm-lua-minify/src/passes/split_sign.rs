@@ -304,6 +304,7 @@ fn transform_squares_node(
         return node;
     }
 
+    let generated_start = target.nodes.len();
     let abs_function = if let Some(alias) = abs_alias {
         target.name(alias)
     } else {
@@ -315,6 +316,17 @@ fn transform_squares_node(
     let mut replacement = target.bin("*", positive.value, abs_call);
     if let Some(factor) = positive.factor {
         replacement = target.bin("*", replacement, factor);
+    }
+    if target.nodes.tracks_origins() {
+        for id in generated_start..target.nodes.len() {
+            super::origins::derive(
+                target,
+                id as NodeId,
+                source,
+                &[node],
+                "split-sign-square-recomposition",
+            );
+        }
     }
     if expression_size(target, replacement) >= expression_size(target, node) {
         return node;
@@ -389,8 +401,8 @@ pub fn eliminate_split_sign_recomposition(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str, aggressive: bool) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

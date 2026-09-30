@@ -12,6 +12,7 @@ struct Mark {
 
 pub(super) struct Trace {
     period: usize,
+    batch_starts: Vec<usize>,
     calls: Vec<NodeId>,
     callees: Vec<NodeId>,
     arguments: Vec<Vec<(NodeId, Atom)>>,
@@ -53,6 +54,7 @@ impl Trace {
     pub(super) fn new(calls: &[&Call], period: usize) -> Self {
         Self {
             period,
+            batch_starts: vec![0],
             calls: calls.iter().map(|c| c.origin_call).collect(),
             callees: calls.iter().map(|c| c.callee).collect(),
             arguments: calls
@@ -67,6 +69,56 @@ impl Trace {
                 .collect(),
             marks: Vec::new(),
         }
+    }
+    pub(super) fn batches(batches: &[&[Call]], period: usize) -> Self {
+        let calls = batches.iter().flat_map(|b| b.iter()).collect::<Vec<_>>();
+        let mut out = Self::new(&calls, period);
+        let mut offset = 0;
+        out.batch_starts = batches
+            .iter()
+            .map(|b| {
+                let start = offset;
+                offset += b.len();
+                start
+            })
+            .collect();
+        out
+    }
+    // Initial values in predictive codecs are source data, unlike decoder
+    // control constants. Retain exact row/column contributors for every batch.
+    pub(super) fn column(
+        &mut self,
+        nodes: Range<usize>,
+        shape: &Shape,
+        column: usize,
+        first_only: bool,
+    ) {
+        let mut inputs = Vec::new();
+        for (slot, args) in shape.args.iter().enumerate() {
+            for (argument, encoding) in args.iter().enumerate() {
+                let stored = match encoding {
+                    Arg::Column(c) | Arg::Lookup(c, _) | Arg::Affine(c, _, _) => Some(*c),
+                    _ => None,
+                };
+                if stored != Some(column) {
+                    continue;
+                }
+                if first_only {
+                    for &start in &self.batch_starts {
+                        inputs.push(self.arguments[start + slot][argument].0);
+                    }
+                } else {
+                    for row in self.arguments.iter().skip(slot).step_by(self.period) {
+                        inputs.push(row[argument].0);
+                    }
+                }
+            }
+        }
+        self.marks.push(Mark {
+            nodes,
+            inputs,
+            reason: "draw-record-predictor-source",
+        });
     }
     pub(super) fn argument(&mut self, nodes: Range<usize>, slot: usize, column: usize) {
         self.marks.push(Mark {
@@ -180,6 +232,62 @@ impl Trace {
                 .nodes
                 .relate_from(definition, &source.nodes, original, "draw-record-decoder");
         }
+    }
+}
+
+// A table payload has explicit row/column provenance. Encoded bytes and a
+// pooled reference have a many-to-many relationship to their original operands.
+pub(super) fn payload(target: &mut Ast, node: NodeId, source: &Ast, calls: &[Call], shape: &Shape) {
+    if !target.nodes.tracks_origins() {
+        return;
+    }
+    if let Node::Table(fields) = target.node(node).clone() {
+        target
+            .nodes
+            .mark_synthetic(node, "draw-record-payload-container");
+        let rows = fields.len() / shape.columns.max(1);
+        let period = shape.targets.len();
+        for (position, field) in fields.iter().enumerate() {
+            let TableField::Arr(value) = field else {
+                unreachable!()
+            };
+            let row = position / shape.columns;
+            let column = position % shape.columns;
+            let mut inputs = Vec::new();
+            for (slot, args) in shape.args.iter().enumerate() {
+                for (arg, encoding) in args.iter().enumerate() {
+                    let stored = match encoding {
+                        Arg::Column(c) | Arg::Lookup(c, _) | Arg::Affine(c, _, _) => Some(*c),
+                        _ => None,
+                    };
+                    if stored == Some(column) {
+                        for call in calls
+                            .iter()
+                            .skip(row * period + slot)
+                            .step_by(rows * period)
+                        {
+                            inputs.push(call.origin_arguments[arg]);
+                        }
+                    }
+                }
+            }
+            // Atom::Neg allocates the sign and its numeric leaf together.
+            let mut nodes = Vec::new();
+            storm_lua_syntax::ast_utils::walk(target, *value, &mut |n| nodes.push(n));
+            for n in nodes {
+                derive(target, n, source, &inputs, "draw-record-table-cell");
+            }
+        }
+    } else {
+        let inputs = if shape.columns == 0 {
+            calls.iter().map(|c| c.origin_call).collect::<Vec<_>>()
+        } else {
+            calls
+                .iter()
+                .flat_map(|c| c.origin_arguments.iter().copied())
+                .collect::<Vec<_>>()
+        };
+        derive(target, node, source, &inputs, "draw-record-encoded-payload");
     }
 }
 

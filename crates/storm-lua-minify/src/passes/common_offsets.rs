@@ -216,20 +216,33 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_subtree(target, source, child)
     });
-    target.push(mapped)
+    let copied = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copied, &source.nodes, node, "common-offset-copy");
+    copied
 }
 
-fn build_sum(target: &mut Ast, source: &Ast, signed: &[SignedTerm]) -> NodeId {
+fn build_sum(target: &mut Ast, source: &Ast, signed: &[SignedTerm], original: NodeId) -> NodeId {
     let first = signed[0];
     let first_node = clone_subtree(target, source, first.node);
     let mut result = if first.sign == 1 {
         first_node
     } else {
-        target.un("-", first_node)
+        {
+            let result = target.un("-", first_node);
+            target
+                .nodes
+                .derive_from(result, &source.nodes, original, "common-offset-sum");
+            result
+        }
     };
     for term in &signed[1..] {
         let right = clone_subtree(target, source, term.node);
         result = target.bin(if term.sign == 1 { "+" } else { "-" }, result, right);
+        target
+            .nodes
+            .derive_from(result, &source.nodes, original, "common-offset-sum");
     }
     result
 }
@@ -286,7 +299,7 @@ fn rewrite_statement_node(
             .enumerate()
             .filter_map(|(index, term)| (index != offset_index).then_some(term))
             .collect::<Vec<_>>();
-        return build_sum(target, source, &remaining);
+        return build_sum(target, source, &remaining, node);
     }
     if matches!(source.node(node), Node::Block(_) | Node::Function(..)) {
         return node;
@@ -299,14 +312,22 @@ fn rewrite_statement_node(
                 rewrite_statement_node(target, source, resolution, *expression, candidate, state)
             })
             .collect::<Vec<_>>();
-        return target.push(Node::Assign(targets, expressions));
+        let result = target.push(Node::Assign(targets, expressions));
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "common-offset-rewrite");
+        return result;
     }
     let original = source.node(node).clone();
     let (mapped, changed) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_statement_node(target, source, resolution, child, candidate, state)
     });
     if changed {
-        target.push(mapped)
+        let result = target.push(mapped);
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "common-offset-rewrite");
+        result
     } else {
         node
     }
@@ -393,10 +414,47 @@ fn apply_candidate(
         offset,
     );
     let update = target.assign(vec![write_target], vec![updated]);
+    if target.nodes.tracks_origins() {
+        let mut reads = Vec::new();
+        storm_lua_syntax::ast_utils::walk(source, original_statement, &mut |id| {
+            if matches!(source.node(id), Node::Name(_))
+                && node_bid(resolution, id) == Some(candidate.bid)
+            {
+                reads.push(id);
+            }
+        });
+        super::origins::derive(
+            &mut target,
+            write_target,
+            source,
+            &reads,
+            "common-offset-storage",
+        );
+        super::origins::derive(
+            &mut target,
+            current_value,
+            source,
+            &reads,
+            "common-offset-read",
+        );
+        reads.push(candidate.offset);
+        super::origins::derive(
+            &mut target,
+            updated,
+            source,
+            &reads,
+            "common-offset-adjustment",
+        );
+        target.nodes.mark_synthetic(update, "common-offset-storage");
+    }
     let mut statements = source_statements.clone();
     statements[candidate.statement] = rewritten;
     statements.insert(candidate.statement, update);
-    target.nodes[candidate.block as usize] = Node::Block(statements);
+    target.nodes.rewrite(
+        candidate.block,
+        Node::Block(statements),
+        "common-offset-absorption",
+    );
     Some((target, root))
 }
 
@@ -486,7 +544,7 @@ pub fn absorb_common_offsets(ast: &mut Ast, root: NodeId, aggressive: bool) -> P
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     fn output(source: &str, aggressive: bool) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

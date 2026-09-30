@@ -282,8 +282,8 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod write_only_field_tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn global_table_initializer_target_is_not_escape() {
@@ -1401,7 +1401,31 @@ fn rewrite_table_parameter_body(
         {
             if let Some(static_key) = static_table_key(source, *key) {
                 if let Some((_, symbol)) = replacements.iter().find(|(key, _)| *key == static_key) {
-                    target.nodes[node as usize] = Node::Name(*symbol);
+                    target.nodes.rewrite(
+                        node,
+                        Node::Name(*symbol),
+                        "table-parameter-scalarization",
+                    );
+                    if source
+                        .nodes
+                        .name_origin(*key, storm_lua_syntax::NameSite::Member)
+                        .is_some()
+                    {
+                        target.nodes.copy_name_from(
+                            node,
+                            storm_lua_syntax::NameSite::Reference,
+                            &source.nodes,
+                            *key,
+                            storm_lua_syntax::NameSite::Member,
+                        );
+                    } else {
+                        target.nodes.copy_expression_to_name_from(
+                            node,
+                            storm_lua_syntax::NameSite::Reference,
+                            &source.nodes,
+                            *key,
+                        );
+                    }
                     return;
                 }
             }
@@ -1501,10 +1525,30 @@ pub fn scalarize_table_literal_parameters(
                     let mut expanded = Vec::new();
                     expanded.extend(arguments[..parameter_index].iter().copied());
                     for key in &keys {
-                        expanded.push(table_get(&mut trial, table, key));
+                        let start = trial.nodes.len();
+                        let value = table_get(&mut trial, table, key);
+                        if value as usize >= start {
+                            trial.nodes.derive_from(
+                                value,
+                                &source.nodes,
+                                table,
+                                "table-parameter-missing-key",
+                            );
+                            trial.nodes.relate_from(
+                                value,
+                                &source.nodes,
+                                *call,
+                                "table-parameter-argument",
+                            );
+                        }
+                        expanded.push(value);
                     }
                     expanded.extend(arguments[parameter_index + 1..].iter().copied());
-                    trial.nodes[*call as usize] = Node::Call(function, expanded, method);
+                    trial.nodes.rewrite(
+                        *call,
+                        Node::Call(function, expanded, method),
+                        "table-argument-expansion",
+                    );
                 }
                 // Rewrite the function parameter list and indexed uses.
                 let mut parameters = info.parameters.clone();
@@ -1512,8 +1556,30 @@ pub fn scalarize_table_literal_parameters(
                     parameter_index..=parameter_index,
                     replacements.iter().map(|(_, symbol)| *symbol),
                 );
-                trial.nodes[info.function as usize] =
-                    Node::Function(parameters, info.variadic, info.body);
+                trial.nodes.rewrite(
+                    info.function,
+                    Node::Function(parameters, info.variadic, info.body),
+                    "table-parameter-expansion",
+                );
+                if trial.nodes.tracks_origins() {
+                    let new_len = info.parameters.len() - 1 + replacements.len();
+                    for index in 0..new_len {
+                        let old_index = if index < parameter_index {
+                            index
+                        } else if index < parameter_index + replacements.len() {
+                            parameter_index
+                        } else {
+                            index + 1 - replacements.len()
+                        };
+                        trial.nodes.copy_name_from(
+                            info.function,
+                            storm_lua_syntax::NameSite::Parameter(index as u32),
+                            &source.nodes,
+                            info.function,
+                            storm_lua_syntax::NameSite::Parameter(old_index as u32),
+                        );
+                    }
+                }
                 let Node::Block(body_statements) = source.node(info.body) else {
                     continue;
                 };
@@ -1555,8 +1621,8 @@ pub fn scalarize_table_literal_parameters(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod scalarization_tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     #[test]
     fn immutable_table_accesses_are_folded() {

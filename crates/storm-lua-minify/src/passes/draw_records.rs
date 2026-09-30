@@ -29,7 +29,7 @@ mod rice;
 mod shared;
 mod translated;
 
-use encoding::{emit_helper, helper_cost};
+use encoding::helper_cost;
 
 const MAX_PERIOD: usize = 4;
 const MAX_COLUMNS: usize = 24;
@@ -128,6 +128,7 @@ fn wrapper_call(ast: &Ast, function: NodeId) -> Option<NodeId> {
     args.iter().all(|&n| no_calls(ast, n)).then_some(call)
 }
 
+#[derive(Clone)]
 struct Call {
     statement: NodeId,
     callee: NodeId,
@@ -472,6 +473,7 @@ impl Payload {
     }
 }
 struct Plan {
+    origins: Vec<Call>,
     start: usize,
     stop: usize,
     helper: usize,
@@ -1133,6 +1135,11 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                         id
                     };
                     plans.entry(block).or_default().push(Plan {
+                        origins: if source.nodes.tracks_origins() {
+                            calls[at..best.stop].to_vec()
+                        } else {
+                            Vec::new()
+                        },
                         start: cluster_start + at,
                         stop: cluster_start + best.stop,
                         helper,
@@ -1176,12 +1183,27 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
         .collect::<Vec<_>>();
     let mut definitions = Vec::new();
     for (i, helper) in helpers.iter().enumerate() {
-        definitions.push(emit_helper(
+        let first = target.nodes.len();
+        let mut trace = source.nodes.tracks_origins().then(|| {
+            let batches = plans
+                .values()
+                .flatten()
+                .filter(|p| p.helper == i)
+                .map(|p| p.origins.as_slice())
+                .collect::<Vec<_>>();
+            provenance::Trace::batches(&batches, helper.shape.targets.len())
+        });
+        let definition = encoding::emit_helper_recording(
             &mut target,
             &helper.shape,
             helper_names[i],
             serial + i,
-        ));
+            &mut trace,
+        );
+        if let Some(trace) = trace {
+            trace.finish(&mut target, &source, first, definition);
+        }
+        definitions.push(definition);
     }
     // Repeated byte payloads (e.g. the common background of nine cards) share
     // one immutable string. No table allocation or identity is shared.
@@ -1206,6 +1228,22 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
         let symbol = fresh(&mut target, &mut taken, "draw_data", &mut serial);
         symbols.push(symbol);
         let payload = Payload::Bytes(bytes.clone()).emit(&mut target);
+        if target.nodes.tracks_origins() {
+            let originals = plans
+                .values()
+                .flatten()
+                .filter(|p| matches!(&p.payload,Payload::Bytes(v) if *v==bytes))
+                .flat_map(|p| p.origins.iter())
+                .flat_map(|c| c.origin_arguments.iter().copied())
+                .collect::<Vec<_>>();
+            provenance::derive(
+                &mut target,
+                payload,
+                &source,
+                &originals,
+                "draw-record-shared-payload",
+            );
+        }
         if dense {
             dictionary::compress_literal(&mut target, payload);
         }
@@ -1213,7 +1251,11 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
         payload_symbols.insert(bytes, symbol);
     }
     if !symbols.is_empty() {
-        definitions.push(target.push(Node::Local(symbols, values)));
+        let storage = target.push(Node::Local(symbols, values));
+        target
+            .nodes
+            .mark_synthetic(storage, "draw-record-payload-storage");
+        definitions.push(storage);
     }
     let mut batched = 0;
     for (block, runs) in plans {
@@ -1239,21 +1281,61 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                 None
             };
             let emitted = payload.unwrap_or_else(|| plan.payload.emit(&mut target));
+            if target.nodes.tracks_origins() {
+                provenance::payload(
+                    &mut target,
+                    emitted,
+                    &source,
+                    &plan.origins,
+                    &helpers[plan.helper].shape,
+                );
+            }
             if dense && payload.is_none() && matches!(plan.payload, Payload::Bytes(_)) {
                 dictionary::compress_literal(&mut target, emitted);
             }
             args.push(emitted);
             let f = name(&mut target, helper_names[plan.helper]);
             let c = target.push(Node::Call(f, args, None));
-            stmts.push(target.push(Node::Callstat(c)));
+            let stmt = target.push(Node::Callstat(c));
+            if target.nodes.tracks_origins() {
+                target
+                    .nodes
+                    .mark_synthetic(f, "draw-record-helper-reference");
+                let originals = plan
+                    .origins
+                    .iter()
+                    .map(|c| c.origin_call)
+                    .collect::<Vec<_>>();
+                provenance::derive(
+                    &mut target,
+                    c,
+                    &source,
+                    &originals,
+                    "draw-record-batch-call",
+                );
+                provenance::derive(
+                    &mut target,
+                    stmt,
+                    &source,
+                    &originals,
+                    "draw-record-batch-call",
+                );
+            }
+            stmts.push(stmt);
             cursor = plan.stop;
         }
         stmts.extend_from_slice(&old[cursor..]);
-        target.nodes[block as usize] = Node::Block(stmts);
+        target
+            .nodes
+            .rewrite(block, Node::Block(stmts), "draw-record-run-replacement");
     }
-    if let Node::Block(stmts) = &mut target.nodes[root as usize] {
-        definitions.append(stmts);
-        *stmts = definitions;
+    if let Node::Block(stmts) = target.node(root).clone() {
+        definitions.extend(stmts);
+        target.nodes.rewrite(
+            root,
+            Node::Block(definitions),
+            "draw-record-helper-insertion",
+        );
     } else {
         return unchanged();
     }

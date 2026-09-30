@@ -555,14 +555,18 @@ fn split_sign_traversal_preserves_noop_and_deleted_sequence_boundaries() {
 }
 
 #[test]
-fn generated_split_sign_square_expression_does_not_inherit_known_block_origin() {
+fn generated_split_sign_square_expression_retains_original_expression() {
     let source = "x=input.getNumber(1)y=math.max(x,0)^2*3-math.min(x,0)^2*3";
     let (code, origins) = run(source, |a, r| {
         passes::split_sign::eliminate_split_sign_recomposition(a, r, true)
     });
     assert_eq!(code, "x=input.getNumber(1)y=x*math.abs(x)*3");
-    assert!(origins.unknown_bytes() > 0);
-    assert!(origin_at(&code, &origins, code.find("abs").unwrap()).is_none());
+    assert_eq!(origins.unknown_bytes(), 0);
+    let origin = origin_at(&code, &origins, code.find("abs").unwrap()).unwrap();
+    assert_eq!(
+        source_text(source, origin),
+        "math.max(x,0)^2*3-math.min(x,0)^2*3"
+    );
     assert_eq!(
         source_text(
             source,

@@ -449,6 +449,13 @@ fn candidate_for_carrier(
             Node::Name(carrier_symbol),
             "immutable-global-expression-reuse",
         );
+        super::origins::derive(
+            &mut candidate,
+            *replacement,
+            source,
+            &[*replacement],
+            "immutable-global-expression-reuse",
+        );
         candidate.nodes.relate_from(
             *replacement,
             &source.nodes,
@@ -509,8 +516,8 @@ pub fn reuse_immutable_values(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

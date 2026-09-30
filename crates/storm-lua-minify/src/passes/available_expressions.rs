@@ -105,6 +105,13 @@ impl<'a> Transformer<'a> {
                         Node::Name(entry.carrier),
                         "available-expression-use",
                     );
+                    super::origins::derive(
+                        &mut self.output,
+                        node,
+                        self.source,
+                        &[node],
+                        "available-expression-use",
+                    );
                     self.output.nodes.relate_from(
                         node,
                         &self.source.nodes,
@@ -418,8 +425,8 @@ pub fn reuse_available_expressions(ast: &mut Ast, root: NodeId) -> PassResult {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     fn run(source: &str) -> (String, usize) {
         let (mut ast, root) = parse_source(source).expect("parse");

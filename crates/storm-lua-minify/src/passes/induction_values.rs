@@ -173,8 +173,8 @@ fn is_induction_name(ast: &Ast, res: &Resolution, id: NodeId, integer_bids: &[bo
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
-    use storm_lua_syntax::print::Printer;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
 
     /// 整数誘導変数は fold され、非整数初期値はそのまま残る。
     #[test]

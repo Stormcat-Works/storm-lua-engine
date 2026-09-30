@@ -34,7 +34,11 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_subtree(target, source, child)
     });
-    target.push(mapped)
+    let copied = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copied, &source.nodes, node, "immutable-carrier-copy");
+    copied
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
@@ -134,15 +138,40 @@ fn candidate_for_group(
     let expression = clone_subtree(&mut candidate, source, group.expression);
     let carrier_symbol = candidate.strings.intern(carrier);
     for occurrence in group.occurrences.iter().take(count) {
-        candidate.nodes[*occurrence as usize] = Node::Name(carrier_symbol);
+        candidate.nodes.rewrite(
+            *occurrence,
+            Node::Name(carrier_symbol),
+            "immutable-carrier-use",
+        );
+        super::origins::derive(
+            &mut candidate,
+            *occurrence,
+            source,
+            &[*occurrence],
+            "immutable-carrier-use",
+        );
+        candidate.nodes.relate_from(
+            *occurrence,
+            &source.nodes,
+            group.expression,
+            "immutable-carrier-definition",
+        );
     }
     let target = candidate.name(carrier);
+    candidate
+        .nodes
+        .mark_synthetic(target, "immutable-carrier-storage");
     let assignment = candidate.assign(vec![target], vec![expression]);
+    candidate
+        .nodes
+        .mark_synthetic(assignment, "immutable-carrier-storage");
     if let Node::Block(statements) = candidate.node(root).clone() {
         let mut statements = statements;
         let insert_at = (group.declaration + 1).min(statements.len());
         statements.insert(insert_at, assignment);
-        candidate.nodes[root as usize] = Node::Block(statements);
+        candidate
+            .nodes
+            .rewrite(root, Node::Block(statements), "immutable-carrier-insertion");
     }
     candidate
 }
@@ -271,7 +300,7 @@ pub fn synthesize_immutable_carriers(ast: &mut Ast, root: NodeId) -> PassResult 
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
 
     fn output(source: &str) -> String {
         let (mut ast, root) = parse_source(source).expect("parse");

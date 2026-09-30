@@ -480,10 +480,12 @@ fn every_registered_pass_has_an_explicit_audit_status() {
         .collect::<Vec<_>>();
     assert_eq!(ids.as_slice(), OPTIMIZATION_PASS_IDS);
     for entry in entries {
-        assert!(matches!(
-            entry["status"].as_str(),
-            Some("partial" | "pending" | "implemented")
-        ));
+        assert_eq!(entry["status"].as_str(), Some("implemented"));
+        let id = entry["id"].as_str().unwrap();
+        assert_eq!(
+            entry["matrixTest"].as_str(),
+            Some(format!("provenance_pass_matrix::{}", id.replace('-', "_")).as_str())
+        );
         assert!(!entry["notes"].as_str().unwrap().is_empty());
     }
 }

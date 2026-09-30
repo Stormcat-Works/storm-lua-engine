@@ -250,14 +250,34 @@ pub fn synthesize_destructive_radix_helpers(
                         if let Some(site) = sites.iter().find(|s| s.start == i) {
                             let fnn = candidate.push(Node::Name(helper_sym));
                             let call = candidate.push(Node::Call(fnn, vec![site.divisor], None));
-                            out.push(candidate.push(Node::Callstat(call)));
+                            candidate
+                                .nodes
+                                .mark_synthetic(fnn, "radix-helper-reference");
+                            super::origins::derive(
+                                &mut candidate,
+                                call,
+                                &source,
+                                &[statements[i], statements[i + 1]],
+                                "radix-helper-invocation",
+                            );
+                            let stmt = candidate.push(Node::Callstat(call));
+                            super::origins::derive(
+                                &mut candidate,
+                                stmt,
+                                &source,
+                                &[statements[i], statements[i + 1]],
+                                "radix-helper-invocation",
+                            );
+                            out.push(stmt);
                             i += 2;
                         } else {
                             out.push(statements[i]);
                             i += 1;
                         }
                     }
-                    candidate.nodes[block as usize] = Node::Block(out);
+                    candidate
+                        .nodes
+                        .rewrite(block, Node::Block(out), "radix-helper-extraction");
                 }
                 let rem_target = candidate.push(Node::Name(first.remainder_name));
                 let target_read1 = candidate.push(Node::Name(first.target_name));
@@ -273,11 +293,72 @@ pub fn synthesize_destructive_radix_helpers(
                 let fun = candidate.push(Node::Function(vec![param_sym], false, body));
                 let target = candidate.push(Node::Name(helper_sym));
                 let def = candidate.push(Node::Funcstat(target, fun));
+                if candidate.nodes.tracks_origins() {
+                    let mut rem_sites = Vec::new();
+                    let mut quo_sites = Vec::new();
+                    let mut rem_targets = Vec::new();
+                    let mut quo_targets = Vec::new();
+                    let mut rem_reads = Vec::new();
+                    let mut quo_reads = Vec::new();
+                    let mut rem_values = Vec::new();
+                    let mut quo_values = Vec::new();
+                    let mut divisors = Vec::new();
+                    for site in &selected {
+                        let Node::Block(ss) = source.node(site.block) else {
+                            unreachable!()
+                        };
+                        let (rs, qs) = (ss[site.start], ss[site.start + 1]);
+                        let (Node::Assign(rv, re), Node::Assign(qv, qe)) =
+                            (source.node(rs), source.node(qs))
+                        else {
+                            unreachable!()
+                        };
+                        let (Node::Bin(_, rl, rr), Node::Bin(_, ql, qr)) =
+                            (source.node(re[0]), source.node(qe[0]))
+                        else {
+                            unreachable!()
+                        };
+                        rem_sites.push(rs);
+                        quo_sites.push(qs);
+                        rem_targets.push(rv[0]);
+                        quo_targets.push(qv[0]);
+                        rem_reads.push(*rl);
+                        quo_reads.push(*ql);
+                        rem_values.push(re[0]);
+                        quo_values.push(qe[0]);
+                        divisors.extend([*rr, *qr]);
+                    }
+                    for (id, inputs) in [
+                        (rem_target, &rem_targets),
+                        (target_write, &quo_targets),
+                        (target_read1, &rem_reads),
+                        (target_read2, &quo_reads),
+                        (rem_expr, &rem_values),
+                        (quo, &quo_values),
+                        (s1, &rem_sites),
+                        (s2, &quo_sites),
+                        (p1, &divisors),
+                        (p2, &divisors),
+                    ] {
+                        super::origins::derive(
+                            &mut candidate,
+                            id,
+                            &source,
+                            inputs,
+                            "shared-radix-operation",
+                        );
+                    }
+                    for id in [body, fun, target, def] {
+                        candidate.nodes.mark_synthetic(id, "radix-helper-control");
+                    }
+                }
                 let Node::Block(mut top) = candidate.node(root).clone() else {
                     unreachable!()
                 };
                 top.insert(0, def);
-                candidate.nodes[root as usize] = Node::Block(top);
+                candidate
+                    .nodes
+                    .rewrite(root, Node::Block(top), "radix-helper-insertion");
                 let size = renamed_size(&candidate, root);
                 if size < baseline && best.as_ref().is_none_or(|(_, b)| size < *b) {
                     best = Some((candidate, size));
@@ -512,11 +593,23 @@ pub fn reuse_terminal_radix_quotients(
                     let mut candidate = clone_ast(ast);
                     let target_name = res.bindings[helper.target_bid as usize].name;
                     for r in replacements {
-                        candidate.nodes[r as usize] = Node::Name(target_name);
+                        candidate
+                            .nodes
+                            .rewrite(r, Node::Name(target_name), "terminal-radix-reuse");
                     }
                     let fnn = candidate.push(Node::Name(helper.name));
                     let call = candidate.push(Node::Call(fnn, vec![*divisor], None));
-                    candidate.nodes[statement as usize] = Node::Callstat(call);
+                    candidate
+                        .nodes
+                        .mark_synthetic(fnn, "terminal-radix-helper-reference");
+                    candidate
+                        .nodes
+                        .derive_from(call, &ast.nodes, values[0], "terminal-radix-call");
+                    candidate.nodes.rewrite(
+                        statement,
+                        Node::Callstat(call),
+                        "terminal-radix-reuse",
+                    );
                     let size = renamed_size(&candidate, root);
                     if size < baseline && best.as_ref().is_none_or(|(_, b)| size < *b) {
                         *best = Some((candidate, size));
@@ -554,12 +647,13 @@ pub fn reuse_terminal_radix_quotients(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use storm_lua_syntax::parser::parse_source;
+    use crate::provenance_audit_support::{parse_source, Printer};
     #[test]
     fn synthesizes_three_pairs() {
         let src="function onTick()p=input.getNumber(1)r=p%100001 p=p//100001 r=p%1251 p=p//1251 r=p%60001 p=p//60001 r=p%15001 p=p//15001 r=p%100001 p=p//100001 output.setNumber(1,p+r)end";
         let (mut ast, root) = parse_source(src).unwrap();
         let r = synthesize_destructive_radix_helpers(&mut ast, root, true, 4);
         assert!(r.details.unwrap()[0].contains("synthesized=1"));
+        let _ = Printer::new(&ast, false).output(root);
     }
 }

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "version": "0.2.1",
+  "sourceRevision": "5724cb054816dd330f73fd5a114be967b6c96095",
+  "ci": {
+    "run": 36650424343,
+    "conclusion": "success"
+  },
+  "nativePassed": 513,
+  "wasmSha256": {
+    "dist/wasm/storm_lua_wasm.wasm": "352338b1bb256145534025651e2f783a554f1449c2e433c9ecfb746826247c45",
+    "dist/wasm/screen.wasm": "de29d784357a25b06ae1ff9a20f523fc765bd9419c127f8aa2966bf0f785f3a8",
+    "dist/compiler-wasm/compiler_bg.wasm": "965aaa5fad24df787c4254c0d07c52aebe48d8834956c5968b0567d672f5a3ae"
+  },
+  "targetContract": "When targetSize is unmet, generated code is byte-identical to target-free exhaustive search with identical semantic settings, regardless of requested fast search/beam width.",
+  "optimizedMinifyMap": false,
+  "sourceMapRelease": "0.3.0",
+  "assets": {
+    "stormcat-works-storm-lua-engine-0.2.1.tgz": "3826946bbe2117bf7cc4d2ea7745f20ecaffb0927304af6540bd781f7354ad19",
+    "storm-lua-engine-playground-0.2.1.zip": "13a8d4002185a91eb196f1ceeba3aa5dab4ad50e65153550869cc5ce23bfd3f0"
+  },
+  "packageConsumer": "passed on the exact attached tarball",
+  "registryPublication": "blocked: existing credential rejected; npm publish returned permission-related E404",
+  "targetParity": {
+    "cases": 30,
+    "baselineConfigurations": 240,
+    "unmetComparisons": 716,
+    "successfulBoundaryCases": 4,
+    "generatedCode": "byte-identical",
+    "candidateSets": "identical"
+  },
+  "wasmTests": {
+    "wasm": [
+      69
+    ],
+    "compiler-wasm": [
+      17
+    ]
+  },
+  "publication": {
+    "github": "published, assets re-downloaded and verified",
+    "playground": "deployed and browser verified",
+    "npm": "blocked by invalid stored credentials",
+    "npmLatest": "0.2.0",
+    "v030Implementation": "not started: v0.2.1 registry publication prerequisite remains"
+  },
+  "deployment": {
+    "version": {
+      "version": "0.2.1",
+      "revision": "5724cb054816dd330f73fd5a114be967b6c96095"
+    },
+    "browserReceipts": [
+      {
+        "browser": "chromium",
+        "recipes": 13,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "firefox",
+        "recipes": 13,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "webkit",
+        "recipes": 13,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      }
+    ],
+    "wasm": [
+      {
+        "asset": "storm_lua_wasm.wasm",
+        "bytes": 903807,
+        "sha256": "352338b1bb256145534025651e2f783a554f1449c2e433c9ecfb746826247c45",
+        "matchesSdk": true
+      },
+      {
+        "asset": "screen.wasm",
+        "bytes": 83680,
+        "sha256": "de29d784357a25b06ae1ff9a20f523fc765bd9419c127f8aa2966bf0f785f3a8",
+        "matchesSdk": true
+      },
+      {
+        "asset": "compiler/compiler_bg.wasm",
+        "bytes": 2133713,
+        "sha256": "47426d8405716db04dbf39f85c02ef968df640244058f5cf7268fba8523de9dd",
+        "matchesSdk": false
+      }
+    ],
+    "compilerEquivalence": {
+      "ok": true,
+      "localAndPublicBaselineHashesMatch": 240,
+      "unmetComparisonsPerArtifact": 716,
+      "publicWasmSha256": "47426d8405716db04dbf39f85c02ef968df640244058f5cf7268fba8523de9dd",
+      "localWasmSha256": "965aaa5fad24df787c4254c0d07c52aebe48d8834956c5968b0567d672f5a3ae",
+      "explanation": "Local wasm-opt 120 vs Cloudflare Emscripten wasm-opt 131; rebuilding with 131 reproduced the deployed WASM byte-for-byte."
+    }
+  }
+}

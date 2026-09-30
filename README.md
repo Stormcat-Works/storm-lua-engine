@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-**v0.2.0 公開済み。** Compiler SDK、環境プロファイル、開発用require、Playgroundを提供しています。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
+**v0.2.1はGitHub ReleaseとPlaygroundへ公開済み。npmは認証更新待ちでlatest=0.2.0です。** [公開状況](docs/verification/release-0.2.1.md)。 Compiler SDK、環境プロファイル、開発用require、Playgroundを提供しています。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,11 +14,11 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine`
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine`（registryは現在0.2.0）。0.2.1はGitHub Releaseの検査済みtarballを取得し、`npm install ./stormcat-works-storm-lua-engine-0.2.1.tgz`で導入できます。
 
-実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるAddon Labも配布します。
+実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
-Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.2.0" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
+Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.2.1" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
 
 ## できること
 

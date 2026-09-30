@@ -33,3 +33,8 @@ npm Trusted Publisher登録の成立をこちらから確認できる認証は�
 ## 開発との分離
 
 npmの初回登録は公開運用の残件として扱う。v0.3.0のParser/Printer位置記録は専用branch `feat/minify-source-provenance-v0.3`の`47436c6`で着手・検証している。最適化後minify mapの完成やv0.3.0の公開を意味しない。
+
+
+## 最終mainのCI
+
+公開後latest確認も含むcommit `7caef992e2a685a4f01b2a03001baf1861d8c644`は[CI36660638197](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36660638197)で3 OS Native/WASM全成功。開発branchの実装47436c6も別のCI36660638108で成功した。今回の追記は検証結果だけであり、同じ製品コードのCIを再起動しない。

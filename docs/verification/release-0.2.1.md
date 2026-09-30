@@ -1,6 +1,6 @@
 # Storm Lua Engine v0.2.1 公開状況と検証
 
-2026-09-30。**GitHub Release・Gitタグ・配布物・Playgroundの本番更新は完了。npm公開は認証エラーで未完了。** リリース全体の完了とは扱わず、指定された順序に従ってv0.3.0の実装開始を保留している。
+2026-09-30。**GitHub Release・Gitタグ・配布物・Playgroundの本番更新は完了。npm公開は認証エラーで未完了。** リリース全体の完了とは扱わない。その後の指示により[npm公開の自動化](publication-workflow-20260930.md)を実装し、初回Trusted Publisher承認を公開運用の残件として分離してv0.3.0開発を再開した。
 
 [GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.2.1) / [公開前CI](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36650424343) / [Playground](https://www.makkii.jp/tools/stormworks/storm-lua-engine/) / [機械記録](release-0.2.1.json)
 
@@ -70,6 +70,6 @@ npmの保存済み認証は`npm whoami`に401 Unauthorizedを返した。実際�
 
 認証更新後は、検査済みtarballを通常の公開コマンドで送信し、registryのversion/dist-tag/integrityを確認する。空の導入環境からregistry版を取得して同じconsumerを実行し、GitHubの公開状況表示と本書を更新する。それまではリリース全体を完了と扱わない。
 
-v0.3.0は[由来情報計画](../design/source-provenance.md)のP2〜P5を実装する。指定された順序に従い、今回のnpm公開が完了するまでコード変更は開始していない。v0.3.0の公開・タグ作成も行っていない。
+v0.3.0は[由来情報計画](../design/source-provenance.md)のP2〜P5を実装する。公開自動化・Actions抑制を実装した後、専用branchでParser/Printerの位置記録を開始した。v0.3.0の公開・タグ作成も行っていない。
 
 原ログ、非公開入力に関する計測、再現スクリプトは作業ツリーのlocal-validation/release-0.2.1へ保存した。公開文書へ非公開ソースを持ち込んでいない。

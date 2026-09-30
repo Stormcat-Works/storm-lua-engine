@@ -4,7 +4,9 @@
 
 2026-09-30: GitHub Release・タグ・検査済みSDK tarballとPlaygroundの本番配備は完了した。**npmは認証エラーで未公開（latest=0.2.0）**。未達targetはfast/beam設定によらず最大探索と同一出力を返す。513 Native、実WASM、3 OS CI、716未達比較、本番3ブラウザを確認。[公開記録と未完了工程](docs/verification/release-0.2.1.md)。
 
-最適化後minify mapはv0.3.0へ確定したが、0.2.1のnpm公開とregistry再導入が完了するまで実装開始を保留している。以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は本節が正本である。
+npm公開workflowをmainへ実装し、実Actionsのpreflight/consumer検証は成功した。実publishはnpm Trusted Publisherの初回承認が成立せずENEEDAUTHとなった。[自動化の検証記録](docs/verification/publication-workflow-20260930.md)。初回設定を公開運用の残件として分離し、v0.3.0は専用branch `feat/minify-source-provenance-v0.3`でParser/Printerの範囲記録を開発している。
+
+以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は本節が正本である。
 
 2026-09-27 — **Storm Lua Engine v0.2.0をnpm/GitHubへ公開し、Playground・ガイド・2記事の本番公開まで完了。** 版番号はworkspace、npm SDK、Playgroundとも0.2.0です。範囲と公開手順は[release](docs/release.md)、残件は[TASKS](TASKS.md)、利用ガイドは[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)です。
 

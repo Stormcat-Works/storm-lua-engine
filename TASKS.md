@@ -63,8 +63,8 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## v0.3.0 の残件
 
-v0.2.1のnpm/GitHub/Playground公開は完了。Parser/Printerから最終候補への内部由来、candidate分岐/rollback、JSON/binary Workerの基盤は実装済み。同じ240設定の由来不明率0%は**180件**へ増加し、180件の中間目標を達成した。中央値は0.00%。[検証記録](docs/verification/source-origin-180-20260930.md)。
+v0.2.1の公開は完了。内部由来追跡と候補/Worker転送に加え、代表30入力・240設定すべての由来不明0%を達成した。生成コードと目標未達時の全探索結果は維持する。[検証記録](docs/verification/source-origin-complete-20260930.md)。
 
-次は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial39件の残ケースとpending28件、全出力Unknownの8設定を含む高度な関数/table再編、描画loop/data/辞書化を扱う。生成理由が分かるSynthetic、元の文・式への対応、Unknownを区別し、汎用mapperの失効規則や測定対象を変えて指標を改善しない。追跡時の追加コストも別途改善する。
+この固定コーパスの対応目標は完了。今後は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial49件の未監査経路とpending18件、追加コーパス、描画recordの他のportfolio経路、追跡追加コストを別途確認する。Unknownを推測で埋めず、合成コードの生成理由・元の値の由来・複数の関連元を区別する。
 
-P4は最終Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/snapshot識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置への接続。実装と完成条件の正本は[計画](docs/design/source-provenance.md)。
+P4は標準Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/source snapshotの識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置への接続。計画と完成条件は[由来追跡計画](docs/design/source-provenance.md)が正本。

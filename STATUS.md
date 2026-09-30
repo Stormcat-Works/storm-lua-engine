@@ -2,11 +2,13 @@
 
 ## v0.3.0 開発中
 
-`feat/minify-source-provenance-v0.3`で、同じ代表30入力・240設定の由来不明率0%を**94件→180件**へ増やし、180件の目標を達成した。不明率中央値は4.44%→**0.00%**。生成Luaは全設定で変更前と一致、不明率の悪化は0件。[今回の検証](docs/verification/source-origin-180-20260930.md)。
+`feat/minify-source-provenance-v0.3`で、固定した代表30入力・240設定すべての由来不明を解消した。**0%は180件→240件、全出力のUnknownは39,498→0バイト**。全30入力で8設定すべて0%であり、生成Luaは全件変更前と一致する。[最終検証](docs/verification/source-origin-complete-20260930.md)。
 
-固定テーブルの展開、閉じた名前空間のscalar化、一回だけ使う関数の展開、符号付き共通式、field名の短縮、不要末尾引数の省略に由来伝播を追加。引用符付きキーは元のリテラル範囲を持ち、元にないidentifier nameを捏造しない。未知のキー・値・使用箇所・関数内の子はUnknownのまま残す。
+関数の排他的な配置変更、数値の再表現と共有、ループ引数列、描画辞書のpayload/パレット/デコーダー、繰り返し描画、元の構文を戻す経路を対応した。生成理由が分かるSyntheticと元ソースに対応するSource/Derivedを分け、未知の入力を親や生成コード扱いで補わない。
 
-全67パス中**39 partial / 28 pending**。60設定にUnknownが残り、8設定は全体Unknownである。0%はSource/Derived/Syntheticのいずれかへ帰属するという指標であり、文字対文字の一致や公開mapの完成率ではない。P3の残る変換と追加コスト改善、P4の標準Source Map v3/link合成/Rust-WASM-TS公開と成果物識別、P5のPlayground双方向表示とruntime位置接続が残る。[実装計画](docs/design/source-provenance.md)。
+全67パスの台帳は**49 partial / 18 pending**。この240設定の目標達成は、任意のLuaや未出現の全変換経路の監査完了を意味しない。Source/Derivedは式・文単位や複数の寄与元を含み、0%は文字単位の完全対応や変数復元の保証ではない。
+
+P3の他の変換経路・組み合わせと追跡コスト、P4の標準Source Map v3/link合成/Rust-WASM-TS公開と成果物識別、P5のPlayground双方向表示と実行位置接続が残る。**最適化後mapはまだ高レベルSDKへ公開していない。** [実装計画](docs/design/source-provenance.md)。
 
 ## v0.2.1 公開状況
 

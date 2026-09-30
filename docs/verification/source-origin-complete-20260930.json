@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-30",
+  "developmentVersion": "0.3.0",
+  "published": false,
+  "implementationRevision": "4af2be5b6f81a299a5774a5137f7f2a2f430eb3e",
+  "baselineRevision": "8ffd83769338170aaec6dc8b2f10007f04abeae5",
+  "goal": {
+    "zeroUnknownConfigurations": 240,
+    "achieved": true
+  },
+  "coverage": {
+    "before": {
+      "configurations": 240,
+      "zeroUnknown": 180,
+      "entirelyUnknown": 8,
+      "medianUnknownFraction": 0.0,
+      "weightedUnknownFraction": 0.08031966813079551,
+      "atMost70PercentUnknown": 228
+    },
+    "after": {
+      "configurations": 240,
+      "zeroUnknown": 240,
+      "entirelyUnknown": 0,
+      "medianUnknownFraction": 0.0,
+      "weightedUnknownFraction": 0.0,
+      "atMost70PercentUnknown": 240
+    },
+    "codeIdentical": 240,
+    "regressed": 0,
+    "improved": 60,
+    "sourceGroupOnlyWhitespaceOrSemicolon": true
+  },
+  "inputIdentity": {
+    "snapshots": 30,
+    "allSha256MatchPreviousMeasurements": true,
+    "configurationGrid": "safe/smallest x exact/tolerant x zeroCostNewlines false/true"
+  },
+  "casesWithAllEightZero": 30,
+  "zeroUnknownWithoutSynthetic": 64,
+  "classifiedBytes": {
+    "bytes": 491760,
+    "unknown": 0,
+    "source_bytes": 233460,
+    "derived_bytes": 245884,
+    "synthetic_bytes": 12416,
+    "group_bytes": 8430,
+    "group_nonseparator_bytes": 0,
+    "name_bytes": 94368
+  },
+  "nativePassed": 642,
+  "newRegressionTests": 27,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerSubsetPassed": 17,
+  "browserEngines": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "nativeTargetFallbackComparisons": 240,
+  "wasmRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "449bf6cb1d808c91ed5bdc1709ff8aa355b069637362a181562aa6b740be3b2a",
+      "candidate": "7efcd855210df33964464895eed91eb1a04e7fac3c11733dd6ab3762ff29bbf2"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "nativeTrackingPerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2194.806603,
+      "trackedMedianMs": 2746.1720569999998
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 257.685155,
+      "trackedMedianMs": 377.735527
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 3024.682953,
+      "trackedMedianMs": 5524.982217
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 2892.4168560000003,
+      "trackedMedianMs": 5535.565696
+    }
+  ],
+  "wasmUntrackedPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "449bf6cb1d808c91ed5bdc1709ff8aa355b069637362a181562aa6b740be3b2a",
+      "candidate": "7efcd855210df33964464895eed91eb1a04e7fac3c11733dd6ab3762ff29bbf2"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 2811.853976000013,
+        "candidate": 2759.0971819999977,
+        "ratio": 0.981237719152449
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 309.7797109999956,
+        "candidate": 305.45172000001185,
+        "ratio": 0.9860288106473707
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 2887.8668190000026,
+        "candidate": 2924.8650729999936,
+        "ratio": 1.0128116205901776
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 2882.7920139999915,
+        "candidate": 2863.256272999992,
+        "ratio": 0.993223326238894
+      }
+    ]
+  },
+  "passInventory": {
+    "registered": 67,
+    "partial": 49,
+    "pending": 18
+  },
+  "hostedCi": {
+    "run": 36713873260,
+    "conclusion": "success",
+    "revision": "4af2be5b6f81a299a5774a5137f7f2a2f430eb3e",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "probe-lock": 0,
+    "probe-final-build": 0,
+    "native-matrix": 0,
+    "coverage-summary": 0,
+    "native-perf": 0,
+    "compiler-build": 0,
+    "sdk": 0,
+    "wasm": 0,
+    "compiler-tests": 0,
+    "browsers": 0,
+    "wasm-compare": 0,
+    "consumer": 0,
+    "diff-check": 0,
+    "hosted-ci": 0
+  },
+  "scope": "Complete Unknown-free coverage for this unchanged representative 240-configuration matrix, not a proof for arbitrary Lua or every remaining optimization path. Public optimized Source Map v3 API, link composition and Playground integration are still pending."
+}

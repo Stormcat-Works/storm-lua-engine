@@ -2,9 +2,11 @@
 
 ## v0.3.0 開発中
 
-`feat/minify-source-provenance-v0.3`で、Parser/Printerの範囲記録にoptionalな由来テーブルを接続した。通常/目標探索、字句短縮、原文早期返却、JSON/binary Worker継続に最終候補と一致する内部GeneratedOriginsを持たせる。変更/新規nodeの由来不明は明示し、コピー/名前短縮/定数化など19パスへ伝播処理を追加した。[今回の検証](docs/verification/source-origin-propagation-030-20260930.md)。
+`feat/minify-source-provenance-v0.3`で由来追跡の改善を継続。同じ代表30入力・240設定で由来不明率の中央値は97.97%から**19.02%**へ低下し、70%以下の中間目標を達成した。生成Luaは全設定で変更前と一致、不明率の悪化は0件。[今回の検証](docs/verification/source-origin-coverage-70-20260930.md)。
 
-標準の最適化後minify mapはまだSDKへ提供しない。全67パス中19 partial/48 pendingで、インライン化・共通化・描画data/loop変換を含むP3が主な残件。その後P4の標準map/link合成/Rust-WASM-TS公開、P5のPlayground双方向表示とruntime位置接続を行う。[実装計画](docs/design/source-provenance.md)。
+主な修正は関数localの共有スロット化、テーブルの不要nil代入除去、ローカル式/リテラルの置換、一時global packing。別変数が同じ短縮スロットを使っても元の各識別子位置を保持する。未監査の変更や未知の子はUnknownのままにする。全67パス中**25 partial / 42 pending**。64設定はまだ不明率70%超、16設定は全出力Unknownであり、完全対応とは扱わない。
+
+Parser/Printer、通常/目標探索、字句短縮、原文早期返却、候補clone/rollback、JSON/binary Workerの内部由来は接続済み。標準の最適化後minify mapはまだSDKへ提供しない。P3の残る変換/組み合わせの監査と追跡コスト改善、P4の標準map/link合成/Rust-WASM-TS公開、P5のPlayground双方向表示とruntime位置接続が残る。[実装計画](docs/design/source-provenance.md)。
 
 ## v0.2.1 公開状況
 

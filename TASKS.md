@@ -63,6 +63,6 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## v0.3.0 の残件
 
-v0.2.1のnpm/GitHub/Playground公開と独立導入は完了。Parser/Printerから最終候補への内部由来、candidate分岐/rollback、JSON/binary Workerは実装済み。次は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial19件の残ケースとpending48件を処理する。インライン化/名前とtable再編/共通化/描画データ化に優先順位を付け、passの組み合わせで原文帰属が壊れないことも検証する。
+v0.2.1のnpm/GitHub/Playground公開と独立導入は完了。Parser/Printerから最終候補への内部由来、candidate分岐/rollback、JSON/binary Workerは実装済み。由来不明率70%以下の中間目標は同じ240設定の中央値19.02%で達成した。[検証記録](docs/verification/source-origin-coverage-70-20260930.md)。次は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial25件の残ケースとpending42件、残る64設定の不明率70%超を処理する。インライン化/名前とtable再編/共通化/描画データ化に優先順位を付け、passの組み合わせで原文帰属が壊れないことも検証する。
 
 P4は最終Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/snapshot識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置へのエラー/停止接続。実装の詳細と完成条件は[計画](docs/design/source-provenance.md)が正本。

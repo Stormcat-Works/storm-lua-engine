@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.3.0 development
 
+- 関数localの共有スロット化・不要table nil代入除去で、無関係な構文まで由来を失う問題を修正。ローカル式/リテラルの置換、hybrid globalization、一時global packingでも各宣言・参照の元位置を保持する。短縮結果と候補選択は維持する。
+
 - 内部最適化APIに由来追跡を追加し、候補・Workerと位置情報を一体で保持。未対応変換は明示Unknown。標準のminify Source Map SDK公開は後続。
 - 低レベルAst.nodesは位置失効を管理するNodeArenaへ変更。元の構文的比較と通常のJSON形は維持するが、binary Worker contextは同じcompiler版で使用する。
 

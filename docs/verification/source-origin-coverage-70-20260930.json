@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-30",
+  "developmentVersion": "0.3.0",
+  "implementationRevision": "a847adb1765a68d172472e8932388a2f8d64302b",
+  "baselineRevision": "432c5d4",
+  "goal": {
+    "metric": "median of unknown generated UTF-8 byte fractions in the same 240 configurations",
+    "maximum": 0.7,
+    "met": true
+  },
+  "inputIdentity": {
+    "snapshots": 30,
+    "allMatchPreviouslyRecordedSha256": true,
+    "configurationGrid": "safe/smallest x exact/tolerant x zeroCostNewlines false/true",
+    "noInputChanges": true
+  },
+  "before": {
+    "configurations": 240,
+    "medianUnknownFraction": 0.9797240502016247,
+    "minimumUnknownFraction": 0.006086200471991057,
+    "maximumUnknownFraction": 1.0,
+    "weightedUnknownFraction": 0.8348544005205791,
+    "atMost70PercentUnknown": 48,
+    "entirelyUnknown": 68,
+    "zeroUnknown": 0
+  },
+  "after": {
+    "configurations": 240,
+    "medianUnknownFraction": 0.19023370364613953,
+    "minimumUnknownFraction": 0.0019499512512187196,
+    "maximumUnknownFraction": 1.0,
+    "weightedUnknownFraction": 0.34530258662762325,
+    "atMost70PercentUnknown": 176,
+    "entirelyUnknown": 16,
+    "zeroUnknown": 0
+  },
+  "improvedConfigurations": 196,
+  "unchangedConfigurations": 44,
+  "regressedConfigurations": 0,
+  "outputByteEqualityComparisons": 240,
+  "targetZeroFastBeam1Comparisons": 240,
+  "classifiedBytes": {
+    "bytes": 491760,
+    "unknown": 169806,
+    "source_bytes": 200874,
+    "derived_bytes": 114032,
+    "synthetic_bytes": 7048,
+    "group_bytes": 0,
+    "name_bytes": 63654
+  },
+  "coverageCaveat": "Known origins include source constructs and explicit derivations at identifier/expression/statement granularity, plus synthetic code. They are not one-to-one character mappings. Group bytes count only primary-source Group origins.",
+  "nativePassed": 563,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerSubsetPassed": 17,
+  "browserEngines": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "probe-lock": 0,
+    "probe-final-build": 0,
+    "native-matrix": 0,
+    "coverage-summary": 0,
+    "native-perf": 0,
+    "compiler-build": 0,
+    "sdk": 0,
+    "wasm": 0,
+    "compiler-tests": 0,
+    "browsers": 0,
+    "wasm-compare": 0,
+    "consumer": 0,
+    "diff-check": 0
+  },
+  "wasmRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "7c273c1c2734570d0809daaeff7eee0875b18682c6d64d2bedb72dfa9ba3d514",
+      "candidate": "ed39a8aefc99518b547b72d58888f2eda3e8a4e1d8ac6fbf2f5efdf59ace4f97"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "nativeTrackingPerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2487.727626,
+      "trackedMedianMs": 2661.348205
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 287.248957,
+      "trackedMedianMs": 367.98967700000003
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 3409.404962,
+      "trackedMedianMs": 5187.738496
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 3531.061287,
+      "trackedMedianMs": 5568.507608
+    }
+  ],
+  "wasmUntrackedPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "7c273c1c2734570d0809daaeff7eee0875b18682c6d64d2bedb72dfa9ba3d514",
+      "candidate": "ed39a8aefc99518b547b72d58888f2eda3e8a4e1d8ac6fbf2f5efdf59ace4f97"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 2892.194404000009,
+        "candidate": 2864.062711999999,
+        "ratio": 0.9902732361416983
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 314.06414800000493,
+        "candidate": 314.42178100001183,
+        "ratio": 1.0011387259650117
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 3021.200091999999,
+        "candidate": 3009.935890000008,
+        "ratio": 0.9962716133797896
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 3018.180647999994,
+        "candidate": 2998.5308099999966,
+        "ratio": 0.993489508981837
+      }
+    ]
+  },
+  "passInventory": {
+    "registered": 67,
+    "partial": 25,
+    "pending": 42
+  },
+  "hostedCi": {
+    "run": 36684589447,
+    "revision": "a847adb1765a68d172472e8932388a2f8d64302b",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "stillUnimplemented": [
+    "Complete provenance audit for remaining transformations and combinations",
+    "High-level optimized Source Map v3 output and link composition",
+    "Public Rust/WASM/TS map artifact identity",
+    "Playground source/generated reverse selection and runtime location integration"
+  ]
+}

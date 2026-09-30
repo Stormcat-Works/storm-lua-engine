@@ -192,7 +192,9 @@ fn transform_node(
             synthesized,
         )
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "output-sequence-loop-synthesis");
     node
 }
 
@@ -261,7 +263,9 @@ fn transform_block(
         }
         index = end;
     }
-    target.nodes[block as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(block, Node::Block(output), "output-sequence-loop-synthesis");
     block
 }
 

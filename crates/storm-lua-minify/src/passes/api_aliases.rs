@@ -98,7 +98,14 @@ fn clone_rewriting(
     if !is_write(resolution, node) {
         if let Some(builtin) = analyzer.resolve_builtin_reference(node) {
             if let Some(alias) = aliases.get(&builtin) {
-                return target.name(alias);
+                let replacement = target.name(alias);
+                target.nodes.derive_from(
+                    replacement,
+                    &source.nodes,
+                    node,
+                    "api-alias-optimization",
+                );
+                return replacement;
             }
         }
     }
@@ -106,7 +113,11 @@ fn clone_rewriting(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_rewriting(target, source, resolution, analyzer, aliases, child)
     });
-    target.push(mapped)
+    let cloned = target.push(mapped);
+    target
+        .nodes
+        .derive_from(cloned, &source.nodes, node, "api-alias-optimization");
+    cloned
 }
 
 fn alias_assignment(
@@ -115,6 +126,7 @@ fn alias_assignment(
     aliases: &HashMap<String, String>,
     use_root_aliases: bool,
 ) -> NodeId {
+    let first_synthetic = ast.nodes.len();
     #[expect(
         clippy::expect_used,
         reason = "keys is the ordered selection from the already constructed aliases map, which is immutable during emission"
@@ -142,7 +154,14 @@ fn alias_assignment(
             expressions.push(ast.index(object, member, true));
         }
     }
-    ast.assign(targets, expressions)
+    let assignment = ast.assign(targets, expressions);
+    if ast.nodes.tracks_origins() {
+        for id in first_synthetic..ast.nodes.len() {
+            ast.nodes
+                .mark_synthetic(id as NodeId, "api-alias-definition");
+        }
+    }
+    assignment
 }
 
 fn apply_alias_set(
@@ -202,6 +221,9 @@ fn apply_alias_set(
     }
     definitions.extend(body_statements);
     let new_root = target.block(definitions);
+    target
+        .nodes
+        .derive_from(new_root, &source.nodes, root, "api-alias-optimization");
     (target, new_root)
 }
 

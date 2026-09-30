@@ -141,14 +141,18 @@ fn rewrite(
                 }
             }
             let new_node = Node::Call(new_fn, new_args, method.clone());
-            new_ast.nodes[id as usize] = new_node;
+            new_ast
+                .nodes
+                .rewrite(id, new_node, "integer-loop-call-folding");
             id
         }
         _ => {
             let (new_node, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |c| {
                 rewrite(new_ast, source_ast, analyzer, res, integer_bids, c, folded)
             });
-            new_ast.nodes[id as usize] = new_node;
+            new_ast
+                .nodes
+                .rewrite(id, new_node, "integer-loop-call-folding");
             id
         }
     }

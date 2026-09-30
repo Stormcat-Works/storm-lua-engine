@@ -107,6 +107,10 @@ pub enum SearchMode {
 /// 最小限のフィールドのみ反映し、残りは移植対象パス進行に応じて追加する。
 #[derive(Debug, Clone)]
 pub struct CompileOptions {
+    /// Opt-in original source label for internal provenance tracing. None keeps the
+    /// existing no-tracking path. This is not yet the build SDK's Source Map API.
+    pub origin_source: Option<String>,
+
     /// Script-visible profile shared with the runtime.
     pub environment: storm_lua_spec::environment::EnvironmentProfile,
     /// Dot-separated host-provided binding paths; replacing builtins requires conservative compilation.
@@ -134,6 +138,7 @@ pub struct CompileOptions {
 impl Default for CompileOptions {
     fn default() -> Self {
         CompileOptions {
+            origin_source: None,
             environment: Default::default(),
             host_bindings: Vec::new(),
             mode: CompileMode::Smallest,

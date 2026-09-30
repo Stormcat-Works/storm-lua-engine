@@ -35,7 +35,11 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_subtree(target, source, child)
     });
-    target.push(mapped)
+    let cloned = target.push(mapped);
+    target
+        .nodes
+        .derive_from(cloned, &source.nodes, node, "captured-single-use-hoisting");
+    cloned
 }
 
 fn replace_read(
@@ -50,13 +54,24 @@ fn replace_read(
         && !res.node_write.get(node as usize).copied().unwrap_or(false)
         && res.node_bid.get(node as usize).copied().flatten() == Some(bid)
     {
-        return clone_subtree(target, source, expression);
+        let replacement = clone_subtree(target, source, expression);
+        target.nodes.relate_from(
+            replacement,
+            &source.nodes,
+            node,
+            "captured-single-use-hoisting",
+        );
+        return replacement;
     }
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         replace_read(target, source, res, child, bid, expression)
     });
-    target.push(mapped)
+    let cloned = target.push(mapped);
+    target
+        .nodes
+        .derive_from(cloned, &source.nodes, node, "captured-single-use-hoisting");
+    cloned
 }
 
 fn control_barrier(node: &Node) -> bool {
@@ -90,7 +105,9 @@ fn transform_node(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         transform_node(target, source, res, analyzer, child, hoisted)
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "captured-single-use-hoisting");
     node
 }
 
@@ -225,7 +242,9 @@ fn transform_block(
         break;
     }
 
-    target.nodes[block as usize] = Node::Block(nested);
+    target
+        .nodes
+        .rewrite(block, Node::Block(nested), "captured-single-use-hoisting");
     block
 }
 

@@ -170,11 +170,11 @@ impl Node {
     }
 }
 
-/// 純粋な AST。メタ情報は持たない（D-29 A-2）。
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Arena-backed syntax. Optional origins live in a separate slot table and are excluded from syntax equality.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Ast {
     /// Node arena. Structural edits must preserve valid child IDs and node kinds.
-    pub nodes: Vec<Node>,
+    pub nodes: crate::node_arena::NodeArena,
     /// Identifier registry shared by the nodes in this arena.
     pub strings: Interner,
 }
@@ -183,7 +183,7 @@ impl Ast {
     /// Create an empty arena or identifier registry.
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: crate::node_arena::NodeArena::default(),
             strings: Interner::new(),
         }
     }
@@ -343,6 +343,50 @@ impl Ast {
 impl Default for Ast {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Human-readable syntax snapshots retain the historical nodes/strings shape.
+// Worker transfers use a sized tuple; serde flatten requires a map length that
+// bincode cannot know and is therefore deliberately not used for binary data.
+impl Serialize for Ast {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            use serde::ser::SerializeStruct;
+            let origins = self.nodes.provenance();
+            let mut state =
+                serializer.serialize_struct("Ast", if origins.is_some() { 3 } else { 2 })?;
+            state.serialize_field("nodes", &*self.nodes)?;
+            state.serialize_field("strings", &self.strings)?;
+            if let Some(origins) = origins {
+                state.serialize_field("origins", origins)?;
+            }
+            state.end()
+        } else {
+            (&self.nodes, &self.strings).serialize(serializer)
+        }
+    }
+}
+impl<'de> Deserialize<'de> for Ast {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if deserializer.is_human_readable() {
+            #[derive(Deserialize)]
+            struct Wire {
+                nodes: Vec<Node>,
+                strings: Interner,
+                origins: Option<crate::provenance::ArenaOrigins>,
+            }
+            let wire = Wire::deserialize(deserializer)?;
+            let nodes = crate::node_arena::NodeArena::from_parts(wire.nodes, wire.origins)
+                .map_err(serde::de::Error::custom)?;
+            Ok(Self {
+                nodes,
+                strings: wire.strings,
+            })
+        } else {
+            let (nodes, strings) = Deserialize::deserialize(deserializer)?;
+            Ok(Self { nodes, strings })
+        }
     }
 }
 

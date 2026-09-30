@@ -65,11 +65,8 @@ fn functions(ast: &Ast, res: &Resolution) -> Vec<FunctionInfo> {
 }
 
 fn remove_definition(ast: &mut Ast, declaration: NodeId) {
-    for node in &mut ast.nodes {
-        if let Node::Block(statements) = node {
-            statements.retain(|statement| *statement != declaration);
-        }
-    }
+    ast.nodes
+        .retain_block_statements(|id| id != declaration, "color-unpack-declaration-removal");
 }
 
 pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResult {

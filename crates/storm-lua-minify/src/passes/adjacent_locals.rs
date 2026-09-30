@@ -87,11 +87,28 @@ pub fn pack_adjacent_locals(ast: &mut Ast, root: NodeId, rename: bool) -> PassRe
                     && old_names.len() + names.len() <= 16
                     && names.iter().all(|n| !old_names.contains(n))
                 {
+                    let first_new_slot = old_names.len();
                     let mut all_names = old_names.clone();
                     let mut all_values = old_values.clone();
                     all_names.extend_from_slice(names);
                     all_values.extend_from_slice(values);
-                    target.nodes[previous as usize] = Node::Local(all_names, all_values);
+                    target.nodes.rewrite(
+                        previous,
+                        Node::Local(all_names, all_values),
+                        "adjacent-local-packing",
+                    );
+                    target
+                        .nodes
+                        .relate_from(previous, &ast.nodes, stmt, "adjacent-local-packing");
+                    for offset in 0..names.len() {
+                        target.nodes.copy_name_from(
+                            previous,
+                            storm_lua_syntax::NameSite::Binding((first_new_slot + offset) as u32),
+                            &ast.nodes,
+                            stmt,
+                            storm_lua_syntax::NameSite::Binding(offset as u32),
+                        );
+                    }
                     declared.extend(res.node_bids[stmt as usize].iter().copied());
                     merged += 1;
                     continue;
@@ -102,7 +119,9 @@ pub fn pack_adjacent_locals(ast: &mut Ast, root: NodeId, rename: bool) -> PassRe
             declared.extend(res.node_bids[stmt as usize].iter().copied());
             output.push(stmt);
         }
-        target.nodes[block as usize] = Node::Block(output);
+        target
+            .nodes
+            .rewrite(block, Node::Block(output), "adjacent-local-packing");
     }
     if merged == 0 {
         return unchanged();

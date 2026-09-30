@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-30",
+  "version": "0.3.0-development",
+  "published": false,
+  "baselineCommit": "17f42c10cf6cd18773cbd8d36386607615ef05e4",
+  "rustSourceDigest": "b1e9ddd7f0cec525a2de4802047f1655fac99702cc0d661343a9e72506ea81e3",
+  "internalOrigins": true,
+  "highLevelOptimizedSourceMap": false,
+  "passAudit": {
+    "registered": 67,
+    "partial": 19,
+    "pending": 48,
+    "implemented": 0
+  },
+  "native": {
+    "passed": 553,
+    "tracingOnOffConfigurations": 240,
+    "unmetTargetConfigurations": 240,
+    "outputBytesAndCandidateSizes": "identical",
+    "previousOutputHashesMatched": 240,
+    "jsonAndBinaryWorkerOrigins": "round-trip verified, including reversed completion and target continuation"
+  },
+  "unclassifiedOutput": {
+    "minimumUnknownFraction": 0.006086200471991057,
+    "medianUnknownFraction": 0.9797240502016247,
+    "maximumUnknownFraction": 1.0,
+    "fullyUnknownConfigurations": 68,
+    "zeroUnknownConfigurations": 0,
+    "note": "Not a percentage of precise original-source coverage: classified bytes also include Synthetic and Group origins."
+  },
+  "nativePerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2905.577526,
+      "trackedMedianMs": 3606.829992,
+      "generatedBytes": 5706,
+      "unknownBytes": 5706
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 445.669331,
+      "trackedMedianMs": 392.99976,
+      "generatedBytes": 7748,
+      "unknownBytes": 7748
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 5568.011685,
+      "trackedMedianMs": 7474.747607,
+      "generatedBytes": 34084,
+      "unknownBytes": 28910
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 5569.09674,
+      "trackedMedianMs": 6946.28005,
+      "generatedBytes": 34084,
+      "unknownBytes": 28910
+    }
+  ],
+  "wasm": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "c250a321b8bba34a75a7b04cad65e49d7d9d98b3d86e7ad33e5de6d57150936c",
+      "candidate": "7c273c1c2734570d0809daaeff7eee0875b18682c6d64d2bedb72dfa9ba3d514"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "wasmPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "c250a321b8bba34a75a7b04cad65e49d7d9d98b3d86e7ad33e5de6d57150936c",
+      "candidate": "7c273c1c2734570d0809daaeff7eee0875b18682c6d64d2bedb72dfa9ba3d514"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 3471.9133169999986,
+        "candidate": 3470.68207000001,
+        "ratio": 0.9996453693143893
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 454.2761860000028,
+        "candidate": 344.1506129999907,
+        "ratio": 0.757580132100494
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 3687.167278000008,
+        "candidate": 3703.274686999983,
+        "ratio": 1.0043685050841284
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 3595.589742000011,
+        "candidate": 3644.3153779999993,
+        "ratio": 1.0135515004481255
+      }
+    ]
+  },
+  "gates": {
+    "sdkPassed": 30,
+    "wasmPassed": 69,
+    "compilerSubsetPassed": 17,
+    "browserEngines": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "fmt": true,
+    "clippy": true,
+    "rustdoc": true,
+    "architecture": true
+  },
+  "measurementLimits": [
+    "Native timing compares tracing on/off in the same release binary, three paired repetitions; not browser timing.",
+    "WASM high-level API remains non-tracing; the comparison verifies the existing API, not a final Source Map feature.",
+    "No observed duration is used as a search deadline; the complete public map has not been implemented or benchmarked.",
+    "Runtime WASM was not changed in this stage; existing runtime assets were exercised with the newly built compiler."
+  ]
+}

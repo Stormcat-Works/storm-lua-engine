@@ -13,12 +13,29 @@ fn rewrite_node(
     config: &PropertyConfig,
     replaced: &mut usize,
 ) -> NodeId {
+    let result = rewrite_node_inner(source, target, analyzer, node, config, replaced);
+    if result != node {
+        target
+            .nodes
+            .derive_from(result, &source.nodes, node, "property-hardcoding");
+    }
+    result
+}
+
+fn rewrite_node_inner(
+    source: &Ast,
+    target: &mut Ast,
+    analyzer: &EffectAnalyzer<'_>,
+    node: NodeId,
+    config: &PropertyConfig,
+    replaced: &mut usize,
+) -> NodeId {
     let original = source.node(node).clone();
     let (mapped, changed) = map_children(&original, &mut |child| {
         rewrite_node(source, target, analyzer, child, config, replaced)
     });
     if changed {
-        target.nodes[node as usize] = mapped;
+        target.nodes.rewrite(node, mapped, "property-hardcoding");
     }
 
     let Node::Call(function, args, _) = original else {

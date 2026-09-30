@@ -32,6 +32,17 @@ enum Role {
 }
 
 fn rewrite(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> NodeId {
+    let origin = ast.nodes.capture_origin(id);
+    let result = rewrite_inner(ast, id, role, removed);
+    if result == id {
+        ast.nodes.finish_rewrite(id, origin, "parentheses");
+    }
+    // A removed parenthesis returns an existing child, preserving that child's
+    // own origin rather than overwriting it with the discarded parent's range.
+    result
+}
+
+fn rewrite_inner(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> NodeId {
     let node = ast.nodes[id as usize].clone();
     match node {
         Node::Paren(e) => {

@@ -2,13 +2,13 @@
 
 ## Published and working-tree boundaries
 
-Published **v0.2.0** returns a Source Map v3 JSON `code`/`map` pair only for `build(project, { minify: false })`. That published map is line-based, its columns are zero and it embeds `sourcesContent`. Standalone `minify` and `minify: true` do not return a post-optimization map.
+Published **v0.2.1** returns detailed Source Map v3 JSON `code`/`map` pairs for non-minified normal and LifeBoat builds. Token/column anchors and exact internal byte ranges identify copied original slices. Standalone `minify` and `minify: true` still do not return a post-optimization map.
 
-The **unpublished source-provenance work** upgrades non-minified normal and LifeBoat builds to token/column anchors and exact internal byte ranges. It does not yet implement optimized-AST provenance or return a minified map. The complete design and implementation stages are in [Source provenance](../design/source-provenance.md). No published SDK artifact has been replaced.
+The **unpublished v0.3.0 work** adds internal optimizer provenance and candidate/Worker transfer. It does not yet expose the final optimized Source Map v3 SDK contract. The stages and pass audit are in [Source provenance](../design/source-provenance.md). Published SDK tags and artifacts remain fixed.
 
 A failed build has no artifact. Hosts must check the build result before using `code` or `map`. Compilation does not create a VM or execute Lua.
 
-## Origin and location model (unpublished)
+## Published non-minified origin and location model
 
 The linker owns ordered, disjoint `LinkedRange` intervals for verbatim source slices. Each has generated `[startByte,endByte)` and original `startByte` in a module snapshot. Line fields are a coarse projection retained for low-level line lookup, not the authority for column correspondence.
 
@@ -66,3 +66,20 @@ Test existence is not a claim that a particular revision passed; executed comman
 `Printer.output_with_positions`は`PrintedSource { code, emissions }`を返す。NodeEmissionは最終生成コード上の半開UTF-8 byte範囲、同じAST内のNodeId、任意のNameSiteを示す。範囲は入れ子になり得る。省略されたnodeには生成範囲を捏造しない。通常のPrinterと同じコードと改行数を生成する。
 
 これは最適化後Source Mapの完成APIではない。入力ASTが変換されている場合、元範囲は各変換の由来情報から取得する必要がある。`minify`/`build(minify:true)`がmapを返すようになったとは扱わない。
+
+
+## v0.3.0開発中: 内部の最適化由来
+
+低レベルRustの`CompileOptions.origin_source: Some(label)`は、原文snapshotを初期由来として、返却する`CompileCodeResult.origins: Some(GeneratedOrigins)`まで追跡する。Noneは通常の非追跡経路である。labelは表示用で、任意ファイルを開く権限や実runtime chunk IDではない。このoptionは高レベルbuild/SDKのmap設定としてまだ公開していない。
+
+内部のSourceSpanは原文snapshot番号と半開UTF-8 byte範囲。OriginはSource / Derived / Synthetic、precisionはName / Token / Expression / Statement / Group、主な範囲と関連範囲・元の名前を保持する。UnknownはOriginなしとして扱い、Syntheticの別名にしない。Sourceは元構文への帰属を表すもので、印字の文字単位一致を保証しない。
+
+GeneratedOriginsは原文snapshot、internされたorigin一覧、最終コードの非重複byte区間を返す。子の由来が失われた区間は、位置が残っている親や隣の区間へ誤って帰属させない。name slotの由来がない場合に対応するnode範囲を使うときは、そのnodeの粗いprecisionを維持する。区間のunknown_bytesは未帰属byte数であり、残りがすべて精密な原文位置へ戻れるという指標ではない。SyntheticやGroupへの帰属も残りに含まれる。
+
+NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブルを所有する。構文Eqと最適化の評価値から由来を除外し、clone/rollbackで同じcandidateの位置情報を保持する。直接mutable indexingはslotの由来を無効化し、mutable全体iterationは保守的に全slotを無効化する。新node/切り詰め後の再利用には古い由来を付けない。監査した変換のみが元node/名前slot/関連範囲の引き継ぎを指定する。
+
+同じファイル名でも内容が違うsnapshotは別sourceとして扱う。別ArenaのNodeIdが一致しても同一nodeと解釈しない。JSONの未追跡ASTは従来のnodes/strings形を維持するが、Workerのbinary contextは同compiler版専用のopaque形式であり、0.2.1との互換性は保証しない。低レベルRustでAst.nodesをVecとして直接構築するconsumerはNodeArenaへの更新が必要。
+
+転送時は元spanのindex/UTF-8境界/範囲、名前slot重複、slot数を検証する。最終生成範囲も連続性/UTF-8境界/原文index/生成長を検証するが、同長の別コードとの組み違いをこの検証だけで識別できるわけではない。code/map/snapshot識別はP4の成果物契約で追加する。
+
+67パスの分類と未対応範囲は[台帳](../design/source-provenance-pass-audit.json)へ保存する。パスがmetadata非依存で完走し同じLuaを返せることと、その全出力を精密に原文へ戻せることを区別する。

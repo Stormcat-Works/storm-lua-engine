@@ -17,3 +17,6 @@ pub mod search;
 
 pub use config::{CompileMode, CompileOptions, NumericMode, NumericTolerance, SearchMode};
 pub use search::{compile_code, CompileCodeResult};
+
+#[cfg(test)]
+mod provenance_tests;

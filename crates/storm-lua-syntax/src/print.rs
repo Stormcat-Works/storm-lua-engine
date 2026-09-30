@@ -756,11 +756,31 @@ pub fn token_minify(source: &str) -> Result<String, crate::lexer::LexError> {
 /// Preserving token line positions also preserves Lua error messages observed through pcall.
 /// Reflection and host overrides use this path instead of whole-program transformations.
 pub fn lexical_minify(source: &str) -> Result<String, crate::lexer::LexError> {
+    lexical_minify_impl(source, false).map(|(code, _)| code)
+}
+
+/// Preserve lexical source locations using the same token-emission path as ordinary
+/// conservative minification. This does not guess origins from a generated string.
+pub fn lexical_minify_with_origins(
+    name: &str,
+    source: &str,
+) -> Result<(String, crate::provenance::GeneratedOrigins), crate::lexer::LexError> {
+    let (code, tokens) = lexical_minify_impl(source, true)?;
+    let origins =
+        crate::provenance::GeneratedOrigins::copied_tokens(name, source, code.len(), &tokens);
+    Ok((code, origins))
+}
+
+fn lexical_minify_impl(
+    source: &str,
+    track: bool,
+) -> Result<(String, Vec<crate::provenance::CopiedToken>), crate::lexer::LexError> {
     use crate::lexer::{Lexer, TokenKind};
     let tokens = Lexer::new(source).all()?;
     let compact_with = |spaced: bool| {
         let mut output = String::with_capacity(source.len());
         let mut end = 0;
+        let mut copies = Vec::new();
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
             let gap = &source[end..token.p];
             let before = output.len();
@@ -771,13 +791,23 @@ pub fn lexical_minify(source: &str) -> Result<String, crate::lexer::LexError> {
             {
                 output.push(' ');
             }
+            let generated_start = output.len();
             output.push_str(&token.v);
             end = token.p + token.v.len();
+            if track {
+                copies.push(crate::provenance::CopiedToken {
+                    start: generated_start,
+                    end: output.len(),
+                    source_start: token.p,
+                    source_end: end,
+                    is_name: token.k == TokenKind::Id,
+                });
+            }
         }
         output.extend(source[end..].chars().filter(|c| matches!(c, '\n' | '\r')));
-        output
+        (output, copies)
     };
-    let mut compact = compact_with(false);
+    let (mut compact, mut copies) = compact_with(false);
     let expected: Vec<_> = tokens
         .iter()
         .filter(|t| t.k != TokenKind::Eof)
@@ -793,12 +823,27 @@ pub fn lexical_minify(source: &str) -> Result<String, crate::lexer::LexError> {
     // Multi-character delimiters can require an explicit boundary. This branch
     // uses the same exact tokens and original line breaks, not a second parser.
     if !matches {
-        compact = compact_with(true);
+        (compact, copies) = compact_with(true);
     }
     if compact.encode_utf16().count() > source.encode_utf16().count() {
-        return Ok(source.to_owned());
+        let copies = if track {
+            tokens
+                .iter()
+                .filter(|token| token.k != TokenKind::Eof)
+                .map(|token| crate::provenance::CopiedToken {
+                    start: token.p,
+                    end: token.p + token.v.len(),
+                    source_start: token.p,
+                    source_end: token.p + token.v.len(),
+                    is_name: token.k == TokenKind::Id,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        return Ok((source.to_owned(), copies));
     }
-    Ok(compact)
+    Ok((compact, copies))
 }
 
 #[cfg(test)]

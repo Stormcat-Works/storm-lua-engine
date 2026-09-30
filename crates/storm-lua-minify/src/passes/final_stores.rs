@@ -236,7 +236,9 @@ fn clean_block(
         }
     }
     output.reverse();
-    target.nodes[block as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(block, Node::Block(output), "final-dead-store-elimination");
     CleanResult {
         block,
         live_in: live,
@@ -266,7 +268,11 @@ fn rewrite_functions(
             aggressive,
         );
         *removed += result.removed;
-        target.nodes[id as usize] = Node::Function(params, vararg, result.block);
+        target.nodes.rewrite(
+            id,
+            Node::Function(params, vararg, result.block),
+            "final-dead-store-elimination",
+        );
         return id;
     }
     let node = source.node(id).clone();
@@ -282,7 +288,9 @@ fn rewrite_functions(
             removed,
         )
     });
-    target.nodes[id as usize] = mapped;
+    target
+        .nodes
+        .rewrite(id, mapped, "final-dead-store-elimination");
     id
 }
 

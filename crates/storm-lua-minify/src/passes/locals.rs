@@ -27,7 +27,7 @@ fn rewrite_dead_node(
         rewrite_dead_node(target, source, res, effects, reads, writes, child, changed)
             .unwrap_or(child)
     });
-    target.nodes[id as usize] = mapped;
+    target.nodes.rewrite(id, mapped, "local-scope-cleanup");
     Some(id)
 }
 
@@ -87,14 +87,29 @@ fn rewrite_dead_block(
             continue;
         }
         if keep.len() != names.len() {
-            target.nodes[statement as usize] = Node::Local(
-                keep.iter().map(|index| names[*index]).collect(),
-                keep.iter().map(|index| expressions[*index]).collect(),
+            target.nodes.rewrite(
+                statement,
+                Node::Local(
+                    keep.iter().map(|index| names[*index]).collect(),
+                    keep.iter().map(|index| expressions[*index]).collect(),
+                ),
+                "dead-local-elimination",
             );
+            for (new_slot, &old_slot) in keep.iter().enumerate() {
+                target.nodes.copy_name_from(
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(new_slot as u32),
+                    &source.nodes,
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(old_slot as u32),
+                );
+            }
         }
         output.push(statement);
     }
-    target.nodes[block as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(block, Node::Block(output), "local-scope-cleanup");
     block
 }
 
@@ -136,7 +151,7 @@ fn flatten_node(target: &mut Ast, source: &Ast, id: NodeId) -> NodeId {
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
         flatten_node(target, source, child)
     });
-    target.nodes[id as usize] = mapped;
+    target.nodes.rewrite(id, mapped, "local-scope-cleanup");
     id
 }
 
@@ -204,7 +219,9 @@ fn flatten_block(target: &mut Ast, source: &Ast, block: NodeId) -> NodeId {
         }
     }
 
-    target.nodes[block as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(block, Node::Block(output), "local-scope-cleanup");
     block
 }
 
@@ -288,11 +305,8 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn remove_statement_from_blocks(ast: &mut Ast, statement: NodeId) {
-    for node in &mut ast.nodes {
-        if let Node::Block(statements) = node {
-            statements.retain(|id| *id != statement);
-        }
-    }
+    ast.nodes
+        .retain_block_statements(|id| id != statement, "unused-local-declaration-removal");
 }
 
 fn remove_local_binding(ast: &mut Ast, res: &Resolution, bid: u32) -> bool {
@@ -343,7 +357,7 @@ pub fn inline_tiny_literal_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
         let res = resolve(&source, root);
         let (reads, writes) = count_binding_uses(&source, &res, root);
         let before = measure_size(&source, root);
-        let mut best: Option<(usize, Vec<Node>)> = None;
+        let mut best: Option<(usize, storm_lua_syntax::node_arena::NodeArena)> = None;
         let mut nodes = Vec::new();
         storm_lua_syntax::ast_utils::walk(&source, root, &mut |id| nodes.push(id));
         for statement in nodes {

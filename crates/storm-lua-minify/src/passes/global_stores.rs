@@ -117,7 +117,14 @@ fn rewrite(
                     .unwrap_or(false);
             if is_nil {
                 *replaced += 1;
-                new_ast.push(Node::Nil)
+                let origin = new_ast.nodes.capture_origin(id);
+                let replacement = new_ast.push(Node::Nil);
+                new_ast.nodes.finish_rewrite(
+                    replacement,
+                    origin,
+                    "unwritten-global-nil-propagation",
+                );
+                replacement
             } else {
                 id
             }
@@ -126,7 +133,9 @@ fn rewrite(
             let (new_node, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |c| {
                 rewrite(new_ast, res, nil_globals, c, replaced)
             });
-            new_ast.nodes[id as usize] = new_node;
+            new_ast
+                .nodes
+                .rewrite(id, new_node, "unwritten-global-nil-propagation");
             id
         }
     }
@@ -340,8 +349,11 @@ fn cleanup_block(
                         .iter()
                         .map(|index| expressions[*index])
                         .collect::<Vec<_>>();
-                    target.nodes[statement as usize] =
-                        Node::Assign(kept_targets.clone(), kept_expressions.clone());
+                    target.nodes.rewrite(
+                        statement,
+                        Node::Assign(kept_targets.clone(), kept_expressions.clone()),
+                        "global-store-cleanup",
+                    );
                     cleanup_transfer_assignment(
                         source,
                         res,
@@ -392,7 +404,11 @@ fn cleanup_block(
                     }
                 }
                 live = merged;
-                target.nodes[statement as usize] = Node::If(rewritten_arms, rewritten_else);
+                target.nodes.rewrite(
+                    statement,
+                    Node::If(rewritten_arms, rewritten_else),
+                    "global-store-cleanup",
+                );
                 output.push(statement);
             }
             Node::Do(body) => {
@@ -400,7 +416,9 @@ fn cleanup_block(
                     target, source, res, analyzer, reads, scratch, body, &live, aggressive,
                 );
                 live = live_in;
-                target.nodes[statement as usize] = Node::Do(body);
+                target
+                    .nodes
+                    .rewrite(statement, Node::Do(body), "global-store-cleanup");
                 output.push(statement);
             }
             Node::While(..) | Node::Repeat(..) | Node::Fornum(..) | Node::Forin(..) => {
@@ -429,7 +447,9 @@ fn cleanup_block(
         }
     }
     output.reverse();
-    target.nodes[block as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(block, Node::Block(output), "global-store-cleanup");
     (block, live)
 }
 
@@ -456,7 +476,11 @@ fn cleanup_rewrite_node(
             &std::collections::HashSet::new(),
             aggressive,
         );
-        target.nodes[id as usize] = Node::Function(params, vararg, body);
+        target.nodes.rewrite(
+            id,
+            Node::Function(params, vararg, body),
+            "global-store-cleanup",
+        );
         return Some(id);
     }
     if let Node::Funcstat(target_name, _) = source.node(id) {
@@ -485,7 +509,9 @@ fn cleanup_rewrite_node(
                 }
             }
         }
-        target.nodes[id as usize] = Node::Block(output);
+        target
+            .nodes
+            .rewrite(id, Node::Block(output), "global-store-cleanup");
         return Some(id);
     }
     let node = source.node(id).clone();
@@ -495,7 +521,7 @@ fn cleanup_rewrite_node(
         )
         .unwrap_or_else(|| target.block(Vec::new()))
     });
-    target.nodes[id as usize] = mapped;
+    target.nodes.rewrite(id, mapped, "global-store-cleanup");
     Some(id)
 }
 
@@ -637,14 +663,16 @@ fn remove_unread_rewrite(
             }
             output.push(nested);
         }
-        target.nodes[id as usize] = Node::Block(output);
+        target
+            .nodes
+            .rewrite(id, Node::Block(output), "global-store-cleanup");
         return id;
     }
     let node = source.node(id).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
         remove_unread_rewrite(target, source, res, analyzer, reads, child, removed)
     });
-    target.nodes[id as usize] = mapped;
+    target.nodes.rewrite(id, mapped, "global-store-cleanup");
     id
 }
 

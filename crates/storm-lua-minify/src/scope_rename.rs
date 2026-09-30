@@ -343,6 +343,7 @@ fn apply_renames(
         // Only symbols change. The arena is already cloned, so preserve its
         // owned nodes and declaration lists instead of copying them again.
         // Keep the original traversal/intern order and unreachable nodes.
+        let origin = ast.nodes.capture_origin(id);
         match &mut ast.nodes[id as usize] {
             Node::Name(symbol) | Node::Localfunc(symbol, _) | Node::Fornum(symbol, ..) => {
                 if let Some(bid) = resolution.node_bid[id as usize] {
@@ -362,6 +363,7 @@ fn apply_renames(
             }
             _ => {}
         }
+        ast.nodes.finish_rename(id, origin);
         storm_lua_analysis::resolver::for_each_child(&ast, id, &mut |child| stack.push(child));
     }
     (ast, root)

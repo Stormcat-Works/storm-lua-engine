@@ -20,7 +20,7 @@
     "storm-lua-engine-playground-0.2.1.zip": "13a8d4002185a91eb196f1ceeba3aa5dab4ad50e65153550869cc5ce23bfd3f0"
   },
   "packageConsumer": "passed on the exact attached tarball",
-  "registryPublication": "blocked: existing credential rejected; npm publish returned permission-related E404",
+  "registryPublication": "published using GitHub Actions OIDC; exact registry artifact and consumer verified",
   "targetParity": {
     "cases": 30,
     "baselineConfigurations": 240,
@@ -40,9 +40,9 @@
   "publication": {
     "github": "published, assets re-downloaded and verified",
     "playground": "deployed and browser verified",
-    "npm": "blocked by invalid stored credentials",
-    "npmLatest": "0.2.0",
-    "v030Implementation": "not started: v0.2.1 registry publication prerequisite remains"
+    "npm": "published and independently installed from the public registry",
+    "npmLatest": "0.2.1",
+    "v030Implementation": "started on feat/minify-source-provenance-v0.3; not part of v0.2.1"
   },
   "deployment": {
     "version": {
@@ -133,5 +133,79 @@
       "localWasmSha256": "965aaa5fad24df787c4254c0d07c52aebe48d8834956c5968b0567d672f5a3ae",
       "explanation": "Local wasm-opt 120 vs Cloudflare Emscripten wasm-opt 131; rebuilding with 131 reproduced the deployed WASM byte-for-byte."
     }
+  },
+  "npmPublication": {
+    "schemaVersion": 1,
+    "date": "2026-09-30",
+    "version": "0.2.1",
+    "sourceRevision": "5724cb054816dd330f73fd5a114be967b6c96095",
+    "workflowRevision": "1235dfb8065826bf1b260dfc94dfab171d94cb1f",
+    "workflow": {
+      "run": 36667537171,
+      "url": "https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36667537171",
+      "publicationAttempt": 1,
+      "publicationResult": "success",
+      "verificationAttempt": 2,
+      "verificationConclusion": "success",
+      "verificationJobs": {
+        "verify": "success",
+        "verify-registry": "success",
+        "publish": "skipped"
+      }
+    },
+    "registry": {
+      "name": "@stormcat-works/storm-lua-engine",
+      "version": "0.2.1",
+      "latest": "0.2.1",
+      "integrity": "sha512-MzyVLBCu8KOfttEsyICNTu7rPbwItRoh8UbDIDOBovzPeig+IKWiUN+Sa60vLRquDyCy2X5aPv/s5iFoBDrvjQ==",
+      "shasum": "b237bb39dfe06b5c336a8b7b79af427d229b5fe1",
+      "sha256": "3826946bbe2117bf7cc4d2ea7745f20ecaffb0927304af6540bd781f7354ad19",
+      "matchesTestedReleaseArtifact": true,
+      "tarballBytes": 1292970,
+      "publisher": "GitHub Actions",
+      "trustedPublisher": "github"
+    },
+    "directRegistryInstall": {
+      "ok": true,
+      "package": {
+        "version": "0.2.1",
+        "resolved": "https://registry.npmjs.org/@stormcat-works/storm-lua-engine/-/storm-lua-engine-0.2.1.tgz",
+        "integrity": "sha512-MzyVLBCu8KOfttEsyICNTu7rPbwItRoh8UbDIDOBovzPeig+IKWiUN+Sa60vLRquDyCy2X5aPv/s5iFoBDrvjQ==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=22.18"
+        }
+      },
+      "checks": {
+        "ok": true,
+        "version": "0.2.1",
+        "runtimeOutput": 7,
+        "rasterPixel": [
+          128,
+          0,
+          0,
+          64
+        ],
+        "minifiedSize": 60,
+        "unmetTargetByteIdentical": true
+      }
+    },
+    "consumer": {
+      "source": "matching v0.2.1 consumer",
+      "runtime": true,
+      "raster": true,
+      "compiler": true,
+      "vehicleAndAddon": true,
+      "hostServices": true,
+      "saveReload": true,
+      "sourceLoading": true,
+      "mappedDebug": true,
+      "mappedRuntimeError": true
+    },
+    "notes": [
+      "First publication succeeded using GitHub Actions Trusted Publishing. The immediate registry verification received HTTP 404 within its 30-second retry window.",
+      "After the version became retrievable, a complete workflow rerun skipped publishing existing identical bytes and passed the registry download and isolated consumer tests.",
+      "Published tag and existing SDK tarball, static ZIP and their checksums were not changed."
+    ]
   }
 }

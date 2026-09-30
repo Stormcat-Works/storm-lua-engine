@@ -167,6 +167,7 @@ impl ApiCompileOptions {
             })
         };
         Ok(CompileOptions {
+            origin_source: None,
             environment: self.environment,
             host_bindings: self.host_bindings.clone(),
             mode: match self.mode.unwrap_or(ApiCompileMode::Smallest) {

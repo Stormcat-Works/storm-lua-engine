@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use storm_lua_syntax::ast::{Ast, NodeId};
 use storm_lua_syntax::parser::parse_source;
 use storm_lua_syntax::print::Printer;
+use storm_lua_syntax::provenance::GeneratedOrigins;
 use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -27,6 +28,7 @@ struct Variant {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Candidate {
+    origins: Option<GeneratedOrigins>,
     structural: String,
     layout: String,
     code: String,
@@ -70,6 +72,9 @@ pub struct SearchStats {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompileCodeResult {
+    /// Final-code provenance when requested. Unknown ranges remain explicit;
+    /// not every transformation has been annotated yet, so this is not a full map.
+    pub origins: Option<GeneratedOrigins>,
     pub code: String,
     pub stats: SearchStats,
     pub passes: Vec<PassRecord>,
@@ -156,6 +161,7 @@ impl PassMask {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CandidateJob {
+    lexical_origins: Option<GeneratedOrigins>,
     lexical_source: Option<String>,
     variant: Variant,
     aggressive: bool,
@@ -225,6 +231,26 @@ impl PartialEq for SatisficingAttempt {
 // a wall-clock limit. Completed batches stay in the search context.
 const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
+fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, NodeId), String> {
+    if let Some(name) = &options.origin_source {
+        storm_lua_syntax::parse_source_with_origins(name, source)
+    } else {
+        parse_source(source).map_err(|error| error.to_string())
+    }
+}
+
+fn final_output(ast: &Ast, root: NodeId, zero: bool) -> (String, u32, Option<GeneratedOrigins>) {
+    let mut printer = Printer::new(ast, zero);
+    if ast.nodes.tracks_origins() {
+        let printed = printer.output_with_positions(root);
+        let origins = GeneratedOrigins::from_print(ast, &printed);
+        (printed.code, printer.newline_count(), origins)
+    } else {
+        let code = printer.output(root);
+        (code, printer.newline_count(), None)
+    }
+}
+
 pub fn prepare_search(
     source: &str,
     options: &CompileOptions,
@@ -238,7 +264,16 @@ fn prepare_lexical(
     root: NodeId,
     options: &CompileOptions,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
-    let code = storm_lua_syntax::print::lexical_minify(source).map_err(|e| e.to_string())?;
+    let (code, lexical_origins) = if let Some(name) = &options.origin_source {
+        let (code, origins) = storm_lua_syntax::print::lexical_minify_with_origins(name, source)
+            .map_err(|error| error.to_string())?;
+        (code, Some(origins))
+    } else {
+        (
+            storm_lua_syntax::print::lexical_minify(source).map_err(|error| error.to_string())?,
+            None,
+        )
+    };
     parse_source(&code).map_err(|e| e.to_string())?;
     Ok((
         SearchContext {
@@ -251,6 +286,7 @@ fn prepare_lexical(
             completed_batches: Vec::new(),
         },
         vec![CandidateJob {
+            lexical_origins,
             lexical_source: Some(code),
             variant: Variant {
                 name: "lexical".into(),
@@ -274,7 +310,7 @@ fn prepare_search_with_dedup(
     deduplicate: bool,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     options.validate_pass_toggles()?;
-    let (parsed_ast, parsed_root) = parse_source(source).map_err(|e| e.to_string())?;
+    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -485,6 +521,7 @@ fn prepare_search_from_base(
         .into_iter()
         .enumerate()
         .map(|(index, variant)| CandidateJob {
+            lexical_origins: None,
             lexical_source: None,
             variant,
             aggressive,
@@ -526,6 +563,7 @@ fn evaluate_candidate_with_verifier(
         }
         return Ok(CandidateBatch {
             candidates: vec![Candidate {
+                origins: job.lexical_origins.clone(),
                 structural: "lexical".into(),
                 layout: "tokens".into(),
                 code: code.clone(),
@@ -546,6 +584,7 @@ fn evaluate_candidate_with_verifier(
     let mut semantic_rejected = 0usize;
 
     let CandidateJob {
+        lexical_origins: _,
         lexical_source: _,
         variant: structural_candidate,
         aggressive,
@@ -983,12 +1022,13 @@ fn evaluate_candidate_with_verifier(
             }
         }
         let size = target_char_size(&compact);
-        let mut pretty_printer = Printer::new(&candidate_ast, zero_cost_newlines);
-        let code = pretty_printer.output(candidate_root);
+        let (code, newline_count, origins) =
+            final_output(&candidate_ast, candidate_root, zero_cost_newlines);
         if target_char_size(&code) != size {
             return Err("zero-cost newline printer changed size".into());
         }
         candidates.push(Candidate {
+            origins,
             structural: structural_name.clone(),
             layout: layout.to_string(),
             code,
@@ -996,7 +1036,7 @@ fn evaluate_candidate_with_verifier(
             order,
             passes: candidate_passes,
             aliases,
-            zero_cost_newlines: pretty_printer.newline_count(),
+            zero_cost_newlines: newline_count,
         });
     }
 
@@ -1034,10 +1074,14 @@ fn select_best_candidates(
         })
         .collect::<Vec<_>>();
     let best = candidates.remove(0);
+    if let Some(origins) = &best.origins {
+        origins.validate_for_code(&best.code)?;
+    }
     let lexical_target_met = context
         .lexical_target
         .is_some_and(|target| best.size <= target);
     Ok(CompileCodeResult {
+        origins: best.origins,
         code: best.code,
         passes: best.passes,
         api_aliases: best.aliases,
@@ -1106,12 +1150,13 @@ fn render_variant_candidate(
         return Err("satisficing checkpoint failed reparse validation".into());
     }
     let size = target_char_size(&compact);
-    let mut pretty_printer = Printer::new(&candidate_ast, zero_cost_newlines);
-    let code = pretty_printer.output(candidate_root);
+    let (code, newline_count, origins) =
+        final_output(&candidate_ast, candidate_root, zero_cost_newlines);
     if target_char_size(&code) != size {
         return Err("zero-cost newline printer changed size".into());
     }
     Ok(Candidate {
+        origins,
         structural: variant.name.clone(),
         layout: "none".into(),
         code,
@@ -1119,7 +1164,7 @@ fn render_variant_candidate(
         order,
         passes: variant.passes.clone(),
         aliases: Vec::new(),
-        zero_cost_newlines: pretty_printer.newline_count(),
+        zero_cost_newlines: newline_count,
     })
 }
 
@@ -1182,7 +1227,7 @@ pub fn try_satisficing(
         .target_size
         .ok_or("try_satisficing requires target_size")?;
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
-    let (parsed_ast, parsed_root) = parse_source(source).map_err(|error| error.to_string())?;
+    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -1292,6 +1337,10 @@ pub fn try_satisficing(
     // AST first so the requested option is still honored.
     if property_reads_hardcoded == 0 {
         explored.push(Candidate {
+            origins: options
+                .origin_source
+                .as_ref()
+                .map(|name| GeneratedOrigins::identity(name, source)),
             structural: "target:source".into(),
             layout: "source".into(),
             code: source.to_string(),

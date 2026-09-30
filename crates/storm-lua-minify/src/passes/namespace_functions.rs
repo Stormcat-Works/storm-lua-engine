@@ -552,11 +552,10 @@ pub fn devirtualize_closed_namespaces(ast: &mut Ast, root: NodeId, rename: bool)
             }
         }
     }
-    for node in &mut trial.nodes {
-        if let Node::Block(stmts) = node {
-            stmts.retain(|stmt| !removed.contains(stmt));
-        }
-    }
+    trial.nodes.retain_block_statements(
+        |statement| !removed.contains(&statement),
+        "namespace-declaration-removal",
+    );
     if !symbols.is_empty() {
         let declaration = trial.push(Node::Local(symbols, Vec::new()));
         let Node::Block(stmts) = &mut trial.nodes[root as usize] else {

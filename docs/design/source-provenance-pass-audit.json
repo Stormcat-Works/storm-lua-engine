@@ -1,0 +1,365 @@
+{
+  "schemaVersion": 1,
+  "developmentVersion": "0.3.0",
+  "scope": "Inventory plus initial propagation review; partial is not a completed semantic audit. A no-op fixture is not proof of every transformation.",
+  "fallback": "Unannotated writes invalidate their node origin; new nodes are unknown unless attributed explicitly.",
+  "passes": [
+    {
+      "id": "constant-folding",
+      "status": "partial",
+      "notes": "Expression roots and existing control-flow nodes retain their contributing original ranges. New helper subtrees still need case-by-case attribution."
+    },
+    {
+      "id": "numeric-literal-approximation",
+      "status": "partial",
+      "notes": "Existing numeric replacements and structural copy-through preserve source expressions; compound rescaling passes are separate."
+    },
+    {
+      "id": "binding-unit-rescaling",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "interval-origin-shifting",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "integer-loop-call-folding",
+      "status": "partial",
+      "notes": "Rebuilt context retains origins; removed floor calls return the original argument node."
+    },
+    {
+      "id": "color-unpack-specialization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "constant-argument-specialization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "literal-call-folding",
+      "status": "partial",
+      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+    },
+    {
+      "id": "split-sign-recomposition-elimination",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "equivalent-trailing-argument-omission",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "table-parameter-scalarization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "sparse-boolean-decode-scalarization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "numeric-boolean-bit-specialization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "quotient-remainder-fusion",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "destructive-radix-helper-synthesis",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "destructive-radix-terminal-reuse",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "quotient-chain-fusion",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "captured-single-use-hoisting",
+      "status": "partial",
+      "notes": "Copied expressions keep defining ranges; copied root records the use site as a related range."
+    },
+    {
+      "id": "immutable-global-expression-reuse",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "multiplicative-carrier-reassociation",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "coefficient-carrier-synthesis",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "destructive-result-globalization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "immutable-carrier-synthesis",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "callback-exclusive-function-slotting",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "screen-button-outlining",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "else-default-hoisting",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "conditional-call-lowering",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "conditional-assignment-lowering",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "write-only-table-field-cleanup",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "immutable-table-flattening",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "closed-namespace-scalarization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "uniform-table-fill-scalarization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "one-use-function-fusion",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "expression-helper-inlining",
+      "status": "partial",
+      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+    },
+    {
+      "id": "tiny-literal-inlining",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "single-use-local-sinking",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "dead-local-elimination",
+      "status": "partial",
+      "notes": "Retained nodes keep origins, removed bindings get no output, and surviving binding slots are explicitly remapped."
+    },
+    {
+      "id": "terminal-scope-flattening",
+      "status": "partial",
+      "notes": "Existing child nodes keep their original locations when the do wrapper is removed."
+    },
+    {
+      "id": "ordered-screen-call-factoring",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "constant-wrapper-merging",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "affine-wrapper-merging",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "root-local-globalization",
+      "status": "partial",
+      "notes": "New assignment/function nodes derive from the original declaration; each new name is explicitly copied from the old binding slot."
+    },
+    {
+      "id": "function-local-globalization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "hybrid-function-local-globalization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "global-store-cleanup",
+      "status": "partial",
+      "notes": "Ordinary structural copy and surviving assignments retain origins. Other synthesized cleanup constructs remain to be audited."
+    },
+    {
+      "id": "single-use-global-forwarding",
+      "status": "partial",
+      "notes": "Cloned defining expressions keep origins and record original use sites; speculative appended nodes roll back with their metadata."
+    },
+    {
+      "id": "equal-scratch-value-coalescing",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "unwritten-global-nil-propagation",
+      "status": "partial",
+      "notes": "Generated nil roots derive from the replaced name; ordinary context copies retain origins."
+    },
+    {
+      "id": "temporary-global-packing",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "output-sequence-loop-synthesis",
+      "status": "partial",
+      "notes": "Unchanged/copy-through context retains origins. The synthesized loops and data entries are not yet fully attributed."
+    },
+    {
+      "id": "common-offset-absorption",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "ordered-screen-loop-synthesis",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "periodic-screen-loop-synthesis",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "available-expression-reuse",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "signed-expression-factoring",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "one-use-expression-helper-reversal",
+      "status": "partial",
+      "notes": "Shared expression-copy/substitution preserves function-body origins, actual argument origins and related call/parameter sites. Statement fusion, literal-result special cases and other rewrites still need dedicated attribution."
+    },
+    {
+      "id": "final-dead-store-elimination",
+      "status": "partial",
+      "notes": "Copied context and surviving function/block nodes retain origins. Nested rewrites and synthesized forms need further cases."
+    },
+    {
+      "id": "redundant-parentheses-elimination",
+      "status": "partial",
+      "notes": "Removed wrappers do not overwrite surviving child origins."
+    },
+    {
+      "id": "scope-renaming",
+      "status": "partial",
+      "notes": "Each old identifier slot remains associated with its original spelling and range; the AST comparison excludes this metadata."
+    },
+    {
+      "id": "api-alias-optimization",
+      "status": "partial",
+      "notes": "Rebuilt source subtrees keep explicit origins; alias references derive from the original builtin access; alias definitions are explicitly synthetic."
+    },
+    {
+      "id": "closed-table-field-renaming",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "closed-namespace-devirtualization",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "exact-numeric-literal-pooling",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "ordered-draw-record-packing",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "repeated-draw-sequence-outlining",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    },
+    {
+      "id": "adjacent-local-declaration-packing",
+      "status": "partial",
+      "notes": "Merged declaration keeps related original declarations and remaps each appended binding slot explicitly."
+    },
+    {
+      "id": "conditional-return-lowering",
+      "status": "pending",
+      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+    }
+  ],
+  "additionalStages": [
+    {
+      "stage": "property-hardcoding",
+      "status": "partial",
+      "notes": "New value roots derive from the original property call."
+    },
+    {
+      "stage": "lexical-minification",
+      "status": "implemented",
+      "notes": "The shared lexical emitter records exact copied-token ranges; whitespace remains unmapped."
+    },
+    {
+      "stage": "early-source-return",
+      "status": "implemented",
+      "notes": "An unmodified source candidate carries its original snapshot and full-source group range."
+    },
+    {
+      "stage": "declaration-removal",
+      "status": "implemented",
+      "notes": "Shared block-statement filtering changes only affected block attribution; inspecting unrelated nodes no longer invalidates their origins. Owning complex passes still require their separate audits."
+    }
+  ]
+}

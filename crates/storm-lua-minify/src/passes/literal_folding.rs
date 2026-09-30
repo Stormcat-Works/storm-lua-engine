@@ -483,6 +483,33 @@ fn fold_node(
     tolerance: NumericTolerance,
     fold_nonportable_math: bool,
 ) {
+    let origin = target.nodes.capture_origin(node);
+    fold_node_inner(
+        source,
+        target,
+        resolution,
+        analyzer,
+        node,
+        aggressive,
+        tolerance,
+        fold_nonportable_math,
+    );
+    target
+        .nodes
+        .finish_rewrite(node, origin, "constant-folding");
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fold_node_inner(
+    source: &Ast,
+    target: &mut Ast,
+    resolution: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
+    node: NodeId,
+    aggressive: bool,
+    tolerance: NumericTolerance,
+    fold_nonportable_math: bool,
+) {
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         fold_node(
@@ -930,6 +957,14 @@ pub fn fold_expressions(
 }
 
 fn simplify_node(source: &Ast, target: &mut Ast, node: NodeId) {
+    let origin = target.nodes.capture_origin(node);
+    simplify_node_inner(source, target, node);
+    target
+        .nodes
+        .finish_rewrite(node, origin, "control-flow-simplification");
+}
+
+fn simplify_node_inner(source: &Ast, target: &mut Ast, node: NodeId) {
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         simplify_node(source, target, child);
@@ -994,6 +1029,13 @@ pub fn simplify_control_flow(ast: &Ast, root: NodeId, _aggressive: bool) -> (Ast
 }
 
 fn fold_exact_safe_node(ast: &mut Ast, node: NodeId) {
+    let origin = ast.nodes.capture_origin(node);
+    fold_exact_safe_node_inner(ast, node);
+    ast.nodes
+        .finish_rewrite(node, origin, "exact-control-flow-folding");
+}
+
+fn fold_exact_safe_node_inner(ast: &mut Ast, node: NodeId) {
     let original = ast.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         fold_exact_safe_node(ast, child);

@@ -55,7 +55,8 @@ pub fn canonicalize_exact_float_literals(ast: &mut Ast, root: NodeId) -> PassRes
         }
         saved += (current_len - hex.len()) as u64;
         changed += 1;
-        ast.nodes[id as usize] = Node::Num(hex.into());
+        ast.nodes
+            .rewrite(id, Node::Num(hex.into()), "exact-float-spelling");
     }
 
     PassResult {
@@ -392,7 +393,9 @@ fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact
             mapped
         }
     };
-    target.nodes[id as usize] = rewritten;
+    target
+        .nodes
+        .rewrite(id, rewritten, "numeric-literal-approximation");
     id
 }
 

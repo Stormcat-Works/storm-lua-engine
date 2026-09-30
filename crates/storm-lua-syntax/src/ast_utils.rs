@@ -22,7 +22,7 @@ pub fn map_node(
     let node = ast.nodes[id as usize].clone();
     let (node, changed) = map_owned_children(node, &mut |c| map_node(ast, c, fn_));
     if changed {
-        ast.nodes[id as usize] = node;
+        ast.nodes.rewrite(id, node, "child-rewrite");
     }
     fn_(ast, id)
 }
@@ -37,7 +37,7 @@ pub fn map_blocks(
     let node = ast.nodes[id as usize].clone();
     let (node, changed) = map_owned_children(node, &mut |c| apply_blocks(ast, c, block_fn));
     if changed {
-        ast.nodes[id as usize] = node;
+        ast.nodes.rewrite(id, node, "child-rewrite");
     }
     id
 }
@@ -54,7 +54,7 @@ fn apply_blocks(
         let node = ast.nodes[id as usize].clone();
         let (node, changed) = map_owned_children(node, &mut |c| apply_blocks(ast, c, block_fn));
         if changed {
-            ast.nodes[id as usize] = node;
+            ast.nodes.rewrite(id, node, "child-rewrite");
         }
         id
     }
@@ -280,7 +280,7 @@ fn walk_rec<F: FnMut(NodeId) + ?Sized>(ast: &Ast, id: NodeId, fn_: &mut F) {
 /// （SymbolId の整合を保つ。Interner は挿入順で id を割り当てるため）。
 pub fn inherit_ast(source: &Ast) -> Ast {
     Ast {
-        nodes: Vec::new(),
+        nodes: source.nodes.empty_like(),
         strings: source.strings.clone(),
     }
 }

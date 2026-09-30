@@ -1,6 +1,6 @@
 # 最適化後ソースマップと探索処理の実装計画
 
-記録日: 2026-09-30。基準: `d4bcfbf`、未公開の後続開発。公開済みv0.2.0の対応範囲は変更しない。P0/P1をv0.2.1として公開し、公開完了後に最適化後マップをv0.3.0として実装する。v0.3.0の公開は別の明示工程とする。
+記録日: 2026-09-30。P0/P1はv0.2.1としてnpm/GitHub/Playgroundへ公開済み。最適化後マップは専用branchのv0.3.0で開発し、公開・タグ作成は別の明示工程とする。
 
 本書は今回合意した設計・実装順序を所有する。実装済み契約は[Source maps](../specs/source-maps.md)、現在地は[STATUS](../../STATUS.md)、検証結果は別のverification記録で区別する。
 
@@ -77,7 +77,7 @@ Printerは実際に返す最終`code`に対して生成範囲を記録する。c
 
 - [x] P0: 未達targetと全探索の二重処理を排除する。全探索の出力維持、目標達成の早期終了、checkpoint/Worker継続、同一条件のNative/WASM再測定。
 - [x] P1: リンク段の正確なバイト範囲と列対応を実装する。合成部分を明示的にunmappedにし、複数ファイル・Unicode・同一行境界を検証する。
-- [ ] P2: Parser/Printerと変換サイドテーブルを接続し、名前出現・式範囲・最終出力座標を保持する。構造変換なしの最適化出力から端から端まで確認する。
+- [x] P2: Parser/Printerと由来サイドテーブルを接続。原文snapshot・名前出現・式範囲を候補分岐、rollback、JSON/binary Workerへ渡し、最終候補に一致する内部GeneratedOriginsを返す。未対応変換はUnknownとして明示する。標準mapの製品APIはP4で扱う。
 - [ ] P3: 最適化パスを単純置換、定数化、インライン化、共有化、描画データ化の順で監査・対応する。全パスを分類し、精度・未対応範囲を公開APIに偽りなく反映する。
 - [ ] P4: `minify`/`build(minify:true)`のRust/WASM/TS成果物へ接続し、非短縮mapとの合成と公開型の整合性を検証する。
 - [ ] P5: Playgroundで双方向位置選択、関連由来、自動生成/不明を表示し、エラー/停止位置に接続する。元変数の完全な復元とは分ける。
@@ -91,10 +91,18 @@ Printerは実際に返す最終`code`に対して生成範囲を記録する。c
 P0/P1の実行結果、性能比較、既知の未実装範囲は[検証記録](../verification/source-provenance-20260930.md)を参照する。残りのP2〜P5を完了扱いしない。
 
 
-## v0.3.0 P2の進捗（2026-09-30）
+## v0.3.0 P2/P3の現在地（2026-09-30）
 
-Parserの全ノードspanとNameSite、Printerの生成byte範囲記録を実装した。変換しない同じAST上では、原文の名前・式と最終印字範囲を対応付けられる。既存診断のpointと通常Printerの文字列は維持する。[検証と実行例](../verification/source-emissions-030-20260930.md)。
+Parserの全node/name span、Printerの生成byte範囲に、任意の由来テーブルを接続した。低レベル`CompileOptions.origin_source`を指定すると、通常探索・目標探索・字句短縮・元コードの早期返却・Worker継続の最終候補へ内部`GeneratedOrigins`が返る。コードと位置を別探索で再構成しない。[今回の検証](../verification/source-origin-propagation-030-20260930.md)。
 
-P2全体のチェックはまだ閉じない。由来IDテーブルの候補分岐・Arena再生成・置換への引き継ぎと、P3の各最適化パスの監査が必要である。ParserのNodePositionsを最適化済みASTへ無更新で添付してmap完成と扱わない。TS/Workerの最終map公開とPlayground接続も残る。
+P3は[全67パスの台帳](source-provenance-pass-audit.json)で管理する。19パスに由来伝播を追加したが、現段階ではすべてpartial扱い。残り48パスはpending。部分対応をパス全体の完了や全入力の追跡可能性と同一視しない。台帳のID集合はcanonical pass registryとテストで一致させる。
 
-npm自動公開は[別workflow](publication-workflow.md)へ実装済み。npmの初回Trusted Publisher承認は公開運用の残件として記録し、v0.3.0の開発は専用branchで継続する。公開済み0.2.1のtagやtarballを変更しない。
+未対応の直接mutationは該当slotの由来を失効させる。新規nodeは明示的な由来がない限りUnknown。元のnode番号が同じ、印字が似ている、近くの親に位置がある、という理由で古い位置を復活させない。既知のhelper生成だけSyntheticと明示する。
+
+P3の優先順は、局所式のコピー/置換とインライン化、名前/テーブルの再編、複数式の共通化、描画loop/data/辞書化。個別passの動作確認に加えて、複数passの連鎖で由来が消失・誤帰属しないことを検証する。単一のno-op fixtureを全変換の対応根拠にしない。
+
+P4では標準Source Map v3と詳細由来の最終公開型を確定し、非短縮link範囲を通じて元moduleへ合成する。内部byte/外部UTF-16列、names、sourcesContent、Unknown/Syntheticの明示、code/map/元snapshotの成果物識別を一緒に扱う。現在の座標検証はfingerprintではない。高レベルRust/WASM/TSの`minify`にmapが付いたとは扱わない。
+
+P5ではPlaygroundの双方向選択と関連由来・不明・自動生成表示、実runtimeの提供する生成位置へのエラー/停止対応を実装する。元変数や消失stack frameの完全復元は本版の必須条件に含めない。
+
+npmの公開運用は[公開workflow](publication-workflow.md)に分離され、v0.2.1は公開とregistry再導入まで完了している。v0.3.0の開発作業で既公開tag/tarballを変更しない。

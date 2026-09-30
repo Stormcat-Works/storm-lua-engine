@@ -1,6 +1,6 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.2.0は公開済み。後続機能は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+現在地は[STATUS](STATUS.md)。**v0.2.1は公開済み。後続機能は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -59,17 +59,10 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## ソース位置追跡とtarget探索（P0/P1実装済み）
 
-[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。残りはP2〜P5の最適化ASTの由来、最終出力map、公開API、consumerへの接続。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
+[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続は実装済み。残りはP3の各変換の由来精度、P4の最終map/公開API、P5のconsumer接続。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
 
-## v0.2.1からv0.3.0への順序
+## v0.3.0 の残件
 
-0.2.1の同一出力ゲート・GitHub/Playground公開は完了。npmの公開自動化を整備し、初回Trusted Publisher承認は公開運用の残件として分離する。[由来情報計画](docs/design/source-provenance.md)のP2〜P5を専用branchで開発する。
+v0.2.1のnpm/GitHub/Playground公開と独立導入は完了。Parser/Printerから最終候補への内部由来、candidate分岐/rollback、JSON/binary Workerは実装済み。次は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial19件の残ケースとpending48件を処理する。インライン化/名前とtable再編/共通化/描画データ化に優先順位を付け、passの組み合わせで原文帰属が壊れないことも検証する。
 
-## v0.2.1 残件（2026-09-30）
-
-GitHubとPlaygroundは公開・再取得・本番検証済み。npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの独立導入、公開状態文書の更新が未完了。v0.3.0の開発とは分離して追跡する。詳細は[公開記録](docs/verification/release-0.2.1.md)。
-
-
-## v0.3.0 の次の工程
-
-Parser/Printerの範囲記録は実装・検証済み。P2の由来IDテーブルを変換と候補分岐へ接続し、P3の各パスへ伝播規則を追加する。P4で最終mapをRust/WASM/TSへ公開し、P5でPlaygroundを接続する。全工程の完了は[計画](docs/design/source-provenance.md)で管理する。npmの初回承認待ちは公開運用の残件とし、開発の保留条件にしない。
+P4は最終Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/snapshot識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置へのエラー/停止接続。実装の詳細と完成条件は[計画](docs/design/source-provenance.md)が正本。

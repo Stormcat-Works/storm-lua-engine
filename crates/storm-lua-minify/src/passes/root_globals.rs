@@ -60,24 +60,47 @@ pub fn globalize_root_locals(ast: &mut Ast, root: NodeId) -> PassResult {
             {
                 let targets = names
                     .into_iter()
-                    .map(|symbol| {
+                    .enumerate()
+                    .map(|(index, symbol)| {
                         let name = ast.strings.get(symbol).to_string();
-                        ast.name(&name)
+                        let target = ast.name(&name);
+                        ast.nodes.copy_name_within(
+                            target,
+                            storm_lua_syntax::NameSite::Reference,
+                            statement,
+                            storm_lua_syntax::NameSite::Binding(index as u32),
+                        );
+                        target
                     })
                     .collect::<Vec<_>>();
-                output.push(ast.assign(targets, expressions));
+                let origin = ast.nodes.capture_origin(statement);
+                let assignment = ast.assign(targets, expressions);
+                ast.nodes
+                    .finish_rewrite(assignment, origin, "root-local-globalization");
+                output.push(assignment);
             }
             Node::Localfunc(name, function)
                 if root_name_counts.get(ast.strings.get(name)).copied() == Some(1) =>
             {
                 let name = ast.strings.get(name).to_string();
                 let target = ast.name(&name);
-                output.push(ast.funcstat(target, function));
+                ast.nodes.copy_name_within(
+                    target,
+                    storm_lua_syntax::NameSite::Reference,
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(0),
+                );
+                let origin = ast.nodes.capture_origin(statement);
+                let declaration = ast.funcstat(target, function);
+                ast.nodes
+                    .finish_rewrite(declaration, origin, "root-local-globalization");
+                output.push(declaration);
             }
             _ => output.push(statement),
         }
     }
-    ast.nodes[root as usize] = Node::Block(output);
+    ast.nodes
+        .rewrite(root, Node::Block(output), "root-local-globalization");
     PassResult {
         root,
         saved: Some(original_size.saturating_sub(measure_size(ast, root)) as u64),

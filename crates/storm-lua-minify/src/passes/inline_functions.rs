@@ -149,7 +149,12 @@ fn install_expression(
     replacement: NodeId,
     origins: &mut ReferenceOrigins,
 ) {
+    ast.nodes
+        .relate_within(replacement, node, "function-inline-site");
+    let source_origin = ast.nodes.capture_origin(replacement);
     ast.nodes[node as usize] = ast.node(replacement).clone();
+    ast.nodes
+        .finish_rewrite(node, source_origin, "function-inline-expression");
     if let Some(bid) = origins.get(&replacement).copied() {
         origins.insert(node, bid);
     } else {
@@ -181,11 +186,14 @@ fn expression_bindings_preserved(
 }
 
 fn clone_local_subtree(ast: &mut Ast, node: NodeId, origins: &mut ReferenceOrigins) -> NodeId {
+    let source_origin = ast.nodes.capture_origin(node);
     let original = ast.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_local_subtree(ast, child, origins)
     });
     let copied = ast.push(mapped);
+    ast.nodes
+        .finish_rewrite(copied, source_origin, "function-inline-argument-copy");
     if let Some(bid) = origins.get(&node).copied() {
         origins.insert(copied, bid);
     }
@@ -203,7 +211,14 @@ fn clone_subtree_with_replacements(
     if matches!(source.node(node), Node::Name(_)) {
         if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
             if let Some(replacement) = replacements.get(&bid) {
-                return clone_local_subtree(target, *replacement, origins);
+                let copied = clone_local_subtree(target, *replacement, origins);
+                target.nodes.relate_from(
+                    copied,
+                    &source.nodes,
+                    node,
+                    "function-parameter-substitution",
+                );
+                return copied;
             }
         }
     }
@@ -212,6 +227,9 @@ fn clone_subtree_with_replacements(
         clone_subtree_with_replacements(target, source, res, child, replacements, origins)
     });
     let copied = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copied, &source.nodes, node, "function-body-copy");
     if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
         origins.insert(copied, bid);
     }
@@ -229,11 +247,8 @@ fn count_param_uses(ast: &Ast, res: &Resolution, expression: NodeId, bid: Bindin
 }
 
 fn remove_statement_from_blocks(ast: &mut Ast, statement: NodeId) {
-    for node in &mut ast.nodes {
-        if let Node::Block(statements) = node {
-            statements.retain(|candidate| *candidate != statement);
-        }
-    }
+    ast.nodes
+        .retain_block_statements(|id| id != statement, "inline-declaration-removal");
 }
 
 pub fn specialize_constant_arguments(

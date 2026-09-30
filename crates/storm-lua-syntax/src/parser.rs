@@ -20,7 +20,9 @@ impl std::error::Error for ParseError {}
 
 /// An identifier occurrence within a parsed node, not an interned symbol.
 /// Repeated spellings and shadowed bindings have independent source positions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum NameSite {
     /// A standalone name expression.
     Reference,
@@ -50,6 +52,12 @@ pub struct NodePositions {
 }
 
 impl NodePositions {
+    pub(crate) fn name_spans(
+        &self,
+    ) -> impl Iterator<Item = ((NodeId, NameSite), (usize, usize))> + '_ {
+        self.names.iter().map(|(key, span)| (*key, *span))
+    }
+
     /// Inclusive/exclusive UTF-8 byte span of a parsed node, valid only on this AST.
     /// A declaration's Function child starts at `(`; a function expression also
     /// includes its `function` keyword. Empty blocks have an empty span.
@@ -714,6 +722,16 @@ pub fn parse_source_with_positions(
     let root = parser.parse().map_err(ParserError::Parse)?;
     let (ast, positions) = parser.into_ast_with_positions();
     Ok((ast, root, positions))
+}
+
+/// Parse and initialize opt-in origins. The source name is a label, not a filesystem path.
+/// Origin tables follow candidate clones and are invalidated by unannotated writes.
+pub fn parse_source_with_origins(name: &str, source: &str) -> Result<(Ast, NodeId), String> {
+    let (mut ast, root, positions) =
+        parse_source_with_positions(source).map_err(|error| error.to_string())?;
+    let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
+    ast.nodes.set_provenance(origins);
+    Ok((ast, root))
 }
 
 /// Distinguishes lexical and syntactic source failures.

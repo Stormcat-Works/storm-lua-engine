@@ -2,6 +2,9 @@
 
 ## Unreleased — v0.3.0 development
 
+- 内部最適化APIに由来追跡を追加し、候補・Workerと位置情報を一体で保持。未対応変換は明示Unknown。標準のminify Source Map SDK公開は後続。
+- 低レベルAst.nodesは位置失効を管理するNodeArenaへ変更。元の構文的比較と通常のJSON形は維持するが、binary Worker contextは同じcompiler版で使用する。
+
 - Parserで式全体と名前出現の範囲を保持し、Printerへ最終生成byte範囲の記録を追加。原文・生成位置の接続基盤であり、最適化後minify mapはまだ提供しない。
 
 最適化後minifyソースマップはv0.3.0で実装する。0.2.1には含まない。

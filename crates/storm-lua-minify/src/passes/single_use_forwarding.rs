@@ -258,11 +258,15 @@ fn collect_plans(
 }
 
 fn clone_subtree(ast: &mut Ast, node: NodeId) -> NodeId {
+    let origin = ast.nodes.capture_origin(node);
     let original = ast.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_subtree(ast, child)
     });
-    ast.push(mapped)
+    let copied = ast.push(mapped);
+    ast.nodes
+        .finish_rewrite(copied, origin, "global-forwarding-copy");
+    copied
 }
 
 fn clone_replacing_reads(
@@ -277,12 +281,19 @@ fn clone_replacing_reads(
         && node_bid(resolution, node) == Some(target_bid)
         && !is_write(resolution, node)
     {
-        return clone_subtree(ast, expression);
+        let replacement = clone_subtree(ast, expression);
+        ast.nodes
+            .relate_within(replacement, node, "single-use-global-forwarding");
+        return replacement;
     }
+    let origin = ast.nodes.capture_origin(node);
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         clone_replacing_reads(ast, resolution, child, target_bid, expression)
     });
-    ast.push(mapped)
+    let copied = ast.push(mapped);
+    ast.nodes
+        .finish_rewrite(copied, origin, "single-use-global-forwarding");
+    copied
 }
 
 fn statement_size(ast: &Ast, statement: NodeId) -> usize {
@@ -323,6 +334,11 @@ fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
                 kept.iter().map(|index| expressions[*index]).collect(),
             ))
         };
+        if let Some(replacement) = replacement_assignment {
+            let origin = ast.nodes.capture_origin(assignment_id);
+            ast.nodes
+                .finish_rewrite(replacement, origin, "single-use-global-forwarding");
+        }
         let old_cost = statement_size(ast, assignment_id)
             + statement_size(ast, base_statements[plan.use_index]);
         let new_cost = replacement_assignment.map_or(0, |statement| statement_size(ast, statement))
@@ -335,7 +351,11 @@ fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
             } else {
                 statements.remove(plan.assignment_index);
             }
-            ast.nodes[block as usize] = Node::Block(statements);
+            ast.nodes.rewrite(
+                block,
+                Node::Block(statements),
+                "single-use-global-forwarding",
+            );
             return true;
         }
         ast.nodes.truncate(checkpoint);

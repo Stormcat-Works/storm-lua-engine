@@ -23,6 +23,7 @@ mod grouped;
 mod palette;
 mod predictors;
 mod prefix;
+mod provenance;
 mod regular;
 mod rice;
 mod shared;
@@ -135,6 +136,9 @@ struct Call {
     // Later callees must not throw before earlier commands have executed.
     total_read: bool,
     args: Vec<Atom>,
+    origin_call: NodeId,
+    // Normalized argument source nodes, collected only when tracing is enabled.
+    origin_arguments: Vec<NodeId>,
 }
 
 struct Classifier<'a> {
@@ -320,9 +324,13 @@ impl<'a> Classifier<'a> {
             }
             let param_bids = &self.res.node_bids[function as usize];
             let mut mapped = Vec::new();
+            let mut origin_arguments = Vec::new();
             for &arg in args {
                 if let Some(atom) = Atom::read(self.ast, arg) {
                     mapped.push(atom);
+                    if self.ast.nodes.tracks_origins() {
+                        origin_arguments.push(arg);
+                    }
                 } else if matches!(self.ast.node(arg), Node::Name(_)) {
                     let pos = self.res.node_bid[arg as usize]
                         .and_then(|b| param_bids.iter().position(|&p| p == b));
@@ -331,12 +339,16 @@ impl<'a> Classifier<'a> {
                         return;
                     };
                     mapped.push(value.clone());
+                    if self.ast.nodes.tracks_origins() {
+                        origin_arguments.push(call.origin_arguments[pos]);
+                    }
                 } else {
                     return;
                 }
             }
             call.callee = *target;
             call.args = mapped;
+            call.origin_arguments = origin_arguments;
         }
     }
     fn call(&self, statement: NodeId) -> Option<Call> {
@@ -359,6 +371,12 @@ impl<'a> Classifier<'a> {
             key: String::new(),
             total_read: false,
             args: atoms,
+            origin_call: *expression,
+            origin_arguments: if self.ast.nodes.tracks_origins() {
+                args.clone()
+            } else {
+                Vec::new()
+            },
         };
         self.normalize(&mut call);
         call.total_read = self.total_callee_read(call.callee);
@@ -823,7 +841,11 @@ fn copy_callee(source: &Ast, target: &mut Ast, node: NodeId) -> NodeId {
         Node::Paren(n) => Node::Paren(copy_callee(source, target, n)),
         other => other,
     };
-    target.push(rewritten)
+    let copy = target.push(rewritten);
+    target
+        .nodes
+        .derive_from(copy, &source.nodes, node, "draw-record-callee-copy");
+    copy
 }
 fn fresh(ast: &mut Ast, taken: &mut HashSet<String>, stem: &str, serial: &mut usize) -> SymbolId {
     loop {
@@ -1325,7 +1347,8 @@ fn remove_unused_forwarders(ast: &mut Ast, root: NodeId) {
         if kept.len() == stmts.len() {
             return;
         }
-        ast.nodes[root as usize] = Node::Block(kept);
+        ast.nodes
+            .rewrite(root, Node::Block(kept), "unused-draw-forwarder-removal");
     }
 }
 

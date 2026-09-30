@@ -114,7 +114,25 @@ fn make_candidate(source: &Ast, root: NodeId, groups: &[Group], chosen: &[usize]
         for site in &groups[group_index].sites {
             let function = candidate.push(Node::Name(symbol));
             let call = candidate.push(Node::Call(function, Vec::new(), None));
-            candidate.nodes[*site as usize] = Node::Callstat(call);
+            // This invocation still belongs to its own original call site.
+            let Node::Callstat(original) = source.node(*site) else {
+                unreachable!()
+            };
+            candidate.nodes.derive_from(
+                function,
+                &source.nodes,
+                *original,
+                "screen-call-helper-reference",
+            );
+            candidate.nodes.derive_from(
+                call,
+                &source.nodes,
+                *original,
+                "screen-call-helper-invocation",
+            );
+            candidate
+                .nodes
+                .rewrite(*site, Node::Callstat(call), "screen-call-factoring");
         }
     }
 
@@ -124,15 +142,35 @@ fn make_candidate(source: &Ast, root: NodeId, groups: &[Group], chosen: &[usize]
         // The source call node is immutable and structurally equivalent for every
         // occurrence in the group, so sharing it into the wrapper body is safe.
         let callstat = candidate.push(Node::Callstat(groups[group_index].call));
+        let group = &groups[group_index];
+        let original = group.sites[group.sites.len() - 1];
+        candidate
+            .nodes
+            .derive_from(callstat, &source.nodes, original, "screen-call-shared-body");
+        for &site in &group.sites {
+            candidate
+                .nodes
+                .relate_from(callstat, &source.nodes, site, "screen-call-shared-body");
+        }
         let body = candidate.push(Node::Block(vec![callstat]));
         let function = candidate.push(Node::Function(Vec::new(), false, body));
         let target = candidate.push(Node::Name(symbol));
-        definitions.push(candidate.push(Node::Funcstat(target, function)));
+        let definition = candidate.push(Node::Funcstat(target, function));
+        for node in [body, function, target, definition] {
+            candidate
+                .nodes
+                .mark_synthetic(node, "screen-call-helper-definition");
+        }
+        definitions.push(definition);
     }
 
     if let Node::Block(statements) = candidate.node(root).clone() {
         definitions.extend(statements);
-        candidate.nodes[root as usize] = Node::Block(definitions);
+        candidate.nodes.rewrite(
+            root,
+            Node::Block(definitions),
+            "screen-call-helper-insertion",
+        );
     }
     candidate
 }

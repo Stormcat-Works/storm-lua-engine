@@ -318,7 +318,21 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
     let mut edits = BTreeMap::<NodeId, BTreeMap<usize, (usize, NodeId)>>::new();
     for c in &selected {
         let symbol = fresh(&mut target, &mut taken, "shared_draw", &mut serial);
-        definitions.push(emit_helper(&mut target, &c.shape, symbol, serial));
+        let first = target.nodes.len();
+        let mut trace = source.nodes.tracks_origins().then(|| {
+            let calls = c
+                .payloads
+                .iter()
+                .flat_map(|(i, _)| runs[*i].calls.iter())
+                .collect::<Vec<_>>();
+            provenance::Trace::new(&calls, c.shape.args.len())
+        });
+        let definition =
+            encoding::emit_helper_recording(&mut target, &c.shape, symbol, serial, &mut trace);
+        if let Some(t) = trace {
+            t.finish(&mut target, &source, first, definition);
+        }
+        definitions.push(definition);
         for (i, payload) in &c.payloads {
             let run = &runs[*i];
             let f = name(&mut target, symbol);
@@ -326,6 +340,38 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
             let data = payload.emit(&mut target);
             let call = target.push(Node::Call(f, vec![callee, data], None));
             let stmt = target.push(Node::Callstat(call));
+            if source.nodes.tracks_origins() {
+                let inputs = run
+                    .calls
+                    .iter()
+                    .flat_map(|c| c.origin_arguments.iter().copied())
+                    .collect::<Vec<_>>();
+                provenance::derive(
+                    &mut target,
+                    data,
+                    &source,
+                    &inputs,
+                    "draw-record-encoded-payload",
+                );
+                target
+                    .nodes
+                    .mark_synthetic(f, "draw-record-helper-reference");
+                let commands = run.calls.iter().map(|c| c.origin_call).collect::<Vec<_>>();
+                provenance::derive(
+                    &mut target,
+                    call,
+                    &source,
+                    &commands,
+                    "draw-record-batch-call",
+                );
+                provenance::derive(
+                    &mut target,
+                    stmt,
+                    &source,
+                    &commands,
+                    "draw-record-batch-call",
+                );
+            }
             edits
                 .entry(run.block)
                 .or_default()
@@ -344,13 +390,19 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
             at = stop;
         }
         out.extend_from_slice(&old[at..]);
-        target.nodes[block as usize] = Node::Block(out);
+        target
+            .nodes
+            .rewrite(block, Node::Block(out), "shared-draw-record-insertion");
     }
-    let Node::Block(stmts) = &mut target.nodes[root as usize] else {
+    let Node::Block(stmts) = target.node(root).clone() else {
         return 0;
     };
-    definitions.append(stmts);
-    *stmts = definitions;
+    definitions.extend(stmts);
+    target.nodes.rewrite(
+        root,
+        Node::Block(definitions),
+        "shared-draw-record-insertion",
+    );
     remove_unused_forwarders(&mut target, root);
     if rename {
         target = scope_rename_fast(&target, root).ast

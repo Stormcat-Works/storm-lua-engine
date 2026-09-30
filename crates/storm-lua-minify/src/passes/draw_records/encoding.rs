@@ -34,11 +34,21 @@ fn column_value(
 }
 
 pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial: usize) -> NodeId {
+    emit_helper_recording(ast, shape, symbol, serial, &mut None)
+}
+
+pub(super) fn emit_helper_recording(
+    ast: &mut Ast,
+    shape: &Shape,
+    symbol: SymbolId,
+    serial: usize,
+    trace: &mut Option<provenance::Trace>,
+) -> NodeId {
     if matches!(shape.codec, Codec::GroupedBytes { .. }) {
-        return super::grouped::emit_helper(ast, shape, symbol, serial);
+        return super::grouped::emit_helper(ast, shape, symbol, serial, trace);
     }
     if matches!(shape.codec, Codec::PrefixBytes { .. }) {
-        return super::prefix::emit_helper(ast, shape, symbol, serial);
+        return super::prefix::emit_helper(ast, shape, symbol, serial, trace);
     }
     let targets = 1 + shape.targets.iter().copied().max().unwrap_or(0);
     let functions = (0..targets)
@@ -69,7 +79,14 @@ pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial
                 .intern(&format!("__draw_lookup_{serial}_{}", dictionaries.len()));
             let fields = entries
                 .iter()
-                .map(|a| TableField::Arr(a.emit(ast)))
+                .map(|a| {
+                    let start = ast.nodes.len();
+                    let n = a.emit(ast);
+                    if let Some(t) = trace.as_mut() {
+                        t.lookup(start..ast.nodes.len(), shape, entries, Some(a));
+                    }
+                    TableField::Arr(n)
+                })
                 .collect();
             let table = ast.push(Node::Table(fields));
             let mut value = table;
@@ -95,6 +112,9 @@ pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial
                         .map(|n| (n - low + 35) as u8 as char)
                         .collect();
                     let string = ast.push(Node::Str(quote_lua(&text).into()));
+                    if let Some(t) = trace.as_mut() {
+                        t.lookup(string as usize..string as usize + 1, shape, entries, None);
+                    }
                     let d = name(ast, symbol);
                     let at = num(ast, 1);
                     let lookup = ast.push(Node::Index(d, at, false));
@@ -208,6 +228,7 @@ pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial
     for (slot, (which, arguments)) in shape.targets.iter().zip(&shape.args).enumerate() {
         let mut values = Vec::new();
         for (column, arg) in arguments.iter().enumerate() {
+            let first = ast.nodes.len();
             let value = match arg {
                 Arg::Constant(a) => a.emit(ast),
                 Arg::Column(col) => column_value(ast, &shape.codec, *col, value_vars, packed),
@@ -250,11 +271,18 @@ pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial
             } else {
                 value
             };
+            if let Some(t) = trace.as_mut() {
+                t.argument(first..ast.nodes.len(), slot, column);
+            }
             values.push(value);
         }
         let f = name(ast, functions[*which]);
         let call = ast.push(Node::Call(f, values, None));
-        body.push(ast.push(Node::Callstat(call)));
+        let statement = ast.push(Node::Callstat(call));
+        if let Some(t) = trace.as_mut() {
+            t.replay(f, call, statement, slot);
+        }
+        body.push(statement);
     }
     let body = ast.push(Node::Block(body));
     let first = num(ast, if zero_counter { 0 } else { 1 });

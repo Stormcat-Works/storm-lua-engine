@@ -16,8 +16,8 @@
     },
     {
       "id": "binding-unit-rescaling",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Copies preserve origins; compensation factors and initializers retain their actual source operands."
     },
     {
       "id": "interval-origin-shifting",
@@ -121,8 +121,8 @@
     },
     {
       "id": "callback-exclusive-function-slotting",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Copied callback functions preserve original identities despite sharing runtime slots."
     },
     {
       "id": "screen-button-outlining",
@@ -131,8 +131,8 @@
     },
     {
       "id": "else-default-hoisting",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Moved assignments and modified conditionals keep their original statements."
     },
     {
       "id": "conditional-call-lowering",
@@ -196,18 +196,18 @@
     },
     {
       "id": "ordered-screen-call-factoring",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Shared calls retain their source sites; new wrapper structure is explicitly generated."
     },
     {
       "id": "constant-wrapper-merging",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Merged calls and argument formulas retain original constants and functions."
     },
     {
       "id": "affine-wrapper-merging",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Formulas reference both original wrappers. Selector constants are explicitly generated."
     },
     {
       "id": "root-local-globalization",
@@ -271,8 +271,8 @@
     },
     {
       "id": "available-expression-reuse",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Each replacement keeps its use location and the reaching definition."
     },
     {
       "id": "signed-expression-factoring",
@@ -316,18 +316,18 @@
     },
     {
       "id": "exact-numeric-literal-pooling",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Pooled uses, shared values and exact arithmetic forms retain sources. Storage is explicitly generated. Missing inputs remain unknown."
     },
     {
       "id": "ordered-draw-record-packing",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Shared pair-dictionary path records palettes, payloads and replayed arguments separately from generated decoder code. Other portfolio paths still need an audit."
     },
     {
       "id": "repeated-draw-sequence-outlining",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Retained commands and each invocation keep source sites. Helper storage is explicitly generated."
     },
     {
       "id": "adjacent-local-declaration-packing",

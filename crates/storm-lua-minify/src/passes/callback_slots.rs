@@ -131,7 +131,18 @@ fn rewrite_names(
     if matches!(source.node(node), Node::Name(_)) {
         if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
             if let Some(name) = names.get(&bid) {
-                return target.name(name);
+                let copy = target.name(name);
+                target
+                    .nodes
+                    .derive_from(copy, &source.nodes, node, "callback-function-slot-use");
+                target.nodes.copy_name_from(
+                    copy,
+                    storm_lua_syntax::NameSite::Reference,
+                    &source.nodes,
+                    node,
+                    storm_lua_syntax::NameSite::Reference,
+                );
+                return copy;
             }
         }
     }
@@ -139,7 +150,11 @@ fn rewrite_names(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_names(target, source, res, names, child)
     });
-    target.push(mapped)
+    let copy = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copy, &source.nodes, node, "callback-function-relocation");
+    copy
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
@@ -227,8 +242,16 @@ fn candidate_for_count(
                     if let Node::Block(body_statements) = target.node(body).clone() {
                         let mut merged = definitions.clone();
                         merged.extend(body_statements);
-                        target.nodes[body as usize] = Node::Block(merged);
-                        target.nodes[function as usize] = Node::Function(params, vararg, body);
+                        target.nodes.rewrite(
+                            body,
+                            Node::Block(merged),
+                            "callback-function-insertion",
+                        );
+                        target.nodes.rewrite(
+                            function,
+                            Node::Function(params, vararg, body),
+                            "callback-function-insertion",
+                        );
                     }
                 }
             }
@@ -236,6 +259,12 @@ fn candidate_for_count(
         output.push(transformed);
     }
     let candidate_root = target.block(output);
+    target.nodes.derive_from(
+        candidate_root,
+        &source.nodes,
+        root,
+        "callback-function-relocation",
+    );
     (target, candidate_root)
 }
 

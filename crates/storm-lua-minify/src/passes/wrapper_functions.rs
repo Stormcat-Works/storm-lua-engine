@@ -16,6 +16,7 @@ struct Wrapper {
     function: NodeId,
     callee: NodeId,
     values: Vec<f64>,
+    arguments: Vec<NodeId>,
 }
 
 fn clone_ast(source: &Ast) -> Ast {
@@ -72,6 +73,7 @@ fn collect_wrappers(ast: &Ast, res: &Resolution) -> Vec<Wrapper> {
             declaration,
             function,
             callee: *callee,
+            arguments: arguments.clone(),
             values,
         });
     }
@@ -175,8 +177,25 @@ fn rewrite_wrapper_calls(
             continue;
         }
         let fn_node = ast.push(Node::Name(keeper_symbol));
+        ast.nodes.derive_from(
+            fn_node,
+            &source.nodes,
+            *function,
+            "merged-wrapper-reference",
+        );
+        ast.nodes.copy_name_from(
+            fn_node,
+            storm_lua_syntax::NameSite::Reference,
+            &source.nodes,
+            *function,
+            storm_lua_syntax::NameSite::Reference,
+        );
         let arg = argument(ast, bid);
-        ast.nodes[node as usize] = Node::Call(fn_node, vec![arg], None);
+        ast.nodes.rewrite(
+            node,
+            Node::Call(fn_node, vec![arg], None),
+            "merged-wrapper-call",
+        );
     }
 }
 
@@ -202,7 +221,8 @@ fn construct_translated_candidate(
         .map(|value| *value - a.values[base])
         .collect::<Vec<_>>();
     let mut args = Vec::with_capacity(offsets.len());
-    for offset in offsets {
+    for (argument_index, offset) in offsets.into_iter().enumerate() {
+        let first = candidate.nodes.len();
         let parameter = candidate.push(Node::Name(parameter_symbol));
         let expression = if offset == 0.0 {
             parameter
@@ -214,11 +234,27 @@ fn construct_translated_candidate(
                 magnitude,
             ))
         };
+        annotate_wrapper_argument(
+            &mut candidate,
+            source,
+            first,
+            &[a.arguments[argument_index], a.arguments[base]],
+            "translated-wrapper-argument",
+        );
         args.push(expression);
     }
     if let Node::Function(_, variadic, body) = candidate.node(a.function).clone() {
-        candidate.nodes[a.function as usize] =
-            Node::Function(vec![parameter_symbol], variadic, body);
+        candidate.nodes.rewrite(
+            a.function,
+            Node::Function(vec![parameter_symbol], variadic, body),
+            "merged-wrapper-function",
+        );
+        candidate.nodes.relate_from(
+            a.function,
+            &source.nodes,
+            b.function,
+            "merged-wrapper-function",
+        );
         let Node::Block(statements) = candidate.node(body).clone() else {
             unreachable!()
         };
@@ -228,7 +264,14 @@ fn construct_translated_candidate(
         let Node::Call(callee, _, method) = candidate.node(call).clone() else {
             unreachable!()
         };
-        candidate.nodes[call as usize] = Node::Call(callee, args, method);
+        candidate.nodes.rewrite(
+            call,
+            Node::Call(callee, args, method),
+            "merged-wrapper-body",
+        );
+        candidate
+            .nodes
+            .relate_from(call, &source.nodes, b.function, "merged-wrapper-body");
     }
     let keeper_symbol = res.bindings[a.bid as usize].name;
     rewrite_wrapper_calls(
@@ -240,14 +283,15 @@ fn construct_translated_candidate(
         b.bid,
         keeper_symbol,
         |ast, bid| {
-            ast.push(Node::Num(
-                short_num(if bid == a.bid {
-                    a.values[base]
-                } else {
-                    b.values[base]
-                })
-                .into(),
-            ))
+            let wrapper = if bid == a.bid { a } else { b };
+            let value = ast.push(Node::Num(short_num(wrapper.values[base]).into()));
+            ast.nodes.derive_from(
+                value,
+                &source.nodes,
+                wrapper.arguments[base],
+                "translated-wrapper-actual",
+            );
+            value
         },
     );
     remove_declaration(&mut candidate, b.declaration);
@@ -294,16 +338,33 @@ fn construct_affine_candidate(
     let parameter_symbol = candidate.strings.intern(parameter_name);
     let mut args = Vec::with_capacity(a.values.len());
     for (index, base) in a.values.iter().copied().enumerate() {
+        let first = candidate.nodes.len();
         args.push(affine_argument(
             &mut candidate,
             parameter_symbol,
             base,
             b.values[index] - base,
         ));
+        annotate_wrapper_argument(
+            &mut candidate,
+            source,
+            first,
+            &[a.arguments[index], b.arguments[index]],
+            "affine-wrapper-argument",
+        );
     }
     if let Node::Function(_, variadic, body) = candidate.node(a.function).clone() {
-        candidate.nodes[a.function as usize] =
-            Node::Function(vec![parameter_symbol], variadic, body);
+        candidate.nodes.rewrite(
+            a.function,
+            Node::Function(vec![parameter_symbol], variadic, body),
+            "merged-wrapper-function",
+        );
+        candidate.nodes.relate_from(
+            a.function,
+            &source.nodes,
+            b.function,
+            "merged-wrapper-function",
+        );
         let Node::Block(statements) = candidate.node(body).clone() else {
             unreachable!()
         };
@@ -313,7 +374,14 @@ fn construct_affine_candidate(
         let Node::Call(callee, _, method) = candidate.node(call).clone() else {
             unreachable!()
         };
-        candidate.nodes[call as usize] = Node::Call(callee, args, method);
+        candidate.nodes.rewrite(
+            call,
+            Node::Call(callee, args, method),
+            "merged-wrapper-body",
+        );
+        candidate
+            .nodes
+            .relate_from(call, &source.nodes, b.function, "merged-wrapper-body");
     }
     let keeper_symbol = res.bindings[a.bid as usize].name;
     rewrite_wrapper_calls(
@@ -325,9 +393,10 @@ fn construct_affine_candidate(
         b.bid,
         keeper_symbol,
         |ast, bid| {
-            ast.push(Node::Num(
-                if bid == a.bid { "0" } else { "1" }.to_string().into(),
-            ))
+            let selector = ast.push(Node::Num(if bid == a.bid { "0" } else { "1" }.into()));
+            ast.nodes
+                .mark_synthetic(selector, "affine-wrapper-selector");
+            selector
         },
     );
     remove_declaration(&mut candidate, b.declaration);
@@ -470,6 +539,35 @@ pub fn merge_affine_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult
             root,
             saved: Some(0),
             details: Some(vec!["merged=0".to_string()]),
+        }
+    }
+}
+
+// This range consists only of the newly built single argument expression.
+// The synthetic parameter is storage; constants and arithmetic derive from
+// the selected original wrapper arguments, not from the whole function body.
+fn annotate_wrapper_argument(
+    target: &mut Ast,
+    source: &Ast,
+    first: usize,
+    inputs: &[NodeId],
+    reason: &str,
+) {
+    if !target.nodes.tracks_origins() {
+        return;
+    }
+    let complete = inputs.iter().all(|&n| source.nodes.origin(n).is_some());
+    for id in first..target.nodes.len() {
+        let id = id as NodeId;
+        if matches!(target.node(id), Node::Name(_)) {
+            target.nodes.mark_synthetic(id, "merged-wrapper-parameter");
+        } else if complete {
+            target
+                .nodes
+                .derive_from(id, &source.nodes, inputs[0], reason);
+            for &input in &inputs[1..] {
+                target.nodes.relate_from(id, &source.nodes, input, reason);
+            }
         }
     }
 }

@@ -129,16 +129,43 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
             };
             let symbol = trial.strings.intern(&name);
             for &node in &group.nodes {
-                trial.nodes[node as usize] = Node::Name(symbol);
+                trial
+                    .nodes
+                    .rewrite(node, Node::Name(symbol), "numeric-literal-pool-use");
             }
             symbols.push(symbol);
-            values.push(trial.push(Node::Num(group.token.clone())));
+            let value = trial.push(Node::Num(group.token.clone()));
+            if ast.nodes.tracks_origins()
+                && group.nodes.iter().all(|&n| ast.nodes.origin(n).is_some())
+            {
+                trial.nodes.derive_from(
+                    value,
+                    &ast.nodes,
+                    group.nodes[0],
+                    "numeric-literal-pool-value",
+                );
+                for &original in &group.nodes[1..] {
+                    trial.nodes.relate_from(
+                        value,
+                        &ast.nodes,
+                        original,
+                        "numeric-literal-pool-value",
+                    );
+                }
+            }
+            values.push(value);
         }
         let declaration = trial.push(Node::Local(symbols, values));
-        let Node::Block(stmts) = &mut trial.nodes[root as usize] else {
+        trial
+            .nodes
+            .mark_synthetic(declaration, "numeric-literal-pool-storage");
+        let Node::Block(mut stmts) = trial.node(root).clone() else {
             unreachable!()
         };
         stmts.insert(0, declaration);
+        trial
+            .nodes
+            .rewrite(root, Node::Block(stmts), "numeric-literal-pool-insertion");
         if rename {
             trial = scope_rename_fast(&trial, root).ast;
         }

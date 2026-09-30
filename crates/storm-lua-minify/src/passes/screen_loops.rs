@@ -54,7 +54,12 @@ fn add_term(ast: &mut Ast, base: Option<NodeId>, coefficient: f64, term: NodeId)
     }
 }
 
-fn affine(source: &Ast, target: &mut Ast, values: &[NodeId], index: NodeId) -> Option<NodeId> {
+fn affine_expression(
+    source: &Ast,
+    target: &mut Ast,
+    values: &[NodeId],
+    index: NodeId,
+) -> Option<NodeId> {
     if values.len() < 2
         || !values
             .iter()
@@ -116,7 +121,7 @@ fn integer_periodic_possible(numbers: &[f64], period: usize, phase: usize) -> bo
     })
 }
 
-fn periodic_affine(
+fn periodic_affine_expression(
     source: &Ast,
     target: &mut Ast,
     values: &[NodeId],
@@ -175,6 +180,7 @@ fn periodic_affine(
                         continue;
                     }
                     let index = target.push(Node::Name(index_symbol));
+                    target.nodes.mark_synthetic(index, "screen-loop-index");
                     let mut expression = add_term(target, None, step, index);
                     let shifted_index = target.push(Node::Name(index_symbol));
                     let shifted = if phase == 0 {
@@ -214,7 +220,19 @@ struct Template {
     leaves: Vec<NodeId>,
 }
 
-fn fallback_template(replacement: NodeId, values: &[NodeId]) -> Template {
+fn fallback_template(
+    source: &Ast,
+    target: &mut Ast,
+    replacement: NodeId,
+    values: &[NodeId],
+) -> Template {
+    derive_samples(
+        target,
+        replacement,
+        source,
+        values,
+        "screen-value-table-lookup",
+    );
     Template {
         template: replacement,
         leaves: values.to_vec(),
@@ -244,6 +262,7 @@ fn translated_template(
     }
     if let Some(symbol) = affine_symbol {
         let index = target.push(Node::Name(symbol));
+        target.nodes.mark_synthetic(index, "screen-loop-index");
         if let Some(progression) = affine(source, target, values, index).or_else(|| {
             periodic
                 .then(|| periodic_affine(source, target, values, symbol))
@@ -260,7 +279,7 @@ fn translated_template(
         .iter()
         .all(|value| std::mem::discriminant(source.node(*value)) == kind)
     {
-        return Some(fallback_template(replacement, values));
+        return Some(fallback_template(source, target, replacement, values));
     }
 
     let first = source.node(values[0]).clone();
@@ -268,7 +287,7 @@ fn translated_template(
     // force a whole-expression value table fallback as soon as the expressions differ.
     match first {
         Node::Call(..) | Node::Table(..) | Node::Function(..) => {
-            return Some(fallback_template(replacement, values));
+            return Some(fallback_template(source, target, replacement, values));
         }
         _ => {}
     }
@@ -304,7 +323,7 @@ fn translated_template(
                 .collect();
             let inner = match merge_child(parts) {
                 Some(inner) => inner,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             target.push(Node::Paren(inner))
         }
@@ -313,7 +332,7 @@ fn translated_template(
                 .iter()
                 .all(|value| matches!(source.node(*value), Node::Un(op, _) if *op == operator))
             {
-                return Some(fallback_template(replacement, values));
+                return Some(fallback_template(source, target, replacement, values));
             }
             let parts = values
                 .iter()
@@ -324,7 +343,7 @@ fn translated_template(
                 .collect();
             let inner = match merge_child(parts) {
                 Some(inner) => inner,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             target.push(Node::Un(operator, inner))
         }
@@ -333,7 +352,7 @@ fn translated_template(
                 .iter()
                 .all(|value| matches!(source.node(*value), Node::Bin(op, _, _) if *op == operator))
             {
-                return Some(fallback_template(replacement, values));
+                return Some(fallback_template(source, target, replacement, values));
             }
             let lefts = values
                 .iter()
@@ -344,7 +363,7 @@ fn translated_template(
                 .collect();
             let left = match merge_child(lefts) {
                 Some(value) => value,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             let rights = values
                 .iter()
@@ -355,13 +374,13 @@ fn translated_template(
                 .collect();
             let right = match merge_child(rights) {
                 Some(value) => value,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             target.push(Node::Bin(operator, left, right))
         }
         Node::Index(_, _, dot) => {
             if !values.iter().all(|value| matches!(source.node(*value), Node::Index(_, _, other_dot) if *other_dot == dot)) {
-                return Some(fallback_template(replacement, values));
+                return Some(fallback_template(source, target, replacement, values));
             }
             let objects = values
                 .iter()
@@ -372,7 +391,7 @@ fn translated_template(
                 .collect();
             let object = match merge_child(objects) {
                 Some(value) => value,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             let keys = values
                 .iter()
@@ -383,7 +402,7 @@ fn translated_template(
                 .collect();
             let key = match merge_child(keys) {
                 Some(value) => value,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             target.push(Node::Index(object, key, dot))
         }
@@ -391,7 +410,7 @@ fn translated_template(
             if !values.iter().all(
                 |value| matches!(source.node(*value), Node::Methodname(_, other) if *other == name),
             ) {
-                return Some(fallback_template(replacement, values));
+                return Some(fallback_template(source, target, replacement, values));
             }
             let objects = values
                 .iter()
@@ -402,16 +421,17 @@ fn translated_template(
                 .collect();
             let object = match merge_child(objects) {
                 Some(value) => value,
-                None => return Some(fallback_template(replacement, values)),
+                None => return Some(fallback_template(source, target, replacement, values)),
             };
             target.push(Node::Methodname(object, name))
         }
         // If the differing expressions are scalar/atom-like, the scalar value itself changes.
         Node::Name(_) | Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil | Node::Vararg => {
-            return Some(fallback_template(replacement, values));
+            return Some(fallback_template(source, target, replacement, values));
         }
-        _ => return Some(fallback_template(replacement, values)),
+        _ => return Some(fallback_template(source, target, replacement, values)),
     };
+    derive_samples(target, template, source, values, "screen-argument-template");
     Some(Template {
         template,
         leaves: changing.unwrap_or_default(),
@@ -538,6 +558,7 @@ fn build_candidate(
             })
             .collect::<Vec<_>>();
         let index = target.push(Node::Name(index_symbol));
+        target.nodes.mark_synthetic(index, "screen-loop-index");
         if let Some(progression) = affine(source, target, &values, index).or_else(|| {
             periodic
                 .then(|| periodic_affine(source, target, &values, index_symbol))
@@ -557,6 +578,11 @@ fn build_candidate(
         let one = target.push(Node::Num("1".to_string().into()));
         let plus_one = target.push(Node::Bin("+".to_string(), index_name, one));
         let table_index = target.push(Node::Index(table_name, plus_one, false));
+        for node in [table_name, index_name, one, plus_one] {
+            target
+                .nodes
+                .mark_synthetic(node, "screen-value-table-address");
+        }
         let template = translated_template(
             source,
             target,
@@ -587,7 +613,14 @@ fn build_candidate(
         let target_name = target.push(Node::Name(table_symbol));
         let fields = values.into_iter().map(TableField::Arr).collect();
         let table = target.push(Node::Table(fields));
-        Some(target.push(Node::Assign(vec![target_name], vec![table])))
+        let assignment = target.push(Node::Assign(vec![target_name], vec![table]));
+        // Only the storage shell is inserted. Original table elements retain their own origins.
+        for node in [target_name, table, assignment] {
+            target
+                .nodes
+                .mark_synthetic(node, "screen-value-table-storage");
+        }
+        Some(assignment)
     } else {
         None
     };
@@ -600,6 +633,23 @@ fn build_candidate(
     let start = target.push(Node::Num("0".to_string().into()));
     let end = target.push(Node::Num(short_num((calls.len() - 1) as f64).into()));
     let loop_node = target.push(Node::Fornum(index_symbol, start, end, None, body));
+    derive_samples(
+        target,
+        body_call,
+        source,
+        calls,
+        "screen-loop-replayed-call",
+    );
+    derive_samples(
+        target,
+        body_statement,
+        source,
+        calls,
+        "screen-loop-replayed-call",
+    );
+    for node in [body, start, end, loop_node] {
+        target.nodes.mark_synthetic(node, "screen-loop-control");
+    }
     let (old_cost, new_cost) = normalize_cost(
         target,
         calls,
@@ -847,4 +897,73 @@ mod integer_periodic_tests {
             assert!(!integer_periodic_possible(&samples, 8, phase));
         }
     }
+}
+
+fn derive_samples(target: &mut Ast, node: NodeId, source: &Ast, values: &[NodeId], reason: &str) {
+    if !target.nodes.tracks_origins() {
+        return;
+    }
+    if values.is_empty() || values.iter().any(|&id| source.nodes.origin(id).is_none()) {
+        let syntax = target.node(node).clone();
+        target.nodes[node as usize] = syntax;
+        return;
+    }
+    target
+        .nodes
+        .derive_from(node, &source.nodes, values[0], reason);
+    for &original in &values[1..] {
+        target
+            .nodes
+            .relate_from(node, &source.nodes, original, reason);
+    }
+}
+
+fn affine(source: &Ast, target: &mut Ast, values: &[NodeId], index: NodeId) -> Option<NodeId> {
+    let first = target.nodes.len();
+    let result = affine_expression(source, target, values, index)?;
+    // A unit progression can reduce to the index alone. That read is the
+    // representation of this original column, not only loop-control syntax.
+    if result == index {
+        derive_samples(target, result, source, values, "screen-affine-arguments");
+    }
+    if target.nodes.tracks_origins() {
+        for node in first..target.nodes.len() {
+            derive_samples(
+                target,
+                node as NodeId,
+                source,
+                values,
+                "screen-affine-arguments",
+            );
+        }
+    }
+    Some(result)
+}
+
+fn periodic_affine(
+    source: &Ast,
+    target: &mut Ast,
+    values: &[NodeId],
+    symbol: SymbolId,
+) -> Option<NodeId> {
+    let first = target.nodes.len();
+    let result = periodic_affine_expression(source, target, values, symbol)?;
+    if target.nodes.tracks_origins() {
+        for node in first..target.nodes.len() {
+            if matches!(target.node(node as NodeId), Node::Name(_)) {
+                target
+                    .nodes
+                    .mark_synthetic(node as NodeId, "screen-loop-index");
+            } else {
+                derive_samples(
+                    target,
+                    node as NodeId,
+                    source,
+                    values,
+                    "screen-periodic-arguments",
+                );
+            }
+        }
+    }
+    Some(result)
 }

@@ -30,6 +30,7 @@ struct Initializer {
 struct Candidate {
     initializer: Initializer,
     divisor: f64,
+    divisor_expression: NodeId,
     estimate: usize,
 }
 
@@ -128,7 +129,11 @@ fn rewrite_numerator(
     if matches!(source.node(node), Node::Name(_))
         && res.node_bid.get(node as usize).copied().flatten() == Some(candidate.initializer.bid)
     {
-        return scaled_name(target, candidate);
+        let name = scaled_name(target, candidate);
+        target
+            .nodes
+            .derive_from(name, &source.nodes, node, "rescaled-name");
+        return name;
     }
     if count_bid(source, res, node, candidate.initializer.bid) == 0 {
         return rewrite_node(target, source, res, node, candidate, false);
@@ -137,7 +142,11 @@ fn rewrite_numerator(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_numerator(target, source, res, child, candidate)
     });
-    target.push(mapped)
+    let copy = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copy, &source.nodes, node, "binding-unit-rescaling");
+    copy
 }
 
 fn rewrite_node(
@@ -152,7 +161,22 @@ fn rewrite_node(
         && matches!(source.node(node), Node::Name(_))
         && res.node_bid.get(node as usize).copied().flatten() == Some(candidate.initializer.bid)
     {
-        return compensated_name(target, candidate);
+        let first = target.nodes.len();
+        let compensated = compensated_name(target, candidate);
+        if source.nodes.tracks_origins() {
+            for id in first..target.nodes.len() {
+                let id = id as NodeId;
+                let original = if matches!(target.node(id), Node::Num(_)) {
+                    candidate.divisor_expression
+                } else {
+                    node
+                };
+                target
+                    .nodes
+                    .derive_from(id, &source.nodes, original, "rescaled-read-compensation");
+            }
+        }
+        return compensated;
     }
     if let Node::Bin(op, left, right) = source.node(node) {
         if op == "/" {
@@ -164,7 +188,14 @@ fn rewrite_node(
                             == Some(candidate.initializer.bid))
                         || direct_product_factor(source, res, *left, candidate.initializer.bid))
                 {
-                    return rewrite_numerator(target, source, res, *left, candidate);
+                    let result = rewrite_numerator(target, source, res, *left, candidate);
+                    target.nodes.relate_from(
+                        result,
+                        &source.nodes,
+                        node,
+                        "rescaled-quotient-elision",
+                    );
+                    return result;
                 }
             }
         }
@@ -179,16 +210,41 @@ fn rewrite_node(
             .map(|child| rewrite_node(target, source, res, child, candidate, false))
             .collect::<Vec<_>>();
         if node == candidate.initializer.statement {
-            expressions[candidate.initializer.expression_index] =
-                target.num(short_num(candidate.initializer.value / candidate.divisor));
+            let value = target.num(short_num(candidate.initializer.value / candidate.divisor));
+            let Node::Assign(_, originals) = source.node(node) else {
+                unreachable!()
+            };
+            let original = originals[candidate.initializer.expression_index];
+            if source.nodes.origin(original).is_some()
+                && source.nodes.origin(candidate.divisor_expression).is_some()
+            {
+                target
+                    .nodes
+                    .derive_from(value, &source.nodes, original, "rescaled-initializer");
+                target.nodes.relate_from(
+                    value,
+                    &source.nodes,
+                    candidate.divisor_expression,
+                    "rescaled-initializer",
+                );
+            }
+            expressions[candidate.initializer.expression_index] = value;
         }
-        return target.push(Node::Assign(targets, expressions));
+        let copy = target.push(Node::Assign(targets, expressions));
+        target
+            .nodes
+            .derive_from(copy, &source.nodes, node, "binding-unit-rescaling");
+        return copy;
     }
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_node(target, source, res, child, candidate, false)
     });
-    target.push(mapped)
+    let copy = target.push(mapped);
+    target
+        .nodes
+        .derive_from(copy, &source.nodes, node, "binding-unit-rescaling");
+    copy
 }
 
 fn apply_candidate(
@@ -296,7 +352,7 @@ pub fn rescale_bindings_with_options(
             ) {
                 continue;
             }
-            let mut divisors = HashMap::<u64, (f64, usize)>::new();
+            let mut divisors = HashMap::<u64, (f64, usize, NodeId)>::new();
             for &node in &ast_nodes {
                 let Node::Bin(op, left, right) = source.node(node) else {
                     continue;
@@ -319,13 +375,14 @@ pub fn rescale_bindings_with_options(
                 }
                 let entry = divisors
                     .entry(divisor.to_bits())
-                    .or_insert((divisor, 0usize));
+                    .or_insert((divisor, 0usize, *right));
                 entry.1 += 1;
             }
-            for (_, (divisor, removable)) in divisors {
+            for (_, (divisor, removable, divisor_expression)) in divisors {
                 candidates.push(Candidate {
                     initializer: initializer.clone(),
                     divisor,
+                    divisor_expression,
                     estimate: removable * (short_num(divisor).len() + 1),
                 });
             }

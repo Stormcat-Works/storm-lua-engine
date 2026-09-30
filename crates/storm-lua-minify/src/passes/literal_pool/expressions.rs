@@ -184,8 +184,24 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId) -> usize {
     for (nodes, replacement) in replacements {
         for node in nodes {
             // Separate expression nodes preserve resolver/source-map ownership.
+            let first = trial.nodes.len();
             let emitted = replacement.emit(&mut trial);
+            // This emitter creates only the arithmetic representation of this
+            // one literal; it does not contain any borrowed source children.
+            if ast.nodes.tracks_origins() {
+                for new_node in first..trial.nodes.len() {
+                    trial.nodes.derive_from(
+                        new_node as NodeId,
+                        &ast.nodes,
+                        node,
+                        "exact-literal-expression",
+                    );
+                }
+            }
             trial.nodes[node as usize] = trial.node(emitted).clone();
+            trial
+                .nodes
+                .derive_from(node, &ast.nodes, node, "exact-literal-expression");
             count += 1;
         }
     }

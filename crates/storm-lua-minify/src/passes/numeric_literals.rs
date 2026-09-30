@@ -302,7 +302,14 @@ fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact
                     let original_len = measure_expr(context.source, id);
                     if candidate.len() < original_len {
                         context.shortened += 1;
-                        return target.num(candidate);
+                        let replacement = target.num(candidate);
+                        target.nodes.derive_from(
+                            replacement,
+                            &context.source.nodes,
+                            id,
+                            "numeric-literal-approximation",
+                        );
+                        return replacement;
                     }
                 }
             }

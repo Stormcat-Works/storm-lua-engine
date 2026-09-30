@@ -178,7 +178,11 @@ fn apply_site(ast: &mut Ast, site: Site) -> Result<(), &'static str> {
     let Node::Block(defaults) = ast.node(else_block).clone() else {
         return Err("validated else block changed");
     };
-    ast.nodes[site.statement as usize] = Node::If(arms, None);
+    ast.nodes.rewrite(
+        site.statement,
+        Node::If(arms, None),
+        "else-default-hoisting",
+    );
     let Node::Block(statements) = ast.node(site.block).clone() else {
         return Err("validated containing block changed");
     };
@@ -187,7 +191,8 @@ fn apply_site(ast: &mut Ast, site: Site) -> Result<(), &'static str> {
     output.extend(defaults);
     output.push(site.statement);
     output.extend_from_slice(&statements[site.index + 1..]);
-    ast.nodes[site.block as usize] = Node::Block(output);
+    ast.nodes
+        .rewrite(site.block, Node::Block(output), "else-default-hoisting");
     Ok(())
 }
 

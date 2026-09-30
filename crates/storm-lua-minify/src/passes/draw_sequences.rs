@@ -202,9 +202,27 @@ pub fn outline_draw_sequences(ast: &mut Ast, root: NodeId, rename: bool) -> Pass
             unreachable!()
         };
         let motif_body = stmts[first.start..first.start + motif.length].to_vec();
+        if target.nodes.tracks_origins() {
+            for site in &motif.sites[1..] {
+                let Node::Block(original) = target.node(site.block) else {
+                    unreachable!()
+                };
+                let counterparts = original[site.start..site.start + motif.length].to_vec();
+                for (&moved, &other) in motif_body.iter().zip(&counterparts) {
+                    target
+                        .nodes
+                        .relate_within(moved, other, "draw-sequence-shared-command");
+                }
+            }
+        }
         let block = target.push(Node::Block(motif_body));
         let function = target.push(Node::Function(Vec::new(), false, block));
         let definition = target.push(Node::Localfunc(symbol, function));
+        for node in [block, function, definition] {
+            target
+                .nodes
+                .mark_synthetic(node, "draw-sequence-helper-definition");
+        }
         let mut by_block = BTreeMap::<NodeId, Vec<usize>>::new();
         for site in &motif.sites {
             by_block.entry(site.block).or_default().push(site.start);
@@ -219,19 +237,39 @@ pub fn outline_draw_sequences(ast: &mut Ast, root: NodeId, rename: bool) -> Pass
                 out.extend_from_slice(&stmts[cursor..start]);
                 let f = target.push(Node::Name(symbol));
                 let call = target.push(Node::Call(f, Vec::new(), None));
-                out.push(target.push(Node::Callstat(call)));
+                let statement = target.push(Node::Callstat(call));
+                target
+                    .nodes
+                    .mark_synthetic(f, "draw-sequence-helper-reference");
+                for node in [call, statement] {
+                    let origin = target.nodes.capture_origin(stmts[start]);
+                    target
+                        .nodes
+                        .finish_rewrite(node, origin, "draw-sequence-invocation");
+                    for &original in &stmts[start + 1..start + motif.length] {
+                        target
+                            .nodes
+                            .relate_within(node, original, "draw-sequence-invocation");
+                    }
+                }
+                out.push(statement);
                 cursor = start + motif.length;
             }
             out.extend_from_slice(&stmts[cursor..]);
-            target.nodes[block as usize] = Node::Block(out);
+            target
+                .nodes
+                .rewrite(block, Node::Block(out), "draw-sequence-outlining");
         }
         let Some((at, _)) = on_draw(&target, root) else {
             unreachable!()
         };
-        let Node::Block(stmts) = &mut target.nodes[root as usize] else {
+        let Node::Block(mut stmts) = target.node(root).clone() else {
             unreachable!()
         };
         stmts.insert(at, definition);
+        target
+            .nodes
+            .rewrite(root, Node::Block(stmts), "draw-sequence-helper-insertion");
         count += 1;
         replaced += motif.sites.len();
     }

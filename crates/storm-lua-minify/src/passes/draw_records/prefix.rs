@@ -2,7 +2,13 @@
 //! The first digit chooses the width; no terminator, ambiguity, or padding.
 use super::*;
 
-pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial: usize) -> NodeId {
+pub(super) fn emit_helper(
+    ast: &mut Ast,
+    shape: &Shape,
+    symbol: SymbolId,
+    serial: usize,
+    trace: &mut Option<provenance::Trace>,
+) -> NodeId {
     let Codec::PrefixBytes {
         biases,
         radices,
@@ -23,7 +29,7 @@ pub(super) fn emit_helper(ast: &mut Ast, shape: &Shape, symbol: SymbolId, serial
         radices: radices.clone(),
         width: *width,
     };
-    let declaration = super::encoding::emit_helper(ast, &fixed, symbol, serial);
+    let declaration = super::encoding::emit_helper_recording(ast, &fixed, symbol, serial, trace);
     let index = ast.strings.intern(&format!("__draw_i_{serial}"));
     let data = ast.strings.intern(&format!("__draw_d_{serial}"));
     let packed = ast.strings.intern(&format!("__draw_p_{serial}"));

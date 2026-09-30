@@ -26,3 +26,6 @@ mod provenance_zero_tests;
 
 #[cfg(test)]
 mod provenance_table_function_tests;
+
+#[cfg(test)]
+mod provenance_complete_tests;

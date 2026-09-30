@@ -350,30 +350,54 @@ fn boolean_coercion(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
     Some(twice)
 }
 
+// These operands, not an enclosing statement, determine the computed value.
+// A missing input origin therefore remains missing on the result.
+fn computed_origin(ast: &mut Ast, result: NodeId, inputs: &[NodeId], reason: &str) {
+    if !ast.nodes.tracks_origins()
+        || inputs.is_empty()
+        || inputs.iter().any(|&id| ast.nodes.origin(id).is_none())
+    {
+        return;
+    }
+    let origin = ast.nodes.capture_origin(inputs[0]);
+    ast.nodes.finish_rewrite(result, origin, reason);
+    for &input in &inputs[1..] {
+        ast.nodes.relate_within(result, input, reason);
+    }
+}
+
 fn positive_term(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
     let value = without_parens(ast, node);
     match ast.node(value).clone() {
         Node::Num(v) if num_val(&v) < 0.0 => {
-            Some(ast.push(Node::Num(short_num(-num_val(&v)).into())))
+            let result = ast.push(Node::Num(short_num(-num_val(&v)).into()));
+            computed_origin(ast, result, &[value], "positive-term-literal");
+            Some(result)
         }
         Node::Un(op, expression) if op == "-" => Some(expression),
         Node::Bin(op, left, right) if op == "/" => {
             let numerator = positive_term(ast, left)?;
-            Some(ast.push(Node::Bin("/".into(), numerator, right)))
+            let result = ast.push(Node::Bin("/".into(), numerator, right));
+            computed_origin(ast, result, &[value], "positive-term-division");
+            Some(result)
         }
         Node::Bin(op, left, right) if op == "*" => {
-            let l = without_parens(ast, left);
-            let r = without_parens(ast, right);
-            if let Node::Num(v) = ast.node(l).clone() {
-                if num_val(&v) < 0.0 {
-                    let n = ast.push(Node::Num(short_num(-num_val(&v)).into()));
-                    return Some(ast.push(Node::Bin("*".into(), n, right)));
-                }
-            }
-            if let Node::Num(v) = ast.node(r).clone() {
-                if num_val(&v) < 0.0 {
-                    let n = ast.push(Node::Num(short_num(-num_val(&v)).into()));
-                    return Some(ast.push(Node::Bin("*".into(), left, n)));
+            for (literal, is_left) in [
+                (without_parens(ast, left), true),
+                (without_parens(ast, right), false),
+            ] {
+                if let Node::Num(v) = ast.node(literal).clone() {
+                    if num_val(&v) < 0.0 {
+                        let n = ast.push(Node::Num(short_num(-num_val(&v)).into()));
+                        computed_origin(ast, n, &[literal], "positive-term-literal");
+                        let result = ast.push(Node::Bin(
+                            "*".into(),
+                            if is_left { n } else { left },
+                            if is_left { right } else { n },
+                        ));
+                        computed_origin(ast, result, &[value], "positive-term-product");
+                        return Some(result);
+                    }
                 }
             }
             None
@@ -410,14 +434,23 @@ fn divide_by_literal(ast: &mut Ast, value: NodeId, divisor: NodeId) -> Option<No
             let rn = numerator / factor;
             let rd = denominator / factor;
             if rd == 1.0 {
-                return Some(ast.push(Node::Num(short_num(rn).into())));
+                let result = ast.push(Node::Num(short_num(rn).into()));
+                computed_origin(ast, result, &[value, divisor], "reduced-literal-division");
+                return Some(result);
             }
             let l = ast.push(Node::Num(short_num(rn).into()));
             let r = ast.push(Node::Num(short_num(rd).into()));
-            return Some(ast.push(Node::Bin("/".into(), l, r)));
+            for result in [l, r] {
+                computed_origin(ast, result, &[value, divisor], "reduced-literal-division");
+            }
+            let result = ast.push(Node::Bin("/".into(), l, r));
+            computed_origin(ast, result, &[value, divisor], "reduced-literal-division");
+            return Some(result);
         }
     }
-    Some(ast.push(Node::Bin("/".into(), value, divisor)))
+    let result = ast.push(Node::Bin("/".into(), value, divisor));
+    computed_origin(ast, result, &[value, divisor], "literal-division");
+    Some(result)
 }
 
 fn modulo_bit_test(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
@@ -447,15 +480,20 @@ fn modulo_bit_test(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
         return None;
     }
     let two_mask = ast.push(Node::Num(short_num(mask * 2.0).into()));
+    computed_origin(ast, two_mask, &[mask_node], "bit-test-modulus");
     let modulo = ast.push(Node::Bin("%".into(), value, two_mask));
+    computed_origin(ast, modulo, &[bit], "bit-test-modulo");
     let boundary = ast.push(Node::Num(
         short_num(if op == "~=" { mask - 1.0 } else { mask }).into(),
     ));
-    Some(ast.push(Node::Bin(
+    computed_origin(ast, boundary, &[mask_node, right], "bit-test-boundary");
+    let result = ast.push(Node::Bin(
         if op == "~=" { ">" } else { "<" }.into(),
         modulo,
         boundary,
-    )))
+    ));
+    computed_origin(ast, result, &[node], "bit-test-comparison");
+    Some(result)
 }
 
 fn original_child_movable(
@@ -719,6 +757,7 @@ fn fold_node_inner(
                         && divisor.log2().fract() == 0.0
                     {
                         let d = target.push(Node::Num(short_num(divisor).into()));
+                        computed_origin(target, d, &[constant], "reciprocal-power-of-two");
                         let candidate = target.push(Node::Bin("/".into(), value, d));
                         if measure_expr(target, candidate) < measure_expr(target, node) {
                             target.nodes[node as usize] = target.node(candidate).clone();
@@ -798,7 +837,9 @@ fn fold_node_inner(
                             && original_child_movable(analyzer, source, target, orig_left, left)
                         {
                             let one = target.push(Node::Num("1".into()));
+                            computed_origin(target, one, &[node], "factored-unit-coefficient");
                             let sub = target.push(Node::Bin("-".into(), one, term));
+                            computed_origin(target, sub, &[right], "factored-coefficient");
                             let candidate = target.push(Node::Bin("*".into(), left, sub));
                             if measure_expr(target, candidate) < measure_expr(target, node) {
                                 target.nodes[node as usize] = target.node(candidate).clone();
@@ -860,6 +901,12 @@ fn fold_node_inner(
                     && original_child_movable(analyzer, source, target, orig_left, left)
                 {
                     let alternatives = target.push(Node::Bin("or".into(), av, bv));
+                    computed_origin(
+                        target,
+                        alternatives,
+                        &[l, r],
+                        "shared-condition-alternatives",
+                    );
                     let candidate = target.push(Node::Bin("and".into(), ac, alternatives));
                     if measure_expr(target, candidate) < measure_expr(target, node) {
                         target.nodes[node as usize] = target.node(candidate).clone();

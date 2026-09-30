@@ -518,7 +518,11 @@ fn rewrite_literal_calls(
             if let Some(value) = value.filter(|value| value.is_finite()) {
                 let candidate = target.push(Node::Num(short_num(value).into()));
                 if measure_expr(target, candidate) < measure_expr(target, node) {
-                    target.nodes[node as usize] = target.node(candidate).clone();
+                    target.nodes.rewrite(
+                        node,
+                        target.node(candidate).clone(),
+                        "literal-call-folding",
+                    );
                     *folded += 1;
                     return;
                 }
@@ -562,7 +566,11 @@ fn rewrite_literal_calls(
         install_expression(target, node, simplified, origins);
         *folded += 1;
     } else {
-        target.nodes[node as usize] = Node::Call(function, arguments, method);
+        target.nodes.rewrite(
+            node,
+            Node::Call(function, arguments, method),
+            "literal-call-rejected-candidate",
+        );
     }
 }
 

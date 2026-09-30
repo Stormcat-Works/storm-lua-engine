@@ -19,6 +19,7 @@ use super::immutable_values::{contains_fresh_reference, expression_key};
 struct AvailableExpression {
     carrier: SymbolId,
     carrier_bid: BindingId,
+    definition: NodeId,
     reads: Vec<BindingId>,
 }
 
@@ -99,7 +100,17 @@ impl<'a> Transformer<'a> {
             if let Some(entry) = available.get(&key) {
                 let carrier_len = self.source.strings.get(entry.carrier).len();
                 if carrier_len < measure_expr(self.source, node) {
-                    self.output.nodes[node as usize] = Node::Name(entry.carrier);
+                    self.output.nodes.rewrite(
+                        node,
+                        Node::Name(entry.carrier),
+                        "available-expression-use",
+                    );
+                    self.output.nodes.relate_from(
+                        node,
+                        &self.source.nodes,
+                        entry.definition,
+                        "available-expression-definition",
+                    );
                     self.reused += 1;
                     return;
                 }
@@ -382,6 +393,7 @@ impl<'a> Transformer<'a> {
             AvailableExpression {
                 carrier: symbol,
                 carrier_bid: bid,
+                definition: source_expression,
                 reads: expression_effect.reads,
             },
         );

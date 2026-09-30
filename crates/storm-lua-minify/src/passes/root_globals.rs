@@ -64,6 +64,7 @@ pub fn globalize_root_locals(ast: &mut Ast, root: NodeId) -> PassResult {
                     .map(|(index, symbol)| {
                         let name = ast.strings.get(symbol).to_string();
                         let target = ast.name(&name);
+                        inherit_synthetic_binding(ast, target, statement);
                         ast.nodes.copy_name_within(
                             target,
                             storm_lua_syntax::NameSite::Reference,
@@ -84,6 +85,7 @@ pub fn globalize_root_locals(ast: &mut Ast, root: NodeId) -> PassResult {
             {
                 let name = ast.strings.get(name).to_string();
                 let target = ast.name(&name);
+                inherit_synthetic_binding(ast, target, statement);
                 ast.nodes.copy_name_within(
                     target,
                     storm_lua_syntax::NameSite::Reference,
@@ -105,6 +107,20 @@ pub fn globalize_root_locals(ast: &mut Ast, root: NodeId) -> PassResult {
         root,
         saved: Some(original_size.saturating_sub(measure_size(ast, root)) as u64),
         details: None,
+    }
+}
+
+// A compiler-created local has no original identifier slot. Globalizing it
+// retains that explicit generated origin, not a fabricated source declaration.
+fn inherit_synthetic_binding(ast: &mut Ast, target: NodeId, statement: NodeId) {
+    if ast
+        .nodes
+        .origin(statement)
+        .is_some_and(|o| o.kind == storm_lua_syntax::provenance::OriginKind::Synthetic)
+    {
+        let snapshot = ast.nodes.capture_origin(statement);
+        ast.nodes
+            .finish_rewrite(target, snapshot, "root-generated-binding-globalization");
     }
 }
 

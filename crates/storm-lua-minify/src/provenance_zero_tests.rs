@@ -377,7 +377,7 @@ fn insufficient_screen_run_retains_each_call_origin() {
 }
 
 #[test]
-fn preserving_screen_block_does_not_attribute_unannotated_generated_loop_nodes() {
+fn screen_loop_provenance_distinguishes_generated_control_and_source_arguments() {
     let source = format!(
         "function onDraw(){}screen.drawText(1,1,'unchanged')end",
         (0..24)
@@ -391,11 +391,13 @@ fn preserving_screen_block_does_not_attribute_unannotated_generated_loop_nodes()
         code.contains("for "),
         "fixture must exercise actual synthesis: {code}"
     );
-    assert!(
-        origins.unknown_bytes() > 0,
-        "unannotated synthesized nodes must stay Unknown"
+    assert_eq!(origins.unknown_bytes(), 0);
+    assert_eq!(
+        origin_at(&code, &origins, code.find("for ").unwrap())
+            .unwrap()
+            .kind,
+        OriginKind::Synthetic
     );
-    assert!(origin_at(&code, &origins, code.find("for ").unwrap()).is_none());
     let text = origin_at(&code, &origins, code.find("drawText").unwrap()).unwrap();
     assert_eq!(source_text(&source, text), "drawText");
 }

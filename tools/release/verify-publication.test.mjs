@@ -44,3 +44,9 @@ test('automatic stable latest cannot move backwards', () => {
   assertNotOlder('0.2.1', '0.2.1');
   assert.throws(() => assertNotOlder('0.2.1', '0.3.0'));
 });
+
+test('post-publication latest must include this release or a newer stable release', () => {
+  assertNotOlder('0.2.1', '0.2.1');
+  assertNotOlder('0.3.0', '0.2.1');
+  assert.throws(() => assertNotOlder('0.2.0', '0.2.1'));
+});

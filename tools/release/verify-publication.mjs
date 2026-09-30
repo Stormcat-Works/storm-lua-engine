@@ -147,6 +147,9 @@ async function main() {
     }
     assert.ok(metadata, 'Version not found after publication');
     validateRegistry(metadata, state);
+    const latest = await registryMetadata('latest');
+    assert.ok(latest, 'Registry latest tag is missing');
+    assertNotOlder(latest.version, state.version);
     const url = new URL(metadata.dist.tarball);
     assert.equal(url.origin, 'https://registry.npmjs.org');
     const response = await fetch(url, {signal: AbortSignal.timeout(30000)});
@@ -155,7 +158,7 @@ async function main() {
     assert.equal(sha256(bytes), state.sha256, 'Registry tarball is not byte-identical');
     const path = join(directory, `registry-${state.filename}`);
     await writeFile(path, bytes);
-    await outputs({version: state.version, registryTarball: path, verified: true});
+    await outputs({version: state.version, registryTarball: path, latest: latest.version, verified: true});
     return;
   }
   throw new Error('Usage: verify-publication.mjs prepare TAG DIRECTORY | check DIRECTORY | verify-registry DIRECTORY');

@@ -139,5 +139,28 @@
     "WASM high-level API remains non-tracing; the comparison verifies the existing API, not a final Source Map feature.",
     "No observed duration is used as a search deadline; the complete public map has not been implemented or benchmarked.",
     "Runtime WASM was not changed in this stage; existing runtime assets were exercised with the newly built compiler."
-  ]
+  ],
+  "implementationRevision": "ca87e1f3dbf7e39422fcb0cd5550e932ddf0f0da",
+  "hostedCi": {
+    "run": 36675436003,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      }
+    ]
+  }
 }

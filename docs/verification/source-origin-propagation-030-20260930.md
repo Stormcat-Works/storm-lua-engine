@@ -28,7 +28,7 @@
 
 ## 測定・回帰の扱い
 
-最終ゲート・Nativeの追跡ON/OFF比較・WASM既存出力比較の結果は、同名JSONへ実行後に保存する。大きな原文、短縮結果、収集元の私有情報を含む原ログはlocal-validation/source-provenance-030-stage2にのみ置き、公開文書には件数・集計・hashだけを残す。
+最終ゲート・Nativeの追跡ON/OFF比較・WASM既存出力比較の結果は、同名JSONへ保存した。大きな原文、短縮結果、収集元の私有情報を含む原ログはlocal-validation/source-provenance-030-stage2にのみ置き、公開文書には件数・集計・hashだけを残す。
 
 Nativeの追跡有無は実際にorigin_sourceを切り替えて比較する。WASMの高レベルAPIはまだtrace指定を公開していないため、WASMの通常API回帰は非追跡経路の検証であり、最終ソースマップAPIの試験と混同しない。binary/JSON Workerの追跡付き往復はNativeの実codecで試験する。
 
@@ -63,3 +63,10 @@ Nativeでは代表30入力の240設定で、追跡ON/OFFの生成Lua・候補サ
 大きい描画入力では追跡の負担も残っている。標準mapの符号化や全pass対応前の内部追跡の測定であり、製品の完成性能ではない。原文snapshot/slotの共有と変更のない由来recordの再利用、最終出力originのinternを実装したが、これだけで性能課題が解決したとは説明しない。
 
 private入力・生成コードを含む詳細測定データは公開JSONへ含めていない。公開記録は件数、集計、ビルドhashと検証範囲に限定する。
+
+
+## GitHub上の検証
+
+実装commit `ca87e1f3dbf7e39422fcb0cd5550e932ddf0f0da`に対する[CI run 36675436003](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36675436003)が成功した。Linux/Windows/macOSのNative、WASMの全4jobで成功。WASM jobには実ブラウザー、独立した梱包consumerとPlayground検証も含む。
+
+このCI成功は、現段階の機能の回帰と実行基盤の検証である。最適化後mapの高レベル公開や、partial/pendingパスの原文帰属が完成したという意味ではない。今回の実装は開発branchへ保存し、main/release/v0.2.1 tagは変更していない。

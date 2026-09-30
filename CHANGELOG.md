@@ -2,6 +2,10 @@
 
 ## Unreleased — v0.3.0 development
 
+- `sourceMap:true`で最適化後のSource Map v3＋`x_storm`理由/由来を返す。Rust/WASM/TS、通常/LifeBoat project、Workerを接続し、`validateSourceMap`でcode/source/設定/mapの指紋と構造を検証する。
+- 保持tokenとidentity/copyの精度を追加。子リテラルのinline context、型付き関係、削除/置換記録、数値評価・近似・共有引数・既知条件/未使用宣言の判断事実を保持する。全適用条件の形式証明やruntime値復元ではない。
+- エンジンversion/revisionと独立した拡張schemaVersionを格納する。理由/関連元の共有と出力時のプール化、UTF-16索引、ブロック差分の集合化でメタデータの複製負荷を抑える。
+
 - 全67最適化パスの由来伝播を実装。引数/table/Boolean特殊化、interval/係数/商・剰余・radix/共有値、出力・描画helper、および全描画record候補/codecへ対応した。各パスの実変換・欠落入力・転送・実コンパイラ組み合わせの回帰を追加し、生成Luaと既存240設定の0%を維持する。標準mapの公開APIとPlaygroundはP4/P5として残る。
 
 - 代表240設定すべてで内部の由来不明を解消。排他的関数配置、数値の再表現/共有、元の呼び出しの復元、描画ループ・共有辞書・繰り返し描画への由来伝播を追加した。生成コード・候補選択・Unknownの失効規則は維持する。高レベルの最適化後Source Map APIは後続工程。

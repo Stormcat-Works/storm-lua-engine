@@ -1,5 +1,12 @@
 # 最適化後ソースマップと探索処理の実装計画
 
+## 現在地（2026-10-01）
+
+P0〜P3は実装・検証済み。P4は[理由付きmapの確定設計](optimization-explanation-schema.md)に従い、標準v3＋x_storm、複数ファイル合成、Rust/WASM/TS/Workerの公開APIと内容指紋検証を実装した。[検証](../verification/optimization-explanations-20261001.md)と[実測例更新](../verification/provenance-examples-20261001.md)を参照する。以下の時系列進捗は当時の記録であり、現在の公開APIは[仕様](../specs/optimization-map-extension.md)が正本。
+
+P5の本格的な表示・双方向選択・実行位置接続は残る。元変数の値、消えたフレーム、loop反復のruntime対応は位置マップだけでは実現しない。理由の詳細なbasis/factsは記録した規則から順次増やすもので、知らない適用根拠を出力から推測しない。
+
+
 記録日: 2026-09-30。P0/P1はv0.2.1としてnpm/GitHub/Playgroundへ公開済み。最適化後マップは専用branchのv0.3.0で開発し、公開・タグ作成は別の明示工程とする。
 
 本書は今回合意した設計・実装順序を所有する。実装済み契約は[Source maps](../specs/source-maps.md)、現在地は[STATUS](../../STATUS.md)、検証結果は別のverification記録で区別する。

@@ -61,10 +61,12 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 [実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続、P3の全67パスの由来対応は実装済み。残りはP4の最終map/公開API、P5のconsumer接続と追跡コストの改善。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
 
-## v0.3.0 の残件
+## v0.3.0 の現在地と残件
 
-v0.2.1の公開は完了。P0〜P3を完了し、[全67パスの台帳](docs/design/source-provenance-pass-audit.json)はimplementedとなった。全パスの実変換・負例、実コンパイラ536設定、代表30入力・240設定、Native/WASMとクロスプラットフォームCIを検証した。[今回の検証記録](docs/verification/source-origin-all-passes-20261001.md)。
+v0.2.1の公開、P0/P1の探索/リンク、P2の候補/Worker由来、P3の全67パス対応は完了。固定30入力・240設定のUnknown 0%を維持する。P4の標準Source Map v3＋x_storm、元ファイルへの合成、Rust/WASM/TS API、producer/code/source/設定の識別・検証を実装した。[P4と説明情報の検証](docs/verification/optimization-explanations-20261001.md)。
 
-P4は標準Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/source snapshotの識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置への接続。計画と完成条件は[由来追跡計画](docs/design/source-provenance.md)が正本。
+[元の実測例の更新](docs/verification/provenance-examples-20261001.md)に、細かな位置・copy・文脈・理由が実際に返る例を残した。理由のbasis/factsは、実装が観測した条件・数値だけを格納する。全パスの網羅的な正当化証明や、不採用候補の全探索履歴は約束しない。
 
-追跡追加コストの削減、追加コーパス・新しい組み合わせの回帰は継続する。現行パスに未実装の由来伝播が残っていることとは区別する。Unknownを推測で埋めず、生成コードの理由・元データ・複数の関連元を保持する。
+主な残件はP5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と、実runtimeが返す位置との接続。P4の実利用で新たに必要になる検査もconsumer integrationで継続する。複雑な移動・統合の置換先情報、各パスの追加根拠、追跡コストの改善は個別課題として扱う。元変数の値・storage/lifetime・bytecode PC・特定のloop反復の復元は位置マップとは別の将来機能。
+
+v0.3.0の公開は別の明示工程で行う。現在の開発コードをmain/release/npmの0.2.1へ混ぜない。

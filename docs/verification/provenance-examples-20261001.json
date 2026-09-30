@@ -1,0 +1,1693 @@
+{
+  "generatedBy": "actual public Compiler API; not hand-written maps",
+  "producer": {
+    "name": "storm-lua-engine",
+    "version": "0.3.0",
+    "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+    "dirty": false
+  },
+  "results": [
+    {
+      "id": "rename",
+      "title": "変数名・API別名化",
+      "source": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "exact",
+        "sourceName": "rename.lua",
+        "sourceMap": true
+      },
+      "code": "a=output.setNumber function onTick()b=input.getNumber(1)a(1,b)a(2,b*2)end",
+      "mapBytes": 15280,
+      "generatedSha256": "d9aca59462739db0ab427866ddf7635aa0149bdecab8c172abcb06657093e4cc",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "*",
+          "generated": "*",
+          "generatedStart": {
+            "line": 1,
+            "column": 68
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 69
+          },
+          "kind": "source",
+          "precision": "token",
+          "primary": {
+            "source": "rename.lua",
+            "start": 119,
+            "end": 120,
+            "startPosition": {
+              "line": 4,
+              "column": 32
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 33
+            },
+            "text": "*"
+          },
+          "copied": {
+            "source": "rename.lua",
+            "start": 119,
+            "end": 120,
+            "startPosition": {
+              "line": 4,
+              "column": 32
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 33
+            },
+            "text": "*"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "function-local-globalization",
+              "operation": "rewrite",
+              "before": "binary:*",
+              "after": "binary:*",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "binary:*",
+              "after": "binary:*",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "call",
+              "after": "call",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "call-statement",
+              "after": "call-statement",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "block",
+              "after": "block",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "function",
+              "after": "function",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "api-alias-optimization",
+              "operation": "rewrite",
+              "before": "function-statement",
+              "after": "function-statement",
+              "basis": null,
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [
+        {
+          "original": {
+            "source": "rename.lua",
+            "start": 37,
+            "end": 55,
+            "startPosition": {
+              "line": 2,
+              "column": 20
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 38
+            },
+            "text": "input.getNumber(1)"
+          },
+          "reason": {
+            "code": "api-alias-optimization",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "rename.lua",
+            "start": 90,
+            "end": 106,
+            "startPosition": {
+              "line": 4,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 19
+            },
+            "text": "output.setNumber"
+          },
+          "reason": {
+            "code": "api-alias-optimization",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "fold",
+      "title": "定数式の計算根拠",
+      "source": "function onTick()\n  output.setNumber(1, 2 * 3)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "tolerant",
+        "sourceName": "fold.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()output.setNumber(1,6)end",
+      "mapBytes": 8458,
+      "generatedSha256": "0147132bcdf968ac5c3f3cd793773f88f2927b3f9d1b3e107a39f098a6d7958b",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "6",
+          "generated": "6",
+          "generatedStart": {
+            "line": 1,
+            "column": 37
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 38
+          },
+          "kind": "derived",
+          "precision": "expression",
+          "primary": {
+            "source": "fold.lua",
+            "start": 40,
+            "end": 45,
+            "startPosition": {
+              "line": 2,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 28
+            },
+            "text": "2 * 3"
+          },
+          "copied": null,
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "constant-folding",
+              "operation": "rewrite",
+              "before": "binary:*",
+              "after": "number:6",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "constant-folding",
+              "operation": "rewrite",
+              "before": null,
+              "after": null,
+              "basis": "literal-operands-evaluated-and-size-nonincreasing",
+              "facts": [
+                {
+                  "key": "operator",
+                  "value": "*"
+                },
+                {
+                  "key": "left",
+                  "value": "i64:2"
+                },
+                {
+                  "key": "right",
+                  "value": "i64:3"
+                },
+                {
+                  "key": "evaluated",
+                  "value": "i64:6"
+                },
+                {
+                  "key": "emitted",
+                  "value": "i64:6"
+                },
+                {
+                  "key": "expressionSizeBefore",
+                  "value": "3"
+                },
+                {
+                  "key": "expressionSizeAfter",
+                  "value": "1"
+                },
+                {
+                  "key": "aggressive",
+                  "value": "true"
+                },
+                {
+                  "key": "absToleranceBits",
+                  "value": "3d719799812dea11"
+                },
+                {
+                  "key": "relToleranceBits",
+                  "value": "3d719799812dea11"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "dispositions": [
+        {
+          "original": {
+            "source": "fold.lua",
+            "start": 40,
+            "end": 45,
+            "startPosition": {
+              "line": 2,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 28
+            },
+            "text": "2 * 3"
+          },
+          "reason": {
+            "code": "constant-folding",
+            "operation": "rewrite",
+            "before": "binary:*",
+            "after": "number:6",
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "normalized",
+      "title": "数値表記変更",
+      "source": "function onTick()\n  output.setNumber(1, 0x10)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "exact",
+        "sourceName": "normalized.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()output.setNumber(1,16)end",
+      "mapBytes": 7940,
+      "generatedSha256": "517e83f7d61d736e89ce1aa55dc160701a0e0280dbb98fd5c39a81e6948d2221",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "16",
+          "generated": "16",
+          "generatedStart": {
+            "line": 1,
+            "column": 37
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 39
+          },
+          "kind": "derived",
+          "precision": "expression",
+          "primary": {
+            "source": "normalized.lua",
+            "start": 40,
+            "end": 44,
+            "startPosition": {
+              "line": 2,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 27
+            },
+            "text": "0x10"
+          },
+          "copied": null,
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "numeric-literal-spelling",
+              "operation": "rewrite",
+              "before": "number:0x10",
+              "after": "number:16",
+              "basis": "canonical-literal-emission",
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "inline",
+      "title": "インライン展開したリテラル",
+      "source": "local function twice(value)\n  return value * 2\nend\nfunction onTick()\n  output.setNumber(1, twice(input.getNumber(1)))\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "exact",
+        "sourceName": "inline.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()output.setNumber(1,input.getNumber(1)*2)end",
+      "mapBytes": 11373,
+      "generatedSha256": "fddf3699a29cc23fbaf0ac7c19768b94a25244a11c4c143fd875a67bb865920b",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "*2",
+          "generated": "2",
+          "generatedStart": {
+            "line": 1,
+            "column": 56
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 57
+          },
+          "kind": "source",
+          "precision": "expression",
+          "primary": {
+            "source": "inline.lua",
+            "start": 45,
+            "end": 46,
+            "startPosition": {
+              "line": 2,
+              "column": 18
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 19
+            },
+            "text": "2"
+          },
+          "copied": {
+            "source": "inline.lua",
+            "start": 45,
+            "end": 46,
+            "startPosition": {
+              "line": 2,
+              "column": 18
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 19
+            },
+            "text": "2"
+          },
+          "contexts": [
+            {
+              "definition": {
+                "source": "inline.lua",
+                "start": 37,
+                "end": 46,
+                "startPosition": {
+                  "line": 2,
+                  "column": 10
+                },
+                "endExclusive": {
+                  "line": 2,
+                  "column": 19
+                },
+                "text": "value * 2"
+              },
+              "callSite": {
+                "source": "inline.lua",
+                "start": 91,
+                "end": 116,
+                "startPosition": {
+                  "line": 5,
+                  "column": 23
+                },
+                "endExclusive": {
+                  "line": 5,
+                  "column": 48
+                },
+                "text": "twice(input.getNumber(1))"
+              }
+            }
+          ],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "function-body-copy",
+              "operation": "rewrite",
+              "before": "binary:*",
+              "after": "binary:*",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "function-inline-site",
+              "operation": "relate",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "inline-declaration-removal",
+              "operation": "rewrite",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [
+        {
+          "original": {
+            "source": "inline.lua",
+            "start": 0,
+            "end": 50,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 3,
+              "column": 4
+            },
+            "text": "local function twice(value)\n  return value * 2\nend"
+          },
+          "reason": {
+            "code": "inline-declaration-removal",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "shared",
+      "title": "共通定数引数の特殊化",
+      "source": "local function add(value, offset)\n  return value + offset\nend\na = add(1, 200)\nb = add(3, 200)\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "passToggles": {
+          "constant-folding": false,
+          "numeric-literal-approximation": false,
+          "binding-unit-rescaling": false,
+          "interval-origin-shifting": false,
+          "integer-loop-call-folding": false,
+          "color-unpack-specialization": false,
+          "constant-argument-specialization": true,
+          "literal-call-folding": false,
+          "split-sign-recomposition-elimination": false,
+          "equivalent-trailing-argument-omission": false,
+          "table-parameter-scalarization": false,
+          "sparse-boolean-decode-scalarization": false,
+          "numeric-boolean-bit-specialization": false,
+          "quotient-remainder-fusion": false,
+          "destructive-radix-helper-synthesis": false,
+          "destructive-radix-terminal-reuse": false,
+          "quotient-chain-fusion": false,
+          "captured-single-use-hoisting": false,
+          "immutable-global-expression-reuse": false,
+          "multiplicative-carrier-reassociation": false,
+          "coefficient-carrier-synthesis": false,
+          "destructive-result-globalization": false,
+          "immutable-carrier-synthesis": false,
+          "callback-exclusive-function-slotting": false,
+          "screen-button-outlining": false,
+          "else-default-hoisting": false,
+          "conditional-call-lowering": false,
+          "conditional-assignment-lowering": false,
+          "write-only-table-field-cleanup": false,
+          "immutable-table-flattening": false,
+          "closed-namespace-scalarization": false,
+          "uniform-table-fill-scalarization": false,
+          "one-use-function-fusion": false,
+          "expression-helper-inlining": false,
+          "tiny-literal-inlining": false,
+          "single-use-local-sinking": false,
+          "dead-local-elimination": false,
+          "terminal-scope-flattening": false,
+          "ordered-screen-call-factoring": false,
+          "constant-wrapper-merging": false,
+          "affine-wrapper-merging": false,
+          "root-local-globalization": false,
+          "function-local-globalization": false,
+          "hybrid-function-local-globalization": false,
+          "global-store-cleanup": false,
+          "single-use-global-forwarding": false,
+          "equal-scratch-value-coalescing": false,
+          "unwritten-global-nil-propagation": false,
+          "temporary-global-packing": false,
+          "output-sequence-loop-synthesis": false,
+          "common-offset-absorption": false,
+          "ordered-screen-loop-synthesis": false,
+          "periodic-screen-loop-synthesis": false,
+          "available-expression-reuse": false,
+          "signed-expression-factoring": false,
+          "one-use-expression-helper-reversal": false,
+          "final-dead-store-elimination": false,
+          "redundant-parentheses-elimination": false,
+          "scope-renaming": false,
+          "api-alias-optimization": false,
+          "closed-table-field-renaming": false,
+          "closed-namespace-devirtualization": false,
+          "exact-numeric-literal-pooling": false,
+          "ordered-draw-record-packing": false,
+          "repeated-draw-sequence-outlining": false,
+          "adjacent-local-declaration-packing": false,
+          "conditional-return-lowering": false
+        },
+        "sourceName": "shared.lua",
+        "sourceMap": true
+      },
+      "code": "local function add(value)return value+200 end a=add(1)b=add(3)",
+      "mapBytes": 14442,
+      "generatedSha256": "94bfe6fd500a0a0540d50d219143ba26ae1e4aab0c90e60f54b5cbf46efdd27e",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "200",
+          "generated": "200",
+          "generatedStart": {
+            "line": 1,
+            "column": 39
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 42
+          },
+          "kind": "derived",
+          "precision": "expression",
+          "primary": {
+            "source": "shared.lua",
+            "start": 73,
+            "end": 76,
+            "startPosition": {
+              "line": 4,
+              "column": 12
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 15
+            },
+            "text": "200"
+          },
+          "copied": {
+            "source": "shared.lua",
+            "start": 73,
+            "end": 76,
+            "startPosition": {
+              "line": 4,
+              "column": 12
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 15
+            },
+            "text": "200"
+          },
+          "contexts": [],
+          "relations": [
+            {
+              "role": "contribution",
+              "span": {
+                "source": "shared.lua",
+                "start": 89,
+                "end": 92,
+                "startPosition": {
+                  "line": 5,
+                  "column": 12
+                },
+                "endExclusive": {
+                  "line": 5,
+                  "column": 15
+                },
+                "text": "200"
+              }
+            },
+            {
+              "role": "parameterUse",
+              "span": {
+                "source": "shared.lua",
+                "start": 51,
+                "end": 57,
+                "startPosition": {
+                  "line": 2,
+                  "column": 18
+                },
+                "endExclusive": {
+                  "line": 2,
+                  "column": 24
+                },
+                "text": "offset"
+              }
+            },
+            {
+              "role": "argument",
+              "span": {
+                "source": "shared.lua",
+                "start": 73,
+                "end": 76,
+                "startPosition": {
+                  "line": 4,
+                  "column": 12
+                },
+                "endExclusive": {
+                  "line": 4,
+                  "column": 15
+                },
+                "text": "200"
+              }
+            },
+            {
+              "role": "argument",
+              "span": {
+                "source": "shared.lua",
+                "start": 89,
+                "end": 92,
+                "startPosition": {
+                  "line": 5,
+                  "column": 12
+                },
+                "endExclusive": {
+                  "line": 5,
+                  "column": 15
+                },
+                "text": "200"
+              }
+            }
+          ],
+          "reasons": [
+            {
+              "code": "specialized-argument-sites",
+              "operation": "relate",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "specialized-parameter-read",
+              "operation": "relate",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "specialized-actual-argument",
+              "operation": "relate",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "constant-argument-specialization",
+              "operation": "rewrite",
+              "before": null,
+              "after": null,
+              "basis": "same-literal-at-every-analyzed-call-and-unmodified-parameter",
+              "facts": [
+                {
+                  "key": "parameterIndex",
+                  "value": "1"
+                },
+                {
+                  "key": "analyzedCallSites",
+                  "value": "2"
+                },
+                {
+                  "key": "value",
+                  "value": "number:200"
+                },
+                {
+                  "key": "removedParameter",
+                  "value": "true"
+                }
+              ]
+            },
+            {
+              "code": "constant-parameter-removal",
+              "operation": "rewrite",
+              "before": "function",
+              "after": "function",
+              "basis": null,
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "loop",
+      "title": "八つの出力を一つのループへ",
+      "source": "function onTick()\n  output.setNumber(1, 10)\n  output.setNumber(2, 20)\n  output.setNumber(3, 30)\n  output.setNumber(4, 40)\n  output.setNumber(5, 50)\n  output.setNumber(6, 60)\n  output.setNumber(7, 70)\n  output.setNumber(8, 80)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "tolerant",
+        "sourceName": "loop.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()a={10,20,30,40,50,60,70,80}for b=1,8 do output.setNumber(b,a[b])end end",
+      "mapBytes": 16175,
+      "generatedSha256": "cf98887a93fcbf3aa8fec53baafcdcd0353ef5367f285f80e00d52837b35e7e9",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "10",
+          "generated": "10",
+          "generatedStart": {
+            "line": 1,
+            "column": 21
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 23
+          },
+          "kind": "source",
+          "precision": "expression",
+          "primary": {
+            "source": "loop.lua",
+            "start": 40,
+            "end": 42,
+            "startPosition": {
+              "line": 2,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 25
+            },
+            "text": "10"
+          },
+          "copied": {
+            "source": "loop.lua",
+            "start": 40,
+            "end": 42,
+            "startPosition": {
+              "line": 2,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 25
+            },
+            "text": "10"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "output-loop-value-storage",
+              "operation": "synthesize",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "output-loop-control",
+              "operation": "synthesize",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "output-sequence-loop-synthesis",
+              "operation": "rewrite",
+              "before": "block",
+              "after": "block",
+              "basis": null,
+              "facts": []
+            }
+          ]
+        },
+        {
+          "needle": "for",
+          "generated": "for b=",
+          "generatedStart": {
+            "line": 1,
+            "column": 45
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 51
+          },
+          "kind": "synthetic",
+          "precision": "group",
+          "primary": null,
+          "copied": null,
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "output-loop-control",
+              "operation": "synthesize",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "scope-renaming",
+              "operation": "rewrite",
+              "before": null,
+              "after": null,
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "output-sequence-loop-synthesis",
+              "operation": "rewrite",
+              "before": "block",
+              "after": "block",
+              "basis": null,
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 20,
+            "end": 43,
+            "startPosition": {
+              "line": 2,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 26
+            },
+            "text": "output.setNumber(1, 10)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 46,
+            "end": 69,
+            "startPosition": {
+              "line": 3,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 3,
+              "column": 26
+            },
+            "text": "output.setNumber(2, 20)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 72,
+            "end": 95,
+            "startPosition": {
+              "line": 4,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 4,
+              "column": 26
+            },
+            "text": "output.setNumber(3, 30)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 98,
+            "end": 121,
+            "startPosition": {
+              "line": 5,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 5,
+              "column": 26
+            },
+            "text": "output.setNumber(4, 40)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 124,
+            "end": 147,
+            "startPosition": {
+              "line": 6,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 6,
+              "column": 26
+            },
+            "text": "output.setNumber(5, 50)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 150,
+            "end": 173,
+            "startPosition": {
+              "line": 7,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 7,
+              "column": 26
+            },
+            "text": "output.setNumber(6, 60)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 176,
+            "end": 199,
+            "startPosition": {
+              "line": 8,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 8,
+              "column": 26
+            },
+            "text": "output.setNumber(7, 70)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "loop.lua",
+            "start": 202,
+            "end": 225,
+            "startPosition": {
+              "line": 9,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 9,
+              "column": 26
+            },
+            "text": "output.setNumber(8, 80)"
+          },
+          "reason": {
+            "code": "output-sequence-loop-synthesis",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": null,
+            "facts": []
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "dead",
+      "title": "削除された宣言と分岐",
+      "source": "function onTick()\n  local unused = 99\n  if false then\n    output.setNumber(2, 123)\n  end\n  output.setNumber(1, 7)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "sourceName": "dead.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()output.setNumber(1,7)end",
+      "mapBytes": 8774,
+      "generatedSha256": "e4415d5b8eb27ce8c283e76e480e2a193696d0790ba04f2c6e8c481038e750e6",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "7",
+          "generated": "7",
+          "generatedStart": {
+            "line": 1,
+            "column": 37
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 38
+          },
+          "kind": "source",
+          "precision": "expression",
+          "primary": {
+            "source": "dead.lua",
+            "start": 111,
+            "end": 112,
+            "startPosition": {
+              "line": 6,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 6,
+              "column": 24
+            },
+            "text": "7"
+          },
+          "copied": {
+            "source": "dead.lua",
+            "start": 111,
+            "end": 112,
+            "startPosition": {
+              "line": 6,
+              "column": 23
+            },
+            "endExclusive": {
+              "line": 6,
+              "column": 24
+            },
+            "text": "7"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": [
+            {
+              "code": "control-flow-simplification",
+              "operation": "rewrite",
+              "before": "block",
+              "after": "block",
+              "basis": null,
+              "facts": []
+            },
+            {
+              "code": "local-scope-cleanup",
+              "operation": "rewrite",
+              "before": "block",
+              "after": "block",
+              "basis": null,
+              "facts": []
+            }
+          ]
+        }
+      ],
+      "dispositions": [
+        {
+          "original": {
+            "source": "dead.lua",
+            "start": 40,
+            "end": 88,
+            "startPosition": {
+              "line": 3,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 5,
+              "column": 6
+            },
+            "text": "if false then\n    output.setNumber(2, 123)\n  end"
+          },
+          "reason": {
+            "code": "constant-control-flow",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": "lua-truthiness-of-known-conditions",
+            "facts": [
+              {
+                "key": "armTruthiness",
+                "value": "false"
+              },
+              {
+                "key": "hasElse",
+                "value": "false"
+              }
+            ]
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "dead.lua",
+            "start": 20,
+            "end": 37,
+            "startPosition": {
+              "line": 2,
+              "column": 3
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 20
+            },
+            "text": "local unused = 99"
+          },
+          "reason": {
+            "code": "dead-local-elimination",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": "all-declared-bindings-unread-unwritten-and-initializers-movable",
+            "facts": [
+              {
+                "key": "removedBindings",
+                "value": "1"
+              },
+              {
+                "key": "reads",
+                "value": "0"
+              },
+              {
+                "key": "writes",
+                "value": "0"
+              },
+              {
+                "key": "initializerCheck",
+                "value": "EffectAnalyzer::is_movable"
+              }
+            ]
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "identity",
+      "title": "原文早期返却のcopy契約",
+      "source": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "targetSize": 8192,
+        "sourceName": "identity.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n",
+      "mapBytes": 4240,
+      "generatedSha256": "3462f9dd9af85a78577ac30e3dfd6d58f37bd3a55d30fa878eae77ed4989427c",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "throttle",
+          "generated": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n",
+          "generatedStart": {
+            "line": 1,
+            "column": 1
+          },
+          "generatedEndExclusive": {
+            "line": 6,
+            "column": 1
+          },
+          "kind": "source",
+          "precision": "group",
+          "primary": {
+            "source": "identity.lua",
+            "start": 0,
+            "end": 128,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 6,
+              "column": 1
+            },
+            "text": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n"
+          },
+          "copied": {
+            "source": "identity.lua",
+            "start": 0,
+            "end": 128,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 6,
+              "column": 1
+            },
+            "text": "function onTick()\n  local throttle = input.getNumber(1)\n  output.setNumber(1, throttle)\n  output.setNumber(2, throttle * 2)\nend\n"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": []
+        }
+      ],
+      "dispositions": [],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "operators",
+      "title": "演算子とendの正確な位置",
+      "source": "function onTick()\n  output.setNumber(1, input.getNumber(1) + 2)\nend\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "numericMode": "exact",
+        "sourceName": "operators.lua",
+        "sourceMap": true
+      },
+      "code": "function onTick()output.setNumber(1,input.getNumber(1)+2)end",
+      "mapBytes": 10075,
+      "generatedSha256": "ba69053b872dbf5a900e23a4aff63bfefc2ef0335d7fc39d40419eeebe2756d4",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "+",
+          "generated": "+",
+          "generatedStart": {
+            "line": 1,
+            "column": 55
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 56
+          },
+          "kind": "source",
+          "precision": "token",
+          "primary": {
+            "source": "operators.lua",
+            "start": 59,
+            "end": 60,
+            "startPosition": {
+              "line": 2,
+              "column": 42
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 43
+            },
+            "text": "+"
+          },
+          "copied": {
+            "source": "operators.lua",
+            "start": 59,
+            "end": 60,
+            "startPosition": {
+              "line": 2,
+              "column": 42
+            },
+            "endExclusive": {
+              "line": 2,
+              "column": 43
+            },
+            "text": "+"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": []
+        },
+        {
+          "needle": "end",
+          "generated": "end",
+          "generatedStart": {
+            "line": 1,
+            "column": 58
+          },
+          "generatedEndExclusive": {
+            "line": 1,
+            "column": 61
+          },
+          "kind": "source",
+          "precision": "token",
+          "primary": {
+            "source": "operators.lua",
+            "start": 64,
+            "end": 67,
+            "startPosition": {
+              "line": 3,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 3,
+              "column": 4
+            },
+            "text": "end"
+          },
+          "copied": {
+            "source": "operators.lua",
+            "start": 64,
+            "end": 67,
+            "startPosition": {
+              "line": 3,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 3,
+              "column": 4
+            },
+            "text": "end"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": []
+        }
+      ],
+      "dispositions": [],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "empty",
+      "title": "全コードが削除された場合",
+      "source": "local unused=99 if not true then output.setNumber(1,7)end",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "sourceName": "empty.lua",
+        "sourceMap": true
+      },
+      "code": "",
+      "mapBytes": 4446,
+      "generatedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "unknownBytes": 0,
+      "selections": [],
+      "dispositions": [
+        {
+          "original": {
+            "source": "empty.lua",
+            "start": 16,
+            "end": 57,
+            "startPosition": {
+              "line": 1,
+              "column": 17
+            },
+            "endExclusive": {
+              "line": 1,
+              "column": 58
+            },
+            "text": "if not true then output.setNumber(1,7)end"
+          },
+          "reason": {
+            "code": "constant-control-flow",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": "lua-truthiness-of-known-conditions",
+            "facts": [
+              {
+                "key": "armTruthiness",
+                "value": "false"
+              },
+              {
+                "key": "hasElse",
+                "value": "false"
+              }
+            ]
+          },
+          "replacementSources": []
+        },
+        {
+          "original": {
+            "source": "empty.lua",
+            "start": 0,
+            "end": 15,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 1,
+              "column": 16
+            },
+            "text": "local unused=99"
+          },
+          "reason": {
+            "code": "dead-local-elimination",
+            "operation": "remove",
+            "before": null,
+            "after": null,
+            "basis": "all-declared-bindings-unread-unwritten-and-initializers-movable",
+            "facts": [
+              {
+                "key": "removedBindings",
+                "value": "1"
+              },
+              {
+                "key": "reads",
+                "value": "0"
+              },
+              {
+                "key": "writes",
+                "value": "0"
+              },
+              {
+                "key": "initializerCheck",
+                "value": "EffectAnalyzer::is_movable"
+              }
+            ]
+          },
+          "replacementSources": []
+        }
+      ],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "unicode",
+      "title": "Unicode/CRLFでのidentity",
+      "source": "-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n",
+      "options": {
+        "mode": "smallest",
+        "searchMode": "exhaustive",
+        "zeroCostNewlines": false,
+        "targetSize": 8192,
+        "sourceName": "unicode.lua",
+        "sourceMap": true
+      },
+      "code": "-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n",
+      "mapBytes": 4116,
+      "generatedSha256": "5e10be8e30b20b18c90cc7969781e9b50a2a508712a6c93384bdbad35598a9d3",
+      "unknownBytes": 0,
+      "selections": [
+        {
+          "needle": "output",
+          "generated": "-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n",
+          "generatedStart": {
+            "line": 1,
+            "column": 1
+          },
+          "generatedEndExclusive": {
+            "line": 5,
+            "column": 1
+          },
+          "kind": "source",
+          "precision": "group",
+          "primary": {
+            "source": "unicode.lua",
+            "start": 0,
+            "end": 84,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 5,
+              "column": 1
+            },
+            "text": "-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n"
+          },
+          "copied": {
+            "source": "unicode.lua",
+            "start": 0,
+            "end": 84,
+            "startPosition": {
+              "line": 1,
+              "column": 1
+            },
+            "endExclusive": {
+              "line": 5,
+              "column": 1
+            },
+            "text": "-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n"
+          },
+          "contexts": [],
+          "relations": [],
+          "reasons": []
+        }
+      ],
+      "dispositions": [],
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+        "dirty": false
+      },
+      "schemaVersion": 1
+    }
+  ]
+}

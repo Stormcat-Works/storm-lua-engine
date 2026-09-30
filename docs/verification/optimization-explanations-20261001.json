@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-01",
+  "version": "0.3.0",
+  "published": false,
+  "implementationRevision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+  "baselineRevision": "158231cda7fc112785441fc45a27d9e910c2c0c3",
+  "producer": {
+    "name": "storm-lua-engine",
+    "version": "0.3.0",
+    "revision": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+    "dirty": false
+  },
+  "mapExtensionSchema": 1,
+  "nativePassed": 761,
+  "sdkPassed": 30,
+  "wasmPassed": 81,
+  "nativeMatrix": {
+    "cases": 30,
+    "configurations": 240,
+    "unchangedCode": 240,
+    "unknownFree": 240,
+    "sourceMapOnOff": 240,
+    "unmetTargetOriginEquality": 240
+  },
+  "wasmMatrix": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "f9cb78c38081412de646517a8053a8a758a996b3ed78f2bfb87db5edf28ab561",
+      "candidate": "b8b3aa456a24416073be126b1f5e40fabf6c0c26a5231569ca50c859c74d7ea7"
+    },
+    "sourceHashesVerified": 30,
+    "configurations": 240,
+    "unmetTargetComparisons": 30
+  },
+  "nativePerformance": [
+    {
+      "case": "vehicle-control",
+      "target": false,
+      "samples": 3,
+      "plainMs": 2273.379942,
+      "mappedMs": 5410.834046,
+      "mapBytes": 1374918,
+      "validationMs": 24.285351
+    },
+    {
+      "case": "vehicle-control",
+      "target": true,
+      "samples": 3,
+      "plainMs": 269.06136200000003,
+      "mappedMs": 538.8939710000001,
+      "mapBytes": 1523794,
+      "validationMs": 26.821175
+    },
+    {
+      "case": "draw-4096",
+      "target": false,
+      "samples": 3,
+      "plainMs": 3241.035917,
+      "mappedMs": 7232.72706,
+      "mapBytes": 8226791,
+      "validationMs": 152.589236
+    },
+    {
+      "case": "draw-4096",
+      "target": true,
+      "samples": 3,
+      "plainMs": 3158.692227,
+      "mappedMs": 7510.117698,
+      "mapBytes": 8226791,
+      "validationMs": 150.806693
+    }
+  ],
+  "earlierImplementationPerformance": [
+    {
+      "case": "vehicle-control",
+      "target": false,
+      "samples": 3,
+      "plainMs": 2361.1525159999997,
+      "mappedMs": 5732.29783,
+      "mapBytes": 1658784,
+      "validationMs": 30.647623
+    },
+    {
+      "case": "vehicle-control",
+      "target": true,
+      "samples": 3,
+      "plainMs": 270.261415,
+      "mappedMs": 579.0806819999999,
+      "mapBytes": 1877889,
+      "validationMs": 36.710831
+    },
+    {
+      "case": "draw-4096",
+      "target": false,
+      "samples": 3,
+      "plainMs": 3437.498629,
+      "mappedMs": 7707.768831,
+      "mapBytes": 13678199,
+      "validationMs": 229.95042700000002
+    },
+    {
+      "case": "draw-4096",
+      "target": true,
+      "samples": 3,
+      "plainMs": 3391.3923449999998,
+      "mappedMs": 7278.239159,
+      "mapBytes": 13678199,
+      "validationMs": 257.914329
+    }
+  ],
+  "wasmPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "f9cb78c38081412de646517a8053a8a758a996b3ed78f2bfb87db5edf28ab561",
+      "candidate": "b8b3aa456a24416073be126b1f5e40fabf6c0c26a5231569ca50c859c74d7ea7"
+    },
+    "notes": [
+      "Three repetitions, paired alternating order. Warm compiler instances, no file IO/hashing included in compile duration.",
+      "Mapped duration includes public Source Map and x_storm serialization; validation measured separately.",
+      "This is Node/WASM, not a browser runtime or Stormworks game benchmark."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "samples": 3,
+        "baselineMs": 2830.0456399999966,
+        "candidateMs": 2804.5249780000013,
+        "mappedMs": 4732.270387000011,
+        "validationMs": 40.39024000000791,
+        "mapBytes": 1374918,
+        "codeBytes": 5706
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "samples": 3,
+        "baselineMs": 310.5809779999836,
+        "candidateMs": 305.13922700000694,
+        "mappedMs": 500.65197800000897,
+        "validationMs": 39.3946499999729,
+        "mapBytes": 1523794,
+        "codeBytes": 7748
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "samples": 3,
+        "baselineMs": 2990.011830000003,
+        "candidateMs": 2956.6800549999753,
+        "mappedMs": 6257.85612099999,
+        "validationMs": 235.6803479999944,
+        "mapBytes": 8226791,
+        "codeBytes": 34084
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "samples": 3,
+        "baselineMs": 2944.529169000016,
+        "candidateMs": 3038.4895229999966,
+        "mappedMs": 6496.2768989999895,
+        "validationMs": 259.12891599998693,
+        "mapBytes": 8226791,
+        "codeBytes": 34084
+      }
+    ]
+  },
+  "examples": {
+    "count": 11,
+    "sourceSnapshots": "authored illustrative fixtures, not private corpus",
+    "file": "provenance-examples-20261001.json"
+  },
+  "gates": {
+    "final-fmt": 0,
+    "final-native": 0,
+    "final-default": 0,
+    "final-clippy": 0,
+    "final-rustdoc": 0,
+    "final-architecture": 0,
+    "final-licenses": 0,
+    "final-sdk": 0,
+    "final-probe-build": 0,
+    "final-native-matrix": 0,
+    "final-native-perf": 0,
+    "final-compiler-build": 0,
+    "final-wasm": 0,
+    "final-compiler-browser": 0,
+    "final-consumer": 0,
+    "final-wasm-matrix-perf": 0,
+    "final-diff": 0,
+    "final-examples": 0
+  },
+  "hostedCi": {
+    "id": 36781676547,
+    "headSha": "c9855a3937518f7b2f25b2dd0bd929e5e8cf8c41",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "limits": [
+    "No automatic original-variable value, lifetime or bytecode-PC reconstruction",
+    "No runtime loop-iteration reconstruction",
+    "No full rejected-candidate search history",
+    "Rule actions exist throughout propagation, but complete eligibility facts are not yet attached to every optimization rule",
+    "Some removed/moved constructs have structural records without an executable replacement destination",
+    "Full Playground explanation UI remains separate"
+  ]
+}

@@ -1,10 +1,15 @@
 # Source maps and source locations
 
+## v0.3.0 開発APIの更新
+
+最適化後mapを`sourceMap:true`で要求できるようになった。標準Source Map v3と`x_storm`の範囲・理由・原文snapshot/生成物の指紋を返す。通常/LifeBoat buildの元ファイル合成、Worker転送と`validateSourceMap`も接続済み。[現行の公開契約](optimization-map-extension.md)と[検証](../verification/optimization-explanations-20261001.md)を参照する。npmのv0.3.0リリース自体は別工程である。
+
+
 ## Published and working-tree boundaries
 
 Published **v0.2.1** returns detailed Source Map v3 JSON `code`/`map` pairs for non-minified normal and LifeBoat builds. Token/column anchors and exact internal byte ranges identify copied original slices. Standalone `minify` and `minify: true` still do not return a post-optimization map.
 
-The **unpublished v0.3.0 work** adds internal optimizer provenance and candidate/Worker transfer. It does not yet expose the final optimized Source Map v3 SDK contract. The stages and pass audit are in [Source provenance](../design/source-provenance.md). Published SDK tags and artifacts remain fixed.
+The **unpublished v0.3.0 work** exposes optimized maps and versioned explanations through the opt-in `sourceMap` option. Normal and LifeBoat project builds compose them back to original snapshots. `validateSourceMap` verifies content identity and the agreement between standard and detailed ranges. The public extension contract is in [Optimization map extension](optimization-map-extension.md). Published SDK tags and artifacts remain fixed.
 
 A failed build has no artifact. Hosts must check the build result before using `code` or `map`. Compilation does not create a VM or execute Lua.
 
@@ -48,13 +53,15 @@ This map does not restore optimized-away variables, original evaluation order, i
 
 ## Executable evidence
 
+- `crates/storm-lua-build/src/optimized_map_tests.rs` and `packages/lua-engine/tests/wasm/optimization-map.test.mjs`: actual optimized maps, explanations, fingerprint/structure rejection, project composition and Worker transfer.
+
 - `crates/storm-lua-syntax/src/source_position.rs`: byte/UTF-16 conversion, Unicode boundaries, CRLF and EOF.
 - `crates/storm-lua-build/src/source_map.rs`: column anchors, multi-file boundaries, synthetic prefixes, exact original snapshots and LifeBoat exclusions.
 - `crates/storm-lua-build/src/public_api.rs`: byte-column and end-range diagnostic composition.
 - `packages/lua-engine/tests/wasm/compiler-provenance.test.mjs`: independent trace-mapping consumer, real compiler WASM and canonical target-search continuation across WASM instances.
 - `conformance/tests/source_maps.rs`: actual-Lua Native execution of source-qualified breakpoints, caller locations and runtime errors.
 - `packages/lua-engine/tests/wasm/source-map.test.mjs`: actual runtime WASM, generated gaps, original lint locations and omitted optimized maps.
-- `examples/consumer/source-map.mjs`: independent installed SDK consumer of the non-minified path.
+- `examples/consumer/source-map.mjs`: independent installed SDK consumer of both non-minified and requested optimized maps.
 
 Test existence is not a claim that a particular revision passed; executed commands and results belong in verification records. The trace-mapping package is an example/test dependency, not a runtime dependency of the SDK.
 
@@ -63,14 +70,14 @@ Test existence is not a claim that a particular revision passed; executed comman
 
 `parse_source_with_positions`のNodePositionsは、同じパース済みASTの全node byte spanと、NameSiteで識別した名前出現の範囲を保持する。従来の診断用pointも保持する。位置はUTF-8バイトで、最適化後のASTにはそのまま流用できない。
 
-`Printer.output_with_positions`は`PrintedSource { code, emissions }`を返す。NodeEmissionは最終生成コード上の半開UTF-8 byte範囲、同じAST内のNodeId、任意のNameSiteを示す。範囲は入れ子になり得る。省略されたnodeには生成範囲を捏造しない。通常のPrinterと同じコードと改行数を生成する。
+`Printer.output_with_positions`は`PrintedSource { root, code, emissions }`を返す。NodeEmissionは最終生成コード上の半開UTF-8 byte範囲、同じAST内のNodeId、任意のNameSiteを示す。範囲は入れ子になり得る。省略されたnodeには生成範囲を捏造しない。通常のPrinterと同じコードと改行数を生成する。
 
-これは最適化後Source Mapの完成APIではない。入力ASTが変換されている場合、元範囲は各変換の由来情報から取得する必要がある。`minify`/`build(minify:true)`がmapを返すようになったとは扱わない。
+このPrinter範囲は元の由来そのものではない。入力ASTが変換されている場合、元範囲は各変換の由来情報から取得する。高レベル`minify`/`build(minify:true)`のmapは、その由来とPrinter出力を合成して作る。
 
 
 ## v0.3.0開発中: 内部の最適化由来
 
-低レベルRustの`CompileOptions.origin_source: Some(label)`は、原文snapshotを初期由来として、返却する`CompileCodeResult.origins: Some(GeneratedOrigins)`まで追跡する。Noneは通常の非追跡経路である。labelは表示用で、任意ファイルを開く権限や実runtime chunk IDではない。このoptionは高レベルbuild/SDKのmap設定としてまだ公開していない。
+低レベルRustの`CompileOptions.origin_source: Some(label)`は、原文snapshotを初期由来として、返却する`CompileCodeResult.origins: Some(GeneratedOrigins)`まで追跡する。Noneは通常の非追跡経路である。labelは表示用で、任意ファイルを開く権限や実runtime chunk IDではない。高レベルbuild/SDKの`sourceMap:true`はこの内部追跡を有効にし、`sourceName`は単一入力の表示名として使う。
 
 内部のSourceSpanは原文snapshot番号と半開UTF-8 byte範囲。OriginはSource / Derived / Synthetic、precisionはName / Token / Expression / Statement / Group、主な範囲と関連範囲・元の名前を保持する。UnknownはOriginなしとして扱い、Syntheticの別名にしない。Sourceは元構文への帰属を表すもので、印字の文字単位一致を保証しない。
 
@@ -80,7 +87,7 @@ NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブ�
 
 同じファイル名でも内容が違うsnapshotは別sourceとして扱う。別ArenaのNodeIdが一致しても同一nodeと解釈しない。JSONの未追跡ASTは従来のnodes/strings形を維持するが、Workerのbinary contextは同compiler版専用のopaque形式であり、0.2.1との互換性は保証しない。低レベルRustでAst.nodesをVecとして直接構築するconsumerはNodeArenaへの更新が必要。
 
-転送時は元spanのindex/UTF-8境界/範囲、名前slot重複、slot数を検証する。最終生成範囲も連続性/UTF-8境界/原文index/生成長を検証するが、同長の別コードとの組み違いをこの検証だけで識別できるわけではない。code/map/snapshot識別はP4の成果物契約で追加する。
+転送時は元spanのindex/UTF-8境界/範囲、名前slot重複、slot数を検証する。最終生成範囲も連続性/UTF-8境界/原文index/生成長を検証するが、同長の別コードとの組み違いをこの検証だけで識別できるわけではない。公開mapの`validateSourceMap`は[拡張契約](optimization-map-extension.md)に従ってcode/source/mapの指紋も確認する。
 
 67パスの分類と未対応範囲は[台帳](../design/source-provenance-pass-audit.json)へ保存する。パスがmetadata非依存で完走し同じLuaを返せることと、その全出力を精密に原文へ戻せることを区別する。
 
@@ -93,4 +100,4 @@ NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブ�
 
 描画recordは通常・拡張・高密度・共有・規則列の各候補とデコーダーで、元の引数・payload/パレット・予測初期値と生成制御を区別する。静的な複数由来の保持と、実行時の特定反復を元の一命令に対応付ける処理は別機能である。
 
-実変換を必須とする67パスのテスト、JSON転送、部分/全由来欠落、各536実コンパイラ設定、代表240設定と実Lua codec比較を[検証記録](../verification/source-origin-all-passes-20261001.md)に記す。これを標準Source Map v3の高レベル公開、非短縮linkとの合成、成果物の同一性検査、Playground接続の完了とは扱わない。これらはP4/P5の範囲である。
+実変換を必須とする67パスのテスト、JSON転送、部分/全由来欠落、各536実コンパイラ設定、代表240設定と実Lua codec比較を[検証記録](../verification/source-origin-all-passes-20261001.md)に記す。このP3検証とは別に、P4の標準v3・link合成・公開API・成果物の同一性を[理由付きmap検証](../verification/optimization-explanations-20261001.md)で確認する。Playground全体の説明UIはP5として残る。

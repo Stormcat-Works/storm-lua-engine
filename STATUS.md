@@ -2,13 +2,13 @@
 
 ## v0.3.0 開発中
 
-**P3の全67最適化パスへの由来対応を完了。67 implemented / 0 partial / 0 pending。** 各パスに実変換を必須とするfixture、追跡ON/OFF一致、区切り2形式、JSON転送、由来を消した負例がある。全67 fixtureを実コンパイラの8設定、合計536設定でも検証した。[実装・検証・性能](docs/verification/source-origin-all-passes-20261001.md)、[パス台帳](docs/design/source-provenance-pass-audit.json)。
+`feat/minify-source-provenance-v0.3`で全67パスの内部由来対応に加え、最適化理由付きSource Map v3をRust/WASM/TSの開発APIへ接続した。`sourceMap:true`で`map`を返し、`validateSourceMap(code,map)`で内容指紋と詳細/標準mapの整合性を確認する。通常/LifeBoatの複数ファイル合成と、Worker経由の取得も対応。[実装・検証・性能](docs/verification/optimization-explanations-20261001.md)。
 
-引数・table/名前空間の特殊化、疎なBoolean decode、数式・共有値・radix/結果helper、出力loop、screen button、描画recordの通常/拡張/高密度/共有/規則列の各経路へ対応した。選ばれた候補だけでなく代替codec・分岐・拒否・復元も検証する。既存の代表30入力・240設定は、生成Luaを変えず全件由来不明0%を維持する。
+旧実測例で課題だった保持演算子/keywordのToken位置、identity/copy契約、型付き関連元、インライン化された子の文脈、原文の除去/置換記録を実装した。[更新した実測例](docs/verification/provenance-examples-20261001.md)。Source Map本体のversion=3とx_storm.schemaVersion=1を分離し、producerのエンジン版・revision・dirty、code/source hashと実効設定を保存する。
 
-Source/Derived/Syntheticとprecisionの区別は維持する。欠けた元情報はUnknownであり、近い親位置やSyntheticへ偽装して埋めない。対応済みは現行パスの由来契約に対する判定で、任意のLua・将来の変更が無欠陥であるという証明ではない。
+全67パスの対応と、固定30入力・240設定のUnknown 0%/生成Lua一致は維持する。理由コードと構造操作は保持するが、全パスの適用根拠を形式的に証明するものではない。basis/factsの詳細は実際に記録した判断のみで、未記録の根拠を推測しない。Source/Derivedの名前・式・文などの精度と、Synthetic/Unknownを区別する。
 
-P0〜P3は完了。次はP4の標準Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/source snapshot識別。続くP5はPlaygroundの双方向選択と実行位置接続。**最適化後mapはまだ高レベルSDKへ公開していない。** 追跡コスト改善も測定しながら継続する。[実装計画](docs/design/source-provenance.md)。
+P4の主要な生成・合成・公開型・内容識別APIは実装した。P5のPlayground理由パネル/双方向選択/実行位置接続、さらに元変数の値・寿命・実フレームの復元は未実装。追跡とmap容量の追加コストも継続評価する。**v0.3.0は未リリース**で、公開済みnpm版は0.2.1のまま。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
 
 ## v0.2.1 公開状況
 

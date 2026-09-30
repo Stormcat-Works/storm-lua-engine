@@ -27,6 +27,7 @@
 | [Screen](specs/screen.md) | 描画・RGBA・同梱フォント |
 | [WASM ABI](specs/wasm-abi.md) | レイアウト・寿命・エラー・Worker |
 | [Runtime and host](specs/runtime-host.md) | サンドボックス・Addon・HTTP・地図 |
+| [Publication workflow](design/publication-workflow.md) | npm OIDC公開、検査済みtarball、再実行とCI起動 |
 | [Release](release.md) | 版・配布物・公開手順 |
 | [Distribution](design/distribution.md) | Cargo/npm、target、ビルド手順 |
 | [Integration](design/integration.md) | 利用形態・最適化ツールの移行判断 |

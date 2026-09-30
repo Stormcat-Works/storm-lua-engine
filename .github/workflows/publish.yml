@@ -1,0 +1,135 @@
+name: Publish npm release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing reviewed stable release tag (vX.Y.Z)
+        type: string
+        required: true
+      dry_run:
+        description: Verify the release tarball and consumer without publishing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+# Never interrupt a registry write or allow two versions to race latest.
+concurrency:
+  group: npm-storm-lua-engine
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'Stormcat-Works/storm-lua-engine' && (github.event_name == 'release' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      revision: ${{ steps.release.outputs.revision }}
+      version: ${{ steps.release.outputs.version }}
+      filename: ${{ steps.release.outputs.filename }}
+      exists: ${{ steps.release.outputs.exists }}
+      provenance: ${{ steps.release.outputs.provenance }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Verify tag, successful CI, archive metadata and release checksums
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: node tools/release/verify-publication.mjs prepare "$RELEASE_TAG" "$RUNNER_TEMP/publication"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.release.outputs.revision }}
+          path: release-source
+          persist-credentials: false
+      - name: Test the exact tarball using the matching source consumer
+        env:
+          RELEASE_FILE: ${{ steps.release.outputs.filename }}
+        run: |
+          npm --prefix release-source/packages/lua-engine ci --ignore-scripts --no-audit --no-fund
+          node release-source/tools/test-package.mjs "$RUNNER_TEMP/publication/$RELEASE_FILE"
+      - name: Retain only the verified payload for the publish job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: npm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    if: needs.verify.outputs.exists != 'true' && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+      - name: Verify transfer integrity
+        run: node tools/release/verify-publication.mjs check "$RUNNER_TEMP/publication"
+      - name: Publish the tested tarball using npm Trusted Publishing
+        env:
+          RELEASE_FILE: ${{ needs.verify.outputs.filename }}
+          # For legacy-tag bootstrap, do not attest a different workflow commit as package source.
+          NPM_CONFIG_PROVENANCE: ${{ needs.verify.outputs.provenance }}
+        run: |
+          npm --version
+          npm publish "$RUNNER_TEMP/publication/$RELEASE_FILE" --access public --tag latest --registry=https://registry.npmjs.org/ --ignore-scripts
+
+  verify-registry:
+    needs: [verify, publish]
+    if: ${{ !cancelled() && needs.verify.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped') && inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+      - name: Re-download the registry package and verify exact integrity
+        id: registry
+        run: node tools/release/verify-publication.mjs verify-registry "$RUNNER_TEMP/publication"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
+          path: release-source
+          persist-credentials: false
+      - name: Run the consumer against the registry download
+        env:
+          REGISTRY_TARBALL: ${{ steps.registry.outputs.registryTarball }}
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          npm --prefix release-source/packages/lua-engine ci --ignore-scripts --no-audit --no-fund
+          node release-source/tools/test-package.mjs "$REGISTRY_TARBALL"
+          printf 'Verified npm release: %s\n' "$RELEASE_VERSION" >> "$GITHUB_STEP_SUMMARY"

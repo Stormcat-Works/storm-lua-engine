@@ -2,14 +2,21 @@ name: Engine conformance
 
 on:
   push:
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
+
+# Release/tag pushes do not rebuild an already-tested commit. PR merge checks stay intact.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   native:
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +38,7 @@ jobs:
       - name: Toolchain
         shell: bash
         run: rustup toolchain install 1.97.1 --profile minimal --component clippy --component rustfmt
+      - run: node --test tools/release/*.test.mjs
       - run: cargo fmt --all --check
       - run: cargo xtask check
       - run: cargo check --workspace --locked
@@ -48,6 +56,7 @@ jobs:
       - run: python3 tools/check_screen_fixtures.py
 
   wasm:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

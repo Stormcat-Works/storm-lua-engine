@@ -1,6 +1,6 @@
 # リリース手順
 
-リリースは管理者の明示指示で行います。GitHub CIは検証のみで、通常のpushからregistryへ自動公開しません。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
+リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
 
 ## v0.2.0の完成範囲
 
@@ -36,7 +36,7 @@ Playgroundは`npm --prefix app ci`でローカルSDK依存を更新した後、`
 
 GitHub Releasesには検査したnpm tarball、Playgroundの静的サイトZIP、`SHA256SUMS`を添付します。静的サイトZIPには`dist/`の内容と必要な権利表示を含めます。個人パス、調査資料、内部履歴のバックアップ、node_modules、Cargo target、テスト専用WASMは配布しません。Rust用ソースはタグから取得します。
 
-公開するcommitのCI成功を確認し、同じcommitへタグを付けます。npmは検査済みtarballを`npm publish <tarballのパス> --access public --tag latest --registry=https://registry.npmjs.org/ --ignore-scripts`で公開します。認証や二要素認証が必要な場合は管理者の認証手順を使い、トークンをコード、ログ、チャットへ記録しません。
+公開するcommitのCI成功を確認し、同じcommitへタグを付けます。自動公開は[公開workflow](design/publication-workflow.md)を使用します。認証済み管理者による手動の復旧操作が必要な場合に限り、npmは検査済みtarballを`npm publish <tarballのパス> --access public --tag latest --registry=https://registry.npmjs.org/ --ignore-scripts`で公開します。認証や二要素認証が必要な場合は管理者の認証手順を使い、トークンをコード、ログ、チャットへ記録しません。
 
 公開後、registryのversion・dist-tag・integrityとGitHub Releaseのassetを確認し、registryから新しくインストールしたconsumerを実行します。dry-run、タグ作成、tarballの添付だけでnpm公開済みとは扱いません。
 

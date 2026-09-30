@@ -9,6 +9,7 @@ Cargoの生成物は利用環境のポリシーに従って`CARGO_TARGET_DIR`で
 
 | Purpose | Command |
 |---|---|
+| Release workflow input validation | `node --test tools/release/*.test.mjs` |
 | Format | `cargo fmt --all --check` |
 | Dependencies, generated data, docs | `cargo xtask check` |
 | Native tests and backend features | `cargo test --workspace --all-features --locked` |

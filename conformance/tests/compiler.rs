@@ -304,3 +304,66 @@ fn captured_tick_input_is_not_reread_by_a_persistent_closure() -> Result<(), Box
     );
     Ok(())
 }
+
+#[test]
+fn target_checkpoints_and_full_search_preserve_real_io_and_draw_commands(
+) -> Result<(), Box<dyn Error>> {
+    let linked = build(
+        &project(),
+        &ApiProjectCompileOptions {
+            minify: Some(false),
+            ..Default::default()
+        },
+    );
+    assert!(linked.ok);
+    let source = linked.code.ok_or("missing source")?;
+    let settings = ApiCompileOptions {
+        numeric_mode: Some(ApiNumericMode::Exact),
+        ..Default::default()
+    };
+    let full = minify(&source, &settings);
+    assert!(full.ok);
+    for target in [0, 400, 8192] {
+        let result = minify(
+            &source,
+            &ApiCompileOptions {
+                target_size: Some(target),
+                ..settings.clone()
+            },
+        );
+        assert!(result.ok, "{:?}", result.diagnostics);
+        if target == 0 {
+            assert_eq!(result.code, full.code);
+        }
+        let config = MicrocontrollerConfig {
+            properties: properties(),
+            ..Default::default()
+        };
+        let mut original = Microcontroller::new(config.clone())?;
+        let mut optimized = Microcontroller::new(config)?;
+        original.load(source.as_bytes(), "=original")?;
+        optimized.load(
+            result.code.ok_or("missing target source")?.as_bytes(),
+            "=target",
+        )?;
+        for tick in 0..16 {
+            let mut input = CompositeSignal::default();
+            input.numbers[0] = [-2.5, 0.0, 3.0, 0.25][tick % 4];
+            input.booleans[0] = tick % 2 == 0;
+            assert_eq!(original.tick(&input)?, RunOutcome::Completed);
+            assert_eq!(optimized.tick(&input)?, RunOutcome::Completed);
+            assert_signals(original.output(), optimized.output());
+            for (width, height) in [(32, 32), (96, 64)] {
+                assert_eq!(original.draw(width, height)?, RunOutcome::Completed);
+                assert_eq!(optimized.draw(width, height)?, RunOutcome::Completed);
+                assert_eq!(&*original.commands(), &*optimized.commands());
+                let mut a = ScreenRaster::new(width, height)?;
+                let mut b = ScreenRaster::new(width, height)?;
+                original.replay(&mut a)?;
+                optimized.replay(&mut b)?;
+                assert_eq!(a.pixels(), b.pixels());
+            }
+        }
+    }
+    Ok(())
+}

@@ -1,16 +1,17 @@
 //! Source Map v3 生成（設計 §6.1 / ロードマップ P4）。
 //!
 //! `link_project`（`link.rs`）が返す `LinkedRange` 区間表を正本にし、`rust-sourcemap`
-//! （crates.io 名 `sourcemap`）で JSON へエンコードする。行単位マッピング（列は常に0）・
+//! （crates.io 名 `sourcemap`）で JSON へエンコードする。トークン・行・コピー範囲境界の位置を記録し、
 //! `sources` は `/` 区切り + `.lua` のパス形式・`sourcesContent` は常に埋め込む（設計 §6.1）。
 //! `link.linked_source` が `None`（リンク失敗）の場合は生成しない。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sourcemap::SourceMapBuilder;
 
-use crate::link::{lookup_source_line, LinkResult};
+use crate::link::{lookup_source_byte, LinkResult};
 use storm_lua_analysis::project::{AmbientMember, LuaProject};
+use storm_lua_syntax::{lexer::Lexer, source_position::LineIndex};
 
 /// モジュールキーを `/` 区切り + `.lua` のパス形式へ変換する（設計 §6.1）。
 /// `key = segment ("." segment)*`（§2.1）という文法により変換は常に可逆。
@@ -35,7 +36,7 @@ fn ambient_source<'a>(project: &'a LuaProject, key: &str) -> Option<&'a str> {
 /// `LinkedRange::module` に現れるキー（通常モジュール or ambient 合成キー）の元ソース全文を取得する。
 /// Generated declarations are not assigned an origin. Ambient member bodies
 /// resolve here exactly like ordinary module bodies.
-fn source_text<'a>(project: &'a LuaProject, key: &str) -> Option<&'a str> {
+pub(crate) fn source_text<'a>(project: &'a LuaProject, key: &str) -> Option<&'a str> {
     project
         .modules
         .get(key)
@@ -43,56 +44,74 @@ fn source_text<'a>(project: &'a LuaProject, key: &str) -> Option<&'a str> {
         .or_else(|| ambient_source(project, key))
 }
 
-/// リンク結果から Source Map v3 (JSON 文字列) を生成する（設計 §6.1）。
-///
-/// - 行単位マッピング: `linked_source` の各出力行を `lookup_source_line` で逆引きし、
-///   (出力行, col=0) → (元モジュールの `sources` インデックス, 元行, col=0) を記録する。
-/// - 原文の由来を持たない合成行はsourceなしのsegmentを出し、直前の位置を継承させない。
-/// - `names` は v1 では出さない（設計 §6.1）。
-/// - `link.linked_source` が `None`（リンク失敗）なら `None` を返す。
+/// Encode the exact non-minified artifact as Source Map v3.
+/// Anchors are generated token starts, line starts and verbatim-slice boundaries.
+/// Columns are UTF-16 units; Lua diagnostic byte columns are not interchangeable.
+/// Token interiors resolve to their preceding anchor, not to an inferred column.
+/// Generated spans and EOF have explicit unmapped anchors. Names are not encoded.
 #[expect(
     clippy::expect_used,
-    reason = "The source-map serializer writes JSON to an in-memory byte vector; valid generated mappings have no failing I/O or invalid UTF-8 path"
+    reason = "Linking validated Lua preserves valid tokens and UTF-8 slice boundaries; all origins belong to project snapshots; serialization writes only to an in-memory Vec"
 )]
 pub fn generate_source_map(project: &LuaProject, link: &LinkResult) -> Option<String> {
-    let linked_source = link.linked_source.as_deref()?;
-
+    let generated = link.linked_source.as_deref()?;
+    let generated_index = LineIndex::new(generated);
     let mut builder = SourceMapBuilder::new(None);
-    let mut source_ids: BTreeMap<&str, u32> = BTreeMap::new();
-
-    let total_lines = linked_source.lines().count() as u32;
-    for output_line in 1..=total_lines {
-        let origin = lookup_source_line(&link.ranges, output_line).and_then(|(module, line)| {
-            source_text(project, module).map(|text| (module, line, text))
-        });
-        let Some((module, source_line, text)) = origin else {
-            // A generated-only segment prevents greatest-lower-bound consumers
-            // from attributing glue (or a blank line) to the previous source.
-            builder.add_raw(output_line - 1, 0, 0, 0, None, None, false);
-            continue;
-        };
-        let src_id = *source_ids.entry(module).or_insert_with(|| {
-            let id = builder.add_source(&module_key_to_path(module));
+    let mut sources = BTreeMap::new();
+    for range in &link.ranges {
+        sources.entry(range.module.as_str()).or_insert_with(|| {
+            let text = source_text(project, &range.module).expect("linked source snapshot");
+            let id = builder.add_source(&module_key_to_path(&range.module));
             builder.set_source_contents(id, Some(text));
-            id
+            (id, LineIndex::new(text))
         });
-        builder.add_raw(
-            output_line - 1,
-            0,
-            source_line - 1,
-            0,
-            Some(src_id),
-            None,
-            false,
-        );
     }
-
-    let source_map = builder.into_sourcemap();
+    let mut anchors = BTreeSet::from([0, generated.len()]);
+    anchors.extend(
+        generated
+            .bytes()
+            .enumerate()
+            .filter_map(|(i, b)| (b == b'\n').then_some(i + 1)),
+    );
+    for range in &link.ranges {
+        anchors.insert(range.output_start_byte);
+        anchors.insert(range.output_end_byte);
+    }
+    anchors.extend(
+        Lexer::new(generated)
+            .all()
+            .expect("linker emitted valid Lua tokens")
+            .into_iter()
+            .map(|token| token.p),
+    );
+    for output_byte in anchors {
+        let (line, col) = generated_index
+            .utf16_position(output_byte)
+            .expect("generated character boundary");
+        if let Some((range, source_byte)) = lookup_source_byte(&link.ranges, output_byte) {
+            let (source_id, index) = &sources[range.module.as_str()];
+            let (source_line, source_col) = index
+                .utf16_position(source_byte)
+                .expect("original character boundary");
+            builder.add_raw(
+                line,
+                col,
+                source_line,
+                source_col,
+                Some(*source_id),
+                None,
+                false,
+            );
+        } else {
+            builder.add_raw(line, col, 0, 0, None, None, false);
+        }
+    }
     let mut buf = Vec::new();
-    source_map
+    builder
+        .into_sourcemap()
         .to_writer(&mut buf)
-        .expect("in-memory Vec<u8> writer never fails");
-    Some(String::from_utf8(buf).expect("sourcemap crate always emits valid UTF-8 JSON"))
+        .expect("in-memory source map writer");
+    Some(String::from_utf8(buf).expect("source map JSON is UTF-8"))
 }
 
 #[cfg(test)]
@@ -205,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn output_line_to_source_line_matches_lookup_source_line() {
+    fn output_line_start_matches_the_exact_byte_origin() {
         // trace-mapping 相当の逆引きを Rust 側でも検証する（外部ライブラリ検証テストと対の内部確認）。
         let p = project(
             "main",
@@ -221,9 +240,21 @@ mod tests {
             .expect("decode generated source map");
 
         let src = link.linked_source.as_deref().unwrap();
-        for (i, _line) in src.lines().enumerate() {
-            let output_line = i as u32; // sourcemap クレートは0-based行
-            let expected = lookup_source_line(&link.ranges, output_line + 1);
+        let mut output_byte = 0;
+        for (i, text) in src.split_inclusive('\n').enumerate() {
+            let output_line = i as u32;
+            let expected =
+                lookup_source_byte(&link.ranges, output_byte).map(|(range, source_byte)| {
+                    let original = source_text(&p, &range.module).unwrap();
+                    (
+                        range.module.as_str(),
+                        LineIndex::new(original)
+                            .byte_position(source_byte)
+                            .unwrap()
+                            .0,
+                    )
+                });
+            output_byte += text.len();
             let token = decoded.lookup_token(output_line, 0);
             match expected {
                 Some((module, source_line)) => {
@@ -321,5 +352,113 @@ mod tests {
         let token = map.lookup_token(generated as u32, 0).unwrap();
         assert_eq!(token.get_source(), Some("lib.lua"));
         assert_eq!(token.get_src_line(), 1);
+    }
+
+    fn assert_token_origin(
+        map: &sourcemap::SourceMap,
+        generated: &str,
+        needle: &str,
+        source_file: &str,
+        original: &str,
+    ) {
+        let output = generated.find(needle).expect("generated token");
+        let source = original.find(needle).expect("original token");
+        let (line, col) = LineIndex::new(generated).utf16_position(output).unwrap();
+        let token = map.lookup_token(line, col).unwrap();
+        // Expected coordinates come directly from the original snapshot, not
+        // from the linker's own range table or its line-lookup helper.
+        let expected_line = original[..source].bytes().filter(|b| *b == b'\n').count() as u32;
+        let start = original[..source].rfind('\n').map_or(0, |i| i + 1);
+        let expected_col = original[start..source].encode_utf16().count() as u32;
+        assert_eq!(token.get_dst_line(), line);
+        assert_eq!(token.get_dst_col(), col);
+        assert_eq!(token.get_source(), Some(source_file));
+        assert_eq!(
+            (token.get_src_line(), token.get_src_col()),
+            (expected_line, expected_col)
+        );
+    }
+
+    #[test]
+    fn same_line_module_boundaries_and_generated_return_prefix_have_exact_columns() {
+        let main = "local f=require('lib');output.setNumber(1,f())";
+        let lib = "return function() return 7 end";
+        let project = project("main", &[("main", main), ("lib", lib)]);
+        let link = link_project(&project);
+        let code = link.linked_source.as_ref().unwrap();
+        let map = sourcemap::SourceMap::from_slice(
+            generate_source_map(&project, &link).unwrap().as_bytes(),
+        )
+        .unwrap();
+        assert_token_origin(&map, code, "function()", "lib.lua", lib);
+        assert_token_origin(&map, code, "return 7", "lib.lua", lib);
+        assert_token_origin(&map, code, "output.setNumber", "main.lua", main);
+        let (line, col) = LineIndex::new(code)
+            .utf16_position(code.find("function()").unwrap())
+            .unwrap();
+        assert!(
+            col > 0,
+            "fixture must have a generated prefix on the function line"
+        );
+        assert_eq!(map.lookup_token(line, 0).unwrap().get_source(), None);
+        let (line, col) = LineIndex::new(code).utf16_position(code.len()).unwrap();
+        assert_eq!(map.lookup_token(line, col).unwrap().get_source(), None);
+        for range in &link.ranges {
+            let original = source_text(&project, &range.module).unwrap();
+            assert_eq!(
+                &code[range.output_start_byte..range.output_end_byte],
+                &original[range.source_start_byte
+                    ..range.source_start_byte + range.output_end_byte - range.output_start_byte]
+            );
+        }
+    }
+
+    #[test]
+    fn token_columns_use_utf16_after_unicode_and_preserve_crlf_snapshots() {
+        let main = "local banner='😀あ';local f=require('lib');output.setNumber(1,f())\r\n";
+        let lib = "return function()\r\n local caption='雪😀';return 7\r\nend";
+        let project = project("main", &[("main", main), ("lib", lib)]);
+        let link = link_project(&project);
+        let code = link.linked_source.as_ref().unwrap();
+        let map = sourcemap::SourceMap::from_slice(
+            generate_source_map(&project, &link).unwrap().as_bytes(),
+        )
+        .unwrap();
+        assert_token_origin(&map, code, "output.setNumber", "main.lua", main);
+        assert_token_origin(&map, code, "return 7", "lib.lua", lib);
+        assert_eq!(
+            map.get_source_contents(
+                map.sources().position(|name| name == "lib.lua").unwrap() as u32
+            ),
+            Some(lib)
+        );
+    }
+
+    #[test]
+    fn lifeboat_blanked_unicode_sections_are_unmapped_but_retained_tokens_are_exact() {
+        let main = "---@section __LB_SIMULATOR_ONLY__\nprint('😀雪')\n---@endsection\n---@section unused\nfunction unused() return '😀' end\n---@endsection\nlocal title='あ😀';function onTick()output.setNumber(1,7)end\n";
+        let project = project("main", &[("main", main)]);
+        let link = crate::lifeboat::link_lifeboat(&project);
+        let code = link.linked_source.as_ref().unwrap();
+        let map = sourcemap::SourceMap::from_slice(
+            generate_source_map(&project, &link).unwrap().as_bytes(),
+        )
+        .unwrap();
+        assert_token_origin(&map, code, "output.setNumber", "main.lua", main);
+        for token in map.tokens() {
+            if token.get_source() == Some("main.lua") {
+                assert!(
+                    ![1, 4].contains(&token.get_src_line()),
+                    "removed code inherited an original location"
+                );
+            }
+        }
+        for range in &link.ranges {
+            assert_eq!(
+                &code[range.output_start_byte..range.output_end_byte],
+                &main[range.source_start_byte
+                    ..range.source_start_byte + range.output_end_byte - range.output_start_byte]
+            );
+        }
     }
 }

@@ -10,10 +10,9 @@
 //! - 出力の任意行から由来モジュール・元行へ逆引きできる連結オフセット区間表を返す
 //!   （Source Map（P4）はこの区間表を正本にして別途生成する。ここでは作らない）。
 //!
-//! **既知の制約**: 区間表は行単位（設計 §6.1 と同じ粒度）。1行に複数トップレベル文が
-//! 同居する非典型ソース（`local a=1 local b=2` のように改行を省略した記述）は、
-//! 区間の行対応が近似になる場合がある。区間表は原文から転写した範囲のみを持つ。
-//! do/endや巻き上げ宣言などの合成行には架空の元行を割り当てない。
+//! 原文のコピー区間はUTF-8バイト範囲で保持する。同一行にある複数の展開境界も
+//! 正確に区別できる。行フィールドとlookup_source_lineは粗い行対応の投影であり、
+//! 詳細なmap・診断にはlookup_source_byteを使用する。合成部分に元位置を付けない。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use storm_lua_analysis::structure::{analyze_structure, StructuralAnalysis};
@@ -25,7 +24,7 @@ use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::lexer::Lexer;
 use storm_lua_syntax::numeric::quote_lua;
 
-/// 出力ソースの行区間 → 由来モジュール・元ソース行の対応。
+/// Verbatim generated/original byte correspondence, with a coarse line projection.
 /// `output_start_line..=output_end_line`（1-based, 両端含む）の各行 L は、
 /// 元モジュール `module` のソース中 `source_start_line + (L - output_start_line)` 行目に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +33,12 @@ pub struct LinkedRange {
     pub output_end_line: u32,
     pub module: String,
     pub source_start_line: u32,
+    /// Inclusive generated UTF-8 byte offset of this verbatim slice.
+    pub output_start_byte: usize,
+    /// Exclusive generated UTF-8 byte offset; generated glue is outside the slice.
+    pub output_end_byte: usize,
+    /// Inclusive original UTF-8 byte offset in `module`.
+    pub source_start_byte: usize,
 }
 
 impl LinkedRange {
@@ -69,6 +74,26 @@ pub fn lookup_source_line(ranges: &[LinkedRange], output_line: u32) -> Option<(&
         r.source_line_for(output_line)
             .map(|line| (r.module.as_str(), line))
     })
+}
+
+/// Locate an exact original byte in ordered, nonoverlapping verbatim ranges.
+/// Generated glue, EOF and removed source have no origin. The caller must use
+/// the same source snapshots as the linker; a byte need not be a UTF-8 boundary.
+pub fn lookup_source_byte(
+    ranges: &[LinkedRange],
+    output_byte: usize,
+) -> Option<(&LinkedRange, usize)> {
+    let i = ranges
+        .partition_point(|range| range.output_start_byte <= output_byte)
+        .checked_sub(1)?;
+    let range = &ranges[i];
+    if output_byte >= range.output_end_byte {
+        return None;
+    }
+    let source_byte = range
+        .source_start_byte
+        .checked_add(output_byte - range.output_start_byte)?;
+    Some((range, source_byte))
 }
 
 /// モジュール本体の展開形（設計 §10 実装ノート3）。
@@ -299,6 +324,7 @@ impl<'a> Expander<'a> {
         let text = &source[start..end];
         let source_start_line = 1 + count_newlines(&source[..start]);
         let out_start = line_of(&self.output);
+        let output_start_byte = self.output.len();
         self.output.push_str(text);
         let newline_count = text.matches('\n').count() as u32;
         let out_end = if text.ends_with('\n') {
@@ -311,6 +337,9 @@ impl<'a> Expander<'a> {
             output_end_line: out_end,
             module: key.to_string(),
             source_start_line,
+            output_start_byte,
+            output_end_byte: self.output.len(),
+            source_start_byte: start,
         });
     }
 

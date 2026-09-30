@@ -56,3 +56,7 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 ## Storm Code向け実行ホスト操作（未公開）
 
 名前付きtick/draw、即時property/input状態操作、typed property snapshot、runtime専用analyzeを実装。静的ビルド契約は維持する。独立consumerとNative/WASMで検証し、Storm Codeでの利用は同製品の段階移行へ記録する。未公開の識別可能なSDKスナップショットと既存npm版を混同しない。
+
+## ソース位置追跡とtarget探索（P0/P1実装済み）
+
+[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。残りはP2〜P5の最適化ASTの由来、最終出力map、公開API、consumerへの接続。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。

@@ -66,7 +66,9 @@ pub(crate) fn append(
                 crate::lifeboat::quote(name)
             ));
             let line = output.bytes().filter(|b| *b == b'\n').count() as u32 + 1;
+            let output_start_byte = output.len();
             output.push_str(source);
+            let output_end_byte = output.len();
             if !source.ends_with('\n') {
                 output.push('\n');
             }
@@ -77,6 +79,9 @@ pub(crate) fn append(
                     output_end_line: line + count - 1,
                     module: format!("{namespace}.{name}"),
                     source_start_line: 1,
+                    output_start_byte,
+                    output_end_byte,
+                    source_start_byte: 0,
                 });
             }
             output.push_str("end)()\n");

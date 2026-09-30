@@ -122,9 +122,9 @@ fn encode_prepared_jobs(
     Ok(object.into())
 }
 
-/// Evaluate exactly one prepared candidate job inside an independent WASM instance.
-/// Run the deterministic OBJ-2 fast ladder inside the coordinator WASM instance.
-/// If the target is still unmet, JS falls back to the existing parallel worker pool.
+/// Run target checkpoints and a canonical candidate prefix in the coordinator.
+/// Remaining jobs can run in independent Workers; the encoded context retains
+/// completed canonical batches so no candidate evaluation is repeated.
 #[wasm_bindgen(js_name = trySatisficing)]
 pub fn try_satisficing(source: &str, options: JsValue) -> Result<JsValue, JsValue> {
     let options = decode_options(options)?;
@@ -161,9 +161,8 @@ pub fn try_satisficing(source: &str, options: JsValue) -> Result<JsValue, JsValu
             })?,
         )?;
     } else {
-        // The ladder has already prepared canonical full-search candidates.
-        // Export them rather than making the coordinator call prepareJobs and
-        // repeat the common core and structural exploration a second time.
+        // Resume the same canonical search: export remaining jobs and the
+        // context containing completed batches. Never call prepareJobs again.
         let (context, jobs) = take_satisficing_fallback(&mut attempt)
             .ok_or_else(|| JsValue::from_str("satisficing fallback preparation missing"))?;
         Reflect::set(

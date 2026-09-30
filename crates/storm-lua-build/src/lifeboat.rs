@@ -2,8 +2,10 @@
 //! Language syntax comes from the shared lexer/parser. No script is executed here.
 use crate::link::{LinkResult, LinkedRange};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 use storm_lua_analysis::resolver::{resolve, BindingKind};
 use storm_lua_analysis::{Diagnostic, LuaProject};
+use storm_lua_syntax::source_position::LineIndex;
 use storm_lua_syntax::source_tools::string_bytes;
 use storm_lua_syntax::{parse_source_with_positions, Ast, Lexer, Node, NodeId, TokenKind};
 
@@ -145,16 +147,21 @@ fn sections(source: &str) -> Result<Vec<Section>, String> {
 /// Remove only development directives while preserving UTF-8 byte offsets and every newline.
 /// It is also useful when an IDE needs the game-side static view of a file without optimization.
 pub fn strip_development(source: &str) -> Result<String, String> {
+    strip_development_recorded(source).map(|(code, _)| code)
+}
+fn strip_development_recorded(source: &str) -> Result<(String, Vec<Range<usize>>), String> {
     if source.len() > MAX_SOURCE {
         return Err("source exceeds 2 MiB build limit".into());
     }
     let mut out = source.as_bytes().to_vec();
+    let mut removed = Vec::new();
     for section in sections(source)? {
         if section.simulator {
             blank(&mut out[section.start..section.end]);
+            removed.push(section.start..section.end);
         }
     }
-    String::from_utf8(out).map_err(|e| e.to_string())
+    Ok((String::from_utf8(out).map_err(|e| e.to_string())?, removed))
 }
 fn countable(source: &str) -> Result<Vec<u8>, String> {
     let mut bytes = source.as_bytes().to_vec();
@@ -173,7 +180,7 @@ fn countable(source: &str) -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
-fn strip_sections(source: &str) -> Result<String, String> {
+fn strip_sections(source: &str, removed: &mut Vec<Range<usize>>) -> Result<String, String> {
     let mut source = source.to_owned();
     let mut passes = 0;
     loop {
@@ -202,6 +209,7 @@ fn strip_sections(source: &str) -> Result<String, String> {
         let mut bytes = source.into_bytes();
         if let Some(section) = removable {
             blank(&mut bytes[section.start..section.end]);
+            removed.push(section.start..section.end);
         } else {
             let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
             let mut lexer = Lexer::new(text).with_comment_capture();
@@ -218,6 +226,7 @@ fn strip_sections(source: &str) -> Result<String, String> {
                 .collect();
             for (start, end) in spans {
                 blank(&mut bytes[start..end]);
+                removed.push(start..end);
             }
             return String::from_utf8(bytes).map_err(|e| e.to_string());
         }
@@ -303,6 +312,7 @@ pub(crate) fn quote(value: &str) -> String {
 struct Builder<'a> {
     project: &'a LuaProject,
     sources: BTreeMap<String, String>,
+    removed: BTreeMap<String, Vec<Range<usize>>>,
     aliases: BTreeMap<String, String>,
     used: Vec<String>,
     seen: BTreeSet<String>,
@@ -320,7 +330,8 @@ impl Builder<'_> {
             .modules
             .get(key)
             .ok_or_else(|| format!("module not found: {key}"))?;
-        let prepared = strip_development(source)?;
+        let (prepared, removed) = strip_development_recorded(source)?;
+        self.removed.insert(key.into(), removed);
         self.used.push(key.into());
         for name in dependencies(&prepared)? {
             if matches!(name.as_str(), "table" | "math" | "string") {
@@ -336,7 +347,7 @@ impl Builder<'_> {
     }
 }
 /// Build an include-once program. Each source has private locals; return values are discarded.
-/// Non-minified line correspondence is expressed using the existing LinkResult ranges.
+/// Original slices are tracked before edits; blanked directives are explicitly unmapped.
 pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
     let failure = |error: String| LinkResult {
         diagnostics: vec![Diagnostic::error("lifeboat-build", error)],
@@ -354,6 +365,7 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
         let mut builder = Builder {
             project,
             sources: BTreeMap::new(),
+            removed: BTreeMap::new(),
             aliases: BTreeMap::new(),
             used: vec![],
             seen: BTreeSet::new(),
@@ -368,6 +380,7 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
         let aliases = format!("{prefix}aliases");
         let mut output=format!("local {loaders},{loaded},{aliases}={{}},{{}},{{}}\nlocal function require(name)\n if {loaded}[name] then return end\n {loaded}[name]=true\n local fn={loaders}[{aliases}[name] or name]\n if fn then fn() end\nend\n");
         let mut ranges = vec![];
+        let mut removed = Vec::new();
         let injected =
             crate::lifeboat_ambient::append(project, &builder.sources, &mut output, &mut ranges)?;
         for (name, key) in &builder.aliases {
@@ -377,7 +390,14 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
             let source = &builder.sources[key];
             output.push_str(&format!("{loaders}[{}]=function()\n", quote(key)));
             let line = output.bytes().filter(|b| *b == b'\n').count() as u32 + 1;
+            let output_start_byte = output.len();
             output.push_str(source);
+            let output_end_byte = output.len();
+            removed.extend(
+                builder.removed[key]
+                    .iter()
+                    .map(|span| output_start_byte + span.start..output_start_byte + span.end),
+            );
             if !source.ends_with('\n') {
                 output.push('\n');
             }
@@ -388,12 +408,16 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
                     output_end_line: line + count - 1,
                     module: key.clone(),
                     source_start_line: 1,
+                    output_start_byte,
+                    output_end_byte,
+                    source_start_byte: 0,
                 });
             }
             output.push_str("end\n");
         }
         output.push_str(&format!("require({})\n", quote(&project.entry)));
-        let code = strip_sections(&output)?;
+        let code = strip_sections(&output, &mut removed)?;
+        let ranges = exclude_blanked_ranges(project, &code, ranges, removed)?;
         Ok(LinkResult {
             diagnostics: vec![],
             linked_source: Some(code),
@@ -403,6 +427,78 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
         })
     };
     run().unwrap_or_else(failure)
+}
+
+// Edits blank bytes without moving offsets. Subtract their explicitly recorded
+// intervals from original slices; never infer provenance by comparing strings.
+fn exclude_blanked_ranges(
+    project: &LuaProject,
+    code: &str,
+    ranges: Vec<LinkedRange>,
+    mut removed: Vec<Range<usize>>,
+) -> Result<Vec<LinkedRange>, String> {
+    removed.sort_by_key(|span| span.start);
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for span in removed {
+        if let Some(last) = merged.last_mut() {
+            if span.start <= last.end {
+                last.end = last.end.max(span.end);
+                continue;
+            }
+        }
+        merged.push(span);
+    }
+    let output_index = LineIndex::new(code);
+    let mut originals = BTreeMap::new();
+    let mut retained = Vec::new();
+    for range in ranges {
+        if !originals.contains_key(&range.module) {
+            let text = crate::source_map::source_text(project, &range.module)
+                .ok_or("LB source snapshot missing")?;
+            originals.insert(range.module.clone(), LineIndex::new(text));
+        }
+        let original = &originals[&range.module];
+        let mut append = |start: usize, end: usize| -> Result<(), String> {
+            if start >= end {
+                return Ok(());
+            }
+            let source_start_byte = range.source_start_byte + start - range.output_start_byte;
+            let output_start_line = output_index
+                .byte_position(start)
+                .ok_or("LB start boundary invalid")?
+                .0;
+            let output_end_line = output_index
+                .byte_position(end)
+                .ok_or("LB end boundary invalid")?
+                .0
+                - u32::from(code.as_bytes()[end - 1] == b'\n');
+            let source_start_line = original
+                .byte_position(source_start_byte)
+                .ok_or("LB original boundary invalid")?
+                .0;
+            retained.push(LinkedRange {
+                output_start_line,
+                output_end_line,
+                module: range.module.clone(),
+                source_start_line,
+                output_start_byte: start,
+                output_end_byte: end,
+                source_start_byte,
+            });
+            Ok(())
+        };
+        let mut cursor = range.output_start_byte;
+        let first = merged.partition_point(|span| span.end <= cursor);
+        for span in &merged[first..] {
+            if span.start >= range.output_end_byte {
+                break;
+            }
+            append(cursor, span.start.min(range.output_end_byte))?;
+            cursor = cursor.max(span.end).min(range.output_end_byte);
+        }
+        append(cursor, range.output_end_byte)?;
+    }
+    Ok(retained)
 }
 
 #[cfg(test)]
@@ -420,7 +516,7 @@ mod tests {
     #[test]
     fn named_nested_and_pattern_sections_reach_a_fixed_point() {
         let source="---@section unused\nfunction unused() called() end\n---@endsection\n---@section EXACT called 1 c\nfunction called()end\n---@endsection c\n---@section PATTERN used%.%w+ 1 keep\nused={}\n---@endsection keep\nused.run()";
-        let result = strip_sections(source).unwrap_or_default();
+        let result = strip_sections(source, &mut Vec::new()).unwrap_or_default();
         assert!(!result.contains("function unused"));
         assert!(!result.contains("function called"));
         assert!(result.contains("used={}"));

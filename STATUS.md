@@ -48,3 +48,9 @@ Storm Minのpublic SDK参照は専用ブランチへpush済みですが、同pri
 ## Storm Code統合API（未公開）
 
 共有parserによるsource inspection、独立したLBビルド、開発用overflow viewportを実装・検証。[記録](docs/verification/storm-code-integration-20260930.md)。通常build、通常game描画、最適化探索、minify後mapは変更しない。
+
+## 最適化後位置追跡の基盤（未公開・別作業ブランチ）
+
+`feat/optimized-source-maps`で[計画](docs/design/source-provenance.md)のP0/P1を実装。未達target探索は共通コアと一意候補を再利用する。非短縮の通常/LifeBoatビルドはUTF-8コピー範囲とトークン/UTF-16列のmapを保持し、合成prefix・削除済み開発区間に元位置を付けない。診断の列と終端も同じ範囲から変換する。
+
+最適化ASTの由来引き継ぎ、最終minify出力のmap、元変数復元、Playgroundの双方向表示は未実装。`minify`と`build(minify:true)`がmapを返すとは扱わない。公開・版上げ・他ブランチの置換は行っていない。実行済みテスト・性能比較・未実装範囲は[検証記録](docs/verification/source-provenance-20260930.md)に記録する。

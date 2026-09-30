@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::link::{analyze_structure, link_project, lookup_source_line, LinkedRange};
+use crate::link::{analyze_structure, link_project, lookup_source_byte, LinkResult};
 use crate::source_map::generate_source_map;
 use storm_lua_analysis::diagnostic::{codes, Diagnostic, Range, Severity};
 use storm_lua_analysis::lint::collect_written_global_names;
@@ -18,6 +18,7 @@ use storm_lua_minify::pass_ids::{OPTIMIZATION_PASS_IDS, PASS_RECORD_NAMES};
 use storm_lua_minify::search::{compile_code, CandidateSize, CompileCodeResult, SearchStats};
 use storm_lua_syntax::parser::{parse_source, parse_source_with_positions};
 use storm_lua_syntax::print::token_minify;
+use storm_lua_syntax::source_position::LineIndex;
 
 /// Optimization pipeline selection; numeric precision is configured separately.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -771,21 +772,51 @@ impl ApiProjectCompileResult {
 /// （悪性フォールバック回避: 誤った位置を出すくらいなら位置なしの方が安全）。
 fn remap_diagnostics_to_modules(
     diagnostics: Vec<Diagnostic>,
-    ranges: &[LinkedRange],
+    project: &LuaProject,
+    link: &LinkResult,
 ) -> Vec<Diagnostic> {
+    let generated = link.linked_source.as_deref().map(LineIndex::new);
+    let mut sources = BTreeMap::new();
+    for range in &link.ranges {
+        if let Some(text) = crate::source_map::source_text(project, &range.module) {
+            sources
+                .entry(range.module.as_str())
+                .or_insert_with(|| LineIndex::new(text));
+        }
+    }
     diagnostics
         .into_iter()
         .map(|diag| {
             let Some(range) = diag.range else {
                 return diag;
             };
-            match lookup_source_line(ranges, range.line) {
-                Some((module, source_line)) => Diagnostic {
-                    module: Some(module.to_string()),
-                    range: Some(Range {
-                        line: source_line,
-                        ..range
-                    }),
+            let mapped = (|| {
+                let generated = generated.as_ref()?;
+                let byte = generated.byte_offset(range.line, range.col)?;
+                let (slice, source_byte) = lookup_source_byte(&link.ranges, byte)?;
+                let original = sources.get(slice.module.as_str())?;
+                let (line, col) = original.byte_position(source_byte)?;
+                let end = range.end_line.zip(range.end_col).and_then(|(line, col)| {
+                    let end = generated.byte_offset(line, col)?;
+                    if end < byte || end > slice.output_end_byte {
+                        return None;
+                    }
+                    original.byte_position(slice.source_start_byte + end - slice.output_start_byte)
+                });
+                Some((
+                    slice.module.clone(),
+                    Range {
+                        line,
+                        col,
+                        end_line: end.map(|p| p.0),
+                        end_col: end.map(|p| p.1),
+                    },
+                ))
+            })();
+            match mapped {
+                Some((module, range)) => Diagnostic {
+                    module: Some(module),
+                    range: Some(range),
                     ..diag
                 },
                 None => Diagnostic {
@@ -885,7 +916,8 @@ pub fn compile_project(
         &core_options,
         compile_code(&linked_source, &core_options),
     );
-    let mut diagnostics = remap_diagnostics_to_modules(compiled.diagnostics.clone(), &link.ranges);
+    let mut diagnostics =
+        remap_diagnostics_to_modules(compiled.diagnostics.clone(), project, &link);
     // 構造/sw_restrict 診断（到達不能モジュールの Error を含む）を合流する。ok:true でも
     // 到達不能モジュールの Error はここまで捨てずに残っている（タスク2: §7-2、
     // `analyze` とのパリティ維持のため minify:true でも diagnostics は落とさない）。
@@ -924,7 +956,7 @@ pub fn compile_lifeboat(
             ..Default::default()
         },
     );
-    let mut diagnostics = remap_diagnostics_to_modules(analysis.diagnostics, &link.ranges);
+    let mut diagnostics = remap_diagnostics_to_modules(analysis.diagnostics, project, &link);
     for diagnostic in &mut diagnostics {
         if matches!(
             diagnostic.code,
@@ -953,7 +985,8 @@ pub fn compile_lifeboat(
     let compiled = finish_compile_result(source, &core, compile_code(source, &core));
     diagnostics.extend(remap_diagnostics_to_modules(
         compiled.diagnostics.clone(),
-        &link.ranges,
+        project,
+        &link,
     ));
     ApiProjectCompileResult::from_minified(
         compiled,
@@ -967,6 +1000,53 @@ pub fn compile_lifeboat(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linked_diagnostics_compose_byte_columns_and_end_ranges_without_snapping_glue() {
+        let original = "return function() local caption='😀';return missingName end";
+        let project = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([
+                (
+                    "main".into(),
+                    "local f=require('lib');function onTick()f()end".into(),
+                ),
+                ("lib".into(), original.into()),
+            ]),
+            ambient: BTreeMap::new(),
+        };
+        let link = link_project(&project);
+        let code = link.linked_source.as_deref().unwrap();
+        let index = LineIndex::new(code);
+        let start = code.find("missingName").unwrap();
+        let (line, col) = index.byte_position(start).unwrap();
+        let (end_line, end_col) = index.byte_position(start + "missingName".len()).unwrap();
+        let input = Diagnostic::warning("probe", "location probe").with_range(Some(Range {
+            line,
+            col,
+            end_line: Some(end_line),
+            end_col: Some(end_col),
+        }));
+        let output = remap_diagnostics_to_modules(vec![input], &project, &link);
+        assert_eq!(output[0].module.as_deref(), Some("lib"));
+        let range = output[0].range.unwrap();
+        assert_eq!(
+            (range.line, range.col),
+            (1, original.find("missingName").unwrap() as u32 + 1)
+        );
+        assert_eq!(
+            (range.end_line, range.end_col),
+            (Some(1), Some(range.col + 11))
+        );
+        let (function_line, _) = index
+            .byte_position(code.find("function() local").unwrap())
+            .unwrap();
+        let glue = Diagnostic::warning("probe", "generated prefix")
+            .with_range(Some(Range::point(function_line, 1)));
+        let output = remap_diagnostics_to_modules(vec![glue], &project, &link);
+        assert_eq!(output[0].module, None);
+        assert_eq!(output[0].range, None);
+    }
 
     #[test]
     fn exact_is_inferred_from_zero_tolerance() {

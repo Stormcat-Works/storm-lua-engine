@@ -1,42 +1,59 @@
-# Non-minified source maps
+# Source maps and source locations
 
-## v0.2.0 boundary
+## Published and working-tree boundaries
 
-`build(project, { minify: false })` returns a `code`/`map` pair. The map is Source Map v3 JSON with embedded `sourcesContent`. It describes the non-minified linked artifact only. `minify: true` and standalone `minify` do not return a post-optimization map. Optimized-source provenance is a separate v0.2.5/v0.3.0 task, not a v0.2.0 release gate.
+Published **v0.2.0** returns a Source Map v3 JSON `code`/`map` pair only for `build(project, { minify: false })`. That published map is line-based, its columns are zero and it embeds `sourcesContent`. Standalone `minify` and `minify: true` do not return a post-optimization map.
 
-The map is optional only because failed builds have no artifact and optimized builds have no supported mapping. Hosts must check the build result before using either field. Compilation does not create a VM or execute the source.
+The **unpublished source-provenance work** upgrades non-minified normal and LifeBoat builds to token/column anchors and exact internal byte ranges. It does not yet implement optimized-AST provenance or return a minified map. The complete design and implementation stages are in [Source provenance](../design/source-provenance.md). No published SDK artifact has been replaced.
 
-## Origin and location model
+A failed build has no artifact. Hosts must check the build result before using `code` or `map`. Compilation does not create a VM or execute Lua.
 
-The linker owns `LinkedRange` entries for verbatim source slices. Mapping never invents a source location for generated `do/end`, return normalization, hoisted variables or injected namespace declarations. A generated-only line is encoded with an explicit unmapped segment so a greatest-lower-bound lookup cannot inherit the preceding origin.
+## Origin and location model (unpublished)
 
-A generated line containing original text can have an origin even when a generated prefix shares that line. The unit is a line, not a token or a column. If multiple source statements/expansion boundaries share a line, the retained line origin is best effort; this is not a column-accurate map. The tests cover ordinary LF and CRLF text and original Unicode comments/strings.
+The linker owns ordered, disjoint `LinkedRange` intervals for verbatim source slices. Each has generated `[startByte,endByte)` and original `startByte` in a module snapshot. Line fields are a coarse projection retained for low-level line lookup, not the authority for column correspondence.
 
-`lib.util` maps to `lib/util.lua`. Injected ambient member text uses the same conversion, such as `sim.value` to `sim/value.lua`. Embedded source content remains the exact input text, including its line endings. `names` is empty; local-variable names and expression provenance are not encoded.
+The mapper records generated token starts, line starts and verbatim-slice boundaries. Mapping anchors resolve to their exact original line and column. An arbitrary position inside a token resolves to the preceding anchor; this is not a character-by-character mapping. Internal verbatim ranges can translate byte offsets exactly without guessing from the encoded map.
 
-The serialized map uses zero-based line/column coordinates. Common JS source-map consumers expose one-based lines and zero-based columns; the SDK runtime's breakpoint and stack lines are one-based. Consumers must respect the decoder's indexing convention rather than incrementing coordinates blindly. Column is zero in this map version.
+Generated `do/end`, loader scaffolding, return-normalization prefixes, hoisted variables, injected namespace declarations and EOF receive explicit unmapped anchors. A generated prefix on the same line as original text remains unmapped until the original slice begins. Greatest-lower-bound consumers must not inherit a preceding origin across generated gaps.
+
+LifeBoat development blocks, unused sections and removed directive comments are recorded when they are blanked. Their intervals are subtracted from the origin table. Preserving byte length and newlines while replacing Unicode with ASCII spaces does not make the replaced text original source. No final-string comparison is used to infer these origins.
+
+`lib.util` maps to `lib/util.lua`; injected ambient members use the same logical path convention. `sourcesContent` retains the exact original snapshots of mapped sources, including original line endings. `names` is still empty. Optimized local names, expression transformations and eliminated-variable values are not encoded in this phase.
+
+## Coordinates
+
+Internal ranges are UTF-8 byte offsets. Lua/parser diagnostics use one-based lines and byte columns. Serialized map coordinates use zero-based lines and UTF-16 columns; common JS consumers expose one-based lines and zero-based columns. Convert deliberately rather than incrementing or reusing byte columns blindly.
+
+The shared syntax `LineIndex` handles LF and CRLF without normalizing source text, validates character boundaries and supports EOF. It indexes non-ASCII width differences so mapping many tokens on a long line does not repeatedly scan that line. UTF-16 coordinates do not imply UTF-16 encoding of the Lua source itself.
 
 ## Host connection
 
-Keep the exact map with the exact generated code loaded under a host-chosen chunk name, for example `@mapped-program.lua`. The generated chunk name is not a source filename from the map. The map does not carry the runtime handle or automatically install breakpoints.
+Keep the exact map with the exact generated code loaded under a host-chosen chunk name, for example `@mapped-program.lua`. The chunk name is not a source filename from the map. The map neither carries a runtime handle nor automatically installs breakpoints.
 
-To bind an original breakpoint, enumerate exact entries matching the original source path and line. Use the corresponding generated lines with the loaded chunk name. A missing exact entry remains unmapped; do not silently select a nearby original line. A mapped blank/comment-only line is not proof that Lua can stop there: executable-line binding remains a separate host/debugger concern.
+To bind an original breakpoint, enumerate exact entries for its source path and line, deduplicate generated lines and use the loaded chunk identity. Missing entries remain unmapped; do not silently select a nearby original line. A mapped blank/comment-only line is not evidence that Lua can stop there. Executable-line binding belongs to the host/debugger.
 
-To display a stopped frame, verify its chunk identity, then map its generated line with column zero. An unmapped generated frame stays generated; do not report it as a previous source line. Runtime error text can be mapped only when its generated source and line are recognized. Preserve unrecognized errors instead of fabricating an origin.
+When the runtime provides a generated column, map that actual column after converting coordinate units. When it provides only a line, do not invent column zero as the actual execution position. Enumerate origins on the exact generated line: a unique source/line may be displayed as a line-level association; multiple origins remain ambiguous and generated-only frames remain generated. Existing simple examples with original text at column zero continue to work, but are not a general column-recovery mechanism.
 
-The same mapping is valid after reinitializing the same code. Editing the generated code, changing its bundle or minifying it invalidates that pairing. Imported maps are not authorization to read files; embedded `sourcesContent` supplies the source view. Hosts should not automatically fetch arbitrary paths listed in a map.
+Recognized runtime error source/line information can be associated using the same rules. Preserve unrecognized errors. Code edits, minification, a different bundle or source snapshots invalidate the pairing. A code hash alone cannot distinguish two original inputs that compile to identical Lua.
+
+Imported maps are not authorization to read files. Embedded `sourcesContent` supplies the source view; hosts must not automatically fetch arbitrary listed paths. Publishing embedded original source is an explicit host decision.
 
 ## Diagnostics versus debugging
 
-`analyze` diagnoses original modules directly and already returns their module/range. It does not require a linked-output map. Build-time diagnostics produced after linking use the linker's original ranges; an unknown generated location is not assigned a guessed file. Any pre-build source transformation performed by a host has its own position mapping, which the host must compose or preserve separately.
+`analyze` diagnoses original modules directly and returns module/range without requiring an output map. Build-time diagnostics after linking translate their byte positions through the exact verbatim intervals; generated-only or invalid positions lose their source attribution rather than snapping to another statement. End positions are preserved only while the whole diagnostic range remains within the same original slice. An end crossing generated glue or another source is omitted, not fabricated.
 
-This mapping does not reconstruct optimized-away variables or the original evaluation order. No promise of original-variable or reverse-execution debugging is made.
+Pre-build source transformations must preserve or compose their own origin ranges. The in-engine LifeBoat blanking operations do so. External host transformations remain the host's responsibility.
+
+This map does not restore optimized-away variables, original evaluation order, inlined stack frames or per-iteration origins of data-driven generated loops. These are separate compiler/debugger capabilities.
 
 ## Executable evidence
 
-- `examples/consumer/source-map.mjs`: independently installed SDK and a normal trace-mapping consumer; game build, source-qualified breakpoints, caller location, step, reset, runtime error and omitted optimized map.
-- `conformance/tests/source_maps.rs`: equivalent actual-Lua Native execution.
-- `packages/lua-engine/tests/wasm/source-map.test.mjs`: real WASM, generated-only gaps, EOF bounds, returned functions, CRLF/Unicode, ambient origins and original lint ranges.
-- `crates/storm-lua-build/src/source_map.rs`: mapper unit tests, including independent source-length bounds rather than only comparing the mapper to its own range table.
+- `crates/storm-lua-syntax/src/source_position.rs`: byte/UTF-16 conversion, Unicode boundaries, CRLF and EOF.
+- `crates/storm-lua-build/src/source_map.rs`: column anchors, multi-file boundaries, synthetic prefixes, exact original snapshots and LifeBoat exclusions.
+- `crates/storm-lua-build/src/public_api.rs`: byte-column and end-range diagnostic composition.
+- `packages/lua-engine/tests/wasm/compiler-provenance.test.mjs`: independent trace-mapping consumer, real compiler WASM and canonical target-search continuation across WASM instances.
+- `conformance/tests/source_maps.rs`: actual-Lua Native execution of source-qualified breakpoints, caller locations and runtime errors.
+- `packages/lua-engine/tests/wasm/source-map.test.mjs`: actual runtime WASM, generated gaps, original lint locations and omitted optimized maps.
+- `examples/consumer/source-map.mjs`: independent installed SDK consumer of the non-minified path.
 
-The trace-mapping package is a development/example-consumer dependency, not a runtime dependency of the SDK. The user-facing integration guide is maintained in docs.makkii.jp, not duplicated here.
+Test existence is not a claim that a particular revision passed; executed commands and results belong in verification records. The trace-mapping package is an example/test dependency, not a runtime dependency of the SDK.

@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- IDE用のトークン/AST宣言検査、明示的LB include-onceビルドと開発専用区間除去、描画の開発用overflow viewportを追加。通常build・通常game描画・最適化探索・minify後ソースマップは変更しない。
+- `targetSize`未達時の探索を全探索と共通化し、実行済みのコア最適化・候補評価を繰り返さない。Worker継続でも評価済み候補を保持する。時間による探索打ち切りは導入しない。
+- 非短縮の通常/LifeBoatビルドのSource Mapをトークン・列単位へ詳細化し、UTF-16座標へ変換する。診断の元モジュール・列・終端も実際のコピー範囲から求め、合成コードと削除済み開発区間は未対応位置として明示する。最適化後mapはまだ返さない。
+
+- IDE用のトークン/AST宣言検査、明示的LB include-onceビルドと開発専用区間除去、描画の開発用overflow viewportを追加。このIDE向け追加は通常game描画を変更せず、minify後ソースマップの実装とは分離する。
 
 - Lua実行で利用できる可変長引数のみの`function(...)`をCompilerも正しく受理する。旧TypeScriptパーサー由来の閉じ括弧の消費漏れを修正。
 

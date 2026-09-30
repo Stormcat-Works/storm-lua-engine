@@ -6,7 +6,7 @@ use crate::config::{
     pass_enabled, resolve_pass_toggles, CompileMode, CompileOptions, NumericMode, NumericTolerance,
     PassRecord, SearchMode,
 };
-use crate::orchestration::{core_optimize, core_optimize_with_round_limit};
+use crate::orchestration::core_optimize;
 use crate::pass_ids::PassToggles;
 use crate::pass_ids::OPTIMIZATION_PASS_IDS;
 use crate::passes;
@@ -174,6 +174,9 @@ pub struct SearchContext {
     core_variants: usize,
     structural_variants: usize,
     structural_names: Vec<String>,
+    // Canonical jobs already evaluated by target search. The encoded context
+    // carries these across the Worker boundary so they are never run twice.
+    completed_batches: Vec<CandidateBatch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,9 +187,9 @@ pub struct CandidateBatch {
     semantic_rejected: usize,
 }
 
-/// Result of the bounded OBJ-2 fast path. `NeedsFullSearch` means the target was
-/// not reached by the deterministic cheap/balanced/structural ladder and the
-/// caller should fall back to canonical OBJ-1 search.
+/// Result of target search over the canonical candidate set. `NeedsFullSearch`
+/// exports only remaining jobs plus the already evaluated batches. `Stopped`
+/// means a checkpoint budget ended or the canonical search completed unmet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SatisficingStatus {
     Satisfied,
@@ -217,28 +220,9 @@ impl PartialEq for SatisficingAttempt {
     }
 }
 
-// Phase 9 profile measured on the canonical vehicle workload. These passes are
-// deferred from the first cheap round because their deterministic expected
-// shortening/cost ratio is low. This is a scheduling choice only: if the target
-// is not met, later stages restore progressively more work and finally fall
-// back to full OBJ-1 search.
-const SATISFICING_CHEAP_DEFERRED: &[&str] = &[
-    "equivalent-trailing-argument-omission",
-    "signed-expression-factoring",
-    "multiplicative-carrier-reassociation",
-    "tiny-literal-inlining",
-    "immutable-table-flattening",
-    "binding-unit-rescaling",
-    "interval-origin-shifting",
-    "constant-wrapper-merging",
-    "affine-wrapper-merging",
-];
-
-const SATISFICING_BALANCED_DEFERRED: &[&str] = &["equivalent-trailing-argument-omission"];
-
-/// Limit expensive final candidate-chain jobs before switching to the existing
-/// parallel exhaustive fallback. The first two are selected by deterministic
-/// gain/cost ranking and cover the useful vehicle target range found in Phase 9.
+// Probe a bounded prefix in the coordinator, then send only the remaining
+// canonical jobs to the Worker pool. This is a deterministic work budget, not
+// a wall-clock limit. Completed batches stay in the search context.
 const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
 pub fn prepare_search(
@@ -264,6 +248,7 @@ fn prepare_lexical(
             core_variants: 0,
             structural_variants: 1,
             structural_names: vec!["lexical".into()],
+            completed_batches: Vec::new(),
         },
         vec![CandidateJob {
             lexical_source: Some(code),
@@ -512,6 +497,7 @@ fn prepare_search_from_base(
             core_variants: core_variants.len(),
             structural_variants: structural_total,
             structural_names,
+            completed_batches: Vec::new(),
         },
         jobs,
     ))
@@ -1073,9 +1059,10 @@ fn select_best_candidates(
 }
 
 pub fn select_best(
-    context: SearchContext,
-    batches: Vec<CandidateBatch>,
+    mut context: SearchContext,
+    mut batches: Vec<CandidateBatch>,
 ) -> Result<CompileCodeResult, String> {
+    batches.append(&mut context.completed_batches);
     let attempted = batches.iter().map(|batch| batch.attempted).sum();
     let parse_rejected = batches.iter().map(|batch| batch.parse_rejected).sum();
     let semantic_rejected = batches.iter().map(|batch| batch.semantic_rejected).sum();
@@ -1094,16 +1081,6 @@ pub fn select_best(
 
 fn target_char_size(code: &str) -> usize {
     code.encode_utf16().count()
-}
-
-fn defer_passes(toggles: &PassToggles, deferred: &[&'static str]) -> PassToggles {
-    let mut result = toggles.clone();
-    for &id in deferred {
-        if pass_enabled(toggles, id) {
-            result.insert(id, false);
-        }
-    }
-    result
 }
 
 fn render_variant_candidate(
@@ -1140,90 +1117,6 @@ fn render_variant_candidate(
     })
 }
 
-fn target_structural_variants(variant: &Variant, toggles: &PassToggles) -> Vec<(Variant, u32)> {
-    let mut structural = vec![(
-        Variant {
-            name: format!("{}:locals", variant.name),
-            ast: variant.ast.clone(),
-            root: variant.root,
-            passes: variant.passes.clone(),
-        },
-        1,
-    )];
-
-    let root_global = if pass_enabled(toggles, "root-local-globalization") {
-        let mut ast = variant.ast.clone();
-        let result = passes::root_globals::globalize_root_locals(&mut ast, variant.root);
-        structural.push((
-            Variant {
-                name: format!("{}:root-global", variant.name),
-                ast: ast.clone(),
-                root: result.root,
-                passes: variant.passes.clone(),
-            },
-            2,
-        ));
-        Some((ast, result.root))
-    } else {
-        None
-    };
-
-    if pass_enabled(toggles, "function-local-globalization") {
-        let mut ast = variant.ast.clone();
-        let result =
-            passes::function_globalization::globalize_function_locals(&mut ast, variant.root, 0);
-        structural.push((
-            Variant {
-                name: format!("{}:function-global", variant.name),
-                ast,
-                root: result.root,
-                passes: variant.passes.clone(),
-            },
-            2,
-        ));
-
-        if let Some((root_ast, root_root)) = &root_global {
-            let mut all_ast = root_ast.clone();
-            let all = passes::function_globalization::globalize_function_locals(
-                &mut all_ast,
-                *root_root,
-                0,
-            );
-            let all_root = all.root;
-            structural.push((
-                Variant {
-                    name: format!("{}:all-global", variant.name),
-                    ast: all_ast.clone(),
-                    root: all_root,
-                    passes: variant.passes.clone(),
-                },
-                3,
-            ));
-
-            if pass_enabled(toggles, "hybrid-function-local-globalization") {
-                for minimum_frequency in [2_u32, 3, 5, 8] {
-                    let mut hybrid_ast = root_ast.clone();
-                    let hybrid = passes::function_globalization::globalize_function_locals(
-                        &mut hybrid_ast,
-                        *root_root,
-                        minimum_frequency,
-                    );
-                    structural.push((
-                        Variant {
-                            name: format!("{}:hybrid-f{minimum_frequency}", variant.name),
-                            ast: hybrid_ast,
-                            root: hybrid.root,
-                            passes: variant.passes.clone(),
-                        },
-                        3,
-                    ));
-                }
-            }
-        }
-    }
-    structural
-}
-
 #[allow(clippy::too_many_arguments)]
 fn build_satisficing_result(
     property_reads_hardcoded: usize,
@@ -1246,6 +1139,7 @@ fn build_satisficing_result(
         core_variants: 1,
         structural_variants: structural_total,
         structural_names: structural_names.to_vec(),
+        completed_batches: Vec::new(),
     };
     let mut result = select_best_candidates(
         context,
@@ -1268,9 +1162,10 @@ fn target_is_met(candidates: &[Candidate], target_size: usize) -> bool {
         .any(|candidate| target_char_size(&candidate.code) <= target_size)
 }
 
-/// Run the deterministic OBJ-2 fast ladder. The optional checkpoint budget is
-/// test/native-control infrastructure for the anytime contract: stopping after
-/// any completed checkpoint returns the best valid code seen so far.
+/// Run deterministic target search. Source/base checkpoints may finish early;
+/// all later work uses the same core and candidates as target-free search.
+/// The optional checkpoint budget returns the best valid code seen so far.
+/// No wall-clock measurements affect scheduling or candidate selection.
 pub fn try_satisficing(
     source: &str,
     options: &CompileOptions,
@@ -1280,7 +1175,6 @@ pub fn try_satisficing(
     let target_size = options
         .target_size
         .ok_or("try_satisficing requires target_size")?;
-    let aggressive = options.mode == CompileMode::Smallest;
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     let (parsed_ast, parsed_root) = parse_source(source).map_err(|error| error.to_string())?;
     storm_lua_analysis::environment_checks::validate(
@@ -1395,7 +1289,7 @@ pub fn try_satisficing(
             structural: "target:source".into(),
             layout: "source".into(),
             code: source.to_string(),
-            size: source.len(),
+            size: target_char_size(source),
             order: 0,
             passes: Vec::new(),
             aliases: Vec::new(),
@@ -1436,132 +1330,72 @@ pub fn try_satisficing(
     attempted += 1;
     checkpoint!("base");
 
-    // Stage 1: deterministic high-efficiency pass subset, one outer round.
-    let cheap_toggles = defer_passes(&resolved_toggles, SATISFICING_CHEAP_DEFERRED);
-    let mut cheap_ast = base_ast.clone();
-    let mut cheap_passes = initial_passes.clone();
-    let cheap_root = core_optimize_with_round_limit(
-        &mut cheap_ast,
-        base_root,
-        aggressive,
-        &mut cheap_passes,
-        &cheap_toggles,
-        options.numeric_tolerance,
-        1,
-        None,
-    );
-    let cheap_variant = Variant {
-        name: "target:cheap-core".into(),
-        ast: cheap_ast,
-        root: cheap_root,
-        passes: cheap_passes,
-    };
-    explored.push(render_variant_candidate(
-        &cheap_variant,
-        &cheap_toggles,
-        options.zero_cost_newlines,
-        2,
-    )?);
-    attempted += 1;
-    checkpoint!("cheap-core");
-
-    // Stage 2: restore all but the measured lowest-efficiency omission pass.
-    let balanced_toggles = defer_passes(&resolved_toggles, SATISFICING_BALANCED_DEFERRED);
-    let mut balanced_ast = base_ast.clone();
-    let mut balanced_passes = initial_passes.clone();
-    let balanced_root = core_optimize_with_round_limit(
-        &mut balanced_ast,
-        base_root,
-        aggressive,
-        &mut balanced_passes,
-        &balanced_toggles,
-        options.numeric_tolerance,
-        1,
-        None,
-    );
-    let balanced_variant = Variant {
-        name: "target:balanced-core".into(),
-        ast: balanced_ast,
-        root: balanced_root,
-        passes: balanced_passes,
-    };
-    explored.push(render_variant_candidate(
-        &balanced_variant,
-        &balanced_toggles,
-        options.zero_cost_newlines,
-        3,
-    )?);
-    attempted += 1;
-    checkpoint!("balanced-core");
-
-    // Stage 3+: source-specific shortening gain divided by a deterministic
-    // structural cost weight. Wall-clock timing must never enter this ranking,
-    // otherwise NFR-2 byte determinism would be violated.
-    let balanced_size = renamed_size(
-        &balanced_variant.ast,
-        balanced_variant.root,
-        &balanced_toggles,
-    );
-    let mut ranked = target_structural_variants(&balanced_variant, &balanced_toggles)
+    // Prepare the canonical core and deduplicated structural jobs exactly once.
+    // Do not optimize separate cheap/balanced arenas and then restart from base:
+    // unmet large drawing inputs otherwise pay for the expensive chains again.
+    let (mut context, jobs) =
+        prepare_search_from_base(options, base_ast, base_root, property_reads_hardcoded, true)?;
+    structural_total = context.structural_variants;
+    let mut ranked = jobs
         .into_iter()
-        .enumerate()
-        .map(|(index, (variant, cost_weight))| {
-            let estimated = renamed_size(&variant.ast, variant.root, &balanced_toggles);
-            let gain = balanced_size.saturating_sub(estimated) as u128;
-            let score = ((gain + 1) * 1024) / u128::from(cost_weight);
-            (score, estimated, index, variant)
+        .map(|job| {
+            let direct = render_variant_candidate(
+                &job.variant,
+                &resolved_toggles,
+                options.zero_cost_newlines,
+                job.order_base,
+            )?;
+            Ok((direct, job))
         })
-        .collect::<Vec<_>>();
-    structural_total = ranked.len();
-    ranked.sort_by(|left, right| {
-        right
-            .0
-            .cmp(&left.0)
-            .then(left.1.cmp(&right.1))
-            .then(left.2.cmp(&right.2))
+        .collect::<Result<Vec<_>, String>>()?;
+    // Rank direct candidates by their actual size, retaining canonical order on
+    // ties. The job itself keeps its canonical order for full-search selection.
+    ranked.sort_by(|(left, _), (right, _)| {
+        left.size
+            .cmp(&right.size)
+            .then(left.order.cmp(&right.order))
     });
-    let job_toggles = PassMask::from_toggles(&balanced_toggles);
-    let layouts_per_job = if job_toggles.enabled("api-alias-optimization") {
-        2
-    } else {
-        1
-    };
-
-    let mut candidate_jobs_evaluated = 0usize;
-    for (rank, (_, _, _, variant)) in ranked.into_iter().enumerate() {
-        structural_names.push(variant.name.clone());
-        let direct = render_variant_candidate(
-            &variant,
-            &balanced_toggles,
-            options.zero_cost_newlines,
-            10 + rank * (layouts_per_job + 1),
-        )?;
+    let mut ranked = ranked.into_iter();
+    for _ in 0..SATISFICING_MAX_CANDIDATE_JOBS {
+        let Some((direct, job)) = ranked.next() else {
+            break;
+        };
+        structural_names.push(job.variant.name.clone());
         explored.push(direct);
         attempted += 1;
         checkpoint!("structural");
 
-        let batch = evaluate_candidate(CandidateJob {
-            lexical_source: None,
-            variant,
-            aggressive,
-            toggles: job_toggles,
-            numeric_tolerance: options.numeric_tolerance,
-            exact_safe_constant_folding: options.numeric_mode == NumericMode::Exact
-                && pass_enabled(&options.pass_toggles, "constant-folding"),
-            zero_cost_newlines: options.zero_cost_newlines,
-            order_base: 11 + rank * (layouts_per_job + 1),
-        })?;
-        candidate_jobs_evaluated += 1;
+        let batch = evaluate_candidate(job)?;
         attempted += batch.attempted;
         parse_rejected += batch.parse_rejected;
         semantic_rejected += batch.semantic_rejected;
-        explored.extend(batch.candidates);
-        checkpoint!("candidate");
-        if candidate_jobs_evaluated >= SATISFICING_MAX_CANDIDATE_JOBS {
+        explored.extend(batch.candidates.iter().cloned());
+        context.completed_batches.push(batch);
+        if ranked.len() == 0 {
+            // Finishing the last canonical job is completion, not an early
+            // stop, even when it is also the first point reaching the target.
+            checkpoints += 1;
             break;
         }
+        checkpoint!("candidate");
     }
-
+    let remaining_jobs = ranked.map(|(_, job)| job).collect::<Vec<_>>();
+    if remaining_jobs.is_empty() {
+        let result = finalize_satisficing_fallback(
+            select_best(context, Vec::new())?,
+            target_size,
+            checkpoints,
+        );
+        return Ok(SatisficingAttempt {
+            status: if result.stats.target_met {
+                SatisficingStatus::Satisfied
+            } else {
+                SatisficingStatus::Stopped
+            },
+            result,
+            fallback: None,
+        });
+    }
     let result = build_satisficing_result(
         property_reads_hardcoded,
         &explored,
@@ -1574,14 +1408,12 @@ pub fn try_satisficing(
         false,
         false,
         checkpoints,
-        "fast-ladder-complete",
+        "canonical-prefix-complete",
     )?;
-    let fallback =
-        prepare_search_from_base(options, base_ast, base_root, property_reads_hardcoded, true)?;
     Ok(SatisficingAttempt {
         status: SatisficingStatus::NeedsFullSearch,
         result,
-        fallback: Some(fallback),
+        fallback: Some((context, remaining_jobs)),
     })
 }
 
@@ -1635,7 +1467,7 @@ fn compile_code_obj1(source: &str, options: &CompileOptions) -> Result<CompileCo
 }
 
 /// Compile without an external semantic verifier. `target_size` activates the
-/// OBJ-2 satisficing ladder; absence of a target preserves canonical OBJ-1.
+/// OBJ-2 checkpoints within canonical search; absence of a target preserves OBJ-1.
 pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCodeResult, String> {
     let Some(target_size) = options.target_size else {
         return compile_code_obj1(source, options);
@@ -1757,6 +1589,186 @@ mod phase7_serialization_tests {
         assert_eq!(result.stats.stage.as_deref(), Some("full-search"));
         assert!(result.stats.checkpoints >= 1);
         assert_eq!(result.code, "function onTick()output.setNumber(1,3)end");
+    }
+
+    const RESUME_SOURCE: &str = "local total=0
+        function onTick()
+          local x=input.getNumber(1) local y=input.getNumber(2)
+          total=total+x+y output.setNumber(1,total+x+x+y)
+        end
+        function onDraw()
+          local w=screen.getWidth()
+          screen.drawLine(0,0,w,w) screen.drawText(1,1,total)
+        end";
+
+    #[test]
+    fn missed_target_resumes_canonical_jobs_without_repeating_evaluated_prefix() {
+        let options = CompileOptions {
+            target_size: Some(0),
+            ..Default::default()
+        };
+        let (canonical_context, canonical_jobs) = prepare_search(RESUME_SOURCE, &options).unwrap();
+        assert!(
+            canonical_jobs.len() > SATISFICING_MAX_CANDIDATE_JOBS,
+            "fixture must actually exercise a remaining Worker batch"
+        );
+        let expected = select_best(
+            canonical_context,
+            canonical_jobs
+                .clone()
+                .into_iter()
+                .map(|job| evaluate_candidate(job).unwrap())
+                .collect(),
+        )
+        .unwrap();
+        let mut attempt = try_satisficing(RESUME_SOURCE, &options, None).unwrap();
+        assert_eq!(attempt.status, SatisficingStatus::NeedsFullSearch);
+        let (context, remaining) = take_satisficing_fallback(&mut attempt).unwrap();
+        assert_eq!(
+            context.completed_batches.len(),
+            SATISFICING_MAX_CANDIDATE_JOBS
+        );
+        assert_eq!(
+            context.completed_batches.len() + remaining.len(),
+            canonical_jobs.len()
+        );
+        let completed_orders = context
+            .completed_batches
+            .iter()
+            .flat_map(|batch| batch.candidates.iter().map(|candidate| candidate.order))
+            .collect::<std::collections::HashSet<_>>();
+        let mut remaining_batches = Vec::new();
+        for job in remaining.into_iter().rev() {
+            let batch =
+                decode_and_evaluate_candidate_job(&encode_candidate_job(&job).unwrap()).unwrap();
+            assert!(batch
+                .candidates
+                .iter()
+                .all(|c| !completed_orders.contains(&c.order)));
+            remaining_batches.push(batch);
+        }
+        // Completed candidates survive context serialization to another worker.
+        let decoded = decode_search_context(&encode_search_context(&context).unwrap()).unwrap();
+        assert_eq!(
+            decoded.completed_batches.len(),
+            context.completed_batches.len()
+        );
+        let actual = select_best(decoded, remaining_batches).unwrap();
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.stats, expected.stats);
+        assert_eq!(actual.api_aliases, expected.api_aliases);
+    }
+
+    #[test]
+    fn target_miss_preserves_full_search_for_modes_and_property_specialization() {
+        use crate::config::{PropertyConfig, PropertyMode};
+        for numeric_mode in [NumericMode::Exact, NumericMode::Tolerant] {
+            for mode in [CompileMode::Safe, CompileMode::Smallest] {
+                for search_mode in [SearchMode::Fast, SearchMode::Exhaustive] {
+                    let options = CompileOptions {
+                        numeric_mode,
+                        mode,
+                        search_mode,
+                        zero_cost_newlines: false,
+                        property: Some(PropertyConfig {
+                            mode: PropertyMode::Hardcode,
+                            numbers: Some(std::collections::BTreeMap::from([("gain".into(), 1.5)])),
+                            bools: None,
+                            texts: None,
+                        }),
+                        ..Default::default()
+                    };
+                    let source = format!("gain=property.getNumber('gain')\n{RESUME_SOURCE}");
+                    let baseline = compile_code(&source, &options).unwrap();
+                    let target = compile_code(
+                        &source,
+                        &CompileOptions {
+                            target_size: Some(0),
+                            ..options
+                        },
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        target.code, baseline.code,
+                        "{numeric_mode:?}/{mode:?}/{search_mode:?}"
+                    );
+                    assert_eq!(target.stats.candidate_sizes, baseline.stats.candidate_sizes);
+                    assert_eq!(target.stats.attempted, baseline.stats.attempted);
+                    assert_eq!(
+                        target.property_reads_hardcoded,
+                        baseline.property_reads_hardcoded
+                    );
+                    assert!(!target.stats.target_met);
+                    assert!(!target.stats.stopped_early);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn completed_single_job_target_miss_does_not_export_work_again() {
+        let source = "function onDraw()screen.drawRectF(1,2,3,4)end";
+        let options = CompileOptions {
+            target_size: Some(0),
+            ..Default::default()
+        };
+        let mut attempt = try_satisficing(source, &options, None).unwrap();
+        assert_eq!(attempt.status, SatisficingStatus::Stopped);
+        assert!(take_satisficing_fallback(&mut attempt).is_none());
+        let baseline = compile_code(source, &CompileOptions::default()).unwrap();
+        assert_eq!(attempt.result.code, baseline.code);
+        assert_eq!(attempt.result.stats.attempted, baseline.stats.attempted);
+        assert_eq!(attempt.result.stats.stage.as_deref(), Some("full-search"));
+        assert!(!attempt.result.stats.stopped_early);
+    }
+
+    #[test]
+    fn target_source_checkpoint_reports_utf16_and_honors_property_transform() {
+        let source = "-- 日本語😀\nfunction onTick()end";
+        let options = CompileOptions {
+            target_size: Some(source.encode_utf16().count()),
+            ..Default::default()
+        };
+        let result = compile_code(source, &options).unwrap();
+        assert_eq!(
+            result.stats.candidate_sizes[0].size,
+            source.encode_utf16().count()
+        );
+        assert_eq!(result.code, source);
+        assert!(result.stats.target_met);
+    }
+
+    #[test]
+    fn target_reached_by_the_last_canonical_job_is_not_an_early_stop() {
+        let body = (0..64)
+            .map(|i| format!("screen.drawRectF({},{},3,4)", i % 32, i / 32))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!("function onDraw()\n{body}\nend");
+        let options = CompileOptions::default();
+        let expected = compile_code(&source, &options).unwrap();
+        let target = target_char_size(&expected.code);
+        let (_, jobs) = prepare_search(&source, &options).unwrap();
+        assert_eq!(jobs.len(), 1);
+        let toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
+        let direct = render_variant_candidate(&jobs[0].variant, &toggles, true, 0).unwrap();
+        assert!(
+            target_char_size(&direct.code) > target,
+            "fixture must need the final candidate chain"
+        );
+        let actual = compile_code(
+            &source,
+            &CompileOptions {
+                target_size: Some(target),
+                ..options
+            },
+        )
+        .unwrap();
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.stats.candidate_sizes, expected.stats.candidate_sizes);
+        assert!(actual.stats.target_met);
+        assert!(!actual.stats.stopped_early);
+        assert_eq!(actual.stats.stage.as_deref(), Some("full-search"));
     }
 
     #[test]

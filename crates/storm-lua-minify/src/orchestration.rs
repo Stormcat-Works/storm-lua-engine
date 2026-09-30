@@ -146,8 +146,8 @@ pub fn core_optimize(
     )
 }
 
-/// Core optimizer with a deterministic outer-round budget. OBJ-2 uses this to
-/// obtain a cheap anytime candidate without changing OBJ-1 behavior.
+/// Core optimizer with a deterministic outer-round budget. Target-driven and
+/// target-free compilation share the canonical core; timing never changes it.
 #[allow(clippy::redundant_closure, clippy::too_many_arguments)]
 pub fn core_optimize_with_round_limit(
     ast: &mut Ast,

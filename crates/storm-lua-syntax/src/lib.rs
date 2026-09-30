@@ -17,3 +17,5 @@ pub use parser::{
     parse_source, parse_source_with_positions, NodePositions, ParseError, Parser, ParserError,
 };
 pub use print::{token_minify, Printer};
+
+pub mod source_position;

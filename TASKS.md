@@ -56,3 +56,10 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 ## Storm Code向け実行ホスト操作（未公開）
 
 名前付きtick/draw、即時property/input状態操作、typed property snapshot、runtime専用analyzeを実装。静的ビルド契約は維持する。独立consumerとNative/WASMで検証し、Storm Codeでの利用は同製品の段階移行へ記録する。未公開の識別可能なSDKスナップショットと既存npm版を混同しない。
+
+
+## Addon非短縮buildの追加（2026-09-30、未公開）
+
+既存のinclude-once linkerを利用するRustのbuild_addonとWASM/TSのbuildAddonを追加しました。最適化とVehicle用phase/8192目標は使いません。先頭の明示metadata commentを位置保持で除去し、元ソース入りのline mapを返します。SDKの既存buildは変更しません。詳細はdocs/specs/addon-build.mdです。
+
+storm-lua-buildの78テスト、compiler/buildのclippy、SDK型/consumer/30テストと、実WASMを使うStudioのAddon回帰で検証しています。Addon用optimizer、完全なserver API analyzer、実ゲーム世界は未実装です。バージョン更新・npm公開・tag/pushは行っていません。

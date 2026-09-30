@@ -281,3 +281,17 @@ pub fn build_lifeboat(project: JsValue, options: JsValue) -> Result<JsValue, JsV
 pub fn strip_development(source: &str) -> Result<String, JsValue> {
     storm_lua_build::lifeboat::strip_development(source).map_err(|e| JsValue::from_str(&e))
 }
+
+/// Non-optimizing Addon include-once build. Never applies Vehicle phase/size rules.
+#[wasm_bindgen(js_name = buildAddon)]
+pub fn build_addon(project: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
+    let project = decode_project(project)?;
+    let options = if options.is_null() || options.is_undefined() {
+        storm_lua_build::addon::AddonBuildOptions::default()
+    } else {
+        serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("invalid Addon build options: {e}")))?
+    };
+    to_js(&storm_lua_build::addon::build_addon(&project, &options))
+        .map_err(|e| JsValue::from_str(&format!("failed to encode Addon build result: {e}")))
+}

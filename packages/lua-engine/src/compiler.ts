@@ -1,12 +1,14 @@
 /** Compiler-only entry point. Importing it does not instantiate any WASM module. */
 import type {
-  SourceInspection, AnalyzeOptions, AnalyzeResult, CompileOptions, CompileResult, LuaProject,
+  AddonBuildOptions, SourceInspection, AnalyzeOptions, AnalyzeResult, CompileOptions, CompileResult, LuaProject,
   PassMetadataEntry, ProjectCompileOptions, ProjectCompileResult, PropertyScanResult,
 } from './compiler-types.js';
 export type * from './compiler-types.js';
 
 /** A loaded compiler. Calls do not execute Lua, create Workers, or access files. */
 export interface Compiler {
+  /** Non-optimizing Addon include-once build, independent of Vehicle analysis. */
+  buildAddon(project: LuaProject, options?: AddonBuildOptions): ProjectCompileResult;
   /** Inspect source declarations through the shared lexer/parser; does not execute Lua. */
   inspectSource(source: string): SourceInspection;
   /** Remove actual development directives, retaining byte/line positions. */
@@ -36,6 +38,7 @@ export interface CompilerInitOptions {
 }
 
 interface CompilerModule {
+  buildAddon(project: LuaProject, options: AddonBuildOptions | undefined): ProjectCompileResult;
   inspectSource(source: string): SourceInspection;
   stripDevelopment(source: string): string;
   buildLifeboat(project: LuaProject, options: ProjectCompileOptions | undefined): ProjectCompileResult;
@@ -49,7 +52,7 @@ interface CompilerModule {
 }
 
 function checkedModule(value: Record<string, unknown>): CompilerModule {
-  for (const key of ['default', 'inspectSource', 'stripDevelopment', 'buildLifeboat', 'compile', 'compileProject', 'analyze', 'scanProperties', 'passIds', 'passMetadata']) {
+  for (const key of ['default', 'buildAddon', 'inspectSource', 'stripDevelopment', 'buildLifeboat', 'compile', 'compileProject', 'analyze', 'scanProperties', 'passIds', 'passMetadata']) {
     if (typeof value[key] !== 'function') throw new TypeError(`Invalid compiler module export: ${key}`);
   }
   // The generated module is built from the matching Rust adapter; the runtime
@@ -71,6 +74,7 @@ export async function loadCompiler(options: CompilerInitOptions = {}): Promise<C
   const module = checkedModule(await import(String(moduleUrl)) as Record<string, unknown>);
   await module.default({ module_or_path: options.wasmBinary ?? options.wasmUrl ?? new URL('./compiler-wasm/compiler_bg.wasm', import.meta.url) });
   return Object.freeze({
+    buildAddon: (project: LuaProject, settings?: AddonBuildOptions) => module.buildAddon(project, settings),
     inspectSource: (source: string) => module.inspectSource(source),
     stripDevelopment: (source: string) => module.stripDevelopment(source),
     buildLifeboat: (project: LuaProject, settings?: ProjectCompileOptions) => module.buildLifeboat(project, settings),

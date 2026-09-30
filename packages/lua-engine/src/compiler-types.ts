@@ -203,3 +203,10 @@ export interface SourceStatement {
 }
 export interface SourceComment {start:number;end:number;line:number;text:string;long:boolean}
 export interface SourceInspection {ok:boolean;error:string|null;statements:SourceStatement[];comments:SourceComment[];replacedRoots:string[]}
+
+/** Addon include-once linking only; no optimizer or Vehicle size assumptions. */
+export interface AddonBuildOptions {
+  environment?: EnvironmentProfile;
+  /** Exact first line in a leading long comment used for development metadata. */
+  metadataTag?: string;
+}

@@ -48,3 +48,10 @@ Storm Minのpublic SDK参照は専用ブランチへpush済みですが、同pri
 ## Storm Code統合API（未公開）
 
 共有parserによるsource inspection、独立したLBビルド、開発用overflow viewportを実装・検証。[記録](docs/verification/storm-code-integration-20260930.md)。通常build、通常game描画、最適化探索、minify後mapは変更しない。
+
+
+## Addon非短縮buildの追加（2026-09-30、未公開）
+
+既存のinclude-once linkerを利用するRustのbuild_addonとWASM/TSのbuildAddonを追加しました。最適化とVehicle用phase/8192目標は使いません。先頭の明示metadata commentを位置保持で除去し、元ソース入りのline mapを返します。SDKの既存buildは変更しません。詳細はdocs/specs/addon-build.mdです。
+
+storm-lua-buildの78テスト、compiler/buildのclippy、SDK型/consumer/30テストと、実WASMを使うStudioのAddon回帰で検証しています。Addon用optimizer、完全なserver API analyzer、実ゲーム世界は未実装です。バージョン更新・npm公開・tag/pushは行っていません。

@@ -2,6 +2,10 @@
 
 ## Unreleased — v0.3.0 development
 
+- Playgroundに理由付きSource Map検査を追加。元/生成コードの双方向選択、元module、複数由来・inline文脈・削除理由と、実行時の停止/ログ/エラーの生成行を表示する。
+- Playground保存をIndexedDBの単一workspaceへ変更。成果物と選択も持ち運べるworkspace JSONを追加し、旧端末保存は救出可能な明示拒否にする。入力project JSON v1は継続受理する。
+- CLIの`--source-map`と`map-inspect`、workspaceの読込を追加。実行は明示操作で、mapの閲覧だけでVMを起動しない。
+
 - `sourceMap:true`で最適化後のSource Map v3＋`x_storm`理由/由来を返す。Rust/WASM/TS、通常/LifeBoat project、Workerを接続し、`validateSourceMap`でcode/source/設定/mapの指紋と構造を検証する。
 - 保持tokenとidentity/copyの精度を追加。子リテラルのinline context、型付き関係、削除/置換記録、数値評価・近似・共有引数・既知条件/未使用宣言の判断事実を保持する。全適用条件の形式証明やruntime値復元ではない。
 - エンジンversion/revisionと独立した拡張schemaVersionを格納する。理由/関連元の共有と出力時のプール化、UTF-16索引、ブロック差分の集合化でメタデータの複製負荷を抑える。

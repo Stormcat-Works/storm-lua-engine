@@ -12,6 +12,8 @@ import {loadCompiler, type Compiler, type CompilerInitOptions} from '@stormcat-w
 import type {RuntimeInitOptions} from '@stormcat-works/storm-lua-engine';
 import type {CompileOptions, ProjectCompileOptions, AnalyzeOptions, LuaProject} from '@stormcat-works/storm-lua-engine/compiler';
 import {object, text, integer} from './wire.js';
+import {MapDocument,artifact} from './source-map.js';
+import {MappedExecution} from './mapped-execution.js';
 
 export interface SessionInit {
   runtime: RuntimeInitOptions;
@@ -20,7 +22,7 @@ export interface SessionInit {
 }
 export type Command = Record<string, unknown> & {op: string};
 export const OPERATIONS = [
-  'catalog','minify','build','analyze','scanProperties','passIds','passMetadata',
+  'inspectMap','mappedLoad','mappedAction','buildLifeboat','catalog','minify','build','analyze','scanProperties','passIds','passMetadata',
   'createVehicle','createAddon','load','tick','draw','frame','io','properties','reset','dispose',
   'start','dispatch','savedata','reload','menuProperties','destroy',
   'logs','drainLogRecords','drainLogs','flushLogs','hostCalls','httpRequests','httpReply','cancelHttp','enableLogs',
@@ -64,6 +66,7 @@ export class PlaygroundSession {
   readonly #logs: {id:string;source:string;bytes:Uint8Array}[]=[];
   readonly #calls: {name:string;args:unknown[]}[]=[];
   #disposed=false;
+  #mapped?:MappedExecution;
   constructor(private readonly init:SessionInit) {}
   private runtime():Promise<LuaEngine> { return this.#runtime ??= loadRuntime(this.init.runtime); }
   private compiler():Promise<Compiler> { return this.#compiler ??= loadCompiler(this.init.compiler); }
@@ -120,7 +123,7 @@ export class PlaygroundSession {
       return {source,name:text(chunk['name'])};
     }};
     const onLog=(record:LogRecord)=>{
-      if(this.#logs.length>=256)this.#logs.shift();this.#logs.push({id,source:record.source,bytes:record.bytes});
+      if(this.#logs.length>=256)this.#logs.shift();this.#logs.push({id,source:record.source,bytes:record.bytes,...(record.location?{location:record.location}:{})});
     };
     return {...options,...requireOptions,bindings:this.bindings(options['bindings']),...(command['manualLogs']===true?{}:{onLog})} as ScriptOptions;
   }
@@ -131,6 +134,21 @@ export class PlaygroundSession {
     if(this.#disposed)throw new Error('セッションは破棄済みです');
     const id=this.id(command);
     switch(command.op) {
+      case 'buildLifeboat':return (await this.compiler()).buildLifeboat(object(command['project']) as unknown as LuaProject,object(command['options']??{}) as ProjectCompileOptions);
+      case 'inspectMap':{
+        const a=artifact(command['artifact']);const api=await this.compiler();const doc=await MapDocument.open(a,(code,map)=>api.validateSourceMap(code,map));
+        const side=command['side']??'generated';if(side!=='original'&&side!=='generated')throw new Error('不正な検査面です');
+        const start=integer(command['start']??0,0,0xffffffff),end=integer(command['end']??start,0,0xffffffff);
+        return {kind:'map-inspection',producer:doc.data.producer,identity:doc.data.integrity,hits:command['side']==='original'?doc.originalHits(integer(command['source']??0,0,doc.sources.length-1),start,end):doc.generatedHits(start,end)};
+      }
+      case 'mappedLoad':{
+        const api=await this.compiler();this.#mapped??=new MappedExecution(()=>this.runtime(),(code,map)=>api.validateSourceMap(code,map));
+        return this.#mapped.load(artifact(command['artifact']),object(command['properties']??{}) as Properties);
+      }
+      case 'mappedAction':{
+        if(!this.#mapped)throw new Error('生成物VMは未ロードです');
+        return this.#mapped.operate(text(command['identity']),text(command['action']),object(command['options']??{}));
+      }
       case 'catalog':return {environment:ENVIRONMENT_CATALOG,vehicle:VEHICLE_API_CATALOG,addon:ADDON_API_CATALOG,events:ADDON_EVENTS,operations:OPERATIONS};
       case 'minify':return (await this.compiler()).minify(text(command['source']),object(command['options']??{}) as CompileOptions);
       case 'build':return (await this.compiler()).build(object(command['project']) as unknown as LuaProject,object(command['options']??{}) as ProjectCompileOptions);
@@ -226,6 +244,7 @@ export class PlaygroundSession {
   dispose():void {
     if(this.#disposed)return;
     const errors:unknown[]=[];
+    try{this.#mapped?.dispose();}catch(e){errors.push(e);}
     for(const vm of this.#vms.values())try{vm.dispose();}catch(e){errors.push(e);}
     for(const raster of this.#rasters.values())try{raster.dispose();}catch(e){errors.push(e);}
     this.#vms.clear();this.#rasters.clear();this.#disposed=true;

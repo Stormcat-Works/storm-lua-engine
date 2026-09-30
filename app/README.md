@@ -4,6 +4,14 @@ SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホス�
 
 Playgroundはv0.2.1を公開しています。SDKのnpm registryとGitHub配布も0.2.1で、公開後の再取得・導入検証まで完了しています。[公開状況](../docs/verification/release-0.2.1.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKのnpm版とGitタグは固定し、Webの配信設定はreleaseブランチから更新します。
 
+## v0.3.0 開発版のSource Map検査
+
+本ブランチでは、原文と生成コードの双方向選択、複数由来・copy・理由・inline文脈・除去記録、実VMの停止/ログ/エラーとの接続を提供します。公開済みWebは上記0.2.1のままで、開発版は同じcheckoutから起動してください。[アプリの契約](../docs/specs/playground-source-maps.md)。
+
+「Source Map / 最適化を説明する」はコンパイルとマップ検査だけを行います。「元ファイルへ戻る」は通常/LifeBoatのmodule対応、「停止・ログ・エラー」は実SDKのpause/step/意図した失敗を実行します。入力編集後の過去成果物はsnapshotとして区別し、実行時に生成行しか分からない場合は複数候補を残します。
+
+CLIの`minify FILE --source-map`は理由付きmapを含む結果JSON、`map-inspect ARTIFACT_FILE GENERATED_BYTE`は保存した生成物の検査を提供します。生成物JSONは画面の「生成物JSON」から取得できます。コード/map/snapshotの検証はSDKに委譲し、アプリは元位置を推測しません。
+
 ## 準備と起動
 
 リポジトリルートで`npm --prefix packages/lua-engine ci`、`node tools/build-wasm.mjs --with-tests`、`node tools/build-compiler.mjs`、`npm --prefix packages/lua-engine run build`を実行し、同じ版のSDKをビルドします。Rust/EmscriptenとCargo出力先は[配布ビルド](../docs/design/distribution.md)に従います。
@@ -30,6 +38,7 @@ CLIのヘルプは`npm --prefix app run cli -- --help`、確認例の一覧は`n
 
 | 例 | 確認する機能 |
 | --- | --- |
+| Source Map | 双方向範囲、理由、inline文脈、除去、元module、実行時の行対応 |
 | Source | requireLoader、読み込み先ブレークポイント、前置き/本体/後置きのreset |
 | Vehicle | Number/Boolean I/O、プロパティ、複数draw、reset、ログ |
 | Compiler | analyze、非短縮リンク/map、minify、パス一覧、property走査 |
@@ -54,9 +63,9 @@ Addonの`server`や任意の`bindings.functions`には、固定の戻り値を�
 
 ## 保存と失敗
 
-ソース、環境、操作列、選択中の例、タブ、直近64操作の結果、最新モニターを同じ端末の保存レコードに保持します。リロード後も入力と結果を復元しますが、Lua VMの継続を保存したとは扱いません。再実行は明示操作です。
+ソース、環境、操作列、選択中の例、タブ、直近64操作の結果、最新モニターと、検査中の生成物・選択・実行入力をIndexedDBの単一workspaceレコードに保持します。リロード後も入力と結果を復元しますが、Lua VMの継続を保存したとは扱いません。再実行は明示操作です。
 
-version付きJSONのexport/importはソース・環境・操作列を持ち運びます。未知のversion、旧Addon Lab形式、不正JSONを読み込んでも現在の入力を置き換えません。ブラウザ内の保存が壊れていた場合も元データを上書きせず、救出操作と有効なJSONのimportを提示します。自動で旧形式を変換しません。
+version付きworkspace JSONのexport/importは入力・生成物・検査位置・保存結果を持ち運びます。入力だけの従来project JSONも読み込めます。旧localStorageの端末保存は自動移行せず、救出または明示的な入力読込を案内します。未知のversion、旧Addon Lab形式、不正JSONを読み込んでも現在の入力を置き換えません。ブラウザ内の保存が壊れていた場合も元データを上書きせず、救出操作と有効なJSONのimportを提示します。自動で旧形式を変換しません。
 
 保存に失敗した場合はエラーを表示します。APIキー等の秘密をこのアプリへ保持する機能はありません。Luaコードの公開共有サービスでもありません。
 

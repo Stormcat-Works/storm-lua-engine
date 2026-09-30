@@ -15,7 +15,30 @@ const commands=[
 ];
 const bindings={values:{'host.offset':11,pcall:null},functions:{'math.abs':{returns:[99]},'host.echo':{operation:'echo'}}};
 const base={kind:'storm-lua-playground',version:1} as const;
+const mappedSource='local function twice(value)\n return value*2\nend\nfunction onTick()\n local unused=99\n output.setNumber(1,twice(input.getNumber(1))+2*3)\n debug.log("mapped",input.getNumber(1))\nend';
+const debugSource='function onTick()\n local values={}\n output.setNumber(1,input.getNumber(1))\n debug.log("before error")\n output.setNumber(2,values.missing+1)\nend';
+const mappedArtifact=(name:string)=>({kind:'storm-lua-artifact',version:1,code:ref(name+'.code'),map:ref(name+'.map')});
 export const RECIPES:Recipe[]=[
+ {...base,id:'source-map',group:'解析と変換',title:'Source Map / 最適化を説明する',environment:'game',
+  description:'生成Luaと元snapshotを並べ、名前・式・インライン文脈・最適化理由・削除記録を確認します。この操作列ではLuaを実行しません。',
+  features:['sourceMap','x_storm','validateSourceMap','reasons','inlineContexts','dispositions'],source:mappedSource,
+  steps:[{op:'minify',source,options:{environment,sourceMap:true,sourceName:'controller.lua',zeroCostNewlines:false},as:'mapped'},{op:'inspectMap',artifact:mappedArtifact('mapped'),side:'generated',start:0}]},
+ {...base,id:'source-map-modules',group:'解析と変換',title:'Source Map / 元ファイルへ戻る',environment:'game',
+  description:'通常とLifeBoatのビルド結果を、リンク前の各moduleへ対応付けます。マップのファイル一覧から元snapshotを選べます。',
+  features:['build','buildLifeboat','sourceMap','sourceSnapshots','moduleComposition'],source:'local twice=require("lib")\nfunction onTick()output.setNumber(1,twice(input.getNumber(1)))end',
+  steps:[{op:'buildLifeboat',project:{entry:'main',modules:{main:'require("lib")\nfunction onTick()output.setNumber(1,twice(3))end',lib:'function twice(value)return value*2 end'}},options:{sourceMap:true,minify:true},as:'lifeboat'},
+   {op:'build',project:{entry:'main',modules:{main:source,lib:'return function(value)\n return value*2\nend'}},options:{environment,sourceMap:true,minify:false},as:'linked'},
+   {op:'build',project:{entry:'main',modules:{main:source,lib:'return function(value)\n return value*2\nend'}},options:{environment,sourceMap:true,minify:true},as:'mapped'}]},
+ {...base,id:'source-map-debug',group:'実行と描画',title:'Source Map / 停止・ログ・エラー',environment:'game',
+  description:'元範囲から生成行へbreakpoint候補を設定し、実VMで停止・継続・意図したエラーを確認します。実行時に列は取得できず、元位置が複数なら候補として表示します。',
+  features:['mappedLoad','mappedAction','breakpoints','stack','logs','runtimeErrors'],source:debugSource,
+  steps:[{op:'build',project:{entry:'main',modules:{main:source}},options:{environment,sourceMap:true,minify:false},as:'mapped'},
+   {op:'mappedLoad',artifact:mappedArtifact('mapped'),as:'loaded'},
+   {op:'mappedAction',identity:ref('loaded.artifact'),action:'breakpoints',options:{source:0,start:debugSource.indexOf('output.setNumber'),end:debugSource.indexOf('output.setNumber')+16}},
+   {op:'mappedAction',identity:ref('loaded.artifact'),action:'tick',as:'paused'},
+   {op:'mappedAction',identity:ref('loaded.artifact'),action:'clearBreakpoints'},
+   {op:'mappedAction',identity:ref('loaded.artifact'),action:'continue',as:'failed'}]},
+
  {...base,id:'source-loading',group:'解析と変換',title:'Source / requireと再初期化',environment:'extended',
   description:'ホストのソースを別チャンクとして読み込み、そのファイルで停止します。前置き・本体・後置きもresetで順に再実行します。',
   features:['requireLoader','sourceNames','includeOnce','loadHistory','resetReplay'],

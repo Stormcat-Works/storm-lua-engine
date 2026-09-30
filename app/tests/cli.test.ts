@@ -1,11 +1,12 @@
 import test from 'node:test';
+import {RECIPES} from '../shared/recipes.js';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const cwd=fileURLToPath(new URL('../',import.meta.url));
 function cli(args:string[],input?:string){return spawnSync(process.execPath,['--import','tsx','cli/index.ts',...args],{cwd,input,encoding:'utf8',timeout:20000});}
 test('CLIの確認例・JSONL・明示エラー終了',()=>{
- const listed=cli(['--list']);assert.equal(listed.status,0,listed.stderr);assert.equal(JSON.parse(listed.stdout).length,13);
+ const listed=cli(['--list']);assert.equal(listed.status,0,listed.stderr);assert.equal(JSON.parse(listed.stdout).length,RECIPES.length);
  const example=cli(['--recipe','compiler']);assert.equal(example.status,0,example.stderr);const result=JSON.parse(example.stdout);assert.ok(result.results.every((r:{ok:boolean})=>r.ok));
  const pipeline=cli(['--jsonl'],[
   {op:'createVehicle'},{op:'load',source:'function onTick()output.setNumber(1,input.getNumber(1)*2)end'},{op:'io',numbers:[6]},{op:'tick'},

@@ -12,7 +12,7 @@ Source Mapは**非短縮リンク結果の行単位対応だけ**を今回の正
 
 ## 版と契約の確認
 
-現在の対象版は**0.2.0**です。Compiler SDK・環境修正・Playground・開発用source loaderとload履歴を、この版へ集約します。公開実行前に[0.2.0確認記録](verification/source-loading-20260927.md)とCHANGELOGを確認します。
+現在の対象版は**0.2.1**です。target未達時の最大探索との同一出力、重複探索排除、詳細な非短縮map、ログ位置・ホスト操作・LifeBoatビルドを含みます。最適化後minify mapは**0.3.0**の別工程です。公開実行前に[0.2.1確認記録](verification/release-0.2.1.md)とCHANGELOGを確認します。
 
 Cargo workspaceと`packages/lua-engine/package.json`の版を揃え、`CHANGELOG.md`へ利用者に影響する変更を書きます。タグは`v<version>`とします。公開済みのタグやnpmの同じ版を差し替えず、修正は新しい版として出します。
 
@@ -46,7 +46,7 @@ GitHub Releasesには検査したnpm tarball、Playgroundの静的サイトZIP�
 
 ## Compiler assets on the integration branch
 
-A release containing the compiler subpath must additionally run `node tools/build-compiler.mjs`, `npm --prefix packages/lua-engine run test:compiler` and `node tools/test-compiler-browser.mjs`. Build compiler assets before the full package gate. The isolated installed consumer exercises both compiler and runtime together, including property snapshot preservation. The expanded SDK is prepared as 0.2.0; publishing still requires an explicit release action.
+A release containing the compiler subpath must additionally run `node tools/build-compiler.mjs`, `npm --prefix packages/lua-engine run test:compiler` and `node tools/test-compiler-browser.mjs`. Build compiler assets before the full package gate. The isolated installed consumer exercises both compiler and runtime together, including property snapshot preservation. The expanded SDK is prepared as 0.2.1; publishing still requires an explicit release action.
 
 ## Playgroundの配布
 

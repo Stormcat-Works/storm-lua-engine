@@ -611,7 +611,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "storm-lua-addon"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "storm-lua-spec",
  "storm-lua-vm",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-analysis"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -629,14 +629,14 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-bridge"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "storm-lua-spec",
 ]
 
 [[package]]
 name = "storm-lua-build"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-compiler-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "js-sys",
  "serde",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-conformance"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "sourcemap",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-microcontroller"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "storm-lua-spec",
  "storm-lua-vm",
@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-minify"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "mlua",
@@ -701,14 +701,14 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-spec"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "storm-lua-syntax"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-vm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mlua",
  "storm-lua-spec",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "storm-lua-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "storm-lua-addon",
@@ -737,14 +737,14 @@ dependencies = [
 
 [[package]]
 name = "storm-screen-raster"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "storm-lua-spec",
 ]
 
 [[package]]
 name = "storm-screen-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "storm-lua-bridge",
  "storm-lua-spec",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "storm-lua-spec",

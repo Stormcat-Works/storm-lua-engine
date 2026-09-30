@@ -434,7 +434,13 @@ fn prepare_search_from_base(
     let requested = options.search_beam_width.clamp(1, 16) as usize;
     let structural_total = structural.len();
     let mut searched_structural = structural;
-    if options.search_mode == SearchMode::Fast && searched_structural.len() > requested {
+    // A target is a size objective, not permission to discard candidates.
+    // Unmet targets must retain the exhaustive winner even when the caller
+    // carries a fast-search preference. Target-free fast mode keeps its bound.
+    if options.target_size.is_none()
+        && options.search_mode == SearchMode::Fast
+        && searched_structural.len() > requested
+    {
         let mut ranked = searched_structural
             .into_iter()
             .enumerate()
@@ -1679,7 +1685,14 @@ mod phase7_serialization_tests {
                         ..Default::default()
                     };
                     let source = format!("gain=property.getNumber('gain')\n{RESUME_SOURCE}");
-                    let baseline = compile_code(&source, &options).unwrap();
+                    let baseline = compile_code(
+                        &source,
+                        &CompileOptions {
+                            search_mode: SearchMode::Exhaustive,
+                            ..options.clone()
+                        },
+                    )
+                    .unwrap();
                     let target = compile_code(
                         &source,
                         &CompileOptions {
@@ -1701,6 +1714,35 @@ mod phase7_serialization_tests {
                     assert!(!target.stats.target_met);
                     assert!(!target.stats.stopped_early);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn unmet_fast_target_retains_the_exhaustive_candidate_set() {
+        let maximum = CompileOptions::default();
+        let (_, canonical) = prepare_search(RESUME_SOURCE, &maximum).unwrap();
+        assert!(canonical.len() > 2);
+        let fast = CompileOptions {
+            search_mode: SearchMode::Fast,
+            search_beam_width: 1,
+            ..maximum.clone()
+        };
+        assert_eq!(prepare_search(RESUME_SOURCE, &fast).unwrap().1.len(), 1);
+        let expected = compile_code(RESUME_SOURCE, &maximum).unwrap();
+        for beam in [1, 4, 16] {
+            for limit in [0, target_char_size(&expected.code) - 1] {
+                let options = CompileOptions {
+                    target_size: Some(limit),
+                    search_beam_width: beam,
+                    ..fast.clone()
+                };
+                let actual = compile_code(RESUME_SOURCE, &options).unwrap();
+                assert_eq!(actual.code, expected.code);
+                assert_eq!(actual.stats.candidate_sizes, expected.stats.candidate_sizes);
+                assert_eq!(actual.stats.attempted, expected.stats.attempted);
+                assert!(!actual.stats.target_met);
+                assert!(!actual.stats.stopped_early);
             }
         }
     }

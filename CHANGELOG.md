@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+最適化後minifyソースマップはv0.3.0で実装する。0.2.1には含まない。
+
+## 0.2.1 — 2026-09-30
+
+- `targetSize`が未達の場合、同じ意味論・pass設定の最大探索（`searchMode:exhaustive`、targetなし）と同一の生成コードを返す。`searchMode:fast`やbeam幅の指定で未達時の品質を落とさない。targetなしのfastは従来どおり候補を限定する。
+- 低レベルRustの`LinkedRange`にbyte範囲を追加。opaqueなWorker search contextは同じ版のcompiler間で使用する。描画命令ABI、Composite I/O、savedata形式は維持する。
+
+
 - `targetSize`未達時の探索を全探索と共通化し、実行済みのコア最適化・候補評価を繰り返さない。Worker継続でも評価済み候補を保持する。時間による探索打ち切りは導入しない。
 - 非短縮の通常/LifeBoatビルドのSource Mapをトークン・列単位へ詳細化し、UTF-16座標へ変換する。診断の元モジュール・列・終端も実際のコピー範囲から求め、合成コードと削除済み開発区間は未対応位置として明示する。最適化後mapはまだ返さない。
 

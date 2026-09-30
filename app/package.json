@@ -1,6 +1,6 @@
 {
   "name": "@stormcat-works/storm-lua-playground",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Storm Lua Engine: Playground — SDK機能の操作・確認用アプリ",

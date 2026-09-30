@@ -29,7 +29,7 @@ export interface CompileOptions {
   numericMode?: NumericMode;
   searchMode?: SearchMode;
   searchBeamWidth?: number;
-  /** Activates OBJ-2 satisficing search when present. */
+  /** Activates target search. Unmet targets retain the exhaustive winner, regardless of searchMode/beam width. */
   targetSize?: number;
 }
 export interface PassRecord {

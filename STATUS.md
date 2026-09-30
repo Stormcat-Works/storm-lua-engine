@@ -1,5 +1,9 @@
 # Current status
 
+## v0.2.1 リリース候補
+
+2026-09-30: P0/P1とStorm Code統合APIを0.2.1へまとめる。目標未達時はfast/beam指定に依存せず最大探索の生成コードと一致することを公開ゲートに追加した。公開・registry再導入の完了状態は[release-0.2.1](docs/verification/release-0.2.1.md)へ記録する。最適化後minify mapは0.3.0へ確定し、0.2.1公開完了後に開始する。以下の0.2.0記録は既公開版の履歴である。
+
 2026-09-27 — **Storm Lua Engine v0.2.0をnpm/GitHubへ公開し、Playground・ガイド・2記事の本番公開まで完了。** 版番号はworkspace、npm SDK、Playgroundとも0.2.0です。範囲と公開手順は[release](docs/release.md)、残件は[TASKS](TASKS.md)、利用ガイドは[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)です。
 
 ## 後続ブランチの作業（未公開）

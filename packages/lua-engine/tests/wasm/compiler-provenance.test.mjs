@@ -103,3 +103,25 @@ test('reaching a target in the last canonical job reports complete search', () =
   assert.equal(target.search.stoppedEarly, false);
   assert.equal(target.search.stage, 'full-search');
 });
+
+
+test('unmet fast target uses the exhaustive candidate set, including Worker continuation', () => {
+  const expected = compiler.minify(source, {searchMode: 'exhaustive'});
+  assert.equal(expected.ok, true);
+  for (const searchBeamWidth of [1, 4, 16]) {
+    const options = {searchMode: 'fast', searchBeamWidth, targetSize: expected.code.length - 1};
+    const actual = compiler.minify(source, options);
+    assert.equal(actual.ok, true);
+    assert.equal(actual.code, expected.code);
+    assert.equal(actual.size, expected.size);
+    assert.deepEqual(actual.search.candidateSizes, expected.search.candidateSizes);
+    assert.equal(actual.search.targetMet, false);
+    assert.equal(actual.search.stoppedEarly, false);
+    const attempt = coordinator.trySatisficing(source, options);
+    const resumed = attempt.done ? attempt.result : coordinator.finishTargetSearch(
+      source, options, attempt.prepared.context,
+      attempt.prepared.jobs.map(job => worker.evaluateJob(job)).reverse(), attempt.checkpoints);
+    assert.equal(resumed.code, expected.code);
+    assert.deepEqual(resumed.search.candidateSizes, expected.search.candidateSizes);
+  }
+});

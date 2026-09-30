@@ -2,9 +2,9 @@
 
 ## v0.2.1 公開状況
 
-2026-09-30: GitHub Release・タグ・検査済みSDK tarballとPlaygroundの本番配備は完了した。**npmは認証エラーで未公開（latest=0.2.0）**。未達targetはfast/beam設定によらず最大探索と同一出力を返す。513 Native、実WASM、3 OS CI、716未達比較、本番3ブラウザを確認。[公開記録と未完了工程](docs/verification/release-0.2.1.md)。
+2026-09-30: GitHub Release・タグ・検査済みSDK tarballとPlaygroundの本番配備は完了した。**npmもTrusted Publishingで公開し、latest=0.2.1とregistry再導入を確認済み**。未達targetはfast/beam設定によらず最大探索と同一出力を返す。513 Native、実WASM、3 OS CI、716未達比較、本番3ブラウザを確認。[公開完了記録](docs/verification/release-0.2.1.md)。
 
-npm公開workflowをmainへ実装し、実Actionsのpreflight/consumer検証は成功した。実publishはnpm Trusted Publisherの初回承認が成立せずENEEDAUTHとなった。[自動化の検証記録](docs/verification/publication-workflow-20260930.md)。初回設定を公開運用の残件として分離し、v0.3.0は専用branch `feat/minify-source-provenance-v0.3`でParser/Printerの範囲記録を開発している。
+npm公開workflowは実公開まで成功した。[run 36667537171](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36667537171)のattempt 1で公開し、attempt 2で同一版の再公開を省略してregistry再取得・consumerを確認した。[自動化の検証記録](docs/verification/publication-workflow-20260930.md)。v0.3.0は専用branch `feat/minify-source-provenance-v0.3`で開発中であり、本公開とは分離する。
 
 以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は本節が正本である。
 

@@ -1,6 +1,6 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.2.0は公開済み。後続機能は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+現在地は[STATUS](STATUS.md)。**v0.2.1はnpm・GitHub・Playgroundへ公開済み。v0.3.0は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -63,8 +63,8 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## v0.2.1からv0.3.0への順序
 
-0.2.1の同一出力ゲート・GitHub/Playground公開は完了。npmの公開自動化を実装した。初回Trusted Publisher承認は公開運用の残件として分離し、[由来情報計画](docs/design/source-provenance.md)のP2〜P5は専用branchで開発する。
+0.2.1の同一出力ゲート・npm/GitHub/Playground公開とregistry再導入は完了。npm公開はTrusted Publishingで自動化した。[由来情報計画](docs/design/source-provenance.md)のP2〜P5は専用branchで開発する。
 
-## v0.2.1 残件（2026-09-30）
+## v0.2.1 公開工程（2026-09-30完了）
 
-GitHubとPlaygroundは公開・再取得・本番検証済み。npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの独立導入、公開状態文書の更新が未完了。v0.3.0開発の保留条件にはせず分離して追跡する。詳細は[公開記録](docs/verification/release-0.2.1.md)。
+npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの再取得・独立導入と公開状態文書の更新が完了した。GitHubとPlaygroundも公開・検証済み。詳細は[公開記録](docs/verification/release-0.2.1.md)。

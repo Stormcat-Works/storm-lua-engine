@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-**v0.2.1はGitHub ReleaseとPlaygroundへ公開済み。npmは認証更新待ちでlatest=0.2.0です。** [公開状況](docs/verification/release-0.2.1.md)。 Compiler SDK、環境プロファイル、開発用require、Playgroundを提供しています。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
+**v0.2.1をnpm・GitHub Release・Playgroundへ公開済み。** [公開状況](docs/verification/release-0.2.1.md)。 Compiler SDK、環境プロファイル、開発用require、Playgroundを提供しています。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,7 +14,7 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine`（registryは現在0.2.0）。0.2.1はGitHub Releaseの検査済みtarballを取得し、`npm install ./stormcat-works-storm-lua-engine-0.2.1.tgz`で導入できます。
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.2.1`。通常の`npm install @stormcat-works/storm-lua-engine`も現在のlatest=0.2.1を取得します。
 
 実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
@@ -70,4 +70,4 @@ Native、Node／WASM、Chromium・Firefox・WebKit、独立したnpmインスト
 
 MIT License。描画参照元と依存ライブラリの権利表示は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)にまとめています。StormworksおよびGeometaとは独立したコミュニティプロジェクトです。
 
-公開後のregistry導入・本番配備の確認は[0.2.0公開記録](docs/verification/release-0.2.0.md)、Webは[Playground](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)を参照してください。
+公開後のregistry導入・本番配備の確認は[0.2.1公開記録](docs/verification/release-0.2.1.md)、Webは[Playground](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)を参照してください。

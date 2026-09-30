@@ -1,6 +1,6 @@
 # npm公開自動化とCI起動の検証
 
-2026-09-30。公開先はnpmjs.comを維持する。実装はmainの`91afd9f`、registryのlatest確認は`e2b1f24`。v0.2.1のtagと配布tarballは変更しない。
+2026-09-30。**v0.2.1のOIDC実公開とregistry再取得・consumer検証は完了した。** 公開先はnpmjs.comを維持する。実装はmainの`91afd9f`、registryのlatest確認は`e2b1f24`。v0.2.1のtagと配布tarballは変更しない。
 
 ## 実装
 
@@ -38,3 +38,8 @@ npmの初回登録は公開運用の残件として扱う。v0.3.0のParser/Prin
 ## 最終mainのCI
 
 公開後latest確認も含むcommit `7caef992e2a685a4f01b2a03001baf1861d8c644`は[CI36660638197](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36660638197)で3 OS Native/WASM全成功。開発branchの実装47436c6も別のCI36660638108で成功した。今回の追記は検証結果だけであり、同じ製品コードのCIを再起動しない。
+
+
+## Trusted Publisher設定後の公開完了
+
+[run 36667537171](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36667537171)のattempt 1でnpm publishが成功した。公開直後のversion取得は404を返し、30秒の確認期間では完了しなかった。取得可能になった後のattempt 2は同一内容の公開済み版を検出してpublishを省略し、verify/verify-registryが成功した。npm versionとlatestは0.2.1、再取得したtarballのhashも元の検査済み配布物と一致した。空のディレクトリから通常のnpm installとLua/描画/compilerのsmokeも成功した。詳細は[release-0.2.1](release-0.2.1.md)へ記録する。上のENEEDAUTHは設定前の履歴であり、現状の公開障害ではない。

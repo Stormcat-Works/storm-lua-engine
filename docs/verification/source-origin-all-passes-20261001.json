@@ -1,0 +1,1187 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-01",
+  "developmentVersion": "0.3.0",
+  "published": false,
+  "implementationRevision": "4004b75639028d9ab1bf131bec618372b8c9b432",
+  "baselineRevision": "288806ada9cde04fc5af12d9a9cf31edf3a1a483",
+  "scope": "P3: provenance propagation for all current registered optimizer passes; P4/P5 standard maps, linking/public API and UI are not implemented by this change.",
+  "registry": {
+    "registered": 67,
+    "implemented": 67,
+    "partial": 0,
+    "pending": 0,
+    "realTransformFixtures": 67,
+    "separatorModesPerFixture": 2,
+    "erasedOriginNegativeFixtures": 67,
+    "unicodeCrlfRelocations": 67,
+    "realCompilerConfigurations": 536
+  },
+  "representativeRegression": {
+    "snapshotHashesVerified": 30,
+    "configurations": 240,
+    "unknownFree": 240,
+    "byteIdenticalToBaseline": 240,
+    "trackingOnOffComparisons": 240,
+    "unmetTargetComparisons": 240,
+    "unknownBytes": 0,
+    "totalGeneratedBytes": 491760,
+    "sourceBytes": 233460,
+    "derivedBytes": 245884,
+    "syntheticBytes": 12416,
+    "groupBytes": 8430,
+    "maxTrackedMs": 1686.9345449999998
+  },
+  "nativePassed": 732,
+  "newNativeTests": 90,
+  "semanticFixtureFiles": 44,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerSubsetPassed": 17,
+  "compilerSubsetOverlapsWasm": true,
+  "browserEngines": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "independentPackageConsumer": "passed",
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "probe-final-build": 0,
+    "native-matrix": 0,
+    "coverage-summary": 0,
+    "native-perf": 0,
+    "manual-build": 0,
+    "manual-origins": 0,
+    "compiler-build": 0,
+    "sdk": 0,
+    "wasm": 0,
+    "compiler-tests": 0,
+    "browsers": 0,
+    "wasm-compare": 0,
+    "consumer": 0,
+    "diff-check": 0
+  },
+  "wasmRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "7efcd855210df33964464895eed91eb1a04e7fac3c11733dd6ab3762ff29bbf2",
+      "candidate": "f9cb78c38081412de646517a8053a8a758a996b3ed78f2bfb87db5edf28ab561"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "nativeTrackingPerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2272.669321,
+      "trackedMedianMs": 3300.151798
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 261.94934600000005,
+      "trackedMedianMs": 393.322281
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 3334.412764,
+      "trackedMedianMs": 5628.219709
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 2881.238134,
+      "trackedMedianMs": 5751.418718
+    }
+  ],
+  "wasmUntrackedPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "7efcd855210df33964464895eed91eb1a04e7fac3c11733dd6ab3762ff29bbf2",
+      "candidate": "f9cb78c38081412de646517a8053a8a758a996b3ed78f2bfb87db5edf28ab561"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 2835.295073999994,
+        "candidate": 2809.7579819999955,
+        "ratio": 0.990993144863765
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 310.59132500000123,
+        "candidate": 309.3303429999942,
+        "ratio": 0.995940060463675
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 2850.286697000003,
+        "candidate": 2905.8676350000023,
+        "ratio": 1.0195001218854578
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 2860.444822000005,
+        "candidate": 2868.269591999997,
+        "ratio": 1.0027355081069247
+      }
+    ]
+  },
+  "manualExamples": [
+    {
+      "code": "local function f(x)return x+200 end a=f(1)b=f(3)",
+      "mappings": [
+        {
+          "generated": "local function ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 35,
+            "start": 0,
+            "text": "local function f(x,y)return x+y end"
+          },
+          "related": []
+        },
+        {
+          "generated": "f",
+          "kind": "Source",
+          "originalName": "f",
+          "precision": "Name",
+          "primary": {
+            "end": 16,
+            "start": 15,
+            "text": "f"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 35,
+            "start": 16,
+            "text": "(x,y)return x+y end"
+          },
+          "related": []
+        },
+        {
+          "generated": "x",
+          "kind": "Source",
+          "originalName": "x",
+          "precision": "Name",
+          "primary": {
+            "end": 18,
+            "start": 17,
+            "text": "x"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 35,
+            "start": 16,
+            "text": "(x,y)return x+y end"
+          },
+          "related": []
+        },
+        {
+          "generated": "return ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 31,
+            "start": 21,
+            "text": "return x+y"
+          },
+          "related": []
+        },
+        {
+          "generated": "x",
+          "kind": "Source",
+          "originalName": "x",
+          "precision": "Name",
+          "primary": {
+            "end": 29,
+            "start": 28,
+            "text": "x"
+          },
+          "related": []
+        },
+        {
+          "generated": "+",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 31,
+            "start": 28,
+            "text": "x+y"
+          },
+          "related": []
+        },
+        {
+          "generated": "200",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 45,
+            "start": 42,
+            "text": "200"
+          },
+          "related": [
+            {
+              "end": 55,
+              "start": 52,
+              "text": "200"
+            },
+            {
+              "end": 31,
+              "start": 30,
+              "text": "y"
+            }
+          ]
+        },
+        {
+          "generated": " end",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 35,
+            "start": 16,
+            "text": "(x,y)return x+y end"
+          },
+          "related": []
+        },
+        {
+          "generated": " ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Group",
+          "primary": {
+            "end": 56,
+            "start": 0,
+            "text": "local function f(x,y)return x+y end a=f(1,200)b=f(3,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "a",
+          "kind": "Source",
+          "originalName": "a",
+          "precision": "Name",
+          "primary": {
+            "end": 37,
+            "start": 36,
+            "text": "a"
+          },
+          "related": []
+        },
+        {
+          "generated": "=",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 46,
+            "start": 36,
+            "text": "a=f(1,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "f",
+          "kind": "Source",
+          "originalName": "f",
+          "precision": "Name",
+          "primary": {
+            "end": 39,
+            "start": 38,
+            "text": "f"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 46,
+            "start": 38,
+            "text": "f(1,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 41,
+            "start": 40,
+            "text": "1"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 46,
+            "start": 38,
+            "text": "f(1,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "b",
+          "kind": "Source",
+          "originalName": "b",
+          "precision": "Name",
+          "primary": {
+            "end": 47,
+            "start": 46,
+            "text": "b"
+          },
+          "related": []
+        },
+        {
+          "generated": "=",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 56,
+            "start": 46,
+            "text": "b=f(3,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "f",
+          "kind": "Source",
+          "originalName": "f",
+          "precision": "Name",
+          "primary": {
+            "end": 49,
+            "start": 48,
+            "text": "f"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 56,
+            "start": 48,
+            "text": "f(3,200)"
+          },
+          "related": []
+        },
+        {
+          "generated": "3",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 51,
+            "start": 50,
+            "text": "3"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 56,
+            "start": 48,
+            "text": "f(3,200)"
+          },
+          "related": []
+        }
+      ],
+      "pass": "constant-argument-specialization",
+      "source": "local function f(x,y)return x+y end a=f(1,200)b=f(3,200)",
+      "unknownBytes": 0
+    },
+    {
+      "code": "function onTick()local bits=input.getNumber(1)local flag=bits>>8&1 output.setNumber(1,flag)end",
+      "mappings": [
+        {
+          "generated": "function ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 106,
+            "start": 0,
+            "text": "function onTick()local bits=input.getNumber(1)local flag=bits&256>0 output.setNumber(1,flag and 1 or 0)end"
+          },
+          "related": []
+        },
+        {
+          "generated": "onTick",
+          "kind": "Source",
+          "originalName": "onTick",
+          "precision": "Name",
+          "primary": {
+            "end": 15,
+            "start": 9,
+            "text": "onTick"
+          },
+          "related": []
+        },
+        {
+          "generated": "()",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 106,
+            "start": 15,
+            "text": "()local bits=input.getNumber(1)local flag=bits&256>0 output.setNumber(1,flag and 1 or 0)end"
+          },
+          "related": []
+        },
+        {
+          "generated": "local ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 46,
+            "start": 17,
+            "text": "local bits=input.getNumber(1)"
+          },
+          "related": []
+        },
+        {
+          "generated": "bits",
+          "kind": "Source",
+          "originalName": "bits",
+          "precision": "Name",
+          "primary": {
+            "end": 27,
+            "start": 23,
+            "text": "bits"
+          },
+          "related": []
+        },
+        {
+          "generated": "=",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 46,
+            "start": 17,
+            "text": "local bits=input.getNumber(1)"
+          },
+          "related": []
+        },
+        {
+          "generated": "input",
+          "kind": "Source",
+          "originalName": "input",
+          "precision": "Name",
+          "primary": {
+            "end": 33,
+            "start": 28,
+            "text": "input"
+          },
+          "related": []
+        },
+        {
+          "generated": ".",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 43,
+            "start": 28,
+            "text": "input.getNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "getNumber",
+          "kind": "Source",
+          "originalName": "getNumber",
+          "precision": "Name",
+          "primary": {
+            "end": 43,
+            "start": 34,
+            "text": "getNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 46,
+            "start": 28,
+            "text": "input.getNumber(1)"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 45,
+            "start": 44,
+            "text": "1"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 46,
+            "start": 28,
+            "text": "input.getNumber(1)"
+          },
+          "related": []
+        },
+        {
+          "generated": "local ",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 67,
+            "start": 46,
+            "text": "local flag=bits&256>0"
+          },
+          "related": []
+        },
+        {
+          "generated": "flag",
+          "kind": "Source",
+          "originalName": "flag",
+          "precision": "Name",
+          "primary": {
+            "end": 56,
+            "start": 52,
+            "text": "flag"
+          },
+          "related": []
+        },
+        {
+          "generated": "=",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 67,
+            "start": 46,
+            "text": "local flag=bits&256>0"
+          },
+          "related": []
+        },
+        {
+          "generated": "bits",
+          "kind": "Source",
+          "originalName": "bits",
+          "precision": "Name",
+          "primary": {
+            "end": 61,
+            "start": 57,
+            "text": "bits"
+          },
+          "related": []
+        },
+        {
+          "generated": ">>8",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 65,
+            "start": 62,
+            "text": "256"
+          },
+          "related": [
+            {
+              "end": 67,
+              "start": 66,
+              "text": "0"
+            }
+          ]
+        },
+        {
+          "generated": "&",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 67,
+            "start": 57,
+            "text": "bits&256>0"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 65,
+            "start": 62,
+            "text": "256"
+          },
+          "related": [
+            {
+              "end": 67,
+              "start": 66,
+              "text": "0"
+            }
+          ]
+        },
+        {
+          "generated": " ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Group",
+          "primary": {
+            "end": 103,
+            "start": 17,
+            "text": "local bits=input.getNumber(1)local flag=bits&256>0 output.setNumber(1,flag and 1 or 0)"
+          },
+          "related": []
+        },
+        {
+          "generated": "output",
+          "kind": "Source",
+          "originalName": "output",
+          "precision": "Name",
+          "primary": {
+            "end": 74,
+            "start": 68,
+            "text": "output"
+          },
+          "related": []
+        },
+        {
+          "generated": ".",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 84,
+            "start": 68,
+            "text": "output.setNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "setNumber",
+          "kind": "Source",
+          "originalName": "setNumber",
+          "precision": "Name",
+          "primary": {
+            "end": 84,
+            "start": 75,
+            "text": "setNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 103,
+            "start": 68,
+            "text": "output.setNumber(1,flag and 1 or 0)"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 86,
+            "start": 85,
+            "text": "1"
+          },
+          "related": []
+        },
+        {
+          "generated": ",",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 103,
+            "start": 68,
+            "text": "output.setNumber(1,flag and 1 or 0)"
+          },
+          "related": []
+        },
+        {
+          "generated": "flag",
+          "kind": "Source",
+          "originalName": "flag",
+          "precision": "Name",
+          "primary": {
+            "end": 91,
+            "start": 87,
+            "text": "flag"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 103,
+            "start": 68,
+            "text": "output.setNumber(1,flag and 1 or 0)"
+          },
+          "related": []
+        },
+        {
+          "generated": "end",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 106,
+            "start": 15,
+            "text": "()local bits=input.getNumber(1)local flag=bits&256>0 output.setNumber(1,flag and 1 or 0)end"
+          },
+          "related": []
+        }
+      ],
+      "pass": "numeric-boolean-bit-specialization",
+      "source": "function onTick()local bits=input.getNumber(1)local flag=bits&256>0 output.setNumber(1,flag and 1 or 0)end",
+      "unknownBytes": 0
+    },
+    {
+      "code": "local a a=function(a)return a+1 end function onTick()output.setNumber(1,a(2))end",
+      "mappings": [
+        {
+          "generated": "local a",
+          "kind": "Synthetic",
+          "originalName": null,
+          "precision": "Group",
+          "primary": null,
+          "related": []
+        },
+        {
+          "generated": " ",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Group",
+          "primary": {
+            "end": 173,
+            "start": 0,
+            "text": "local module={}module['long-key']=function(x)return x+1 end local alias=module if alias==nil then alias=true end function onTick()output.setNumber(1,alias['long-key'](2))end"
+          },
+          "related": []
+        },
+        {
+          "generated": "a",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 32,
+            "start": 22,
+            "text": "'long-key'"
+          },
+          "related": []
+        },
+        {
+          "generated": "=",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 59,
+            "start": 15,
+            "text": "module['long-key']=function(x)return x+1 end"
+          },
+          "related": []
+        },
+        {
+          "generated": "function(",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 59,
+            "start": 34,
+            "text": "function(x)return x+1 end"
+          },
+          "related": []
+        },
+        {
+          "generated": "a",
+          "kind": "Derived",
+          "originalName": "x",
+          "precision": "Name",
+          "primary": {
+            "end": 44,
+            "start": 43,
+            "text": "x"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 59,
+            "start": 34,
+            "text": "function(x)return x+1 end"
+          },
+          "related": []
+        },
+        {
+          "generated": "return ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 55,
+            "start": 45,
+            "text": "return x+1"
+          },
+          "related": []
+        },
+        {
+          "generated": "a",
+          "kind": "Derived",
+          "originalName": "x",
+          "precision": "Name",
+          "primary": {
+            "end": 53,
+            "start": 52,
+            "text": "x"
+          },
+          "related": []
+        },
+        {
+          "generated": "+",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 55,
+            "start": 52,
+            "text": "x+1"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 55,
+            "start": 54,
+            "text": "1"
+          },
+          "related": []
+        },
+        {
+          "generated": " end",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 59,
+            "start": 34,
+            "text": "function(x)return x+1 end"
+          },
+          "related": []
+        },
+        {
+          "generated": " ",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Group",
+          "primary": {
+            "end": 173,
+            "start": 0,
+            "text": "local module={}module['long-key']=function(x)return x+1 end local alias=module if alias==nil then alias=true end function onTick()output.setNumber(1,alias['long-key'](2))end"
+          },
+          "related": []
+        },
+        {
+          "generated": "function ",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Statement",
+          "primary": {
+            "end": 173,
+            "start": 113,
+            "text": "function onTick()output.setNumber(1,alias['long-key'](2))end"
+          },
+          "related": []
+        },
+        {
+          "generated": "onTick",
+          "kind": "Source",
+          "originalName": "onTick",
+          "precision": "Name",
+          "primary": {
+            "end": 128,
+            "start": 122,
+            "text": "onTick"
+          },
+          "related": []
+        },
+        {
+          "generated": "()",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 173,
+            "start": 128,
+            "text": "()output.setNumber(1,alias['long-key'](2))end"
+          },
+          "related": []
+        },
+        {
+          "generated": "output",
+          "kind": "Source",
+          "originalName": "output",
+          "precision": "Name",
+          "primary": {
+            "end": 136,
+            "start": 130,
+            "text": "output"
+          },
+          "related": []
+        },
+        {
+          "generated": ".",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 146,
+            "start": 130,
+            "text": "output.setNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "setNumber",
+          "kind": "Source",
+          "originalName": "setNumber",
+          "precision": "Name",
+          "primary": {
+            "end": 146,
+            "start": 137,
+            "text": "setNumber"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 170,
+            "start": 130,
+            "text": "output.setNumber(1,alias['long-key'](2))"
+          },
+          "related": []
+        },
+        {
+          "generated": "1",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 148,
+            "start": 147,
+            "text": "1"
+          },
+          "related": []
+        },
+        {
+          "generated": ",",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 170,
+            "start": 130,
+            "text": "output.setNumber(1,alias['long-key'](2))"
+          },
+          "related": []
+        },
+        {
+          "generated": "a",
+          "kind": "Derived",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 165,
+            "start": 155,
+            "text": "'long-key'"
+          },
+          "related": []
+        },
+        {
+          "generated": "(",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 169,
+            "start": 149,
+            "text": "alias['long-key'](2)"
+          },
+          "related": []
+        },
+        {
+          "generated": "2",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 168,
+            "start": 167,
+            "text": "2"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 169,
+            "start": 149,
+            "text": "alias['long-key'](2)"
+          },
+          "related": []
+        },
+        {
+          "generated": ")",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 170,
+            "start": 130,
+            "text": "output.setNumber(1,alias['long-key'](2))"
+          },
+          "related": []
+        },
+        {
+          "generated": "end",
+          "kind": "Source",
+          "originalName": null,
+          "precision": "Expression",
+          "primary": {
+            "end": 173,
+            "start": 128,
+            "text": "()output.setNumber(1,alias['long-key'](2))end"
+          },
+          "related": []
+        }
+      ],
+      "pass": "closed-namespace-devirtualization",
+      "source": "local module={}module['long-key']=function(x)return x+1 end local alias=module if alias==nil then alias=true end function onTick()output.setNumber(1,alias['long-key'](2))end",
+      "unknownBytes": 0
+    }
+  ],
+  "hostedCi": {
+    "run": 36748527505,
+    "revision": "4004b75639028d9ab1bf131bec618372b8c9b432",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "limitations": [
+    "Finite semantic and negative tests are not a proof that arbitrary Lua or future optimizer changes are bug-free.",
+    "Known mappings include name, expression, statement and group precision, plus explicitly synthetic code; they are not character-for-character equivalence.",
+    "An intentionally unattributed or partially attributed input can still produce Unknown; unsupported provenance is never relabeled as synthetic.",
+    "No public optimized Source Map v3 API, link composition, artifact fingerprint contract, Playground mapping UI, optimized-away variable restoration or dynamic replay-iteration debugging is claimed."
+  ]
+}

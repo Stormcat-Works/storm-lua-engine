@@ -2,13 +2,13 @@
 
 ## v0.3.0 開発中
 
-`feat/minify-source-provenance-v0.3`で、固定した代表30入力・240設定すべての由来不明を解消した。**0%は180件→240件、全出力のUnknownは39,498→0バイト**。全30入力で8設定すべて0%であり、生成Luaは全件変更前と一致する。[最終検証](docs/verification/source-origin-complete-20260930.md)。
+**P3の全67最適化パスへの由来対応を完了。67 implemented / 0 partial / 0 pending。** 各パスに実変換を必須とするfixture、追跡ON/OFF一致、区切り2形式、JSON転送、由来を消した負例がある。全67 fixtureを実コンパイラの8設定、合計536設定でも検証した。[実装・検証・性能](docs/verification/source-origin-all-passes-20261001.md)、[パス台帳](docs/design/source-provenance-pass-audit.json)。
 
-関数の排他的な配置変更、数値の再表現と共有、ループ引数列、描画辞書のpayload/パレット/デコーダー、繰り返し描画、元の構文を戻す経路を対応した。生成理由が分かるSyntheticと元ソースに対応するSource/Derivedを分け、未知の入力を親や生成コード扱いで補わない。
+引数・table/名前空間の特殊化、疎なBoolean decode、数式・共有値・radix/結果helper、出力loop、screen button、描画recordの通常/拡張/高密度/共有/規則列の各経路へ対応した。選ばれた候補だけでなく代替codec・分岐・拒否・復元も検証する。既存の代表30入力・240設定は、生成Luaを変えず全件由来不明0%を維持する。
 
-全67パスの台帳は**49 partial / 18 pending**。この240設定の目標達成は、任意のLuaや未出現の全変換経路の監査完了を意味しない。Source/Derivedは式・文単位や複数の寄与元を含み、0%は文字単位の完全対応や変数復元の保証ではない。
+Source/Derived/Syntheticとprecisionの区別は維持する。欠けた元情報はUnknownであり、近い親位置やSyntheticへ偽装して埋めない。対応済みは現行パスの由来契約に対する判定で、任意のLua・将来の変更が無欠陥であるという証明ではない。
 
-P3の他の変換経路・組み合わせと追跡コスト、P4の標準Source Map v3/link合成/Rust-WASM-TS公開と成果物識別、P5のPlayground双方向表示と実行位置接続が残る。**最適化後mapはまだ高レベルSDKへ公開していない。** [実装計画](docs/design/source-provenance.md)。
+P0〜P3は完了。次はP4の標準Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/source snapshot識別。続くP5はPlaygroundの双方向選択と実行位置接続。**最適化後mapはまだ高レベルSDKへ公開していない。** 追跡コスト改善も測定しながら継続する。[実装計画](docs/design/source-provenance.md)。
 
 ## v0.2.1 公開状況
 

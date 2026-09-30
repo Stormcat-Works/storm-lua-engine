@@ -59,12 +59,12 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## ソース位置追跡とtarget探索（P0/P1実装済み）
 
-[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続は実装済み。残りはP3の各変換の由来精度、P4の最終map/公開API、P5のconsumer接続。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
+[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続、P3の全67パスの由来対応は実装済み。残りはP4の最終map/公開API、P5のconsumer接続と追跡コストの改善。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
 
 ## v0.3.0 の残件
 
-v0.2.1の公開は完了。内部由来追跡と候補/Worker転送に加え、代表30入力・240設定すべての由来不明0%を達成した。生成コードと目標未達時の全探索結果は維持する。[検証記録](docs/verification/source-origin-complete-20260930.md)。
-
-この固定コーパスの対応目標は完了。今後は[パス台帳](docs/design/source-provenance-pass-audit.json)のpartial49件の未監査経路とpending18件、追加コーパス、描画recordの他のportfolio経路、追跡追加コストを別途確認する。Unknownを推測で埋めず、合成コードの生成理由・元の値の由来・複数の関連元を区別する。
+v0.2.1の公開は完了。P0〜P3を完了し、[全67パスの台帳](docs/design/source-provenance-pass-audit.json)はimplementedとなった。全パスの実変換・負例、実コンパイラ536設定、代表30入力・240設定、Native/WASMとクロスプラットフォームCIを検証した。[今回の検証記録](docs/verification/source-origin-all-passes-20261001.md)。
 
 P4は標準Source Map v3と詳細由来の公開型、link合成、Rust/WASM/TS境界、code/map/source snapshotの識別。P5はPlaygroundの双方向範囲選択・関連由来・Unknown/Synthetic表示と実runtime位置への接続。計画と完成条件は[由来追跡計画](docs/design/source-provenance.md)が正本。
+
+追跡追加コストの削減、追加コーパス・新しい組み合わせの回帰は継続する。現行パスに未実装の由来伝播が残っていることとは区別する。Unknownを推測で埋めず、生成コードの理由・元データ・複数の関連元を保持する。

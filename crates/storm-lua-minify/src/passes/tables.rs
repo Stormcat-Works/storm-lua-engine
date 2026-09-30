@@ -593,7 +593,15 @@ fn rewrite_static_table_chains(
                 current = table_get(&mut scratch, current, key);
                 if current as usize >= source.nodes.len() {
                     // missing key -> nil allocated in scratch
-                    target.nodes[node as usize] = Node::Nil;
+                    target
+                        .nodes
+                        .rewrite(node, Node::Nil, "immutable-table-missing-key");
+                    target.nodes.relate_from(
+                        node,
+                        &source.nodes,
+                        init[&bid].table,
+                        "immutable-table-missing-key",
+                    );
                     return;
                 }
             }
@@ -606,6 +614,15 @@ fn rewrite_static_table_chains(
                     Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
                 ) {
                     target.nodes[node as usize] = source.node(current).clone();
+                    target.nodes.derive_from(
+                        node,
+                        &source.nodes,
+                        current,
+                        "immutable-table-element",
+                    );
+                    target
+                        .nodes
+                        .relate_from(node, &source.nodes, node, "immutable-table-access");
                     return;
                 }
             }
@@ -618,8 +635,10 @@ fn rewrite_static_table_chains(
         rewrite_static_table_chains(target, source, res, child, candidates, init);
     }
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| child);
-    // Preserve already rewritten child slots; parent NodeIds still refer to them.
-    target.nodes[node as usize] = mapped;
+    // Preserve already rewritten child slots and their source occurrences.
+    target
+        .nodes
+        .rewrite(node, mapped, "immutable-table-flattening");
 }
 
 fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: usize) {
@@ -723,10 +742,23 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
                         .filter_map(|(part, bid)| (!candidates.contains(bid)).then_some(part))
                         .collect::<Vec<_>>();
                     if !keep.is_empty() {
-                        trial.nodes[statement as usize] = Node::Local(
-                            keep.iter().map(|part| names[*part]).collect(),
-                            keep.iter().map(|part| expressions[*part]).collect(),
+                        trial.nodes.rewrite(
+                            statement,
+                            Node::Local(
+                                keep.iter().map(|part| names[*part]).collect(),
+                                keep.iter().map(|part| expressions[*part]).collect(),
+                            ),
+                            "immutable-table-binding-removal",
                         );
+                        for (new_index, &old_index) in keep.iter().enumerate() {
+                            trial.nodes.copy_name_from(
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(new_index as u32),
+                                &source.nodes,
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(old_index as u32),
+                            );
+                        }
                         out.push(statement);
                     }
                 }
@@ -742,9 +774,13 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
                         })
                         .collect::<Vec<_>>();
                     if !keep.is_empty() {
-                        trial.nodes[statement as usize] = Node::Assign(
-                            keep.iter().map(|part| targets[*part]).collect(),
-                            keep.iter().map(|part| expressions[*part]).collect(),
+                        trial.nodes.rewrite(
+                            statement,
+                            Node::Assign(
+                                keep.iter().map(|part| targets[*part]).collect(),
+                                keep.iter().map(|part| expressions[*part]).collect(),
+                            ),
+                            "immutable-table-assignment-removal",
                         );
                         out.push(statement);
                     }
@@ -752,7 +788,9 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
                 _ => out.push(statement),
             }
         }
-        trial.nodes[root as usize] = Node::Block(out);
+        trial
+            .nodes
+            .rewrite(root, Node::Block(out), "table-scalarization");
         let new_len = renamed_table_size(&trial, root);
         if new_len >= old_len {
             break;
@@ -1061,39 +1099,63 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                         let field = decode_lua_string(value);
                         if candidates.contains(&bid) {
                             if let Some(symbol) = field_names.get(&(bid, field)).copied() {
-                                trial.nodes[node as usize] = Node::Name(symbol);
+                                trial.nodes.rewrite(
+                                    node,
+                                    Node::Name(symbol),
+                                    "namespace-field-access",
+                                );
+                                trial.nodes.copy_name_from(
+                                    node,
+                                    storm_lua_syntax::NameSite::Reference,
+                                    &source.nodes,
+                                    *key,
+                                    storm_lua_syntax::NameSite::Member,
+                                );
                             }
                         }
                     }
                 }
             }
         }
-        let mut extra = std::collections::HashMap::<usize, Vec<(SymbolId, NodeId)>>::new();
+        let mut extra = std::collections::HashMap::<
+            usize,
+            Vec<(SymbolId, NodeId, NodeId, u32, Option<NodeId>)>,
+        >::new();
         for bid in &candidates {
             let info = &init[bid];
             let Node::Table(table_fields) = source.node(info.table) else {
                 continue;
             };
-            let mut values = std::collections::HashMap::<String, NodeId>::new();
-            for field in table_fields {
+            let mut values =
+                std::collections::HashMap::<String, (NodeId, u32, Option<NodeId>)>::new();
+            for (field_index, field) in table_fields.iter().enumerate() {
                 match field {
                     TableField::Name(name, value) => {
-                        values.insert(source.strings.get(*name).to_string(), *value);
+                        values.insert(
+                            source.strings.get(*name).to_string(),
+                            (*value, field_index as u32, None),
+                        );
                     }
                     TableField::KVar(key, value) => {
-                        if let Node::Str(key) = source.node(*key) {
-                            values.insert(decode_lua_string(key), *value);
+                        if let Node::Str(raw) = source.node(*key) {
+                            values.insert(
+                                decode_lua_string(raw),
+                                (*value, field_index as u32, Some(*key)),
+                            );
                         }
                     }
                     TableField::Arr(_) => {}
                 }
             }
             for field in &fields[bid] {
-                if let Some(value) = values.get(field).copied() {
-                    extra
-                        .entry(info.statement_index)
-                        .or_default()
-                        .push((field_names[&(*bid, field.clone())], value));
+                if let Some((value, field_index, key)) = values.get(field).copied() {
+                    extra.entry(info.statement_index).or_default().push((
+                        field_names[&(*bid, field.clone())],
+                        value,
+                        info.table,
+                        field_index,
+                        key,
+                    ));
                 }
             }
         }
@@ -1112,12 +1174,25 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                         .filter_map(|(part, bid)| (!candidates.contains(bid)).then_some(part))
                         .collect::<Vec<_>>();
                     if !keep.is_empty() {
-                        trial.nodes[statement as usize] = Node::Local(
-                            keep.iter().map(|part| names[*part]).collect(),
-                            keep.iter()
-                                .filter_map(|part| expressions.get(*part).copied())
-                                .collect(),
+                        trial.nodes.rewrite(
+                            statement,
+                            Node::Local(
+                                keep.iter().map(|part| names[*part]).collect(),
+                                keep.iter()
+                                    .filter_map(|part| expressions.get(*part).copied())
+                                    .collect(),
+                            ),
+                            "namespace-binding-removal",
                         );
+                        for (new_index, &old_index) in keep.iter().enumerate() {
+                            trial.nodes.copy_name_from(
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(new_index as u32),
+                                &source.nodes,
+                                statement,
+                                storm_lua_syntax::NameSite::Binding(old_index as u32),
+                            );
+                        }
                         out.push(statement);
                     }
                 }
@@ -1132,15 +1207,42 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                 if !values.is_empty() {
                     let targets = values
                         .iter()
-                        .map(|(symbol, _)| trial.push(Node::Name(*symbol)))
+                        .map(|(symbol, _, table, field_index, key)| {
+                            let target = trial.push(Node::Name(*symbol));
+                            if let Some(key) = key {
+                                trial.nodes.derive_from(
+                                    target,
+                                    &source.nodes,
+                                    *key,
+                                    "namespace-quoted-field-binding",
+                                );
+                            } else {
+                                trial.nodes.copy_name_from(
+                                    target,
+                                    storm_lua_syntax::NameSite::Reference,
+                                    &source.nodes,
+                                    *table,
+                                    storm_lua_syntax::NameSite::Field(*field_index),
+                                );
+                            }
+                            target
+                        })
                         .collect::<Vec<_>>();
-                    let expressions = values.iter().map(|(_, value)| *value).collect();
+                    let expressions = values.iter().map(|(_, value, ..)| *value).collect();
                     let assignment = trial.push(Node::Assign(targets, expressions));
+                    trial.nodes.derive_from(
+                        assignment,
+                        &source.nodes,
+                        statement,
+                        "namespace-initializer",
+                    );
                     out.push(assignment);
                 }
             }
         }
-        trial.nodes[root as usize] = Node::Block(out);
+        trial
+            .nodes
+            .rewrite(root, Node::Block(out), "table-scalarization");
         let old_len = renamed_table_size(&source, root);
         let new_len = renamed_table_size(&trial, root);
         if new_len >= old_len {

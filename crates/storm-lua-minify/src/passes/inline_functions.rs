@@ -918,6 +918,9 @@ fn alpha_clone_node(
             .and_then(|bid| names.get(&bid).copied())
             .unwrap_or(*symbol);
         let copied = target.push(Node::Name(symbol));
+        target
+            .nodes
+            .finish_rename(copied, source.nodes.capture_origin(node));
         if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
             if !names.contains_key(&bid) {
                 free_references.push((copied, bid));
@@ -961,7 +964,12 @@ fn alpha_clone_node(
         }
         _ => {}
     }
-    target.push(mapped)
+    let copied = target.push(mapped);
+    // Alpha conversion changes binding spellings but never reorders the slots.
+    target
+        .nodes
+        .finish_rename(copied, source.nodes.capture_origin(node));
+    copied
 }
 
 #[derive(Clone, Copy)]
@@ -1213,6 +1221,7 @@ pub fn inline_one_use_statement_and_tail_functions(
                 }
             }
             let mut free_references = Vec::new();
+            let first_alpha_node = trial.nodes.len();
             let alpha_function = alpha_clone_node(
                 &mut trial,
                 &source,
@@ -1244,10 +1253,35 @@ pub fn inline_one_use_statement_and_tail_functions(
                 continue;
             }
 
+            if trial.nodes.tracks_origins() {
+                for copied in first_alpha_node..trial.nodes.len() {
+                    trial.nodes.relate_from(
+                        copied as NodeId,
+                        &source.nodes,
+                        site.call,
+                        "one-use-function-call-site",
+                    );
+                }
+            }
             let mut replacement = Vec::<NodeId>::new();
             if !alpha_params.is_empty() {
                 let args = call_args;
                 let local = trial.push(Node::Local(alpha_params.clone(), args));
+                trial.nodes.derive_from(
+                    local,
+                    &source.nodes,
+                    site.statement,
+                    "inlined-parameter-binding",
+                );
+                for index in 0..alpha_params.len() {
+                    trial.nodes.copy_name_from(
+                        local,
+                        storm_lua_syntax::NameSite::Binding(index as u32),
+                        &source.nodes,
+                        info.function,
+                        storm_lua_syntax::NameSite::Parameter(index as u32),
+                    );
+                }
                 replacement.push(local);
             }
             match site.kind {
@@ -1269,6 +1303,17 @@ pub fn inline_one_use_statement_and_tail_functions(
                         continue;
                     };
                     let statement = trial.push(Node::Local(names, tail_values));
+                    trial.nodes.derive_from(
+                        statement,
+                        &source.nodes,
+                        site.statement,
+                        "inlined-tail-local",
+                    );
+                    if let Some(tail) = alpha_tail {
+                        trial
+                            .nodes
+                            .relate_within(statement, tail, "inlined-tail-return");
+                    }
                     replacement.push(statement);
                 }
                 FusionKind::TailAssign => {
@@ -1286,6 +1331,17 @@ pub fn inline_one_use_statement_and_tail_functions(
                         continue;
                     };
                     let statement = trial.push(Node::Assign(targets, tail_values));
+                    trial.nodes.derive_from(
+                        statement,
+                        &source.nodes,
+                        site.statement,
+                        "inlined-tail-assignment",
+                    );
+                    if let Some(tail) = alpha_tail {
+                        trial
+                            .nodes
+                            .relate_within(statement, tail, "inlined-tail-return");
+                    }
                     replacement.push(statement);
                 }
             }
@@ -1293,7 +1349,11 @@ pub fn inline_one_use_statement_and_tail_functions(
                 continue;
             };
             block_statements.splice(site.index..=site.index, replacement);
-            trial.nodes[site.block as usize] = Node::Block(block_statements);
+            trial.nodes.rewrite(
+                site.block,
+                Node::Block(block_statements),
+                "one-use-function-fusion",
+            );
             remove_statement_from_blocks(&mut trial, info.declaration);
 
             // Alpha-renaming protects the callee's own locals, not its free

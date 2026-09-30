@@ -107,6 +107,9 @@ fn signed_form(scratch: &mut Ast, source: &Ast, node: NodeId) -> (i8, NodeId) {
             let (right_sign, right_base) = signed_form(scratch, source, *right);
             if left_sign < 0 || right_sign < 0 {
                 let base = scratch.push(Node::Bin(op.clone(), left_base, right_base));
+                scratch
+                    .nodes
+                    .derive_from(base, &source.nodes, node, "signed-base-normalization");
                 (if left_sign == right_sign { 1 } else { -1 }, base)
             } else {
                 (1, node)
@@ -464,25 +467,38 @@ fn rewrite_signed(
     node: NodeId,
     group_key: &str,
     carrier: SymbolId,
+    definition: NodeId,
 ) -> NodeId {
     if !is_atom(source.node(node)) && safe_signed(source, analyzer, node) {
         let (sign, _, key) = signed_key(scratch, source, res, node);
         if key == group_key {
             let name = target.push(Node::Name(carrier));
+            target
+                .nodes
+                .derive_from(name, &source.nodes, node, "signed-carrier-read");
+            target
+                .nodes
+                .relate_within(name, definition, "signed-carrier-definition-use");
             return if sign > 0 {
                 name
             } else {
-                target.push(Node::Un("-".into(), name))
+                let negated = target.push(Node::Un("-".into(), name));
+                target
+                    .nodes
+                    .derive_from(negated, &source.nodes, node, "signed-carrier-negation");
+                negated
             };
         }
     }
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         rewrite_signed(
-            target, source, res, analyzer, scratch, child, group_key, carrier,
+            target, source, res, analyzer, scratch, child, group_key, carrier, definition,
         )
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "signed-expression-factoring");
     node
 }
 
@@ -615,16 +631,25 @@ pub fn factor_signed_expressions(
                         original_statements[index],
                         &group.key,
                         carrier,
+                        group.expression,
                     );
                 }
                 let definition = if local {
                     trial.push(Node::Local(vec![carrier], vec![group.expression]))
                 } else {
                     let target = trial.push(Node::Name(carrier));
+                    trial.nodes.mark_synthetic(target, "signed-carrier-storage");
                     trial.push(Node::Assign(vec![target], vec![group.expression]))
                 };
+                trial
+                    .nodes
+                    .mark_synthetic(definition, "signed-carrier-definition");
                 rewritten.insert(first, definition);
-                trial.nodes[group.block as usize] = Node::Block(rewritten);
+                trial.nodes.rewrite(
+                    group.block,
+                    Node::Block(rewritten),
+                    "signed-expression-factoring",
+                );
                 let size = measured(&trial, root);
                 if size < baseline && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
                     best = Some((trial, size));

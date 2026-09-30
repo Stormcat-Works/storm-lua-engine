@@ -227,8 +227,11 @@ pub fn omit_equivalent_trailing_arguments(ast: &mut Ast, root: NodeId) -> PassRe
         for keep in first_possible_keep..arguments.len() {
             if can_omit(&source, &res, info, &arguments, keep, &mut missing_cache) {
                 omitted += arguments.len() - keep;
-                ast.nodes[node as usize] =
-                    Node::Call(function, arguments[..keep].to_vec(), method.clone());
+                ast.nodes.rewrite(
+                    node,
+                    Node::Call(function, arguments[..keep].to_vec(), method.clone()),
+                    "trailing-argument-omission",
+                );
                 break;
             }
         }

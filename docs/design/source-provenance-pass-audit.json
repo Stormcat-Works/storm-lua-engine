@@ -51,8 +51,8 @@
     },
     {
       "id": "equivalent-trailing-argument-omission",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Retained call keeps original call range and remaining argument nodes. Removed arguments get no generated interval. Normalization-only temporary ASTs are not reported as final origins."
     },
     {
       "id": "table-parameter-scalarization",
@@ -151,13 +151,13 @@
     },
     {
       "id": "immutable-table-flattening",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Nested scalar leaves retain initializer and separate lookup-use ranges. Missing keys use lookup origin; unknown source leaves stay unknown. Survivor declaration slots and unaffected subtrees are preserved."
     },
     {
       "id": "closed-namespace-scalarization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Scalarized fields retain each access and original named/quoted initializer key. Equal values do not merge field identities; retained local slots and root separators keep origins."
     },
     {
       "id": "uniform-table-fill-scalarization",
@@ -166,8 +166,8 @@
     },
     {
       "id": "one-use-function-fusion",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Alpha-cloned body and parameter-name slots retain original occurrences and associated call site. Tail local/assignment destinations retain caller origin plus return contributor; unknown copied children remain unknown."
     },
     {
       "id": "expression-helper-inlining",
@@ -276,8 +276,8 @@
     },
     {
       "id": "signed-expression-factoring",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Normalized sign bases and per-use carrier reads retain their own expressions plus shared definition relation. Carrier storage is explicitly synthetic; existing code and unknown uses are not masked."
     },
     {
       "id": "one-use-expression-helper-reversal",
@@ -306,8 +306,8 @@
     },
     {
       "id": "closed-table-field-renaming",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Named fields, dot accesses and method occurrences retain per-site original names. Quoted identifiers use exact original literal ranges without inventing name spellings. Missing quoted-key origins invalidate enclosing fallback instead of claiming table-wide precision."
     },
     {
       "id": "closed-namespace-devirtualization",

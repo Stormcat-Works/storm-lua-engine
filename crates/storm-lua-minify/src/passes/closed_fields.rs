@@ -665,13 +665,20 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
             Node::Index(object, key, _) => {
                 if let Node::Str(raw) = ast.node(*key) {
                     if let Some(short) = mapping.get(&decode_lua_string(raw)) {
-                        let key = trial.str(quote_lua(short));
-                        trial.nodes[node as usize] = Node::Index(*object, key, true);
+                        let renamed_key = trial.str(quote_lua(short));
+                        trial
+                            .nodes
+                            .finish_rename(renamed_key, ast.nodes.capture_origin(*key));
+                        trial.nodes.rewrite(
+                            node,
+                            Node::Index(*object, renamed_key, true),
+                            "closed-field-access",
+                        );
                     }
                 }
             }
             Node::Table(fields) => {
-                let fields = fields
+                let renamed_fields = fields
                     .iter()
                     .map(|field| match field {
                         TableField::Name(key, value) => mapping
@@ -689,18 +696,40 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
                         _ => field.clone(),
                     })
                     .collect();
-                trial.nodes[node as usize] = Node::Table(fields);
+                trial.nodes[node as usize] = Node::Table(renamed_fields);
+                trial
+                    .nodes
+                    .finish_rename(node, ast.nodes.capture_origin(node));
+                for (index, field) in fields.iter().enumerate() {
+                    if let TableField::KVar(key, _) = field {
+                        if matches!(trial.node(node), Node::Table(renamed) if matches!(renamed[index], TableField::Name(..)))
+                        {
+                            trial.nodes.copy_expression_to_name_from(
+                                node,
+                                storm_lua_syntax::NameSite::Field(index as u32),
+                                &ast.nodes,
+                                *key,
+                            );
+                        }
+                    }
+                }
             }
             Node::Call(object, args, Some(method)) => {
                 if let Some(short) = mapping.get(method) {
                     trial.nodes[node as usize] =
                         Node::Call(*object, args.clone(), Some(short.clone()));
+                    trial
+                        .nodes
+                        .finish_rename(node, ast.nodes.capture_origin(node));
                 }
             }
             Node::Methodname(object, key) => {
                 if let Some(short) = mapping.get(ast.strings.get(*key)) {
                     trial.nodes[node as usize] =
                         Node::Methodname(*object, trial.strings.intern(short));
+                    trial
+                        .nodes
+                        .finish_rename(node, ast.nodes.capture_origin(node));
                 }
             }
             _ => {}

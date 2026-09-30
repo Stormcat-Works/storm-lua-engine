@@ -432,6 +432,39 @@ impl NodeArena {
         }
     }
 
+    /// Attribute a generated identifier to an explicitly identified original expression,
+    /// such as a quoted table key. Keep the expression precision and do not invent an
+    /// original identifier spelling. A missing source masks the enclosing node fallback.
+    pub fn copy_expression_to_name_from(
+        &mut self,
+        node: NodeId,
+        site: NameSite,
+        source: &Self,
+        original: NodeId,
+    ) {
+        if !self.tracks_origins() {
+            return;
+        }
+        let copied = source
+            .capture_origin(original)
+            .and_then(|snapshot| self.import(&snapshot).origin);
+        let Some(origins) = self.origins.as_mut() else {
+            return;
+        };
+        let slot =
+            origins.slots[node as usize].get_or_insert_with(|| Arc::new(NodeOrigin::default()));
+        let slot = Arc::make_mut(slot);
+        slot.names.retain(|(key, _)| *key != site);
+        if let Some(copied) = copied {
+            slot.names
+                .push((site, copied.derived("quoted-field-renaming")));
+            slot.names.sort_by_key(|(site, _)| *site);
+        } else {
+            // The missing key is not explained by the table's wider source span.
+            slot.origin = None;
+        }
+    }
+
     /// Transfer a named slot explicitly when a declaration is merged or reordered.
     pub fn copy_name_from(
         &mut self,

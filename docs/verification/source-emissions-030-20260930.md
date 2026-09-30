@@ -57,3 +57,8 @@ Native workspaceは523件成功。fmt、clippy `-D warnings`、rustdoc、SDK30�
 ## 残り
 
 [実装計画](../design/source-provenance.md)のP2を進めた段階。次は共通の由来ID/元範囲テーブルを変換と候補分岐へ渡し、各最適化パスの引き継ぎを実装する。変換のない場合に位置が辿れることと、最大短縮後に元ソースへ戻れることは別の完成条件である。
+
+
+## GitHub上の最終確認
+
+実装commit `47436c6d0035465929341145c7a737496b0a5797`に対する[CI run 36660638108](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36660638108)が、Linux/Windows/macOS NativeとWASMの全jobで成功した。WASM jobには実ブラウザーと梱包consumer、Playgroundの検証も含む。公開ワークフロー側main commit `7caef99`のCI `36660638197`も別に成功した。両者は異なるソースを検証するrunであり、同一commitへの重複起動ではない。

@@ -65,5 +65,16 @@
       }
     ]
   },
-  "scope": "Parser/Printer initial source and generated ranges; no transformed-AST provenance propagation or optimized minify map API yet."
+  "scope": "Parser/Printer initial source and generated ranges; no transformed-AST provenance propagation or optimized minify map API yet.",
+  "implementationRevision": "47436c6d0035465929341145c7a737496b0a5797",
+  "hostedCi": {
+    "run": 36660638108,
+    "conclusion": "success",
+    "jobs": [
+      "native (ubuntu-latest)",
+      "native (windows-latest)",
+      "native (macos-latest)",
+      "wasm"
+    ]
+  }
 }

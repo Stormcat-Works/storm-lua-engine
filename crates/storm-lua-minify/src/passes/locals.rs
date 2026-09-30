@@ -309,7 +309,7 @@ fn remove_statement_from_blocks(ast: &mut Ast, statement: NodeId) {
         .retain_block_statements(|id| id != statement, "unused-local-declaration-removal");
 }
 
-fn remove_local_binding(ast: &mut Ast, res: &Resolution, bid: u32) -> bool {
+fn remove_local_binding(ast: &mut Ast, source: &Ast, res: &Resolution, bid: u32) -> bool {
     let Some(statement) = res.binding(bid).decl_node else {
         return false;
     };
@@ -333,12 +333,36 @@ fn remove_local_binding(ast: &mut Ast, res: &Resolution, bid: u32) -> bool {
     if names.is_empty() {
         remove_statement_from_blocks(ast, statement);
     } else {
-        ast.nodes[statement as usize] = Node::Local(names, expressions);
+        ast.nodes.rewrite(
+            statement,
+            Node::Local(names, expressions),
+            "tiny-literal-binding-removal",
+        );
+        for new_index in 0..bids.len() - 1 {
+            let old_index = if new_index < index {
+                new_index
+            } else {
+                new_index + 1
+            };
+            ast.nodes.copy_name_from(
+                statement,
+                storm_lua_syntax::NameSite::Binding(new_index as u32),
+                &source.nodes,
+                statement,
+                storm_lua_syntax::NameSite::Binding(old_index as u32),
+            );
+        }
     }
     true
 }
 
-fn replace_binding_with_literal(ast: &mut Ast, res: &Resolution, bid: u32, literal: NodeId) {
+fn replace_binding_with_literal(
+    ast: &mut Ast,
+    source: &Ast,
+    res: &Resolution,
+    bid: u32,
+    literal: NodeId,
+) {
     let replacement = ast.node(literal).clone();
     let ids = (0..ast.nodes.len() as NodeId).collect::<Vec<_>>();
     for id in ids {
@@ -346,6 +370,10 @@ fn replace_binding_with_literal(ast: &mut Ast, res: &Resolution, bid: u32, liter
             && res.node_bid.get(id as usize).copied().flatten() == Some(bid)
         {
             ast.nodes[id as usize] = replacement.clone();
+            ast.nodes
+                .derive_from(id, &source.nodes, literal, "tiny-literal-copy");
+            ast.nodes
+                .relate_from(id, &source.nodes, id, "tiny-literal-use");
         }
     }
 }
@@ -385,8 +413,8 @@ pub fn inline_tiny_literal_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
                     continue;
                 }
                 let mut trial = clone_ast(&source);
-                replace_binding_with_literal(&mut trial, &res, *bid, literal);
-                if !remove_local_binding(&mut trial, &res, *bid) {
+                replace_binding_with_literal(&mut trial, &source, &res, *bid, literal);
+                if !remove_local_binding(&mut trial, &source, &res, *bid) {
                     continue;
                 }
                 let after = measure_size(&trial, root);
@@ -563,7 +591,12 @@ fn clone_expanded(
                 if !seen.contains(&bid) {
                     let mut next = seen.clone();
                     next.insert(bid);
-                    return clone_expanded(target, source, res, replacements, *replacement, &next);
+                    let copied =
+                        clone_expanded(target, source, res, replacements, *replacement, &next);
+                    target
+                        .nodes
+                        .relate_from(copied, &source.nodes, id, "single-use-local-read");
+                    return copied;
                 }
             }
         }
@@ -572,7 +605,14 @@ fn clone_expanded(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
         clone_expanded(target, source, res, replacements, child, seen)
     });
-    target.push(mapped)
+    let copied = target.push(mapped);
+    target.nodes.derive_from(
+        copied,
+        &source.nodes,
+        id,
+        "single-use-local-expression-copy",
+    );
+    copied
 }
 
 fn expand_tree(
@@ -585,7 +625,7 @@ fn expand_tree(
     if matches!(source.node(id), Node::Name(_)) {
         if let Some(bid) = res.node_bid.get(id as usize).copied().flatten() {
             if let Some(replacement) = replacements.get(&bid) {
-                return clone_expanded(
+                let copied = clone_expanded(
                     target,
                     source,
                     res,
@@ -593,6 +633,10 @@ fn expand_tree(
                     *replacement,
                     &std::collections::HashSet::from([bid]),
                 );
+                target
+                    .nodes
+                    .relate_from(copied, &source.nodes, id, "single-use-local-read");
+                return copied;
             }
         }
     }
@@ -600,7 +644,9 @@ fn expand_tree(
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
         expand_tree(target, source, res, replacements, child)
     });
-    target.nodes[id as usize] = mapped;
+    target
+        .nodes
+        .rewrite(id, mapped, "single-use-local-substitution");
     id
 }
 
@@ -634,12 +680,25 @@ fn strip_removed_locals(
         if keep.is_empty() {
             remove_statement_from_blocks(ast, statement);
         } else {
-            ast.nodes[statement as usize] = Node::Local(
-                keep.iter().map(|index| names[*index]).collect(),
-                keep.iter()
-                    .filter_map(|index| expressions.get(*index).copied())
-                    .collect(),
+            ast.nodes.rewrite(
+                statement,
+                Node::Local(
+                    keep.iter().map(|index| names[*index]).collect(),
+                    keep.iter()
+                        .filter_map(|index| expressions.get(*index).copied())
+                        .collect(),
+                ),
+                "single-use-local-binding-removal",
             );
+            for (new_index, &old_index) in keep.iter().enumerate() {
+                ast.nodes.copy_name_from(
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(new_index as u32),
+                    &source.nodes,
+                    statement,
+                    storm_lua_syntax::NameSite::Binding(old_index as u32),
+                );
+            }
         }
     }
 }
@@ -731,5 +790,145 @@ mod inline_tests {
     fn does_not_sink_across_control_flow() {
         let out = output("local x=a+b if c then y=x end", false);
         assert!(out.starts_with("local x="), "{out}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod local_origin_tests {
+    use super::*;
+    use storm_lua_syntax::provenance::{GeneratedOrigins, OriginKind};
+    use storm_lua_syntax::{parse_source_with_origins, NameSite, Printer};
+
+    fn printed(ast: &Ast, root: NodeId) -> (String, GeneratedOrigins) {
+        let output = Printer::new(ast, false).output_with_positions(root);
+        let origins = GeneratedOrigins::from_print(ast, &output).unwrap();
+        origins.validate_for_code(&output.code).unwrap();
+        (output.code, origins)
+    }
+
+    #[test]
+    fn sinking_keeps_definition_use_and_unrelated_call_origins() {
+        let source = "local sum=left+right result=sum*2 output.setNumber(1,result)";
+        let (mut ast, root) = parse_source_with_origins("controller.lua", source).unwrap();
+        let result = inline_single_use_locals(&mut ast, root);
+        let (code, origins) = printed(&ast, result.root);
+        assert_eq!(code, "result=(left+right)*2 output.setNumber(1,result)");
+        assert_eq!(origins.unknown_bytes(), 0);
+        let moved = origins
+            .origins
+            .iter()
+            .find(|origin| {
+                origin
+                    .primary
+                    .is_some_and(|s| &source[s.start..s.end] == "left+right")
+                    && origin
+                        .related
+                        .iter()
+                        .any(|s| &source[s.start..s.end] == "sum")
+            })
+            .unwrap();
+        assert_eq!(moved.kind, OriginKind::Derived);
+        assert!(origins
+            .origins
+            .iter()
+            .any(|o| o.name.as_deref() == Some("setNumber")));
+        assert!(!origins
+            .origins
+            .iter()
+            .any(|o| o.kind == OriginKind::Synthetic));
+    }
+
+    #[test]
+    fn sinking_remaps_surviving_slots_after_removing_first_binding() {
+        let source =
+            "local discard,retained=left+right,8 result=discard*2 output.setNumber(1,retained)";
+        let (mut ast, root) = parse_source_with_origins("controller.lua", source).unwrap();
+        let result = inline_single_use_locals(&mut ast, root);
+        let (code, origins) = printed(&ast, result.root);
+        assert!(code.starts_with("local retained=8"), "{code}");
+        assert!(!code.contains("discard"));
+        let declaration = ast
+            .nodes
+            .iter()
+            .position(|n| matches!(n, Node::Local(names,_) if names.len()==1))
+            .unwrap() as NodeId;
+        let retained = ast
+            .nodes
+            .name_origin(declaration, NameSite::Binding(0))
+            .unwrap();
+        assert_eq!(retained.name.as_deref(), Some("retained"));
+        assert_eq!(
+            retained.primary.unwrap().start,
+            source.find("retained").unwrap()
+        );
+        assert_eq!(origins.unknown_bytes(), 0);
+    }
+
+    #[test]
+    fn chain_substitution_keeps_each_definition_and_use() {
+        let source = "local first=left+right local second=first*2 result=second+3";
+        let (mut ast, root) = parse_source_with_origins("controller.lua", source).unwrap();
+        let result = inline_single_use_locals(&mut ast, root);
+        let (code, origins) = printed(&ast, result.root);
+        assert_eq!(code, "result=(left+right)*2+3");
+        assert_eq!(origins.unknown_bytes(), 0);
+        for name in ["first", "second"] {
+            assert!(
+                origins
+                    .origins
+                    .iter()
+                    .any(|o| o.related.iter().any(|s| &source[s.start..s.end] == name)),
+                "missing use {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_expression_child_is_not_recovered_from_its_known_parent() {
+        let source = "local sum=left+right result=sum*2";
+        let (mut ast, root) = parse_source_with_origins("controller.lua", source).unwrap();
+        let left = ast
+            .nodes
+            .iter()
+            .position(|n| matches!(n, Node::Name(s) if ast.strings.get(*s)=="left"))
+            .unwrap();
+        // Simulate an unannotated earlier pass, even if it happens to write the same syntax.
+        let value = ast.nodes[left].clone();
+        ast.nodes[left] = value;
+        let result = inline_single_use_locals(&mut ast, root);
+        let (code, origins) = printed(&ast, result.root);
+        let start = code.find("left").unwrap();
+        assert!(origins
+            .mappings
+            .iter()
+            .any(|m| m.start <= start && m.end >= start + 4 && m.origin.is_none()));
+        assert_eq!(origins.unknown_bytes(), 4);
+        assert!(origins
+            .origins
+            .iter()
+            .any(|o| o.name.as_deref() == Some("right")));
+    }
+
+    #[test]
+    fn literal_substitution_distinguishes_shadowed_definitions() {
+        let source =
+            "local value=1 do local value=2 output.setNumber(1,value)end output.setNumber(2,value)";
+        let (mut ast, root) = parse_source_with_origins("controller.lua", source).unwrap();
+        let result = inline_tiny_literal_bindings(&mut ast, root);
+        let (code, origins) = printed(&ast, result.root);
+        assert!(!code.contains("value"));
+        assert_eq!(origins.unknown_bytes(), 0);
+        let copies = origins
+            .origins
+            .iter()
+            .filter(|o| o.transformation.as_deref() == Some("tiny-literal-use"))
+            .collect::<Vec<_>>();
+        assert_eq!(copies.len(), 2);
+        for literal in ["1", "2"] {
+            let definition = source.find(&format!("={literal}")).unwrap() + 1;
+            assert!(copies.iter().any(|o| o.primary.unwrap().start == definition
+                && o.related.iter().any(|s| &source[s.start..s.end] == "value")));
+        }
     }
 }

@@ -463,7 +463,18 @@ pub fn pack_temporary_globals(ast: &mut Ast, root: NodeId) -> PassResult {
         if matches!(source.node(node), Node::Name(_)) {
             if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
                 if let Some(color) = colors.get(&bid) {
-                    target.nodes[node as usize] = Node::Name(color_symbols[color]);
+                    target.nodes.rewrite(
+                        node,
+                        Node::Name(color_symbols[color]),
+                        "temporary-global-packing",
+                    );
+                    target.nodes.copy_name_from(
+                        node,
+                        storm_lua_syntax::NameSite::Reference,
+                        &source.nodes,
+                        node,
+                        storm_lua_syntax::NameSite::Reference,
+                    );
                 }
             }
         }

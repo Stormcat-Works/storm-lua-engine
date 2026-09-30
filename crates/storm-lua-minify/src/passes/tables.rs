@@ -242,15 +242,31 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
                     .map(|&t| transform(new_ast, ast, t, write_only, removed))
                     .collect();
                 let nil_id = new_ast.push(Node::Nil);
+                let Node::Assign(_, values) = &stmt else {
+                    unreachable!()
+                };
+                new_ast.nodes.derive_from(
+                    nil_id,
+                    &ast.nodes,
+                    values[0],
+                    "write-only-field-nil-copy",
+                );
                 let assign = new_ast.push(Node::Assign(new_vs, vec![nil_id]));
+                new_ast
+                    .nodes
+                    .derive_from(assign, &ast.nodes, sid, "write-only-field-cleanup");
                 out.push(assign);
             }
-            new_ast.nodes[id as usize] = Node::Block(out);
+            new_ast
+                .nodes
+                .rewrite(id, Node::Block(out), "write-only-field-cleanup");
             id
         } else {
             let mut rewriter = |c: NodeId| transform(new_ast, ast, c, write_only, removed);
             let (new_node, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut rewriter);
-            new_ast.nodes[id as usize] = new_node;
+            new_ast
+                .nodes
+                .rewrite(id, new_node, "write-only-field-cleanup");
             id
         }
     }

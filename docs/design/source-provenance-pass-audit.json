@@ -146,8 +146,8 @@
     },
     {
       "id": "write-only-table-field-cleanup",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Unchanged nodes keep their origins. Rebuilt surviving assignments and nil values retain their source constructs."
     },
     {
       "id": "immutable-table-flattening",
@@ -176,13 +176,13 @@
     },
     {
       "id": "tiny-literal-inlining",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Literal substitutions retain initializer and per-read origins, including shadowing and shifted declaration slots."
     },
     {
       "id": "single-use-local-sinking",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Initializer copies retain definition and read locations; chained substitutions and surviving declaration slots are tested. Unknown children stay unknown."
     },
     {
       "id": "dead-local-elimination",
@@ -216,13 +216,13 @@
     },
     {
       "id": "function-local-globalization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Converted reads and declarations retain distinct original names even when scratch slots are shared. Only inserted implicit nil is synthetic."
     },
     {
       "id": "hybrid-function-local-globalization",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "The shared rewrite preserves converted names and retained locals; frequency thresholds are tested."
     },
     {
       "id": "global-store-cleanup",
@@ -246,8 +246,8 @@
     },
     {
       "id": "temporary-global-packing",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Each renamed occurrence retains its original name range independently of other bindings sharing the slot."
     },
     {
       "id": "output-sequence-loop-synthesis",

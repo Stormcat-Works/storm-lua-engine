@@ -543,3 +543,166 @@ fn expression_inlining_retains_definition_arguments_and_call_site_separately() {
         );
     }
 }
+
+#[test]
+fn function_globalization_keeps_distinct_bindings_that_share_one_scratch_slot() {
+    let source = "function onTick()local first=input.getNumber(1)output.setNumber(1,first)local second=input.getNumber(2)output.setNumber(2,second)end";
+    let (mut ast, root) = parse_source_with_origins("slots.lua", source).unwrap();
+    crate::passes::function_globalization::globalize_function_locals(&mut ast, root, 0);
+    let printed = Printer::new(&ast, false).output_with_positions(root);
+    let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+    origins.validate_for_code(&printed.code).unwrap();
+    assert!(!printed.code.contains("local"), "{}", printed.code);
+    assert_eq!(origins.unknown_bytes(), 0);
+    let mut generated_names = std::collections::BTreeSet::new();
+    for name in ["first", "second"] {
+        let mut original_starts = Vec::new();
+        for m in &origins.mappings {
+            let Some(o) = m.origin.map(|i| &origins.origins[i as usize]) else {
+                continue;
+            };
+            if o.name.as_deref() == Some(name) {
+                original_starts.push(o.primary.unwrap().start);
+                generated_names.insert(printed.code[m.start..m.end].to_owned());
+            }
+        }
+        original_starts.sort_unstable();
+        original_starts.dedup();
+        assert_eq!(
+            original_starts,
+            source
+                .match_indices(name)
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(generated_names.len(), 1, "fixture must share a slot");
+    assert!(generated_names.iter().next().unwrap().starts_with("__fs"));
+    assert!(origins
+        .origins
+        .iter()
+        .all(|o| o.kind != OriginKind::Synthetic));
+}
+
+#[test]
+fn hybrid_function_globalization_preserves_retained_and_converted_names() {
+    let source="function onTick()local frequent=input.getNumber(1)frequent=frequent+1 local rare=input.getNumber(2)output.setNumber(1,frequent)output.setNumber(2,rare)end";
+    for frequency in [0, 3, 100] {
+        let (mut ast, root) = parse_source_with_origins("hybrid.lua", source).unwrap();
+        let (mut plain, plain_root) = storm_lua_syntax::parse_source(source).unwrap();
+        crate::passes::function_globalization::globalize_function_locals(&mut ast, root, frequency);
+        crate::passes::function_globalization::globalize_function_locals(
+            &mut plain, plain_root, frequency,
+        );
+        let printed = Printer::new(&ast, true).output_with_positions(root);
+        assert_eq!(printed.code, Printer::new(&plain, true).output(plain_root));
+        let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+        origins.validate_for_code(&printed.code).unwrap();
+        assert_eq!(origins.unknown_bytes(), 0);
+        for name in ["frequent", "rare"] {
+            assert!(origins
+                .origins
+                .iter()
+                .any(|o| o.name.as_deref() == Some(name)));
+        }
+        if frequency == 3 {
+            assert!(printed.code.contains("local rare"));
+            assert!(!printed.code.contains("local frequent"));
+        }
+        if frequency == 100 {
+            assert!(printed.code.contains("local frequent"));
+        }
+    }
+}
+
+#[test]
+fn globalized_uninitialized_local_marks_only_inserted_nil_as_synthetic() {
+    let source = "function onTick()local value output.setNumber(1,value)end";
+    let (mut ast, root) = parse_source_with_origins("implicit.lua", source).unwrap();
+    crate::passes::function_globalization::globalize_function_locals(&mut ast, root, 0);
+    let printed = Printer::new(&ast, false).output_with_positions(root);
+    assert!(printed.code.contains("=nil"));
+    let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+    origins.validate_for_code(&printed.code).unwrap();
+    assert_eq!(origins.unknown_bytes(), 0);
+    let synthesized = origins
+        .mappings
+        .iter()
+        .filter(|m| {
+            m.origin
+                .is_some_and(|i| origins.origins[i as usize].kind == OriginKind::Synthetic)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(synthesized.len(), 1);
+    assert_eq!(
+        &printed.code[synthesized[0].start..synthesized[0].end],
+        "nil"
+    );
+    assert!(origins
+        .origins
+        .iter()
+        .any(|o| o.name.as_deref() == Some("value")));
+}
+
+#[test]
+fn temporary_global_packing_preserves_each_original_storage_name() {
+    let source="function onTick()first=input.getNumber(1)output.setNumber(1,first)second=input.getNumber(2)output.setNumber(2,second)end";
+    let (mut ast, root) = parse_source_with_origins("packed.lua", source).unwrap();
+    crate::passes::temporary_globals::pack_temporary_globals(&mut ast, root);
+    let printed = Printer::new(&ast, false).output_with_positions(root);
+    assert!(printed.code.contains("__gs"));
+    let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+    origins.validate_for_code(&printed.code).unwrap();
+    assert_eq!(origins.unknown_bytes(), 0);
+    for name in ["first", "second"] {
+        let mut starts = origins
+            .origins
+            .iter()
+            .filter(|o| o.name.as_deref() == Some(name))
+            .map(|o| o.primary.unwrap().start)
+            .collect::<Vec<_>>();
+        starts.sort_unstable();
+        starts.dedup();
+        assert_eq!(
+            starts,
+            source
+                .match_indices(name)
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn nil_field_cleanup_preserves_untouched_source_and_rebuilt_assignment() {
+    for source in [
+        "local state={value=2}output.setNumber(1,state.value)",
+        "local state={}state.unused,observed=nil output.setNumber(1,observed)",
+    ] {
+        let (mut ast, root) = parse_source_with_origins("table.lua", source).unwrap();
+        let r = crate::passes::tables::remove_write_only_nil_table_fields(&mut ast, root);
+        let printed = Printer::new(&ast, false).output_with_positions(r.root);
+        let origins = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+        origins.validate_for_code(&printed.code).unwrap();
+        assert_eq!(origins.unknown_bytes(), 0);
+        assert!(origins
+            .origins
+            .iter()
+            .any(|o| o.name.as_deref() == Some("setNumber")));
+        if source.contains("unused") {
+            assert_eq!(r.saved, Some(1));
+            assert!(!printed.code.contains("unused"));
+            let nil = origins
+                .mappings
+                .iter()
+                .find(|m| &printed.code[m.start..m.end] == "nil")
+                .unwrap();
+            assert_eq!(
+                slice(&origins, &origins.origins[nil.origin.unwrap() as usize]),
+                "nil"
+            );
+        } else {
+            assert_eq!(r.saved, Some(0));
+        }
+    }
+}

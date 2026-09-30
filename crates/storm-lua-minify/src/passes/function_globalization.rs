@@ -215,7 +215,22 @@ impl<'a> Rewrite<'a> {
                 .flatten()
             {
                 if self.targets.contains(&bid) {
-                    return target.push(Node::Name(self.slot_symbols[&self.slot_by_bid[&bid]]));
+                    let rewritten =
+                        target.push(Node::Name(self.slot_symbols[&self.slot_by_bid[&bid]]));
+                    target.nodes.derive_from(
+                        rewritten,
+                        &self.source.nodes,
+                        node,
+                        "function-local-globalization",
+                    );
+                    target.nodes.copy_name_from(
+                        rewritten,
+                        storm_lua_syntax::NameSite::Reference,
+                        &self.source.nodes,
+                        node,
+                        storm_lua_syntax::NameSite::Reference,
+                    );
+                    return rewritten;
                 }
             }
         }
@@ -233,13 +248,39 @@ impl<'a> Rewrite<'a> {
                     .map(|expression| self.rewrite(target, *expression))
                     .collect::<Vec<_>>();
                 if values.is_empty() {
-                    values.push(target.push(Node::Nil));
+                    let implicit = target.push(Node::Nil);
+                    target
+                        .nodes
+                        .mark_synthetic(implicit, "globalized-local-implicit-nil");
+                    values.push(implicit);
                 }
                 let names = bids
                     .iter()
-                    .map(|bid| target.push(Node::Name(self.slot_symbols[&self.slot_by_bid[bid]])))
+                    .enumerate()
+                    .map(|(index, bid)| {
+                        let name =
+                            target.push(Node::Name(self.slot_symbols[&self.slot_by_bid[bid]]));
+                        target.nodes.derive_from(
+                            name,
+                            &self.source.nodes,
+                            node,
+                            "function-local-globalization",
+                        );
+                        target.nodes.copy_name_from(
+                            name,
+                            storm_lua_syntax::NameSite::Reference,
+                            &self.source.nodes,
+                            node,
+                            storm_lua_syntax::NameSite::Binding(index as u32),
+                        );
+                        name
+                    })
                     .collect();
-                target.nodes[node as usize] = Node::Assign(names, values);
+                target.nodes.rewrite(
+                    node,
+                    Node::Assign(names, values),
+                    "function-local-globalization",
+                );
                 return node;
             }
         }
@@ -248,7 +289,9 @@ impl<'a> Rewrite<'a> {
         let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
             self.rewrite(target, child)
         });
-        target.nodes[node as usize] = mapped;
+        target
+            .nodes
+            .rewrite(node, mapped, "function-local-globalization");
         node
     }
 }

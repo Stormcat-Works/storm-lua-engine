@@ -652,9 +652,13 @@ fn remove_unread_rewrite(
                         })
                         .collect::<Vec<_>>();
                     if !keep.is_empty() {
-                        target.nodes[nested as usize] = Node::Assign(
-                            keep.iter().map(|index| targets[*index]).collect(),
-                            keep.iter().map(|index| expressions[*index]).collect(),
+                        target.nodes.rewrite(
+                            nested,
+                            Node::Assign(
+                                keep.iter().map(|index| targets[*index]).collect(),
+                                keep.iter().map(|index| expressions[*index]).collect(),
+                            ),
+                            "unread-global-store-elimination",
                         );
                         output.push(nested);
                     }

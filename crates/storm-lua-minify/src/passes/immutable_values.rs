@@ -17,6 +17,7 @@ use storm_lua_syntax::size::measure_size;
 struct Carrier {
     bid: BindingId,
     key: String,
+    expression: NodeId,
 }
 
 fn clone_ast(source: &Ast) -> Ast {
@@ -362,6 +363,7 @@ fn collect_carriers(
                         carriers.push(Carrier {
                             bid,
                             key: expression_key(ast, resolution, expression),
+                            expression,
                         });
                     }
                 }
@@ -389,6 +391,7 @@ fn collect_carriers(
                         carriers.push(Carrier {
                             bid,
                             key: expression_key(ast, resolution, expression),
+                            expression,
                         });
                     }
                 }
@@ -441,7 +444,17 @@ fn candidate_for_carrier(
     let mut candidate = clone_ast(source);
     let carrier_symbol = resolution.bindings[carrier.bid as usize].name;
     for replacement in &replacements {
-        candidate.nodes[*replacement as usize] = Node::Name(carrier_symbol);
+        candidate.nodes.rewrite(
+            *replacement,
+            Node::Name(carrier_symbol),
+            "immutable-global-expression-reuse",
+        );
+        candidate.nodes.relate_from(
+            *replacement,
+            &source.nodes,
+            carrier.expression,
+            "immutable-value-definition",
+        );
     }
     Some((candidate, replacements.len()))
 }

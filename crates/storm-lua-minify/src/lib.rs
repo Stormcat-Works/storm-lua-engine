@@ -20,3 +20,6 @@ pub use search::{compile_code, CompileCodeResult};
 
 #[cfg(test)]
 mod provenance_tests;
+
+#[cfg(test)]
+mod provenance_zero_tests;

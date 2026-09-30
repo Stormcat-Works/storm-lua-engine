@@ -411,6 +411,27 @@ fn guard_return_candidate(ast: &mut Ast, statement: NodeId, fallback: NodeId) ->
     conditional_return_value(ast, branches.condition, yes, no)
 }
 
+fn attribute_conditional_nodes(
+    ast: &mut Ast,
+    start: usize,
+    statement: NodeId,
+    fallback: Option<NodeId>,
+    transformation: &str,
+) {
+    if !ast.nodes.tracks_origins() {
+        return;
+    }
+    let origin = ast.nodes.capture_origin(statement);
+    for node in start..ast.nodes.len() {
+        ast.nodes
+            .finish_rewrite(node as NodeId, origin.clone(), transformation);
+        if let Some(fallback) = fallback {
+            ast.nodes
+                .relate_within(node as NodeId, fallback, transformation);
+        }
+    }
+}
+
 fn transform_return_node(ast: &mut Ast, id: NodeId, lowered: &mut usize) -> NodeId {
     if matches!(ast.node(id), Node::Block(_)) {
         return transform_return_block(ast, id, lowered);
@@ -420,7 +441,7 @@ fn transform_return_node(ast: &mut Ast, id: NodeId, lowered: &mut usize) -> Node
         transform_return_node(ast, child, lowered)
     });
     if changed {
-        ast.nodes[id as usize] = mapped;
+        ast.nodes.rewrite(id, mapped, "conditional-lowering");
     }
     id
 }
@@ -438,7 +459,10 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
         // if/else whose arms return may still precede statements or a label
         // reachable by goto; preserve that wrapper rather than dropping the tail.
         let candidate = if index + 1 == statement_count {
-            full_return_candidate(ast, statement)
+            let start = ast.nodes.len();
+            let candidate = full_return_candidate(ast, statement);
+            attribute_conditional_nodes(ast, start, statement, None, "conditional-return-lowering");
+            candidate
         } else {
             None
         };
@@ -464,7 +488,10 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
         while index > 0 {
             let first = output[index - 1];
             let second = output[index];
-            if let Some(candidate) = guard_return_candidate(ast, first, second) {
+            let start = ast.nodes.len();
+            let candidate = guard_return_candidate(ast, first, second);
+            attribute_conditional_nodes(ast, start, first, Some(second), "guard-return-lowering");
+            if let Some(candidate) = candidate {
                 let old_block = ast.block(vec![first, second]);
                 let new_block = ast.block(vec![candidate]);
                 if measure_size(ast, new_block) < measure_size(ast, old_block) {
@@ -477,7 +504,8 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
         }
     }
 
-    ast.nodes[block as usize] = Node::Block(output);
+    ast.nodes
+        .rewrite(block, Node::Block(output), "conditional-return-lowering");
     block
 }
 
@@ -518,7 +546,7 @@ fn transform_node(
         transform_node(ast, res, analyzer, child, kind, lowered)
     });
     if changed {
-        ast.nodes[id as usize] = mapped;
+        ast.nodes.rewrite(id, mapped, "conditional-lowering");
     }
     id
 }
@@ -537,10 +565,16 @@ fn transform_block(
     let mut output = Vec::with_capacity(statements.len());
     for statement in statements {
         let statement = transform_node(ast, res, analyzer, statement, kind, lowered);
+        let start = ast.nodes.len();
         let candidate = match kind {
             ConditionalKind::Calls => call_candidate(ast, res, analyzer, statement),
             ConditionalKind::Assignments => assignment_candidate(ast, analyzer, statement),
         };
+        let transformation = match kind {
+            ConditionalKind::Calls => "conditional-call-lowering",
+            ConditionalKind::Assignments => "conditional-assignment-lowering",
+        };
+        attribute_conditional_nodes(ast, start, statement, None, transformation);
         let selected = if let Some(candidate) = candidate {
             let old_len = measure_stmt(ast, statement);
             let new_len = measure_stmt(ast, candidate);
@@ -556,7 +590,8 @@ fn transform_block(
         output.push(selected);
     }
     let statements = output;
-    ast.nodes[block as usize] = Node::Block(statements);
+    ast.nodes
+        .rewrite(block, Node::Block(statements), "conditional-lowering");
     block
 }
 

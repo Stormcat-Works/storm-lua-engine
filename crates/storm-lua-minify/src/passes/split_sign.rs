@@ -143,7 +143,9 @@ fn transform_blocks_node(
         transform_blocks_node(target, source, res, analyzer, child, eliminated)
     });
     if changed {
-        target.nodes[node as usize] = mapped;
+        target
+            .nodes
+            .rewrite(node, mapped, "split-sign-recomposition-elimination");
     }
     node
 }
@@ -216,7 +218,11 @@ fn transform_block(
         output.push(nested[index]);
         index += 1;
     }
-    target.nodes[block as usize] = Node::Block(output);
+    target.nodes.rewrite(
+        block,
+        Node::Block(output),
+        "split-sign-recomposition-elimination",
+    );
     block
 }
 
@@ -269,7 +275,9 @@ fn transform_squares_node(
         )
     });
     if changed {
-        target.nodes[node as usize] = mapped;
+        target
+            .nodes
+            .rewrite(node, mapped, "split-sign-recomposition-elimination");
     }
     if !aggressive {
         return node;

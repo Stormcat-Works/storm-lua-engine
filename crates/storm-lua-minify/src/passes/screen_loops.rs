@@ -719,7 +719,9 @@ fn transform_node(
         }
         index = end;
     }
-    target.nodes[node as usize] = Node::Block(output);
+    target
+        .nodes
+        .rewrite(node, Node::Block(output), "screen-loop-block-rewrite");
 }
 
 pub fn synthesize_screen_loops(ast: &mut Ast, root: NodeId, periodic: bool) -> PassResult {

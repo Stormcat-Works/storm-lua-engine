@@ -341,8 +341,13 @@ fn boolean_coercion(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
         return None;
     }
     let condition = *condition;
+    let origin = ast.nodes.capture_origin(node);
     let once = ast.push(Node::Un("not".into(), condition));
-    Some(ast.push(Node::Un("not".into(), once)))
+    ast.nodes
+        .finish_rewrite(once, origin.clone(), "boolean-coercion");
+    let twice = ast.push(Node::Un("not".into(), once));
+    ast.nodes.finish_rewrite(twice, origin, "boolean-coercion");
+    Some(twice)
 }
 
 fn positive_term(ast: &mut Ast, node: NodeId) -> Option<NodeId> {
@@ -524,7 +529,9 @@ fn fold_node_inner(
         );
         child
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "literal-folding-traversal");
 
     if let Node::Num(v) = target.node(node).clone() {
         // Keep the lexical float spelling in the AST.  The ordinary printer
@@ -970,7 +977,9 @@ fn simplify_node_inner(source: &Ast, target: &mut Ast, node: NodeId) {
         simplify_node(source, target, child);
         child
     });
-    target.nodes[node as usize] = mapped;
+    target
+        .nodes
+        .rewrite(node, mapped, "literal-folding-traversal");
 
     if let Node::If(arms, else_block) = target.node(node).clone() {
         let mut kept = Vec::new();
@@ -1041,7 +1050,7 @@ fn fold_exact_safe_node_inner(ast: &mut Ast, node: NodeId) {
         fold_exact_safe_node(ast, child);
         child
     });
-    ast.nodes[node as usize] = mapped;
+    ast.nodes.rewrite(node, mapped, "literal-folding-traversal");
 
     match ast.node(node).clone() {
         Node::Un(op, expression) if op == "not" => {

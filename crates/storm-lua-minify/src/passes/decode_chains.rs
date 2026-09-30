@@ -21,6 +21,7 @@ struct QuotientAssignment {
     target_bid: BindingId,
     lhs: NodeId,
     divisor: f64,
+    divisor_node: NodeId,
 }
 
 fn quotient_assignment(
@@ -60,6 +61,7 @@ fn quotient_assignment(
         target_bid,
         lhs: *lhs,
         divisor,
+        divisor_node: *rhs,
     })
 }
 
@@ -90,10 +92,40 @@ fn measure_stat(ast: &Ast, statement: NodeId) -> usize {
     Printer::new(ast, false).stat_public(statement).len()
 }
 
-fn make_quotient_assignment(ast: &mut Ast, target: NodeId, lhs: NodeId, divisor: f64) -> NodeId {
+fn make_quotient_assignment(
+    ast: &mut Ast,
+    target: NodeId,
+    lhs: NodeId,
+    divisor: f64,
+    statements: [NodeId; 2],
+    divisor_sources: &[NodeId],
+) -> NodeId {
+    let original = ast.nodes.capture_origin(statements[0]);
+    // A computed product must not masquerade as fully traced when one of its
+    // factors lost attribution in an earlier, unannotated transformation.
+    let literal = divisor_sources
+        .iter()
+        .all(|&id| ast.nodes.origin(id).is_some())
+        .then(|| ast.nodes.capture_origin(divisor_sources[0]))
+        .flatten();
     let divisor_node = ast.num(short_num(divisor));
+    ast.nodes
+        .finish_rewrite(divisor_node, literal, "quotient-chain-divisor");
+    for &source in &divisor_sources[1..] {
+        ast.nodes
+            .relate_within(divisor_node, source, "quotient-chain-divisor");
+    }
     let expression = ast.bin("//", lhs, divisor_node);
-    ast.assign(vec![target], vec![expression])
+    ast.nodes
+        .finish_rewrite(expression, original.clone(), "quotient-chain-fusion");
+    ast.nodes
+        .relate_within(expression, statements[1], "quotient-chain-fusion");
+    let assignment = ast.assign(vec![target], vec![expression]);
+    ast.nodes
+        .finish_rewrite(assignment, original, "quotient-chain-fusion");
+    ast.nodes
+        .relate_within(assignment, statements[1], "quotient-chain-fusion");
+    assignment
 }
 
 /// Rewrites all nested blocks, then the block itself. This mirrors TS
@@ -113,7 +145,7 @@ fn transform_node(
         transform_node(ast, res, child, fused, any_applied)
     });
     if changed {
-        ast.nodes[id as usize] = mapped;
+        ast.nodes.rewrite(id, mapped, "quotient-chain-fusion");
     }
     id
 }
@@ -132,7 +164,11 @@ fn transform_block(
         .into_iter()
         .map(|statement| transform_node(ast, res, statement, fused, any_applied))
         .collect::<Vec<_>>();
-    ast.nodes[block_id as usize] = Node::Block(statements.clone());
+    ast.nodes.rewrite(
+        block_id,
+        Node::Block(statements.clone()),
+        "quotient-chain-fusion",
+    );
 
     for first in 0..statements.len() {
         if let Some(quotient) = quotient_assignment(ast, res, statements[first]) {
@@ -146,15 +182,25 @@ fn transform_block(
                         {
                             break;
                         }
-                        let replacement =
-                            make_quotient_assignment(ast, quotient.target, quotient.lhs, product);
+                        let replacement = make_quotient_assignment(
+                            ast,
+                            quotient.target,
+                            quotient.lhs,
+                            product,
+                            [statements[first], statements[second]],
+                            &[quotient.divisor_node, next.divisor_node],
+                        );
                         let old_length = measure_stat(ast, statements[first])
                             + measure_stat(ast, statements[second]);
                         let new_length = measure_stat(ast, replacement);
                         if new_length < old_length {
                             statements[first] = replacement;
                             statements.remove(second);
-                            ast.nodes[block_id as usize] = Node::Block(statements);
+                            ast.nodes.rewrite(
+                                block_id,
+                                Node::Block(statements),
+                                "quotient-chain-fusion",
+                            );
                             *fused += 1;
                             *any_applied = true;
                             return block_id;
@@ -190,7 +236,14 @@ fn transform_block(
         if res.node_bid.get(vs[0] as usize).copied().flatten() != Some(next.target_bid) {
             continue;
         }
-        let replacement = make_quotient_assignment(ast, vs[0], es[0], next.divisor);
+        let replacement = make_quotient_assignment(
+            ast,
+            vs[0],
+            es[0],
+            next.divisor,
+            [assignment_id, statements[first + 1]],
+            &[next.divisor_node],
+        );
         let old_length =
             measure_stat(ast, assignment_id) + measure_stat(ast, statements[first + 1]);
         let new_length = measure_stat(ast, replacement);
@@ -198,13 +251,15 @@ fn transform_block(
             continue;
         }
         statements.splice(first..=first + 1, [replacement]);
-        ast.nodes[block_id as usize] = Node::Block(statements);
+        ast.nodes
+            .rewrite(block_id, Node::Block(statements), "quotient-chain-fusion");
         *fused += 1;
         *any_applied = true;
         return block_id;
     }
 
-    ast.nodes[block_id as usize] = Node::Block(statements);
+    ast.nodes
+        .rewrite(block_id, Node::Block(statements), "quotient-chain-fusion");
     block_id
 }
 

@@ -162,8 +162,11 @@ fn clean_block(
                         .iter()
                         .map(|index| expressions[*index])
                         .collect::<Vec<_>>();
-                    target.nodes[statement as usize] =
-                        Node::Assign(kept_targets.clone(), kept_expressions.clone());
+                    target.nodes.rewrite(
+                        statement,
+                        Node::Assign(kept_targets.clone(), kept_expressions.clone()),
+                        "final-dead-store-elimination",
+                    );
                     transfer_kept_assignment(
                         source,
                         res,
@@ -210,14 +213,22 @@ fn clean_block(
                     union_into(&mut merged, analyzer.effects_for_expr(arm.cond).reads);
                 }
                 live = merged;
-                target.nodes[statement as usize] = Node::If(rewritten_arms, rewritten_else);
+                target.nodes.rewrite(
+                    statement,
+                    Node::If(rewritten_arms, rewritten_else),
+                    "final-dead-store-elimination",
+                );
                 output.push(statement);
             }
             Node::Do(body) => {
                 let result = clean_block(target, source, res, analyzer, body, &live, aggressive);
                 live = result.live_in;
                 removed += result.removed;
-                target.nodes[statement as usize] = Node::Do(result.block);
+                target.nodes.rewrite(
+                    statement,
+                    Node::Do(result.block),
+                    "final-dead-store-elimination",
+                );
                 output.push(statement);
             }
             Node::While(..) | Node::Repeat(..) | Node::Fornum(..) | Node::Forin(..) => {

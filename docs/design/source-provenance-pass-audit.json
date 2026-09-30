@@ -7,7 +7,7 @@
     {
       "id": "constant-folding",
       "status": "partial",
-      "notes": "Expression roots and existing control-flow nodes retain their contributing original ranges. New helper subtrees still need case-by-case attribution."
+      "notes": "Boolean coercion retains both negation origins; unchanged traversal preserves source constructs."
     },
     {
       "id": "numeric-literal-approximation",
@@ -46,8 +46,8 @@
     },
     {
       "id": "split-sign-recomposition-elimination",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Unchanged block traversal and surviving statements retain source origins after split/recompose sequence removal. Generated square-rewrite expressions remain pending and unknown."
     },
     {
       "id": "equivalent-trailing-argument-omission",
@@ -86,8 +86,8 @@
     },
     {
       "id": "quotient-chain-fusion",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Retained block boundaries, fused assignment origins and all contributing divisor occurrences are tracked. Unknown factors remain unknown."
     },
     {
       "id": "captured-single-use-hoisting",
@@ -96,8 +96,8 @@
     },
     {
       "id": "immutable-global-expression-reuse",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Each replaced use expression and the reused definition remain distinct; unknown use locations are not inferred."
     },
     {
       "id": "multiplicative-carrier-reassociation",
@@ -136,13 +136,13 @@
     },
     {
       "id": "conditional-call-lowering",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "New selection operators and call wrappers derive from the original decision; existing operands keep their origins."
     },
     {
       "id": "conditional-assignment-lowering",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "If/elseif and no-else lowering tracks new logical operators and assignments separately from their operands."
     },
     {
       "id": "write-only-table-field-cleanup",
@@ -227,7 +227,7 @@
     {
       "id": "global-store-cleanup",
       "status": "partial",
-      "notes": "Ordinary structural copy and surviving assignments retain origins. Other synthesized cleanup constructs remain to be audited."
+      "notes": "Retained unread-global assignments keep statement origins, including unchanged and partial-deletion paths."
     },
     {
       "id": "single-use-global-forwarding",
@@ -261,13 +261,13 @@
     },
     {
       "id": "ordered-screen-loop-synthesis",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Source blocks and unaffected statements survive traversal. Synthesized loop/data/helper origins are still pending."
     },
     {
       "id": "periodic-screen-loop-synthesis",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Shared traversal preserves source block boundaries; periodic generated constructs remain pending."
     },
     {
       "id": "available-expression-reuse",
@@ -287,7 +287,7 @@
     {
       "id": "final-dead-store-elimination",
       "status": "partial",
-      "notes": "Copied context and surviving function/block nodes retain origins. Nested rewrites and synthesized forms need further cases."
+      "notes": "Surviving assignments, conditional branches and do blocks retain their origins across liveness traversal."
     },
     {
       "id": "redundant-parentheses-elimination",
@@ -336,8 +336,8 @@
     },
     {
       "id": "conditional-return-lowering",
-      "status": "pending",
-      "notes": "Transformation-specific provenance propagation and semantic cases have not been audited in this stage."
+      "status": "partial",
+      "notes": "Full and guard-return chains retain original decisions and separate fallback return locations."
     }
   ],
   "additionalStages": [

@@ -84,6 +84,21 @@ fn rewrite_dead_block(
             })
             .collect::<Vec<_>>();
         if keep.is_empty() {
+            if target.nodes.tracks_origins() {
+                target.nodes.explain_removal(
+                    statement,
+                    storm_lua_syntax::explanation::OptimizationReason::decision(
+                        "dead-local-elimination",
+                        "all-declared-bindings-unread-unwritten-and-initializers-movable",
+                        [
+                            ("removedBindings", names.len().to_string()),
+                            ("reads", "0".into()),
+                            ("writes", "0".into()),
+                            ("initializerCheck", "EffectAnalyzer::is_movable".into()),
+                        ],
+                    ),
+                );
+            }
             continue;
         }
         if keep.len() != names.len() {
@@ -372,8 +387,13 @@ fn replace_binding_with_literal(
             ast.nodes[id as usize] = replacement.clone();
             ast.nodes
                 .derive_from(id, &source.nodes, literal, "tiny-literal-copy");
-            ast.nodes
-                .relate_from(id, &source.nodes, id, "tiny-literal-use");
+            ast.nodes.relate_from_role(
+                id,
+                &source.nodes,
+                id,
+                "tiny-literal-use",
+                storm_lua_syntax::explanation::RelationRole::UseSite,
+            );
         }
     }
 }
@@ -593,9 +613,13 @@ fn clone_expanded(
                     next.insert(bid);
                     let copied =
                         clone_expanded(target, source, res, replacements, *replacement, &next);
-                    target
-                        .nodes
-                        .relate_from(copied, &source.nodes, id, "single-use-local-read");
+                    target.nodes.relate_from_role(
+                        copied,
+                        &source.nodes,
+                        id,
+                        "single-use-local-read",
+                        storm_lua_syntax::explanation::RelationRole::UseSite,
+                    );
                     return copied;
                 }
             }
@@ -633,9 +657,13 @@ fn expand_tree(
                     *replacement,
                     &std::collections::HashSet::from([bid]),
                 );
-                target
-                    .nodes
-                    .relate_from(copied, &source.nodes, id, "single-use-local-read");
+                target.nodes.relate_from_role(
+                    copied,
+                    &source.nodes,
+                    id,
+                    "single-use-local-read",
+                    storm_lua_syntax::explanation::RelationRole::UseSite,
+                );
                 return copied;
             }
         }

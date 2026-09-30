@@ -5,7 +5,7 @@ import type {AnalyzeOptions, CompileOptions, LuaProject, ProjectCompileOptions} 
 /** Worker生成・終了はホストが所有します。接続時にもLua VMは作成しません。 */
 export interface CompilerEndpoint extends EventTarget { postMessage(message: unknown): void }
 const protocol = 'storm-lua-compiler-v1';
-type Operation = 'inspectSource' | 'stripDevelopment' | 'buildLifeboat' | 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
+type Operation = 'validateSourceMap' | 'inspectSource' | 'stripDevelopment' | 'buildLifeboat' | 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -45,6 +45,7 @@ export class CompilerWorkerClient {
       catch (error) { this.#pending.delete(id); reject(error); }
     });
   }
+  validateSourceMap(code: string, map: string): Promise<ReturnType<Compiler['validateSourceMap']>> { return this.request('validateSourceMap', [code, map]); }
   inspectSource(source: string): Promise<ReturnType<Compiler['inspectSource']>> { return this.request('inspectSource',[source]); }
   stripDevelopment(source: string): Promise<string> { return this.request('stripDevelopment',[source]); }
   buildLifeboat(project: LuaProject, options: ProjectCompileOptions = {}): Promise<ReturnType<Compiler['buildLifeboat']>> { return this.request('buildLifeboat',[project,options]); }
@@ -84,6 +85,9 @@ export function serveCompiler(endpoint: CompilerEndpoint, options: CompilerInitO
         const args = data['args'];
         let result: unknown;
         switch (data['operation']) {
+          case 'validateSourceMap':
+            if (typeof args[0] !== 'string' || typeof args[1] !== 'string') throw new TypeError('validateSourceMap requires code and map text');
+            result = api.validateSourceMap(args[0], args[1]); break;
           case 'inspectSource':
             if(typeof args[0] !== 'string') throw new TypeError('inspectSource requires text');
             result=api.inspectSource(args[0]); break;

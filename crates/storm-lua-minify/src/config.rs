@@ -192,3 +192,18 @@ impl CompileOptions {
         Ok(())
     }
 }
+
+/// Shared effective default used by constant expression folding and recorded metadata.
+pub fn resolve_folding_tolerance(value: Option<NumericTolerance>) -> NumericTolerance {
+    value.unwrap_or(NumericTolerance {
+        abs: 1e-12,
+        rel: 1e-12,
+    })
+}
+/// Shared effective default used by literal approximation before its per-literal caps.
+pub fn resolve_literal_tolerance(value: Option<NumericTolerance>) -> NumericTolerance {
+    value.unwrap_or(NumericTolerance {
+        abs: 1e-6,
+        rel: 1e-6,
+    })
+}

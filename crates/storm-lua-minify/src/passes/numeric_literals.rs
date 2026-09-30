@@ -309,6 +309,38 @@ fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact
                             id,
                             "numeric-literal-approximation",
                         );
+                        if target.nodes.tracks_origins() {
+                            let Node::Num(emitted) = target.node(replacement) else {
+                                unreachable!()
+                            };
+                            let after = num_val(emitted);
+                            let budget_abs = context.tolerance.abs.min(PER_LITERAL_ABS_CAP);
+                            let budget_rel = context.tolerance.rel.min(PER_LITERAL_REL_CAP);
+                            target.nodes.explain(
+                                replacement,
+                                storm_lua_syntax::explanation::OptimizationReason::decision(
+                                    "numeric-literal-approximation",
+                                    "finite-nonintegral-literal-within-budget-and-shorter",
+                                    [
+                                        ("originalBits", format!("{:016x}", value.to_bits())),
+                                        ("replacementBits", format!("{:016x}", after.to_bits())),
+                                        (
+                                            "absoluteErrorBits",
+                                            format!("{:016x}", (after - value).abs().to_bits()),
+                                        ),
+                                        (
+                                            "absoluteBudgetBits",
+                                            format!("{:016x}", budget_abs.to_bits()),
+                                        ),
+                                        (
+                                            "relativeBudgetBits",
+                                            format!("{:016x}", budget_rel.to_bits()),
+                                        ),
+                                        ("expressionSizeBefore", original_len.to_string()),
+                                    ],
+                                ),
+                            );
+                        }
                         return replacement;
                     }
                 }

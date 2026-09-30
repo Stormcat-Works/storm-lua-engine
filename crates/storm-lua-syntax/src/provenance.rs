@@ -1,6 +1,10 @@
 //! Source origins carried independently of AST equality and optimization decisions.
 //! Unknown origin is `None`, never a nearby source position or a synthetic claim.
 
+use crate::explanation::{
+    InlineContext, OptimizationReason, ReasonOperation, SourceDisposition, SourceRelation,
+    SyntaxSite,
+};
 use crate::{Ast, NameSite, Node, NodeId, NodePositions, PrintedSource};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -17,6 +21,7 @@ pub struct SourceSnapshot {
 
 /// Half-open byte range within the associated source snapshot table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceSpan {
     /// Index in this provenance payload's source table.
     pub source: u32,
@@ -63,13 +68,17 @@ pub struct Origin {
     /// Primary source range; absent only for a synthetic origin.
     pub primary: Option<SourceSpan>,
     /// Additional contributing ranges, in deterministic first-seen order.
-    pub related: Vec<SourceSpan>,
+    pub related: Arc<Vec<SourceSpan>>,
     /// Last explicitly recorded transformation, not a timing-dependent decision.
     pub transformation: Option<Arc<str>>,
     /// What the primary attribution describes.
     pub precision: OriginPrecision,
     /// Original spelling for a source identifier occurrence, when known.
     pub name: Option<Arc<str>>,
+    /// Typed source relationships; related is their untyped projection.
+    pub relations: Arc<Vec<SourceRelation>>,
+    /// Recorded actions retained on this construct, not all search trials.
+    pub reasons: Arc<Vec<OptimizationReason>>,
 }
 
 impl Origin {
@@ -78,10 +87,12 @@ impl Origin {
         Self {
             kind: OriginKind::Source,
             primary: Some(span),
-            related: Vec::new(),
+            related: Arc::default(),
             transformation: None,
             precision,
             name,
+            relations: Arc::default(),
+            reasons: Arc::default(),
         }
     }
     /// Describe compiler-created code without inventing a source location.
@@ -89,10 +100,15 @@ impl Origin {
         Self {
             kind: OriginKind::Synthetic,
             primary: None,
-            related: Vec::new(),
+            related: Arc::default(),
             transformation: Some(transformation.into()),
             precision: OriginPrecision::Group,
             name: None,
+            relations: Arc::default(),
+            reasons: Arc::new(vec![OptimizationReason::action(
+                transformation,
+                ReasonOperation::Synthesize,
+            )]),
         }
     }
     /// Preserve source attribution but identify it as a transformation result.
@@ -102,7 +118,19 @@ impl Origin {
             result.kind = OriginKind::Derived;
         }
         result.transformation = Some(transformation.into());
+        result.add_reason(OptimizationReason::action(
+            transformation,
+            ReasonOperation::Rewrite,
+        ));
         result
+    }
+    pub(crate) fn add_reason(&mut self, reason: OptimizationReason) {
+        // Equal rule names do not mean equal decisions: operands and checked
+        // facts can differ at successive applications of the same optimization.
+        if self.reasons.last().is_some_and(|last| last == &reason) {
+            return;
+        }
+        Arc::make_mut(&mut self.reasons).push(reason);
     }
     pub(crate) fn validate(&self, sources: &[SourceSnapshot]) -> Result<(), String> {
         match self.kind {
@@ -122,7 +150,12 @@ impl Origin {
         {
             return Err("transformed origin has no transformation".into());
         }
-        for span in self.primary.iter().chain(self.related.iter()) {
+        for span in self
+            .primary
+            .iter()
+            .chain(self.related.iter())
+            .chain(self.relations.iter().map(|r| &r.span))
+        {
             let source = sources
                 .get(span.source as usize)
                 .ok_or("origin source index is out of bounds")?;
@@ -139,6 +172,9 @@ impl Origin {
                 return Err("original name does not match its source snapshot".into());
             }
         }
+        for reason in self.reasons.iter() {
+            reason.validate()?;
+        }
         Ok(())
     }
 }
@@ -149,12 +185,16 @@ pub(crate) struct NodeOrigin {
     pub origin: Option<Origin>,
     // A vector keeps parameterized NameSite variants valid in JSON (not object keys).
     pub names: Vec<(NameSite, Origin)>,
+    pub contexts: Arc<Vec<InlineContext>>,
+    pub tokens: Vec<(SyntaxSite, Origin)>,
+    pub dispositions: Arc<Vec<SourceDisposition>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ArenaOrigins {
     pub sources: Arc<Vec<SourceSnapshot>>,
     pub slots: Vec<Option<Arc<NodeOrigin>>>,
+    pub dispositions: Arc<Vec<SourceDisposition>>,
 }
 impl ArenaOrigins {
     pub fn seed(
@@ -167,6 +207,9 @@ impl ArenaOrigins {
             name: name.into(),
             text: text.into(),
         }]);
+        let tokens = crate::lexer::Lexer::new(text)
+            .all()
+            .map_err(|e| e.to_string())?;
         let mut slots = Vec::with_capacity(ast.nodes.len());
         for (id, node) in ast.nodes.iter().enumerate() {
             let (start, end) = positions
@@ -190,6 +233,63 @@ impl ArenaOrigins {
                 | Node::Methodname(..) => OriginPrecision::Expression,
                 _ => OriginPrecision::Statement,
             };
+            let mut syntax_tokens = Vec::new();
+            for site in [
+                SyntaxSite::Operator,
+                SyntaxSite::Begin,
+                SyntaxSite::Body,
+                SyntaxSite::End,
+            ] {
+                let Some(expected) = crate::explanation::syntax_text(node, site) else {
+                    continue;
+                };
+                let token = match site {
+                    SyntaxSite::Begin => tokens.get(tokens.partition_point(|t| t.p < start)),
+                    SyntaxSite::End => {
+                        tokens.get(tokens.partition_point(|t| t.p < end).saturating_sub(1))
+                    }
+                    SyntaxSite::Body => {
+                        let next = match node {
+                            Node::While(_, body)
+                            | Node::Fornum(_, _, _, _, body)
+                            | Node::Forin(_, _, body) => Some(*body),
+                            Node::If(arms, _) => arms.first().map(|arm| arm.body),
+                            Node::Repeat(_, condition) => Some(*condition),
+                            _ => None,
+                        }
+                        .and_then(|id| positions.span(id))
+                        .map(|span| span.0);
+                        next.and_then(|start| {
+                            tokens.partition_point(|t| t.p < start).checked_sub(1)
+                        })
+                        .and_then(|i| tokens.get(i))
+                    }
+                    SyntaxSite::Operator => {
+                        let offset = if let Node::Bin(_, left, _) = node {
+                            positions.span(*left).ok_or("operator left span missing")?.1
+                        } else {
+                            start
+                        };
+                        tokens.get(tokens.partition_point(|t| t.p < offset))
+                    }
+                };
+                if let Some(token) =
+                    token.filter(|t| t.v == expected && t.p >= start && t.p + t.v.len() <= end)
+                {
+                    syntax_tokens.push((
+                        site,
+                        Origin::source(
+                            SourceSpan {
+                                source: 0,
+                                start: token.p,
+                                end: token.p + token.v.len(),
+                            },
+                            OriginPrecision::Token,
+                            None,
+                        ),
+                    ));
+                }
+            }
             slots.push(Some(Arc::new(NodeOrigin {
                 origin: Some(Origin::source(
                     SourceSpan {
@@ -201,6 +301,9 @@ impl ArenaOrigins {
                     None,
                 )),
                 names: Vec::new(),
+                contexts: Arc::default(),
+                tokens: syntax_tokens,
+                dispositions: Arc::default(),
             })));
         }
         for ((node, site), (start, end)) in positions.name_spans() {
@@ -224,7 +327,11 @@ impl ArenaOrigins {
                 ),
             ));
         }
-        let result = Self { sources, slots };
+        let result = Self {
+            sources,
+            slots,
+            dispositions: Arc::default(),
+        };
         result.validate(ast.nodes.len())?;
         Ok(result)
     }
@@ -235,6 +342,34 @@ impl ArenaOrigins {
         for slot in self.slots.iter().flatten() {
             if let Some(origin) = &slot.origin {
                 origin.validate(&self.sources)?;
+            }
+            for (_, origin) in &slot.tokens {
+                origin.validate(&self.sources)?;
+            }
+            for context in slot.contexts.iter() {
+                for span in [context.definition, context.call_site] {
+                    Origin::source(span, OriginPrecision::Expression, None)
+                        .validate(&self.sources)?;
+                }
+            }
+            for disposition in slot.dispositions.iter() {
+                for span in std::iter::once(&disposition.original)
+                    .chain(disposition.replacement_sources.iter())
+                {
+                    Origin::source(*span, OriginPrecision::Statement, None)
+                        .validate(&self.sources)?;
+                }
+                disposition.reason.validate()?;
+            }
+            for reason in slot
+                .origin
+                .iter()
+                .flat_map(|o| o.reasons.iter())
+                .chain(slot.names.iter().flat_map(|(_, o)| o.reasons.iter()))
+            {
+                if reason.code.is_empty() {
+                    return Err("optimization reason has empty code".into());
+                }
             }
             let mut sites = BTreeSet::new();
             for (site, origin) in &slot.names {
@@ -250,12 +385,31 @@ impl ArenaOrigins {
 
 /// Nonoverlapping interval of actual final output. `None` explicitly means unknown/unmapped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct OriginMapping {
     /// Inclusive generated UTF-8 byte offset.
     pub start: usize,
     /// Exclusive generated UTF-8 byte offset.
     pub end: usize,
     /// Index in GeneratedOrigins.origins, or unknown attribution.
+    pub origin: Option<u32>,
+    /// Exact source slice when byte-for-byte correspondence was proven during emission.
+    pub copied: Option<SourceSpan>,
+    /// Enclosing inline contexts, outer to inner.
+    pub inline_contexts: Vec<u32>,
+}
+
+/// An emitted enclosing construct retained alongside the most-specific interval map.
+/// Its range may overlap others; it is not automatically an executable stop site.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedConstruct {
+    /// Inclusive UTF-8 output offset.
+    pub start: usize,
+    /// Exclusive UTF-8 output offset.
+    pub end: usize,
+    /// Source attribution in the same origin table; none is explicitly unknown.
     pub origin: Option<u32>,
 }
 
@@ -268,6 +422,12 @@ pub struct GeneratedOrigins {
     pub origins: Vec<Origin>,
     /// Final generated ranges. Gaps and unknown children never inherit a nearby mapping.
     pub mappings: Vec<OriginMapping>,
+    /// Interned expansion contexts, independent of leaf positions.
+    pub contexts: Vec<InlineContext>,
+    /// Enclosing source constructs for expression/statement reasoning and navigation.
+    pub constructs: Vec<GeneratedConstruct>,
+    /// Explicit removals/replacements for this candidate.
+    pub dispositions: Arc<Vec<SourceDisposition>>,
 }
 
 impl GeneratedOrigins {
@@ -296,25 +456,94 @@ impl GeneratedOrigins {
             sources: Arc::clone(&arena.sources),
             origins: Vec::new(),
             mappings: Vec::new(),
+            contexts: Vec::new(),
+            constructs: Vec::new(),
+            dispositions: Arc::clone(&arena.dispositions),
         };
         let mut interned = HashMap::new();
+        let mut context_ids = HashMap::<InlineContext, u32>::new();
+        let has_contexts = arena
+            .slots
+            .iter()
+            .flatten()
+            .any(|slot| !slot.contexts.is_empty());
         let mut cursor = 0;
         for (offset, start, index) in events {
             if cursor < offset {
-                let origin = active.first().and_then(|&(_, _, index)| {
-                    let emission = &printed.emissions[index];
+                let emission = active
+                    .first()
+                    .map(|&(_, _, index)| &printed.emissions[index]);
+                let origin = emission.and_then(|emission| {
                     let slot = arena.slots[emission.node as usize].as_ref()?;
                     emission
-                        .site
+                        .token
                         .and_then(|site| {
-                            slot.names
+                            slot.tokens
                                 .iter()
                                 .find(|(key, _)| *key == site)
-                                .map(|(_, value)| value)
+                                .map(|(_, o)| o)
                         })
-                        .or(slot.origin.as_ref())
+                        .or_else(|| {
+                            emission
+                                .site
+                                .and_then(|site| {
+                                    slot.names
+                                        .iter()
+                                        .find(|(key, _)| *key == site)
+                                        .map(|(_, value)| value)
+                                })
+                                .or(slot.origin.as_ref())
+                        })
                 });
-                result.append(cursor, offset, origin, &mut interned);
+                let printed_origin = origin.zip(emission).and_then(|(origin, e)| {
+                    e.reason.as_ref().map(|reason| {
+                        let mut changed = origin.clone();
+                        if changed.kind != OriginKind::Synthetic {
+                            changed.kind = OriginKind::Derived;
+                        }
+                        changed.transformation = Some(reason.code.clone());
+                        changed.add_reason(reason.clone());
+                        changed
+                    })
+                });
+                let origin = printed_origin.as_ref().or(origin);
+                let copied = origin
+                    .and_then(|o| o.primary)
+                    .zip(emission)
+                    .and_then(|(span, e)| {
+                        let text = &arena.sources[span.source as usize].text;
+                        if span.end - span.start == e.end - e.start
+                            && text.get(span.start..span.end) == printed.code.get(e.start..e.end)
+                        {
+                            Some(SourceSpan {
+                                source: span.source,
+                                start: span.start + cursor - e.start,
+                                end: span.start + offset - e.start,
+                            })
+                        } else {
+                            None
+                        }
+                    });
+                let mut contexts = Vec::new();
+                if has_contexts {
+                    for &(_, _, index) in active.iter().rev() {
+                        if let Some(slot) =
+                            arena.slots[printed.emissions[index].node as usize].as_ref()
+                        {
+                            for context in slot.contexts.iter() {
+                                let id = *context_ids.entry(context.clone()).or_insert_with(|| {
+                                    let id = result.contexts.len() as u32;
+                                    result.contexts.push(context.clone());
+                                    id
+                                });
+                                if !contexts.contains(&id) {
+                                    contexts.push(id);
+                                }
+                            }
+                        }
+                    }
+                }
+                result.append_detail(cursor, offset, origin, copied, contexts, &mut interned);
                 cursor = offset;
             }
             if start {
@@ -326,6 +555,52 @@ impl GeneratedOrigins {
         if cursor < printed.code.len() {
             result.append(cursor, printed.code.len(), None, &mut interned);
         }
+        // Include the selected root even when every statement was eliminated.
+        // Dead speculative arena slots are deliberately not inspected.
+        let mut disposition_nodes = std::collections::HashSet::new();
+        for node in std::iter::once(printed.root).chain(printed.emissions.iter().map(|e| e.node)) {
+            if disposition_nodes.insert(node) {
+                if let Some(slot) = arena.slots[node as usize].as_ref() {
+                    if !slot.dispositions.is_empty() {
+                        Arc::make_mut(&mut result.dispositions)
+                            .extend(slot.dispositions.iter().cloned());
+                    }
+                }
+            }
+        }
+        for emission in printed
+            .emissions
+            .iter()
+            .filter(|e| e.site.is_none() && e.token.is_none())
+        {
+            let origin = arena.slots[emission.node as usize]
+                .as_ref()
+                .and_then(|slot| slot.origin.as_ref());
+            let printed_origin = origin.and_then(|origin| {
+                emission.reason.as_ref().map(|reason| {
+                    let mut changed = origin.clone();
+                    if changed.kind != OriginKind::Synthetic {
+                        changed.kind = OriginKind::Derived;
+                    }
+                    changed.transformation = Some(reason.code.clone());
+                    changed.add_reason(reason.clone());
+                    changed
+                })
+            });
+            let origin = printed_origin.as_ref().or(origin);
+            let id = origin.map(|origin| {
+                *interned.entry(origin.clone()).or_insert_with(|| {
+                    let id = result.origins.len() as u32;
+                    result.origins.push(origin.clone());
+                    id
+                })
+            });
+            result.constructs.push(GeneratedConstruct {
+                start: emission.start,
+                end: emission.end,
+                origin: id,
+            });
+        }
         Some(result)
     }
     fn append(
@@ -333,6 +608,17 @@ impl GeneratedOrigins {
         start: usize,
         end: usize,
         origin: Option<&Origin>,
+        interned: &mut HashMap<Origin, u32>,
+    ) {
+        self.append_detail(start, end, origin, None, Vec::new(), interned);
+    }
+    fn append_detail(
+        &mut self,
+        start: usize,
+        end: usize,
+        origin: Option<&Origin>,
+        copied: Option<SourceSpan>,
+        contexts: Vec<u32>,
         interned: &mut HashMap<Origin, u32>,
     ) {
         let id = origin.map(|origin| {
@@ -344,17 +630,27 @@ impl GeneratedOrigins {
             interned.insert(origin.clone(), id);
             id
         });
-        if let Some(previous) = self
-            .mappings
-            .last_mut()
-            .filter(|previous| previous.end == start && previous.origin == id)
-        {
+        if let Some(previous) = self.mappings.last_mut().filter(|previous| {
+            previous.end == start
+                && previous.origin == id
+                && previous.inline_contexts == contexts
+                && match (previous.copied, copied) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => a.source == b.source && a.end == b.start,
+                    _ => false,
+                }
+        }) {
             previous.end = end;
+            if let (Some(a), Some(b)) = (previous.copied.as_mut(), copied) {
+                a.end = b.end;
+            }
         } else {
             self.mappings.push(OriginMapping {
                 start,
                 end,
                 origin: id,
+                copied,
+                inline_contexts: contexts,
             });
         }
     }
@@ -374,6 +670,9 @@ impl GeneratedOrigins {
                 OriginPrecision::Group,
                 None,
             )],
+            contexts: Vec::new(),
+            constructs: Vec::new(),
+            dispositions: Arc::default(),
             mappings: if source.is_empty() {
                 Vec::new()
             } else {
@@ -381,6 +680,12 @@ impl GeneratedOrigins {
                     start: 0,
                     end: source.len(),
                     origin: Some(0),
+                    copied: Some(SourceSpan {
+                        source: 0,
+                        start: 0,
+                        end: source.len(),
+                    }),
+                    inline_contexts: Vec::new(),
                 }]
             },
         }
@@ -417,6 +722,9 @@ impl GeneratedOrigins {
             }]),
             origins: Vec::new(),
             mappings: Vec::new(),
+            contexts: Vec::new(),
+            constructs: Vec::new(),
+            dispositions: Arc::default(),
         };
         let mut interned = HashMap::new();
         let mut cursor = 0;
@@ -439,7 +747,18 @@ impl GeneratedOrigins {
                     .is_name
                     .then(|| source[token.source_start..token.source_end].into()),
             );
-            output.append(token.start, token.end, Some(&origin), &mut interned);
+            output.append_detail(
+                token.start,
+                token.end,
+                Some(&origin),
+                Some(SourceSpan {
+                    source: 0,
+                    start: token.source_start,
+                    end: token.source_end,
+                }),
+                Vec::new(),
+                &mut interned,
+            );
             cursor = token.end;
         }
         if cursor < generated_len {
@@ -457,6 +776,31 @@ impl GeneratedOrigins {
         for origin in &self.origins {
             origin.validate(&self.sources)?;
         }
+        for construct in &self.constructs {
+            if construct.start >= construct.end
+                || construct.end > code.len()
+                || !code.is_char_boundary(construct.start)
+                || !code.is_char_boundary(construct.end)
+                || construct
+                    .origin
+                    .is_some_and(|i| i as usize >= self.origins.len())
+            {
+                return Err("invalid enclosing construct".into());
+            }
+        }
+        for context in &self.contexts {
+            for span in [context.definition, context.call_site] {
+                Origin::source(span, OriginPrecision::Expression, None).validate(&self.sources)?;
+            }
+        }
+        for disposition in self.dispositions.iter() {
+            for span in
+                std::iter::once(&disposition.original).chain(disposition.replacement_sources.iter())
+            {
+                Origin::source(*span, OriginPrecision::Statement, None).validate(&self.sources)?;
+            }
+            disposition.reason.validate()?;
+        }
         let mut cursor = 0;
         for mapping in &self.mappings {
             if mapping.start != cursor
@@ -469,6 +813,28 @@ impl GeneratedOrigins {
                     .is_some_and(|id| id as usize >= self.origins.len())
             {
                 return Err("invalid or stale generated provenance ranges".into());
+            }
+            if mapping
+                .inline_contexts
+                .iter()
+                .any(|id| *id as usize >= self.contexts.len())
+            {
+                return Err("inline context index is out of bounds".into());
+            }
+            if let Some(copied) = mapping.copied {
+                Origin::source(copied, OriginPrecision::Token, None).validate(&self.sources)?;
+                if mapping.origin.is_none()
+                    || self.origins[mapping.origin.unwrap_or(0) as usize].kind
+                        == OriginKind::Synthetic
+                    || self.sources[copied.source as usize]
+                        .text
+                        .get(copied.start..copied.end)
+                        != code.get(mapping.start..mapping.end)
+                {
+                    return Err(
+                        "exact-copy attribution does not match source and generated bytes".into(),
+                    );
+                }
             }
             cursor = mapping.end;
         }

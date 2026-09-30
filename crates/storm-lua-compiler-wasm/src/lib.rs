@@ -280,3 +280,13 @@ pub fn build_lifeboat(project: JsValue, options: JsValue) -> Result<JsValue, JsV
 pub fn strip_development(source: &str) -> Result<String, JsValue> {
     storm_lua_build::lifeboat::strip_development(source).map_err(|e| JsValue::from_str(&e))
 }
+
+/// Validate code/map/snapshot identity and return the typed Storm optimization extension.
+/// This neither executes Lua nor trusts an unverified map merely because it parses.
+#[wasm_bindgen(js_name = validateSourceMap)]
+pub fn validate_source_map(code: &str, map: &str) -> Result<JsValue, JsValue> {
+    let details = storm_lua_build::optimized_source_map::validate(code, map)
+        .map_err(|e| JsValue::from_str(&e))?;
+    to_js(&details)
+        .map_err(|e| JsValue::from_str(&format!("failed to encode source map details: {e}")))
+}

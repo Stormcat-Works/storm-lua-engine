@@ -95,14 +95,25 @@ fn final_store_cleanup_keeps_branch_keywords_and_surviving_assignment() {
     assert!(code.contains("x=2"));
     assert_eq!(origins.unknown_bytes(), 0);
     let branch = origin_at(&code, &origins, code.find("if ").unwrap()).unwrap();
+    assert_eq!(source_text(source, branch), "if");
     assert_eq!(
-        source_text(source, branch),
-        "if cond then x=1 x=2 else do x=3 end end"
+        branch.precision,
+        storm_lua_syntax::provenance::OriginPrecision::Token
     );
+    assert!(origins
+        .constructs
+        .iter()
+        .any(|c| c
+            .origin
+            .is_some_and(|id| source_text(source, &origins.origins[id as usize])
+                == "if cond then x=1 x=2 else do x=3 end end")));
     let assignment = origin_at(&code, &origins, code.find("x=2").unwrap() + 1).unwrap();
     assert_eq!(source_text(source, assignment), "x=2");
     let wrapper = origin_at(&code, &origins, code.find("do ").unwrap()).unwrap();
-    assert_eq!(source_text(source, wrapper), "do x=3 end");
+    assert_eq!(source_text(source, wrapper), "do");
+    assert!(origins.constructs.iter().any(|c| c
+        .origin
+        .is_some_and(|id| source_text(source, &origins.origins[id as usize]) == "do x=3 end")));
 }
 
 #[test]

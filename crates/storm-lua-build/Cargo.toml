@@ -18,5 +18,5 @@ storm-lua-minify = { workspace = true }
 serde = { workspace = true }
 sourcemap = "9.3"
 
-[dev-dependencies]
 serde_json = { workspace = true }
+sha2 = "0.10"

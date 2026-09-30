@@ -90,6 +90,10 @@ pub struct ApiPropertyConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiCompileOptions {
+    /// Include a Source Map v3 with versioned optimization explanations. Off by default.
+    pub source_map: Option<bool>,
+    /// Original single-source label used only for display and source identity.
+    pub source_name: Option<String>,
     /// Game-facing or explicitly extended Lua environment.
     #[serde(default)]
     pub environment: storm_lua_spec::environment::EnvironmentProfile,
@@ -136,6 +140,13 @@ impl ApiCompileOptions {
         {
             return Err("invalid-environment: invalid host binding path".into());
         }
+        if self
+            .source_name
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.contains('\0'))
+        {
+            return Err("invalid-source-name: source label must be nonempty without NUL".into());
+        }
         let mut pass_toggles = BTreeMap::new();
         for (key, value) in &self.pass_toggles {
             if let Some(&id) = OPTIMIZATION_PASS_IDS.iter().find(|&&id| id == key) {
@@ -167,7 +178,11 @@ impl ApiCompileOptions {
             })
         };
         Ok(CompileOptions {
-            origin_source: None,
+            origin_source: self.source_map.unwrap_or(false).then(|| {
+                self.source_name
+                    .clone()
+                    .unwrap_or_else(|| "input.lua".into())
+            }),
             environment: self.environment,
             host_bindings: self.host_bindings.clone(),
             mode: match self.mode.unwrap_or(ApiCompileMode::Smallest) {
@@ -314,6 +329,9 @@ pub struct ApiAssumptions {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiCompileResult {
+    /// Standard Source Map v3 JSON with x_storm optimization explanations when requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub map: Option<String>,
     /// Whether a usable generated artifact was produced.
     pub ok: bool,
     /// 後方互換のため保持（1.0 で削除予定）。値は `diagnostics` 内の最初の
@@ -368,7 +386,9 @@ pub struct ApiCompileResult {
 }
 
 fn options_error_code(error: &str) -> &'static str {
-    if error.starts_with("invalid-environment:") {
+    if error.starts_with("invalid-source-name:") {
+        codes::INVALID_SOURCE_NAME
+    } else if error.starts_with("invalid-environment:") {
         codes::INVALID_ENVIRONMENT
     } else {
         codes::UNKNOWN_OPTIMIZATION_PASS
@@ -393,6 +413,7 @@ impl ApiCompileResult {
             error: Some(error),
             diagnostics,
             code: None,
+            map: None,
             original: None,
             size: None,
             saved: None,
@@ -535,7 +556,19 @@ fn success(source: &str, options: &CompileOptions, result: CompileCodeResult) ->
             1e-6
         },
     });
+    let map = match result.origins.as_ref() {
+        Some(origins) => match crate::optimized_source_map::encode(
+            &result.code,
+            origins,
+            crate::optimized_source_map::compilation_settings(options, Some(&result.stats)),
+        ) {
+            Ok(map) => Some(map),
+            Err(error) => return ApiCompileResult::failure(source, error),
+        },
+        None => None,
+    };
     ApiCompileResult {
+        map,
         ok: true,
         error: None,
         code: Some(result.code),
@@ -651,7 +684,7 @@ pub struct ApiProjectCompileResult {
     /// Generated Lua source; compilation does not execute it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
-    /// Source Map v3 (JSON 文字列)。`minify:false` のときのみ存在する（設計 §6）。
+    /// Source Map v3 JSON. Minified builds include it when sourceMap is requested; non-minified builds preserve their existing map behavior.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub map: Option<String>,
     /// Linked module keys in execution order.
@@ -744,7 +777,7 @@ impl ApiProjectCompileResult {
             ok: true,
             error: None,
             code: compiled.code,
-            map: None,
+            map: compiled.map,
             used_modules,
             injected_ambient,
             diagnostics,
@@ -900,7 +933,25 @@ pub fn compile_project(
         .expect("no error diagnostics -> link_project always returns linked_source");
 
     if !options.minify.unwrap_or(true) {
-        let map = generate_source_map(project, &link);
+        let map = if core_options.origin_source.is_some() {
+            let origins = storm_lua_syntax::provenance::GeneratedOrigins::identity(
+                "linked.lua",
+                &linked_source,
+            );
+            match crate::map_composition::compose(project, &link, &linked_source, &origins)
+                .and_then(|o| {
+                    crate::optimized_source_map::encode(
+                        &linked_source,
+                        &o,
+                        crate::optimized_source_map::compilation_settings(&core_options, None),
+                    )
+                }) {
+                Ok(map) => Some(map),
+                Err(error) => return ApiProjectCompileResult::compile_failure(error),
+            }
+        } else {
+            generate_source_map(project, &link)
+        };
         return ApiProjectCompileResult {
             ok: true,
             code: Some(linked_source),
@@ -915,7 +966,17 @@ pub fn compile_project(
     let compiled = finish_compile_result(
         &linked_source,
         &core_options,
-        compile_code(&linked_source, &core_options),
+        compile_code(&linked_source, &core_options).and_then(|mut result| {
+            if let Some(origins) = result.origins.as_ref() {
+                result.origins = Some(crate::map_composition::compose(
+                    project,
+                    &link,
+                    &result.code,
+                    origins,
+                )?);
+            }
+            Ok(result)
+        }),
     );
     let mut diagnostics =
         remap_diagnostics_to_modules(compiled.diagnostics.clone(), project, &link);
@@ -976,14 +1037,45 @@ pub fn compile_lifeboat(
         return ApiProjectCompileResult {
             ok: true,
             code: Some(source.into()),
-            map: generate_source_map(project, &link),
+            map: if core.origin_source.is_some() {
+                let origins =
+                    storm_lua_syntax::provenance::GeneratedOrigins::identity("linked.lua", source);
+                match crate::map_composition::compose(project, &link, source, &origins).and_then(
+                    |o| {
+                        crate::optimized_source_map::encode(
+                            source,
+                            &o,
+                            crate::optimized_source_map::compilation_settings(&core, None),
+                        )
+                    },
+                ) {
+                    Ok(map) => Some(map),
+                    Err(error) => return ApiProjectCompileResult::compile_failure(error),
+                }
+            } else {
+                generate_source_map(project, &link)
+            },
             used_modules: link.used_modules,
             injected_ambient: link.injected_ambient,
             diagnostics,
             ..Default::default()
         };
     }
-    let compiled = finish_compile_result(source, &core, compile_code(source, &core));
+    let compiled = finish_compile_result(
+        source,
+        &core,
+        compile_code(source, &core).and_then(|mut result| {
+            if let Some(origins) = result.origins.as_ref() {
+                result.origins = Some(crate::map_composition::compose(
+                    project,
+                    &link,
+                    &result.code,
+                    origins,
+                )?);
+            }
+            Ok(result)
+        }),
+    );
     diagnostics.extend(remap_diagnostics_to_modules(
         compiled.diagnostics.clone(),
         project,

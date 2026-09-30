@@ -350,7 +350,11 @@ mod tests {
         let payloads = origins
             .origins
             .iter()
-            .filter(|o| o.transformation.as_deref() == Some("draw-record-encoded-payload"))
+            .filter(|o| {
+                o.reasons
+                    .iter()
+                    .any(|r| r.code.as_ref() == "draw-record-encoded-payload")
+            })
             .collect::<Vec<_>>();
         assert!(!payloads.is_empty());
         for p in payloads {

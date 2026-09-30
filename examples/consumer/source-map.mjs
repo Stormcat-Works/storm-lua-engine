@@ -87,4 +87,25 @@ try {
 }
 const minified = compiler.build(project, {environment: 'game', minify: true});
 assert.equal(minified.ok, true);
-assert.equal(minified.map, undefined); // v0.2.0 never attaches a stale linked map to optimized code.
+assert.equal(minified.map, undefined); // Optimized maps are opt-in; never attach a stale unoptimized linked map.
+
+// v0.3.0: opt-in optimized maps include structured, validated explanations.
+// This remains source navigation, not reconstruction of eliminated VM variables.
+const optimizedSource = 'local function twice(value)\n return value*2\nend\nfunction onTick()output.setNumber(1,twice(input.getNumber(1)))end';
+const optimized = compiler.minify(optimizedSource, {sourceMap:true,sourceName:'optimized.lua',numericMode:'exact',zeroCostNewlines:false});
+assert.equal(optimized.ok,true);
+const details = compiler.validateSourceMap(optimized.code,optimized.map);
+assert.equal(details.schemaVersion,1);
+assert.equal(details.producer.version,'0.3.0');
+const star = optimized.code.indexOf('*2');assert.ok(star>=0);
+const point = originalPositionFor(new TraceMap(optimized.map), {line:1,column:star+1});
+assert.equal(point.source,'optimized.lua');assert.equal(point.line,2);
+const leaf = details.mappings.find(m=>m.start<=star+1&&star+1<m.end);
+assert.ok(leaf.inlineContexts.length>0);
+assert.throws(()=>compiler.validateSourceMap(optimized.code.replace('*2','*3'),optimized.map),/code|fingerprint/i);
+const optimizedVm=engine.createVehicle({environment:'game'});
+try {
+  optimizedVm.load(optimized.code,'@optimized.lua');optimizedVm.io.inputNumbers[0]=6;
+  assert.equal(optimizedVm.tick(),'completed');assert.equal(optimizedVm.io.outputNumbers[0],12);
+} finally { optimizedVm.dispose(); }
+console.log('Optimized map: exact code/source fingerprints, original literal, inline call context, output 12.');

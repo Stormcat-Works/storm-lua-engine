@@ -112,11 +112,12 @@ impl<'a> Transformer<'a> {
                         &[node],
                         "available-expression-use",
                     );
-                    self.output.nodes.relate_from(
+                    self.output.nodes.relate_from_role(
                         node,
                         &self.source.nodes,
                         entry.definition,
                         "available-expression-definition",
+                        storm_lua_syntax::explanation::RelationRole::Definition,
                     );
                     self.reused += 1;
                     return;

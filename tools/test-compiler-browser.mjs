@@ -21,7 +21,19 @@ self.onmessage = async () => {
     const retired = compiler.minify('function onTick()end', {passToggles:{'general-expression-factoring':true}});
     let addonRejected=false;
     try {compiler.minify('function onTick()end',{target:'addon'});} catch (error) {addonRejected=String(error).includes('addon');}
-    self.postMessage({linked,result,diagnostics,retired,addonRejected,ids:compiler.passIds()});
+    const original='local function twice(value)return value*2 end function onTick()output.setNumber(1,twice(input.getNumber(1)))end';
+    const mapped=compiler.minify(original,{sourceMap:true,sourceName:'original.lua',numericMode:'exact'});
+    if (!mapped.ok || typeof mapped.map!=='string') throw new Error('optimized source map is missing');
+    const details=compiler.validateSourceMap(mapped.code,mapped.map);
+    let staleRejected=false;
+    try {compiler.validateSourceMap(mapped.code+' ',mapped.map);}catch {staleRejected=true;}
+    const linkedMapped=compiler.build(project,{sourceMap:true});
+    if (!linkedMapped.ok) throw new Error('mapped project compilation failed');
+    const linkedDetails=compiler.validateSourceMap(linkedMapped.code,linkedMapped.map);
+    self.postMessage({linked,result,diagnostics,retired,addonRejected,ids:compiler.passIds(),
+      mapping:{schema:details.schemaVersion,producer:details.producer.version,contexts:details.contexts.length,
+        leafContexts:details.mappings.some(m=>m.inlineContexts.length>0),reasonCount:details.reasons.length,
+        staleRejected,linkedSources:linkedDetails.sources.length}});
   } catch (error) {self.postMessage({error:String(error)});}
 };`;
 const server = createServer(async (request, response) => {
@@ -66,9 +78,15 @@ try {
       assert.equal(result.retired.diagnostics[0].code, 'unknown-optimization-pass');
       assert.equal(result.addonRejected, true);
       assert.equal(new Set(result.ids).size, 67);
+      assert.equal(result.mapping.schema,1);
+      assert.equal(result.mapping.producer,'0.3.0');
+      assert.ok(result.mapping.contexts>0 && result.mapping.leafContexts);
+      assert.ok(result.mapping.reasonCount>0);
+      assert.equal(result.mapping.staleRejected,true);
+      assert.equal(result.mapping.linkedSources,2);
       const wasmRequests = requested.slice(start).filter(path => path.endsWith('.wasm'));
       assert.deepEqual(wasmRequests, ['/dist/compiler-wasm/compiler_bg.wasm']);
-      console.log(`${name}: module Worker, project build, lint, retired/Addon rejection; only compiler WASM fetched`);
+      console.log(`${name}: module Worker, project build, optimized maps/reasons/inline contexts and stale rejection, lint, retired/Addon rejection; only compiler WASM fetched`);
     } finally { await browser.close(); }
   }
 } finally { await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }

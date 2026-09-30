@@ -84,10 +84,7 @@ pub struct CompileCodeResult {
 }
 
 fn folding_tolerance(t: Option<NumericTolerance>) -> passes::literal_folding::NumericTolerance {
-    let t = t.unwrap_or(NumericTolerance {
-        abs: 1e-12,
-        rel: 1e-12,
-    });
+    let t = crate::config::resolve_folding_tolerance(t);
     passes::literal_folding::NumericTolerance {
         abs: t.abs,
         rel: t.rel,

@@ -25,3 +25,8 @@ pub mod source_position;
 pub mod node_arena;
 /// Optional source-origin attribution independent of syntax equality.
 pub mod provenance;
+
+pub mod explanation;
+
+#[cfg(test)]
+mod explanation_tests;

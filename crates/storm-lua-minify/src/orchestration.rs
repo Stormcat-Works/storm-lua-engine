@@ -16,10 +16,7 @@ use storm_lua_syntax::print::Printer;
 use storm_lua_syntax::size::measure_size;
 
 fn folding_tolerance(t: Option<ConfigTolerance>) -> passes::literal_folding::NumericTolerance {
-    let t = t.unwrap_or(ConfigTolerance {
-        abs: 1e-12,
-        rel: 1e-12,
-    });
+    let t = crate::config::resolve_folding_tolerance(t);
     passes::literal_folding::NumericTolerance {
         abs: t.abs,
         rel: t.rel,
@@ -27,10 +24,7 @@ fn folding_tolerance(t: Option<ConfigTolerance>) -> passes::literal_folding::Num
 }
 
 fn literal_tolerance(t: Option<ConfigTolerance>) -> ConfigTolerance {
-    t.unwrap_or(ConfigTolerance {
-        abs: 1e-6,
-        rel: 1e-6,
-    })
+    crate::config::resolve_literal_tolerance(t)
 }
 
 fn measured_size(ast: &Ast, root: NodeId, toggles: &PassToggles) -> usize {

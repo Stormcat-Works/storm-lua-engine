@@ -17,6 +17,10 @@ export interface PropertyConfig {
   texts?: Record<string, string>;
 }
 export interface CompileOptions {
+  /** Generate Source Map v3 with x_storm optimization reasons and source snapshots. */
+  sourceMap?: boolean;
+  /** Display label of the original single-source input. Does not read a file. */
+  sourceName?: string;
   environment?: EnvironmentProfile;
   hostBindings?: string[];
   /** Vehicle only in this release. Addon compilation is explicitly unsupported. */
@@ -92,6 +96,8 @@ export interface CompilerAssumptions {
   numericTolerance: NumericTolerance;
 }
 export interface CompileResult {
+  /** Standard Source Map v3 JSON plus x_storm, when sourceMap was requested. */
+  map?: string;
   assumptions?: CompilerAssumptions;
   ok: boolean;
   /** @deprecated Kept for backward compatibility only; scheduled for removal in 1.0. Same string as the first `severity: 'error'` entry in `diagnostics`. Prefer `diagnostics`, which is populated even on fatal failure (`ok: false`) — e.g. `code: 'syntax-error'` or `code: 'compile-failed'`. */
@@ -169,7 +175,7 @@ export interface ProjectCompileResult {
   ok: boolean;
   error?: string;
   code?: string;
-  /** Source Map v3 (JSON string). Present only when `minify:false`. */
+  /** Source Map v3 JSON. Non-minified builds keep their usual map; optimized builds provide x_storm when sourceMap is requested. */
   map?: string;
   /** Linked module keys, in execution order. */
   usedModules?: string[];
@@ -203,3 +209,5 @@ export interface SourceStatement {
 }
 export interface SourceComment {start:number;end:number;line:number;text:string;long:boolean}
 export interface SourceInspection {ok:boolean;error:string|null;statements:SourceStatement[];comments:SourceComment[];replacedRoots:string[]}
+
+export type * from "./optimization-map-types.js";

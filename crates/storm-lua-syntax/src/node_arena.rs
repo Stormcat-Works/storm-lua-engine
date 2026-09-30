@@ -2,6 +2,10 @@
 //! Mutable indexing is deliberately untracked: it invalidates that slot's origin.
 //! Annotated transformations explicitly preserve, derive, merge, or copy origins.
 use crate::ast::{Node, NodeId, SymbolId};
+use crate::explanation::{
+    InlineContext, OptimizationReason, ReasonOperation, RelationRole, SourceDisposition,
+    SourceRelation,
+};
 use crate::parser::NameSite;
 use crate::provenance::{ArenaOrigins, NodeOrigin, Origin, SourceSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -143,12 +147,19 @@ impl NodeArena {
         mut keep: impl FnMut(NodeId) -> bool,
         transformation: &str,
     ) {
+        let mut removed = Vec::new();
         for (id, node) in self.values.iter_mut().enumerate() {
             let Node::Block(statements) = node else {
                 continue;
             };
             let old_len = statements.len();
-            statements.retain(|&statement| keep(statement));
+            statements.retain(|&statement| {
+                let retain = keep(statement);
+                if !retain && self.origins.is_some() {
+                    removed.push((id as NodeId, statement));
+                }
+                retain
+            });
             if statements.len() != old_len {
                 if let Some(slot) = self
                     .origins
@@ -162,6 +173,9 @@ impl NodeArena {
                         .map(|value| value.derived(transformation));
                 }
             }
+        }
+        for (owner, node) in removed {
+            self.record_removal(owner, node, transformation);
         }
     }
 
@@ -179,6 +193,7 @@ impl NodeArena {
             origins: self.origins.as_ref().map(|origins| ArenaOrigins {
                 sources: Arc::clone(&origins.sources),
                 slots: Vec::new(),
+                dispositions: Arc::clone(&origins.dispositions),
             }),
         }
     }
@@ -263,10 +278,30 @@ impl NodeArena {
             .origin
             .iter_mut()
             .chain(imported.names.iter_mut().map(|(_, origin)| origin))
+            .chain(imported.tokens.iter_mut().map(|(_, origin)| origin))
         {
-            for range in value.primary.iter_mut().chain(value.related.iter_mut()) {
+            for range in value
+                .primary
+                .iter_mut()
+                .chain(Arc::make_mut(&mut value.related).iter_mut())
+                .chain(
+                    Arc::make_mut(&mut value.relations)
+                        .iter_mut()
+                        .map(|r| &mut r.span),
+                )
+            {
                 range.source = source_ids[range.source as usize];
             }
+        }
+        for disposition in Arc::make_mut(&mut imported.dispositions) {
+            disposition.original.source = source_ids[disposition.original.source as usize];
+            for span in &mut disposition.replacement_sources {
+                span.source = source_ids[span.source as usize];
+            }
+        }
+        for context in Arc::make_mut(&mut imported.contexts) {
+            context.definition.source = source_ids[context.definition.source as usize];
+            context.call_site.source = source_ids[context.call_site.source as usize];
         }
         imported
     }
@@ -287,10 +322,66 @@ impl NodeArena {
         }
         let mut imported = self.import(&snapshot);
         if !unchanged {
-            imported.origin = imported
-                .origin
-                .as_ref()
-                .map(|value| value.derived(transformation));
+            let reason = OptimizationReason::rewrite(
+                transformation,
+                &snapshot.node,
+                &self.values[node as usize],
+            );
+            imported.origin = imported.origin.as_ref().map(|value| {
+                let mut out = value.derived(transformation);
+                if out
+                    .reasons
+                    .last()
+                    .is_some_and(|r| r.code == reason.code && r.before.is_none())
+                {
+                    Arc::make_mut(&mut out.reasons).pop();
+                }
+                out.add_reason(reason.clone());
+                out
+            });
+            if let Some(original) = imported.origin.as_ref().and_then(|o| o.primary) {
+                if matches!(
+                    self.values[node as usize],
+                    Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
+                ) && !matches!(
+                    snapshot.node,
+                    Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
+                ) {
+                    Arc::make_mut(&mut imported.dispositions).push(SourceDisposition {
+                        original,
+                        reason: reason.clone(),
+                        replacement_sources: Vec::new(),
+                    });
+                }
+            }
+            if let (Node::Block(old), Node::Block(new)) =
+                (&snapshot.node, &self.values[node as usize])
+            {
+                // Recording detachments must not turn a wide block rewrite into
+                // a quadratic scan. Preserve deterministic old-source order.
+                let retained = new
+                    .iter()
+                    .copied()
+                    .collect::<std::collections::HashSet<_>>();
+                let gone = old
+                    .iter()
+                    .filter(|id| !retained.contains(id))
+                    .copied()
+                    .collect::<Vec<_>>();
+                for id in gone {
+                    if let Some(original) = self.origin(id).and_then(|o| o.primary) {
+                        Arc::make_mut(&mut imported.dispositions).push(SourceDisposition {
+                            original,
+                            reason: self.removal_reason(id, transformation),
+                            replacement_sources: Vec::new(),
+                        });
+                    }
+                }
+            }
+            imported.tokens.retain(|(site, _)| {
+                crate::explanation::syntax_text(&snapshot.node, *site)
+                    == crate::explanation::syntax_text(&self.values[node as usize], *site)
+            });
             imported.names.retain(|(site, _)| {
                 name_value(&snapshot.node, *site).is_some()
                     && name_value(&snapshot.node, *site)
@@ -335,6 +426,9 @@ impl NodeArena {
                 .map(|value| value.derived("scope-renaming"));
             for (_, origin) in &mut imported.names {
                 *origin = origin.derived("scope-renaming");
+                if let Some(reason) = Arc::make_mut(&mut origin.reasons).last_mut() {
+                    reason.operation = ReasonOperation::Rename;
+                }
             }
         }
         if let Some(origins) = &mut self.origins {
@@ -362,6 +456,9 @@ impl NodeArena {
             origins.slots[node as usize] = Some(Arc::new(NodeOrigin {
                 origin: Some(Origin::synthetic(transformation)),
                 names: Vec::new(),
+                contexts: Arc::default(),
+                tokens: Vec::new(),
+                dispositions: Arc::default(),
             }));
         }
     }
@@ -373,17 +470,28 @@ impl NodeArena {
         original: NodeId,
         transformation: &str,
     ) {
-        self.relate_snapshot(node, source.capture_origin(original), transformation);
+        self.relate_snapshot(
+            node,
+            source.capture_origin(original),
+            transformation,
+            RelationRole::Contribution,
+        );
     }
     /// Add the original use/call site when copying a value inside this arena.
     pub fn relate_within(&mut self, node: NodeId, original: NodeId, transformation: &str) {
-        self.relate_snapshot(node, self.capture_origin(original), transformation);
+        self.relate_snapshot(
+            node,
+            self.capture_origin(original),
+            transformation,
+            RelationRole::Contribution,
+        );
     }
     fn relate_snapshot(
         &mut self,
         node: NodeId,
         snapshot: Option<OriginSnapshot>,
         transformation: &str,
+        role: RelationRole,
     ) {
         let Some(snapshot) = snapshot.filter(|_| self.tracks_origins()) else {
             return;
@@ -400,13 +508,33 @@ impl NodeArena {
         else {
             return;
         };
-        let Some(origin) = Arc::make_mut(target).origin.as_mut() else {
+        let target = Arc::make_mut(target);
+        let Some(origin) = target.origin.as_mut() else {
             return;
         };
         *origin = origin.derived(transformation);
+        if let Some(reason) = Arc::make_mut(&mut origin.reasons).last_mut() {
+            reason.operation = ReasonOperation::Relate;
+        }
         for span in contributor.primary.iter().chain(contributor.related.iter()) {
             if origin.primary != Some(*span) && !origin.related.contains(span) {
-                origin.related.push(*span);
+                Arc::make_mut(&mut origin.related).push(*span);
+            }
+            let relation = SourceRelation {
+                role: if contributor.primary == Some(*span) {
+                    role
+                } else {
+                    RelationRole::Contribution
+                },
+                span: *span,
+            };
+            if !origin.relations.contains(&relation) {
+                Arc::make_mut(&mut origin.relations).push(relation);
+            }
+        }
+        for relation in contributor.relations.iter() {
+            if !origin.relations.contains(relation) {
+                Arc::make_mut(&mut origin.relations).push(relation.clone());
             }
         }
     }
@@ -496,6 +624,104 @@ impl NodeArena {
         if let Some(origin) = origin {
             target.names.push((site, origin));
             target.names.sort_by_key(|(site, _)| *site);
+        }
+    }
+}
+
+impl NodeArena {
+    /// Attach an expansion context independently of the generated leaf's own origin.
+    pub fn add_inline_context(&mut self, node: NodeId, definition: NodeId, call: NodeId) {
+        let Some(definition) = self.origin(definition).and_then(|o| o.primary) else {
+            return;
+        };
+        let Some(call_site) = self.origin(call).and_then(|o| o.primary) else {
+            return;
+        };
+        let Some(origins) = self.origins.as_mut() else {
+            return;
+        };
+        let slot =
+            origins.slots[node as usize].get_or_insert_with(|| Arc::new(NodeOrigin::default()));
+        let context = InlineContext {
+            definition,
+            call_site,
+        };
+        let contexts = &mut Arc::make_mut(slot).contexts;
+        if !contexts.contains(&context) {
+            Arc::make_mut(contexts).insert(0, context);
+        }
+    }
+    // Only carry checks actually recorded on this detached construct. A prior
+    // value rewrite is not a reason to remove it; eligibility is explicitly tagged.
+    fn removal_reason(&self, node: NodeId, transformation: &str) -> OptimizationReason {
+        let recorded = self.origin(node).and_then(|o| {
+            o.reasons
+                .iter()
+                .rev()
+                .find(|r| r.operation == ReasonOperation::Remove)
+        });
+        recorded
+            .cloned()
+            .unwrap_or_else(|| OptimizationReason::action(transformation, ReasonOperation::Remove))
+    }
+    /// Record why a currently selected construct is about to be detached.
+    pub fn explain_removal(&mut self, node: NodeId, mut reason: OptimizationReason) {
+        reason.operation = ReasonOperation::Remove;
+        self.explain(node, reason);
+    }
+    fn record_removal(&mut self, owner: NodeId, node: NodeId, transformation: &str) {
+        let Some(original) = self.origin(node).and_then(|o| o.primary) else {
+            return;
+        };
+        let reason = self.removal_reason(node, transformation);
+        if let Some(slot) = self
+            .origins
+            .as_mut()
+            .and_then(|table| table.slots[owner as usize].as_mut())
+        {
+            Arc::make_mut(&mut Arc::make_mut(slot).dispositions).push(SourceDisposition {
+                original,
+                reason,
+                replacement_sources: Vec::new(),
+            });
+        }
+    }
+}
+
+impl NodeArena {
+    /// Record the semantic role of a source relationship at the transformation site.
+    pub fn relate_from_role(
+        &mut self,
+        node: NodeId,
+        source: &Self,
+        original: NodeId,
+        transformation: &str,
+        role: RelationRole,
+    ) {
+        self.relate_snapshot(node, source.capture_origin(original), transformation, role);
+    }
+    /// Record a typed relationship within this candidate arena.
+    pub fn relate_within_role(
+        &mut self,
+        node: NodeId,
+        original: NodeId,
+        transformation: &str,
+        role: RelationRole,
+    ) {
+        self.relate_snapshot(node, self.capture_origin(original), transformation, role);
+    }
+}
+
+impl NodeArena {
+    /// Attach facts collected by the accepting transformation. Unknown stays unknown.
+    pub fn explain(&mut self, node: NodeId, reason: OptimizationReason) {
+        if let Some(origin) = self
+            .origins
+            .as_mut()
+            .and_then(|table| table.slots[node as usize].as_mut())
+            .and_then(|slot| Arc::make_mut(slot).origin.as_mut())
+        {
+            origin.add_reason(reason);
         }
     }
 }

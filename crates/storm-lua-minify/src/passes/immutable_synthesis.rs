@@ -150,11 +150,12 @@ fn candidate_for_group(
             &[*occurrence],
             "immutable-carrier-use",
         );
-        candidate.nodes.relate_from(
+        candidate.nodes.relate_from_role(
             *occurrence,
             &source.nodes,
             group.expression,
             "immutable-carrier-definition",
+            storm_lua_syntax::explanation::RelationRole::Definition,
         );
     }
     let target = candidate.name(carrier);

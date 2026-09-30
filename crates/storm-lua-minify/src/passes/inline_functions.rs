@@ -149,8 +149,13 @@ fn install_expression(
     replacement: NodeId,
     origins: &mut ReferenceOrigins,
 ) {
-    ast.nodes
-        .relate_within(replacement, node, "function-inline-site");
+    ast.nodes.relate_within_role(
+        replacement,
+        node,
+        "function-inline-site",
+        storm_lua_syntax::explanation::RelationRole::CallSite,
+    );
+    ast.nodes.add_inline_context(replacement, replacement, node);
     let source_origin = ast.nodes.capture_origin(replacement);
     ast.nodes[node as usize] = ast.node(replacement).clone();
     ast.nodes
@@ -212,11 +217,12 @@ fn clone_subtree_with_replacements(
         if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
             if let Some(replacement) = replacements.get(&bid) {
                 let copied = clone_local_subtree(target, *replacement, origins);
-                target.nodes.relate_from(
+                target.nodes.relate_from_role(
                     copied,
                     &source.nodes,
                     node,
                     "function-parameter-substitution",
+                    storm_lua_syntax::explanation::RelationRole::ParameterUse,
                 );
                 return copied;
             }
@@ -436,17 +442,60 @@ pub fn specialize_constant_arguments(
                     .nodes
                     .derive_from(node, &source.nodes, node, "specialized-implicit-nil");
                 for &call in &calls[&info.bid] {
-                    target.nodes.relate_from(
+                    target.nodes.relate_from_role(
                         node,
                         &source.nodes,
                         call,
                         "specialized-omitted-arguments",
+                        storm_lua_syntax::explanation::RelationRole::CallSite,
                     );
                 }
             }
-            target
-                .nodes
-                .relate_from(node, &source.nodes, node, "specialized-parameter-read");
+            target.nodes.relate_from_role(
+                node,
+                &source.nodes,
+                node,
+                "specialized-parameter-read",
+                storm_lua_syntax::explanation::RelationRole::ParameterUse,
+            );
+            if target.nodes.tracks_origins() {
+                let Some(index) = info.parameter_bids.iter().position(|b| *b == bid) else {
+                    unreachable!("accepted specialization has no parameter")
+                };
+                for &call in &calls[&info.bid] {
+                    if let Node::Call(_, args, _) = source.node(call) {
+                        if let Some(&argument) = args.get(index) {
+                            target.nodes.relate_from_role(
+                                node,
+                                &source.nodes,
+                                argument,
+                                "specialized-actual-argument",
+                                storm_lua_syntax::explanation::RelationRole::Argument,
+                            );
+                        }
+                    }
+                }
+                let literal = match target.node(node) {
+                    Node::Num(v) => format!("number:{v}"),
+                    Node::Str(v) => format!("string-literal-bytes:{}", v.len()),
+                    Node::Bool(v) => format!("boolean:{v}"),
+                    Node::Nil => "nil".into(),
+                    _ => unreachable!("specialization selected a literal"),
+                };
+                target.nodes.explain(
+                    node,
+                    storm_lua_syntax::explanation::OptimizationReason::decision(
+                        "constant-argument-specialization",
+                        "same-literal-at-every-analyzed-call-and-unmodified-parameter",
+                        [
+                            ("parameterIndex", index.to_string()),
+                            ("analyzedCallSites", calls[&info.bid].len().to_string()),
+                            ("value", literal),
+                            ("removedParameter", spec.remove.contains(&index).to_string()),
+                        ],
+                    ),
+                );
+            }
         }
         let filtered_parameters = info
             .parameters
@@ -1321,11 +1370,15 @@ pub fn inline_one_use_statement_and_tail_functions(
 
             if trial.nodes.tracks_origins() {
                 for copied in first_alpha_node..trial.nodes.len() {
-                    trial.nodes.relate_from(
+                    trial
+                        .nodes
+                        .add_inline_context(copied as NodeId, info.function, site.call);
+                    trial.nodes.relate_from_role(
                         copied as NodeId,
                         &source.nodes,
                         site.call,
                         "one-use-function-call-site",
+                        storm_lua_syntax::explanation::RelationRole::CallSite,
                     );
                 }
             }

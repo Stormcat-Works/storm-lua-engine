@@ -249,11 +249,12 @@ fn apply_opportunity(source: &Ast, opportunity: &Opportunity) -> Ast {
         &opportunity.replaced,
         "multiplicative-carrier-substitution",
     );
-    candidate.nodes.relate_from(
+    candidate.nodes.relate_from_role(
         carrier,
         &source.nodes,
         opportunity.definition,
         "multiplicative-carrier-definition",
+        storm_lua_syntax::explanation::RelationRole::Definition,
     );
     let mut product = opportunity.remaining[0];
     for factor in opportunity

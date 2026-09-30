@@ -17,3 +17,9 @@ pub use public_api::{
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod analysis_tests;
+
+pub mod optimized_source_map;
+
+mod map_composition;
+#[cfg(test)]
+mod optimized_map_tests;

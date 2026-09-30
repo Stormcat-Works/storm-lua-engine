@@ -57,6 +57,16 @@ fn literal_value(ast: &Ast, node: NodeId) -> Option<Literal> {
     }
 }
 
+fn literal_fact(value: &Literal) -> String {
+    match value {
+        Literal::Int(v) => format!("i64:{v}"),
+        Literal::Num(v) => format!("f64-bits:{:016x}", v.to_bits()),
+        Literal::Str(v) => format!("string-byte-length:{}", v.len()),
+        Literal::Bool(v) => format!("boolean:{v}"),
+        Literal::Nil => "nil".into(),
+    }
+}
+
 fn literal_node(ast: &mut Ast, value: Literal) -> Option<NodeId> {
     match value {
         Literal::Nil => Some(ast.push(Node::Nil)),
@@ -517,6 +527,7 @@ fn fold_node(
     fold_nonportable_math: bool,
 ) {
     let origin = target.nodes.capture_origin(node);
+    let mut evidence = None;
     fold_node_inner(
         source,
         target,
@@ -526,6 +537,7 @@ fn fold_node(
         aggressive,
         tolerance,
         fold_nonportable_math,
+        &mut evidence,
     );
     target
         .nodes
@@ -543,6 +555,9 @@ fn fold_node(
         let value = target.node(node).clone();
         target.nodes[node as usize] = value;
     }
+    if let Some(reason) = evidence {
+        target.nodes.explain(node, reason);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -555,6 +570,7 @@ fn fold_node_inner(
     aggressive: bool,
     tolerance: NumericTolerance,
     fold_nonportable_math: bool,
+    evidence: &mut Option<storm_lua_syntax::explanation::OptimizationReason>,
 ) {
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
@@ -649,10 +665,40 @@ fn fold_node_inner(
 
     if let Node::Un(op, expression) = target.node(node).clone() {
         if let Some(value) = literal_value(target, expression) {
+            let operand = target.nodes.tracks_origins().then(|| literal_fact(&value));
             if let Some(value) = eval_unary(&op, &value) {
+                let evaluated = target.nodes.tracks_origins().then(|| literal_fact(&value));
                 if let Some(candidate) =
                     aggressive_literal_node(target, value, aggressive, tolerance)
                 {
+                    if let (Some(operand), Some(evaluated)) = (operand, evaluated) {
+                        *evidence =
+                            Some(storm_lua_syntax::explanation::OptimizationReason::decision(
+                                "constant-folding",
+                                "literal-unary-evaluation",
+                                [
+                                    ("operator", op.clone()),
+                                    ("operand", operand),
+                                    ("evaluated", evaluated),
+                                    (
+                                        "emitted",
+                                        literal_value(target, candidate)
+                                            .as_ref()
+                                            .map(literal_fact)
+                                            .unwrap_or_else(|| "nonliteral".into()),
+                                    ),
+                                    ("aggressive", aggressive.to_string()),
+                                    (
+                                        "absToleranceBits",
+                                        format!("{:016x}", tolerance.abs.to_bits()),
+                                    ),
+                                    (
+                                        "relToleranceBits",
+                                        format!("{:016x}", tolerance.rel.to_bits()),
+                                    ),
+                                ],
+                            ));
+                    }
                     target.nodes[node as usize] = target.node(candidate).clone();
                     return;
                 }
@@ -683,10 +729,45 @@ fn fold_node_inner(
         if let (Some(a), Some(b)) = (&a, &b) {
             if fold_nonportable_math || op != "^" {
                 if let Some(value) = eval_binary(&op, a, b) {
+                    let evaluated = target.nodes.tracks_origins().then(|| literal_fact(&value));
                     if let Some(candidate) =
                         aggressive_literal_node(target, value, aggressive, tolerance)
                     {
-                        if measure_expr(target, candidate) <= measure_expr(target, node) {
+                        let before_size = measure_expr(target, node);
+                        let after_size = measure_expr(target, candidate);
+                        if after_size <= before_size {
+                            if let Some(evaluated) = evaluated {
+                                *evidence = Some(
+                                    storm_lua_syntax::explanation::OptimizationReason::decision(
+                                        "constant-folding",
+                                        "literal-operands-evaluated-and-size-nonincreasing",
+                                        [
+                                            ("operator", op.clone()),
+                                            ("left", literal_fact(a)),
+                                            ("right", literal_fact(b)),
+                                            ("evaluated", evaluated),
+                                            (
+                                                "emitted",
+                                                literal_value(target, candidate)
+                                                    .as_ref()
+                                                    .map(literal_fact)
+                                                    .unwrap_or_else(|| "nonliteral".into()),
+                                            ),
+                                            ("expressionSizeBefore", before_size.to_string()),
+                                            ("expressionSizeAfter", after_size.to_string()),
+                                            ("aggressive", aggressive.to_string()),
+                                            (
+                                                "absToleranceBits",
+                                                format!("{:016x}", tolerance.abs.to_bits()),
+                                            ),
+                                            (
+                                                "relToleranceBits",
+                                                format!("{:016x}", tolerance.rel.to_bits()),
+                                            ),
+                                        ],
+                                    ),
+                                );
+                            }
                             target.nodes[node as usize] = target.node(candidate).clone();
                             return;
                         }
@@ -1013,15 +1094,55 @@ pub fn fold_expressions(
     fold_expressions_with_options(ast, root, aggressive, tolerance, true)
 }
 
+fn conditional_evidence(
+    ast: &Ast,
+    node: NodeId,
+) -> Option<storm_lua_syntax::explanation::OptimizationReason> {
+    if !ast.nodes.tracks_origins() {
+        return None;
+    }
+    let Node::If(arms, otherwise) = ast.node(node) else {
+        return None;
+    };
+    let values = arms
+        .iter()
+        .map(|arm| {
+            literal_value(ast, arm.cond)
+                .map(|v| lua_truth(&v).to_string())
+                .unwrap_or_else(|| "unknown".into())
+        })
+        .collect::<Vec<_>>();
+    Some(storm_lua_syntax::explanation::OptimizationReason::decision(
+        "constant-control-flow",
+        "lua-truthiness-of-known-conditions",
+        [
+            ("armTruthiness", values.join(",")),
+            ("hasElse", otherwise.is_some().to_string()),
+        ],
+    ))
+}
 fn simplify_node(source: &Ast, target: &mut Ast, node: NodeId) {
     let origin = target.nodes.capture_origin(node);
-    simplify_node_inner(source, target, node);
+    let mut evidence = None;
+    simplify_node_inner(source, target, node, &mut evidence);
     target
         .nodes
         .finish_rewrite(node, origin, "control-flow-simplification");
+    if let Some(reason) = evidence.filter(|_| source.node(node) != target.node(node)) {
+        if matches!(target.node(node),Node::Block(nodes) if nodes.is_empty()) {
+            target.nodes.explain_removal(node, reason);
+        } else {
+            target.nodes.explain(node, reason);
+        }
+    }
 }
 
-fn simplify_node_inner(source: &Ast, target: &mut Ast, node: NodeId) {
+fn simplify_node_inner(
+    source: &Ast,
+    target: &mut Ast,
+    node: NodeId,
+    evidence: &mut Option<storm_lua_syntax::explanation::OptimizationReason>,
+) {
     let original = source.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         simplify_node(source, target, child);
@@ -1032,6 +1153,7 @@ fn simplify_node_inner(source: &Ast, target: &mut Ast, node: NodeId) {
         .rewrite(node, mapped, "literal-folding-traversal");
 
     if let Node::If(arms, else_block) = target.node(node).clone() {
+        *evidence = conditional_evidence(target, node);
         let mut kept = Vec::new();
         let mut unresolved = false;
         for arm in arms {
@@ -1089,12 +1211,26 @@ pub fn simplify_control_flow(ast: &Ast, root: NodeId, _aggressive: bool) -> (Ast
 
 fn fold_exact_safe_node(ast: &mut Ast, node: NodeId) {
     let origin = ast.nodes.capture_origin(node);
-    fold_exact_safe_node_inner(ast, node);
+    let mut evidence = None;
+    fold_exact_safe_node_inner(ast, node, &mut evidence);
     ast.nodes
         .finish_rewrite(node, origin, "exact-control-flow-folding");
+    if let Some(reason) = evidence {
+        if !matches!(ast.node(node), Node::If(..)) {
+            if matches!(ast.node(node),Node::Block(nodes) if nodes.is_empty()) {
+                ast.nodes.explain_removal(node, reason);
+            } else {
+                ast.nodes.explain(node, reason);
+            }
+        }
+    }
 }
 
-fn fold_exact_safe_node_inner(ast: &mut Ast, node: NodeId) {
+fn fold_exact_safe_node_inner(
+    ast: &mut Ast,
+    node: NodeId,
+    evidence: &mut Option<storm_lua_syntax::explanation::OptimizationReason>,
+) {
     let original = ast.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         fold_exact_safe_node(ast, child);
@@ -1133,6 +1269,7 @@ fn fold_exact_safe_node_inner(ast: &mut Ast, node: NodeId) {
             }
         }
         Node::If(arms, else_block) => {
+            *evidence = conditional_evidence(ast, node);
             let mut kept = Vec::new();
             let mut replacement_else = else_block;
             let mut unresolved = false;

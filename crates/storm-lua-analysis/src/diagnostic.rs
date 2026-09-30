@@ -106,6 +106,8 @@ pub mod codes {
     pub const CONSERVATIVE_MINIFICATION: &str = "conservative-minification";
     /// Invalid combination of environment profile and host binding settings.
     pub const INVALID_ENVIRONMENT: &str = "invalid-environment";
+    /// Invalid host-supplied source label.
+    pub const INVALID_SOURCE_NAME: &str = "invalid-source-name";
 
     /// Requested optimization identifier is unknown or has been removed.
     pub const UNKNOWN_OPTIMIZATION_PASS: &str = "unknown-optimization-pass";

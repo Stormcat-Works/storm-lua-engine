@@ -2,11 +2,11 @@
 
 ## v0.3.0 開発中
 
-`feat/minify-source-provenance-v0.3`で由来追跡の改善を継続。同じ代表30入力・240設定で由来不明率の中央値は97.97%から**19.02%**へ低下し、70%以下の中間目標を達成した。生成Luaは全設定で変更前と一致、不明率の悪化は0件。[今回の検証](docs/verification/source-origin-coverage-70-20260930.md)。
+`feat/minify-source-provenance-v0.3`で由来不明率0%の設定数を増やした。同じ代表30入力・240設定で**0件→94件**、不明率中央値は19.02%→**4.44%**。生成Luaは全設定で変更前と一致し、不明率の悪化は0件。[今回の検証](docs/verification/source-origin-zero-20260930.md)。
 
-主な修正は関数localの共有スロット化、テーブルの不要nil代入除去、ローカル式/リテラルの置換、一時global packing。別変数が同じ短縮スロットを使っても元の各識別子位置を保持する。未監査の変更や未知の子はUnknownのままにする。全67パス中**25 partial / 42 pending**。64設定はまだ不明率70%超、16設定は全出力Unknownであり、完全対応とは扱わない。
+主な修正は残った代入/分岐/ブロックの由来保持、条件分岐の論理式化、連続除算の融合、不変式の再利用、真偽値変換。描画・符号分割の最適化を適用しない走査でもブロックの位置を消していた経路を修正した。未知の子や未対応の生成式はUnknownのままにする。元ソースのGroup帰属は今回の全コーパスで空白・改行・セミコロンだけだった。
 
-Parser/Printer、通常/目標探索、字句短縮、原文早期返却、候補clone/rollback、JSON/binary Workerの内部由来は接続済み。標準の最適化後minify mapはまだSDKへ提供しない。P3の残る変換/組み合わせの監査と追跡コスト改善、P4の標準map/link合成/Rust-WASM-TS公開、P5のPlayground双方向表示とruntime位置接続が残る。[実装計画](docs/design/source-provenance.md)。
+全67パス中**33 partial / 34 pending**。全出力Unknownの16設定は残る。0%は由来不明がないという指標であり、Synthetic・式/文単位の対応も含む。標準の最適化後minify mapはまだSDKへ提供しない。P3の残る変換/組み合わせと追加コスト改善、P4の標準map/link合成/Rust-WASM-TS公開、P5のPlayground双方向表示とruntime位置接続が残る。[実装計画](docs/design/source-provenance.md)。
 
 ## v0.2.1 公開状況
 

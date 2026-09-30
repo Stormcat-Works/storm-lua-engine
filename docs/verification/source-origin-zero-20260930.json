@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-30",
+  "developmentVersion": "0.3.0",
+  "implementationRevision": "a12a0a955d7be07980d6738f1b7625bb102fdb93",
+  "baselineRevision": "f757feba03ad6793140fa593260c03eed2c15217",
+  "goal": "Substantially increase complete (zero Unknown) configurations without changing inputs, outputs or Unknown semantics",
+  "sameSourceSnapshots": 30,
+  "sameConfigurations": 240,
+  "grid": "safe/smallest x exact/tolerant x zeroCostNewlines false/true",
+  "coverage": {
+    "before": {
+      "configurations": 240,
+      "zeroUnknown": 0,
+      "entirelyUnknown": 16,
+      "medianUnknownFraction": 0.19023370364613953,
+      "weightedUnknownFraction": 0.34530258662762325,
+      "atMost70PercentUnknown": 176
+    },
+    "after": {
+      "configurations": 240,
+      "zeroUnknown": 94,
+      "entirelyUnknown": 16,
+      "medianUnknownFraction": 0.04439866187868212,
+      "weightedUnknownFraction": 0.2876972506913942,
+      "atMost70PercentUnknown": 176
+    },
+    "codeIdentical": 240,
+    "regressed": 0,
+    "improved": 224,
+    "sourceGroupOnlyWhitespaceOrSemicolon": true
+  },
+  "zeroCoverage": {
+    "configurations": 94,
+    "fraction": 0.39166666666666666,
+    "casesWithAnyZeroConfiguration": 18,
+    "casesWithAllEightZeroConfigurations": 5,
+    "configurationsWithNoSyntheticBytes": 30,
+    "classifiedBytes": {
+      "bytes": 184066,
+      "unknown": 0,
+      "source_bytes": 117908,
+      "derived_bytes": 63224,
+      "synthetic_bytes": 2934,
+      "group_bytes": 2542,
+      "group_nonseparator_bytes": 0,
+      "name_bytes": 30974
+    }
+  },
+  "allConfigurationClassifiedBytes": {
+    "bytes": 491760,
+    "unknown": 141478,
+    "source_bytes": 208906,
+    "derived_bytes": 133120,
+    "synthetic_bytes": 8256,
+    "group_bytes": 4926,
+    "group_nonseparator_bytes": 0,
+    "name_bytes": 63654
+  },
+  "coverageCaveat": "Source/Derived can be name-, expression- or statement-level, and Synthetic remains distinct from original source. Source Group attribution was checked to cover only whitespace/semicolons in this corpus. Zero Unknown is not exact character correspondence or a finished public map API.",
+  "outputByteEqualityComparisons": 240,
+  "targetZeroFastBeam1CodeAndOriginsComparisons": 240,
+  "newRegressionTests": 25,
+  "nativePassed": 588,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerSubsetPassed": 17,
+  "browserEngines": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "probe-lock": 0,
+    "probe-final-build": 0,
+    "native-matrix": 0,
+    "coverage-summary": 0,
+    "native-perf": 0,
+    "compiler-build": 0,
+    "sdk": 0,
+    "wasm": 0,
+    "compiler-tests": 0,
+    "browsers": 0,
+    "wasm-compare": 0,
+    "consumer": 0,
+    "diff-check": 0
+  },
+  "wasmRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "ed39a8aefc99518b547b72d58888f2eda3e8a4e1d8ac6fbf2f5efdf59ace4f97",
+      "candidate": "82e5c3018e653cabc8f29f9047ea762e53870fd22481aaeab3f5cbd28f9ddd1e"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "nativeTrackingPerformance": [
+    {
+      "case": "vehicle-control",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2489.267101,
+      "trackedMedianMs": 2739.389091
+    },
+    {
+      "case": "vehicle-control",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 269.32309100000003,
+      "trackedMedianMs": 352.511385
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": null,
+      "samples": 3,
+      "untrackedMedianMs": 2912.045999,
+      "trackedMedianMs": 4466.210828
+    },
+    {
+      "case": "draw-4096",
+      "targetSize": 8192,
+      "samples": 3,
+      "untrackedMedianMs": 3111.988255,
+      "trackedMedianMs": 4862.622746999999
+    }
+  ],
+  "wasmUntrackedPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "ed39a8aefc99518b547b72d58888f2eda3e8a4e1d8ac6fbf2f5efdf59ace4f97",
+      "candidate": "82e5c3018e653cabc8f29f9047ea762e53870fd22481aaeab3f5cbd28f9ddd1e"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet; this WASM run checks only the non-tracing API."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 3162.997749999995,
+        "candidate": 2962.1640869999974,
+        "ratio": 0.9365052779440017
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 315.27868899999885,
+        "candidate": 313.04379000001063,
+        "ratio": 0.9929113540560675
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 2924.206487999996,
+        "candidate": 3041.4028160000016,
+        "ratio": 1.0400779932884157
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 2998.4536669999943,
+        "candidate": 2936.652337000007,
+        "ratio": 0.9793889328088832
+      }
+    ]
+  },
+  "passInventory": {
+    "registered": 67,
+    "partial": 33,
+    "pending": 34
+  },
+  "hostedCi": {
+    "run": 36691912724,
+    "revision": "a12a0a955d7be07980d6738f1b7625bb102fdb93",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "remaining": [
+    "Unattributed synthesized loops/data, advanced function/table transformations and their combinations",
+    "Tracking cost reductions without changing optimizer results",
+    "Standard optimized Source Map v3 export and multi-file origin composition",
+    "Public Rust/WASM/TS artifact identity and Playground connection"
+  ]
+}

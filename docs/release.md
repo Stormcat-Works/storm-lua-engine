@@ -2,6 +2,14 @@
 
 リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
 
+## v0.3.0の公開前準備
+
+v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。現在のnpm/GitHub/本番配備は0.2.1で、0.3.0のタグや公開はまだ実施していない。
+
+公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。詳細の性能改善は保留されており、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
+
+以下の0.2.0/0.2.1固有範囲は過去版の条件であり、今回の完成状態とは区別する。
+
 ## v0.2.0の完成範囲
 
 v0.2.0は既存runtime/raster/debug、Vehicle Compiler SDK、game/extendedとbindings、開発require、Vehicle load履歴、Playgroundを一つの版として仕上げます。ゲーム向けのmulti-fileは`build({minify:false,environment:"game"})`で単一ソースにして実行し、LB式の実行時includeはextendedの`requireLoader`を維持します。両者の意味を自動推測しません。

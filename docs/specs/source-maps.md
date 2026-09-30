@@ -101,3 +101,8 @@ NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブ�
 描画recordは通常・拡張・高密度・共有・規則列の各候補とデコーダーで、元の引数・payload/パレット・予測初期値と生成制御を区別する。静的な複数由来の保持と、実行時の特定反復を元の一命令に対応付ける処理は別機能である。
 
 実変換を必須とする67パスのテスト、JSON転送、部分/全由来欠落、各536実コンパイラ設定、代表240設定と実Lua codec比較を[検証記録](../verification/source-origin-all-passes-20261001.md)に記す。このP3検証とは別に、P4の標準v3・link合成・公開API・成果物の同一性を[理由付きmap検証](../verification/optimization-explanations-20261001.md)で確認する。Playground全体の説明UIはP5として残る。
+
+
+## Playground consumer（P5）
+
+[検査・実行契約](playground-source-maps.md)に基づき、原文/生成の双方向選択、理由・複数由来・除去記録と、実runtimeの生成行を結び付ける。列不明時は複数候補を示し、元変数の値や消えた実stackの復元と混同しない。IndexedDB/workspace保存とCLIの同じ検査経路も提供する。[P5の検証](../verification/p5-playground-20261001.md)。

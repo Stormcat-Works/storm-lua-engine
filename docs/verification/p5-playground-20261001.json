@@ -1,0 +1,130 @@
+{
+  "date": "2026-10-01",
+  "developmentVersion": "0.3.0",
+  "implementationRevision": "1d21821e563d9169c9bda2f74275a93b6d9e2f8b",
+  "p5": "complete",
+  "published": false,
+  "performanceOptimization": "deferred by request; no new search/benchmark or compiler pass change",
+  "scope": [
+    "bidirectional selected ranges",
+    "multiple origins and typed relations",
+    "recorded explanations and dispositions",
+    "source snapshots and exact-copy display",
+    "artifact identity validation",
+    "real runtime pauses, steps, logs and errors",
+    "line-only ambiguity",
+    "IndexedDB reload and portable workspace",
+    "CLI minify/map-inspect/workspace",
+    "release-ready package inspection"
+  ],
+  "cases": {
+    "nativePassed": 761,
+    "sdkPassed": 30,
+    "wasmPassed": 81,
+    "playgroundPassed": 31,
+    "recipes": 16,
+    "browsers": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "nativeMapSettings": 240,
+    "nativeTargetMissComparisons": 240,
+    "wasmMapSettings": 240,
+    "wasmTargetMissComparisons": 30,
+    "unknownZeroSettings": 240,
+    "largeArtifactBytesMinimum": 6291456
+  },
+  "gates": {
+    "fmt": 0,
+    "native": 0,
+    "default": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "architecture": 0,
+    "python": 0,
+    "licenses": 0,
+    "sdk": 0,
+    "compiler-build": 0,
+    "wasm": 0,
+    "compiler-browser": 0,
+    "runtime-browser": 0,
+    "app-dependencies": 0,
+    "app-build": 0,
+    "app-tests": 0,
+    "app-browser": 0,
+    "artifacts": 0,
+    "deploy-check": 0,
+    "native-matrix": 0,
+    "wasm-matrix": 0,
+    "pack": 0,
+    "installed-consumer": 0,
+    "diff": 0
+  },
+  "browserCoverage": {
+    "sourceNavigation": true,
+    "reasonsAndInlineContexts": true,
+    "removalReverseMapping": true,
+    "multiFileAndLifeboat": true,
+    "persistedSelectionAndInputs": true,
+    "freshContextImport": true,
+    "mismatchedArtifactRejected": true,
+    "malformedWorkspaceRejected": true,
+    "mappedPauseStepErrorLogs": true,
+    "lineOnlyAmbiguity": true,
+    "cancelledInitializerIsolation": true,
+    "unknownImportedMap": true,
+    "largeIndexedDBSnapshot": true,
+    "mobileOverflow": false,
+    "newConsoleErrors": 0
+  },
+  "ci": {
+    "run": 36791290985,
+    "revision": "1d21821e563d9169c9bda2f74275a93b6d9e2f8b",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "name": "stormcat-works-storm-lua-engine-0.3.0.tgz",
+      "bytes": 1506491,
+      "sha256": "64957774763060c952de84461ef62106d45836dfd444c433d06f374858e9899c"
+    },
+    {
+      "name": "storm-lua-playground-0.3.0-candidate.zip",
+      "bytes": 2591734,
+      "sha256": "0cacc6f4767c02d00e9dcbf4d327a985220f12659ac9b4efaa10c2377eab9b52"
+    }
+  ],
+  "screenshots": {
+    "inspector": "docs/verification/assets/p5-inspector-20261001.png",
+    "runtime": "docs/verification/assets/p5-runtime-20261001.png",
+    "mobile": "docs/verification/assets/p5-mobile-20261001.png"
+  },
+  "boundaries": [
+    "no v0.3.0 npm/GitHub release or production deployment",
+    "no original variable value/lifetime reconstruction",
+    "no vanished VM stack restoration",
+    "no bytecode-PC to original expression mapping",
+    "no dynamic loop iteration mapping or reverse execution",
+    "host binding dependent artifacts require explicit SDK host steps",
+    "source-map size and compile overhead unchanged and deferred"
+  ]
+}

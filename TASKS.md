@@ -59,7 +59,7 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## ソース位置追跡とtarget探索（P0/P1実装済み）
 
-[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続、P3の全67パスの由来対応は実装済み。残りはP4の最終map/公開API、P5のconsumer接続と追跡コストの改善。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
+[実装計画](docs/design/source-provenance.md)のP0（探索共通化）とP1（リンク段の詳細範囲）は実装済み。P2の内部由来・候補/Worker接続、P3の全67パスの由来対応は実装済み。P4の最終map/公開APIとP5のconsumer接続も実装・検証済み。追加の追跡コスト改善は利用者指示で保留する。4秒は実用規模での観測値であり、時間による探索打ち切りや全入力の保証上限ではない。
 
 ## v0.3.0 の現在地と残件
 
@@ -67,6 +67,10 @@ v0.2.1の公開、P0/P1の探索/リンク、P2の候補/Worker由来、P3の全
 
 [元の実測例の更新](docs/verification/provenance-examples-20261001.md)に、細かな位置・copy・文脈・理由が実際に返る例を残した。理由のbasis/factsは、実装が観測した条件・数値だけを格納する。全パスの網羅的な正当化証明や、不採用候補の全探索履歴は約束しない。
 
-主な残件はP5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と、実runtimeが返す位置との接続。P4の実利用で新たに必要になる検査もconsumer integrationで継続する。複雑な移動・統合の置換先情報、各パスの追加根拠、追跡コストの改善は個別課題として扱う。元変数の値・storage/lifetime・bytecode PC・特定のloop反復の復元は位置マップとは別の将来機能。
+P5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と実runtimeの生成行への接続は完了。CLI/Web共通のartifact/workspace検証、再読み込み・別ブラウザーへの持ち運び、実際のbreakpoint/step/log/error、3ブラウザーと大容量mapを検証した。[P5と梱包の記録](docs/verification/p5-playground-20261001.md)。
+
+コードとマップの組み違い、削除行の誤った逆引き、中断後の古い非同期結果の混入を防ぎ、入力や保存物を黙って置換しない。Native/WASMの代表240設定・全67パス回帰と配布tarballの独立導入を確認した。
+
+追加の性能最適化・map容量削減は保留。各パスの詳細な適用根拠追加、元変数の値/storage/lifetime、bytecode PC、特定loop反復、実行履歴は独立の後続項目であり、P5完了条件に混ぜない。
 
 v0.3.0の公開は別の明示工程で行う。現在の開発コードをmain/release/npmの0.2.1へ混ぜない。

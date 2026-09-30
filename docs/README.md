@@ -18,6 +18,7 @@
 | [Optimization explanation schema](design/optimization-explanation-schema.md) | versioned producer/理由/由来/採用候補の確定設計 |
 | [Optimization map extension](specs/optimization-map-extension.md) | Source Map v3＋x_stormの公開API・座標・指紋検証 |
 | [Compiler SDK plan](design/compiler-sdk.md) | 言語処理統合の境界・移行ゲート。現在の実装はCompiler guideとSTATUSで区別 |
+| [Playground source maps](specs/playground-source-maps.md) | 双方向位置、理由、実行位置と持ち運びの契約 |
 | [Playground](design/playground.md) | SDK全機能を試すCLI/Web、app配置、公開Worker、Addon Lab移行の範囲 |
 | [Playground decision](adr/0006-playground-coexistence.md) | Storm Minとの併存とSDK確認専用アプリの採用理由 |
 | [Compiler integration decision](adr/0005-compiler-sdk-integration.md) | 言語処理移管の判断理由と保留事項 |

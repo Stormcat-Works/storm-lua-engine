@@ -4,7 +4,7 @@
 
 P0〜P3は実装・検証済み。P4は[理由付きmapの確定設計](optimization-explanation-schema.md)に従い、標準v3＋x_storm、複数ファイル合成、Rust/WASM/TS/Workerの公開APIと内容指紋検証を実装した。[検証](../verification/optimization-explanations-20261001.md)と[実測例更新](../verification/provenance-examples-20261001.md)を参照する。以下の時系列進捗は当時の記録であり、現在の公開APIは[仕様](../specs/optimization-map-extension.md)が正本。
 
-P5の本格的な表示・双方向選択・実行位置接続は残る。元変数の値、消えたフレーム、loop反復のruntime対応は位置マップだけでは実現しない。理由の詳細なbasis/factsは記録した規則から順次増やすもので、知らない適用根拠を出力から推測しない。
+P5の表示・双方向選択・実行位置接続とCLI/Webの検証・配布物確認も完了した。[P5完成記録](../verification/p5-playground-20261001.md)。追加の性能最適化は利用者指示で保留する。元変数の値、消えたフレーム、loop反復のruntime対応は位置マップだけでは実現しない。理由の詳細なbasis/factsは記録した規則から順次増やすもので、知らない適用根拠を出力から推測しない。
 
 
 記録日: 2026-09-30。P0/P1はv0.2.1としてnpm/GitHub/Playgroundへ公開済み。最適化後マップは専用branchのv0.3.0で開発し、公開・タグ作成は別の明示工程とする。
@@ -15,7 +15,7 @@ P5の本格的な表示・双方向選択・実行位置接続は残る。元変
 
 **P0〜P3は完了。全67パスの由来伝播はimplementedで、partial/pendingは0件。** 各登録IDに実変換・追跡ON/OFF・由来欠落の負例・転送の検証を持ち、実コンパイラ536設定と既存代表240設定を通した。[全パスの検証記録](../verification/source-origin-all-passes-20261001.md)。
 
-全パス対応は、現行の変換と由来契約に対する実装・監査・テストの到達点。任意のLuaや将来の最適化変更が無欠陥であるという証明ではない。元の位置情報が欠けた入力ではUnknownを維持する。残りはP4の標準map/複数ファイル合成/公開API/成果物識別、P5のPlayground表示/実行位置接続、および追跡コストの改善。
+全パス対応は、現行の変換と由来契約に対する実装・監査・テストの到達点。任意のLuaや将来の最適化変更が無欠陥であるという証明ではない。元の位置情報が欠けた入力ではUnknownを維持する。P4の標準map/複数ファイル合成/公開API/成果物識別とP5のPlayground表示/実行位置接続も完成した。追加の追跡コスト改善は保留する。
 
 ## 1. 目的と到達点
 
@@ -92,8 +92,8 @@ Printerは実際に返す最終`code`に対して生成範囲を記録する。c
 - [x] P1: リンク段の正確なバイト範囲と列対応を実装する。合成部分を明示的にunmappedにし、複数ファイル・Unicode・同一行境界を検証する。
 - [x] P2: Parser/Printerと由来サイドテーブルを接続。原文snapshot・名前出現・式範囲を候補分岐、rollback、JSON/binary Workerへ渡し、最終候補に一致する内部GeneratedOriginsを返す。未対応変換はUnknownとして明示する。標準mapの製品APIはP4で扱う。
 - [x] P3: 全67最適化パスを監査・対応する。実変換・分岐・拒否・由来欠落・候補/Worker転送と実コンパイラの組み合わせを検証し、Source/Derived/Synthetic/Unknownと精度を保持する。標準mapの公開はP4と区別する。
-- [ ] P4: `minify`/`build(minify:true)`のRust/WASM/TS成果物へ接続し、非短縮mapとの合成と公開型の整合性を検証する。
-- [ ] P5: Playgroundで双方向位置選択、関連由来、自動生成/不明を表示し、エラー/停止位置に接続する。元変数の完全な復元とは分ける。
+- [x] P4: `minify`/`build(minify:true)`のRust/WASM/TS成果物へ接続し、非短縮mapとの合成と公開型の整合性を検証する。
+- [x] P5: Playgroundで双方向位置選択、関連由来、自動生成/不明を表示し、エラー/停止位置に接続する。元変数の完全な復元とは分ける。
 
 機械ゲートだけに頼らず、代表変換の原文・生成Lua・マップの対応を手動でも確認する。既存の解析診断、非短縮build、LifeBoatビルド、extended字句短縮、source loaderの契約を壊さない。公開・タグ・他製品の本番配備はこの着手の範囲外である。
 
@@ -101,7 +101,7 @@ Printerは実際に返す最終`code`に対して生成範囲を記録する。c
 
 [ECMA-426 Source Map](https://tc39.es/ecma426/) / [Lua 5.3 debug interface](https://www.lua.org/manual/5.3/manual.html#4.9) / [LLVM source-level debugging](https://llvm.org/docs/SourceLevelDebugging.html)。形式の採用と高度なデバッグ機能の実装完了を混同しない。
 
-P0/P1の実行結果、性能比較、既知の未実装範囲は[検証記録](../verification/source-provenance-20260930.md)を参照する。現在残るP4/P5の完了条件は上記のチェックリストで管理する。
+P0/P1の実行結果、性能比較、既知の未実装範囲は[検証記録](../verification/source-provenance-20260930.md)を参照する。P4/P5も上記のチェックリストと各検証記録に従って完了した。リリースと高度なruntime復元は別工程である。
 
 
 ## P2/P3の初期到達点（2026-09-30時点の記録）

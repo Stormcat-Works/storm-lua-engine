@@ -1,6 +1,6 @@
 {
   "name": "@stormcat-works/storm-lua-engine",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Stormworks Lua runtime, screen rasterization, Vehicle compiler and explicit host services",
   "license": "MIT",

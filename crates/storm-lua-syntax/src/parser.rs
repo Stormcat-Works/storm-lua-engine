@@ -18,22 +18,48 @@ impl fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
+/// An identifier occurrence within a parsed node, not an interned symbol.
+/// Repeated spellings and shadowed bindings have independent source positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NameSite {
+    /// A standalone name expression.
+    Reference,
+    /// A local declaration or loop binding, in declaration order.
+    Binding(u32),
+    /// An explicit function parameter, in declaration order (no implicit self).
+    Parameter(u32),
+    /// An identifier key of a named table field, indexed among all fields.
+    Field(u32),
+    /// A dot field or colon method name written as an identifier.
+    Member,
+    /// A goto target or label declaration.
+    Label,
+}
+
 /// NodeId → (line, col) の位置サイドテーブル。AST 本体（`Ast`）は無位置のまま持たせない。
 ///
 /// **有効範囲はパース直後の AST のみ**。最適化パスはノードを新規 push するため、
 /// パス通過後は NodeId の対応が崩れる — 再マッピング・世代管理はここでは実装しない(YAGNI)。
-/// リンク段・解析段（P1〜）の診断専用。
+/// パース時の診断と由来情報の初期範囲。最適化後のASTへ無更新で流用しない。
 #[derive(Debug, Clone, Default)]
 pub struct NodePositions {
     /// index = NodeId。
     positions: Vec<(u32, u32)>,
     spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
 impl NodePositions {
-    /// Statement's inclusive/exclusive UTF-8 byte span, valid only on the parsed AST.
+    /// Inclusive/exclusive UTF-8 byte span of a parsed node, valid only on this AST.
+    /// A declaration's Function child starts at `(`; a function expression also
+    /// includes its `function` keyword. Empty blocks have an empty span.
     pub fn span(&self, id: NodeId) -> Option<(usize, usize)> {
         self.spans.get(&id).copied()
+    }
+    /// Exact source span of one identifier occurrence inside this parsed node.
+    /// Implicit names (such as a method's self argument) have no source occurrence.
+    pub fn name_span(&self, id: NodeId, site: NameSite) -> Option<(usize, usize)> {
+        self.names.get(&(id, site)).copied()
     }
     /// Return the one-based line and byte-column for a parsed node, or None for an unknown ID.
     pub fn get(&self, id: NodeId) -> Option<(u32, u32)> {
@@ -49,6 +75,7 @@ pub struct Parser {
     capture_positions: bool,
     positions: Vec<(u32, u32)>,
     spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
 const STOPS_END: &[&str] = &["end"];
@@ -87,6 +114,7 @@ impl Parser {
             capture_positions: false,
             positions: Vec::new(),
             spans: std::collections::BTreeMap::new(),
+            names: std::collections::BTreeMap::new(),
         })
     }
 
@@ -111,6 +139,7 @@ impl Parser {
             NodePositions {
                 positions: self.positions,
                 spans: self.spans,
+                names: self.names,
             },
         )
     }
@@ -118,7 +147,7 @@ impl Parser {
     /// ノード構築ヘルパー。`capture_positions` が有効な場合のみ位置を記録する。
     /// `Ast::push` は Parser 経由でのみ呼ばれる（パス実行はここを通らない）ため、
     /// 記録漏れがなければ `self.positions` は常に `self.ast.nodes` と同じ長さで揃う。
-    fn mark(&mut self, id: NodeId, line: u32, col: u32) {
+    fn mark(&mut self, id: NodeId, line: u32, col: u32, start: usize) {
         if !self.capture_positions {
             return;
         }
@@ -128,6 +157,32 @@ impl Parser {
             "position side table out of sync with NodeId"
         );
         self.positions.push((line, col));
+        self.span_from(id, start);
+    }
+
+    fn span_from(&mut self, id: NodeId, start: usize) {
+        if self.capture_positions {
+            let end = self
+                .i
+                .checked_sub(1)
+                .map_or(start, |i| self.ts[i].p + self.ts[i].v.len());
+            self.spans.insert(id, (start, end.max(start)));
+        }
+    }
+
+    fn mark_name(&mut self, id: NodeId, site: NameSite, token: usize) {
+        if self.capture_positions {
+            let token = &self.ts[token];
+            debug_assert_eq!(token.k, TokenKind::Id);
+            self.names
+                .insert((id, site), (token.p, token.p + token.v.len()));
+        }
+    }
+
+    fn record_name_token(&self, tokens: &mut Vec<usize>) {
+        if self.capture_positions {
+            tokens.push(self.i);
+        }
     }
 
     fn cur(&self) -> &Token {
@@ -176,6 +231,7 @@ impl Parser {
 
     fn block(&mut self, stops: &[&str]) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
         let mut ss = Vec::new();
         loop {
             if self.cur_k() == TokenKind::Eof {
@@ -187,44 +243,43 @@ impl Parser {
             if self.accept(";") {
                 continue;
             }
-            let start = self.cur().p;
-            let statement = self.stat()?;
-            if self.capture_positions {
-                let last = &self.ts[self.i - 1];
-                self.spans.insert(statement, (start, last.p + last.v.len()));
-            }
-            ss.push(statement);
+            ss.push(self.stat()?);
         }
         let id = self.ast.block(ss);
-        self.mark(id, line, col);
+        self.mark(id, line, col, start);
         Ok(id)
     }
 
     fn stat(&mut self) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
         if self.accept("break") {
             let id = self.ast.break_();
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("goto") {
+            let token = self.i;
             let name = self.identifier()?;
             let id = self.ast.goto(&name);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
+            self.mark_name(id, NameSite::Label, token);
             return Ok(id);
         }
         if self.accept("::") {
+            let token = self.i;
             let name = self.identifier()?;
             self.pop(Some("::"))?;
             let id = self.ast.label(&name);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
+            self.mark_name(id, NameSite::Label, token);
             return Ok(id);
         }
         if self.accept("do") {
             let b = self.block(STOPS_END)?;
             self.pop(Some("end"))?;
             let id = self.ast.do_(b);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("while") {
@@ -233,7 +288,7 @@ impl Parser {
             let b = self.block(STOPS_END)?;
             self.pop(Some("end"))?;
             let id = self.ast.while_(e, b);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("repeat") {
@@ -241,7 +296,7 @@ impl Parser {
             self.pop(Some("until"))?;
             let e = self.expr()?;
             let id = self.ast.repeat(b, e);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("if") {
@@ -267,10 +322,12 @@ impl Parser {
             };
             self.pop(Some("end"))?;
             let id = self.ast.if_(arms, eb);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("for") {
+            let mut name_tokens = Vec::new();
+            self.record_name_token(&mut name_tokens);
             let name = self.identifier()?;
             if self.accept("=") {
                 let a = self.expr()?;
@@ -285,11 +342,15 @@ impl Parser {
                 let body = self.block(STOPS_END)?;
                 self.pop(Some("end"))?;
                 let id = self.ast.fornum(&name, a, b, c, body);
-                self.mark(id, line, col);
+                self.mark(id, line, col, start);
+                for (index, token) in name_tokens.into_iter().enumerate() {
+                    self.mark_name(id, NameSite::Binding(index as u32), token);
+                }
                 return Ok(id);
             }
             let mut names = vec![name];
             while self.accept(",") {
+                self.record_name_token(&mut name_tokens);
                 names.push(self.identifier()?);
             }
             self.pop(Some("in"))?;
@@ -298,26 +359,34 @@ impl Parser {
             let body = self.block(STOPS_END)?;
             self.pop(Some("end"))?;
             let id = self.ast.forin(names, es, body);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
+            for (index, token) in name_tokens.into_iter().enumerate() {
+                self.mark_name(id, NameSite::Binding(index as u32), token);
+            }
             return Ok(id);
         }
         if self.accept("function") {
             let target = self.func_name()?;
             let fn_ = self.func_body()?;
             let id = self.ast.funcstat(target, fn_);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         if self.accept("local") {
             if self.accept("function") {
+                let token = self.i;
                 let name = self.identifier()?;
                 let fn_ = self.func_body()?;
                 let id = self.ast.localfunc(&name, fn_);
-                self.mark(id, line, col);
+                self.mark(id, line, col, start);
+                self.mark_name(id, NameSite::Binding(0), token);
                 return Ok(id);
             }
+            let mut name_tokens = Vec::new();
+            self.record_name_token(&mut name_tokens);
             let mut names = vec![self.identifier()?];
             while self.accept(",") {
+                self.record_name_token(&mut name_tokens);
                 names.push(self.identifier()?);
             }
             let es = if self.accept("=") {
@@ -326,7 +395,10 @@ impl Parser {
                 Vec::new()
             };
             let id = self.ast.local(names, es);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
+            for (index, token) in name_tokens.into_iter().enumerate() {
+                self.mark_name(id, NameSite::Binding(index as u32), token);
+            }
             return Ok(id);
         }
         if self.accept("return") {
@@ -340,13 +412,13 @@ impl Parser {
             };
             self.accept(";");
             let id = self.ast.ret(es);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         let first = self.prefix_exp()?;
         if self.ast.node(first).is_call() {
             let id = self.ast.callstat(first);
-            self.mark(id, line, col);
+            self.mark(id, line, col, start);
             return Ok(id);
         }
         let mut vs = vec![first];
@@ -356,42 +428,53 @@ impl Parser {
         self.pop(Some("="))?;
         let es = self.expr_list()?;
         let id = self.ast.assign(vs, es);
-        self.mark(id, line, col);
+        self.mark(id, line, col, start);
         Ok(id)
     }
 
     fn func_name(&mut self) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
+        let token = self.i;
         let name = self.identifier()?;
         let mut e = self.ast.name(&name);
-        self.mark(e, line, col);
+        self.mark(e, line, col, start);
+        self.mark_name(e, NameSite::Reference, token);
         while self.accept(".") {
             let (line, col) = (self.cur().line, self.cur().col);
+            let token = self.i;
+            let key_start = self.cur().p;
             let name = self.identifier()?;
             let key = self.ast.str(quote_lua(&name));
-            self.mark(key, line, col);
+            self.mark(key, line, col, key_start);
+            self.mark_name(key, NameSite::Member, token);
             e = self.ast.index(e, key, true);
-            self.mark(e, line, col);
+            self.mark(e, line, col, start);
         }
         if self.accept(":") {
             let (line, col) = (self.cur().line, self.cur().col);
+            let token = self.i;
             let name = self.identifier()?;
             e = self.ast.methodname(e, &name);
-            self.mark(e, line, col);
+            self.mark(e, line, col, start);
+            self.mark_name(e, NameSite::Member, token);
         }
         Ok(e)
     }
 
     fn func_body(&mut self) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
         self.pop(Some("("))?;
         let mut ps: Vec<String> = Vec::new();
+        let mut parameter_tokens = Vec::new();
         let mut variadic = false;
         if !self.accept(")") {
             if self.accept("...") {
                 variadic = true;
                 self.pop(Some(")"))?;
             } else {
+                self.record_name_token(&mut parameter_tokens);
                 ps.push(self.identifier()?);
                 loop {
                     if !self.accept(",") {
@@ -401,6 +484,7 @@ impl Parser {
                         variadic = true;
                         break;
                     }
+                    self.record_name_token(&mut parameter_tokens);
                     ps.push(self.identifier()?);
                 }
                 self.pop(Some(")"))?;
@@ -409,7 +493,10 @@ impl Parser {
         let b = self.block(STOPS_END)?;
         self.pop(Some("end"))?;
         let id = self.ast.function(ps, variadic, b);
-        self.mark(id, line, col);
+        self.mark(id, line, col, start);
+        for (index, token) in parameter_tokens.into_iter().enumerate() {
+            self.mark_name(id, NameSite::Parameter(index as u32), token);
+        }
         Ok(id)
     }
 
@@ -432,29 +519,30 @@ impl Parser {
             self.pop(None)?;
             let e = self.expr_min(12)?;
             left = self.ast.un(&tok.v, e);
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("nil") {
             left = self.ast.nil();
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("true") {
             left = self.ast.bool_(true);
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("false") {
             left = self.ast.bool_(false);
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("...") {
             left = self.ast.vararg();
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Num {
             self.pop(None)?;
             left = self.ast.num(tok.v);
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Str {
             self.pop(None)?;
             left = self.ast.str(tok.v);
-            self.mark(left, tok.line, tok.col);
+            self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("function") {
             left = self.func_body()?;
+            self.span_from(left, tok.p);
         } else if self.at(Some("{"), None) {
             left = self.table()?;
         } else {
@@ -469,15 +557,17 @@ impl Parser {
             self.pop(None)?;
             let r = self.expr_min(rp)?;
             left = self.ast.bin(&op, left, r);
-            self.mark(left, op_tok.line, op_tok.col);
+            self.mark(left, op_tok.line, op_tok.col, tok.p);
         }
         Ok(left)
     }
 
     fn table(&mut self) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
         self.pop(Some("{"))?;
         let mut fs: Vec<TableField> = Vec::new();
+        let mut field_tokens = Vec::new();
         loop {
             if self.accept("}") {
                 break;
@@ -491,6 +581,9 @@ impl Parser {
             } else if self.cur_k() == TokenKind::Id
                 && self.ts.get(self.i + 1).is_some_and(|t| t.v == "=")
             {
+                if self.capture_positions {
+                    field_tokens.push((fs.len(), self.i));
+                }
                 let k = self.identifier()?;
                 self.pop(Some("="))?;
                 let v = self.expr()?;
@@ -508,22 +601,28 @@ impl Parser {
             }
         }
         let id = self.ast.table(fs);
-        self.mark(id, line, col);
+        self.mark(id, line, col, start);
+        for (index, token) in field_tokens {
+            self.mark_name(id, NameSite::Field(index as u32), token);
+        }
         Ok(id)
     }
 
     fn prefix_exp(&mut self) -> Result<NodeId, ParseError> {
         let (line0, col0) = (self.cur().line, self.cur().col);
+        let start = self.cur().p;
         let mut e: NodeId;
         if self.at(None, Some(TokenKind::Id)) {
+            let token = self.i;
             let name = self.identifier()?;
             e = self.ast.name(&name);
-            self.mark(e, line0, col0);
+            self.mark(e, line0, col0, start);
+            self.mark_name(e, NameSite::Reference, token);
         } else if self.accept("(") {
             let inner = self.expr()?;
             e = self.ast.paren(inner);
-            self.mark(e, line0, col0);
             self.pop(Some(")"))?;
+            self.mark(e, line0, col0, start);
         } else {
             let t = self.cur().clone();
             return Err(ParseError(format!(
@@ -537,25 +636,30 @@ impl Parser {
                 let key = self.expr()?;
                 self.pop(Some("]"))?;
                 e = self.ast.index(e, key, false);
-                self.mark(e, line, col);
+                self.mark(e, line, col, start);
             } else if self.accept(".") {
+                let token = self.i;
+                let key_start = self.cur().p;
                 let name = self.identifier()?;
                 let key = self.ast.str(quote_lua(&name));
-                self.mark(key, line, col);
+                self.mark(key, line, col, key_start);
+                self.mark_name(key, NameSite::Member, token);
                 e = self.ast.index(e, key, true);
-                self.mark(e, line, col);
+                self.mark(e, line, col, start);
             } else if self.accept(":") {
+                let token = self.i;
                 let method = self.identifier()?;
                 let args = self.args()?;
                 e = self.ast.call(e, args, Some(method));
-                self.mark(e, line, col);
+                self.mark(e, line, col, start);
+                self.mark_name(e, NameSite::Member, token);
             } else if self.at(Some("("), None)
                 || self.at(Some("{"), None)
                 || self.at(None, Some(TokenKind::Str))
             {
                 let args = self.args()?;
                 e = self.ast.call(e, args, None);
-                self.mark(e, line, col);
+                self.mark(e, line, col, start);
             } else {
                 break;
             }
@@ -601,7 +705,7 @@ pub fn parse_source(source: &str) -> Result<(Ast, NodeId), ParserError> {
 }
 
 /// `parse_source` に加えて位置サイドテーブル（NodeId → line/col）を返す。
-/// リンク段・解析段（P1〜）の診断専用。`compile()` のホットパスは
+/// パース時の診断と由来情報の初期範囲。最適化後のASTへ無更新で流用しない。`compile()` のホットパスは
 /// 記録コストなしの `parse_source` のまま変えない。
 pub fn parse_source_with_positions(
     source: &str,
@@ -763,6 +867,229 @@ mod variadic_parameter_tests {
             assert!(
                 parse_source(source).is_err(),
                 "accepted malformed variadic parameters: {source}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod provenance_span_tests {
+    use super::*;
+    use crate::ast::Node;
+
+    fn text<'a>(source: &'a str, positions: &NodePositions, id: NodeId) -> &'a str {
+        let (start, end) = positions.span(id).expect("every parsed node has a span");
+        &source[start..end]
+    }
+
+    fn name<'a>(source: &'a str, positions: &NodePositions, id: NodeId, site: NameSite) -> &'a str {
+        let (start, end) = positions
+            .name_span(id, site)
+            .expect("explicit name occurrence");
+        &source[start..end]
+    }
+
+    #[test]
+    fn expression_spans_cover_operands_not_just_operator_points() {
+        let source = "result = -(left + 2) * obj.field[3]:method(foo, '雪😀')";
+        let (ast, _, positions) = parse_source_with_positions(source).unwrap();
+        let mut checked = 0;
+        for (i, node) in ast.nodes.iter().enumerate() {
+            let id = i as NodeId;
+            match node {
+                Node::Bin(op, ..) if op == "+" => {
+                    assert_eq!(text(source, &positions, id), "left + 2");
+                    assert_eq!(
+                        positions.get(id),
+                        Some((1, source.find('+').unwrap() as u32 + 1))
+                    );
+                    checked += 1;
+                }
+                Node::Bin(op, ..) if op == "*" => {
+                    assert_eq!(
+                        text(source, &positions, id),
+                        "-(left + 2) * obj.field[3]:method(foo, '雪😀')"
+                    );
+                    checked += 1;
+                }
+                Node::Paren(_) => {
+                    assert_eq!(text(source, &positions, id), "(left + 2)");
+                    checked += 1;
+                }
+                Node::Un(_, _) => {
+                    assert_eq!(text(source, &positions, id), "-(left + 2)");
+                    checked += 1;
+                }
+                Node::Call(_, _, Some(_)) => {
+                    assert_eq!(
+                        text(source, &positions, id),
+                        "obj.field[3]:method(foo, '雪😀')"
+                    );
+                    assert_eq!(name(source, &positions, id, NameSite::Member), "method");
+                    checked += 1;
+                }
+                Node::Index(_, _, dot) => {
+                    assert_eq!(
+                        text(source, &positions, id),
+                        if *dot { "obj.field" } else { "obj.field[3]" }
+                    );
+                    checked += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(checked, 7);
+    }
+
+    #[test]
+    fn each_occurrence_of_a_shared_symbol_has_its_own_span() {
+        let source = "local x=1 do local x=x+1 end output.setNumber(1,x)";
+        let (ast, _, positions) = parse_source_with_positions(source).unwrap();
+        let mut ranges = Vec::new();
+        for (i, node) in ast.nodes.iter().enumerate() {
+            let id = i as NodeId;
+            match node {
+                Node::Local(_, _) => {
+                    ranges.push(positions.name_span(id, NameSite::Binding(0)).unwrap())
+                }
+                Node::Name(symbol) if ast.strings.get(*symbol) == "x" => {
+                    ranges.push(positions.name_span(id, NameSite::Reference).unwrap())
+                }
+                _ => {}
+            }
+        }
+        ranges.sort_unstable();
+        ranges.dedup();
+        assert_eq!(ranges.len(), 4);
+        assert_eq!(
+            ranges.iter().map(|&(start, _)| start).collect::<Vec<_>>(),
+            source
+                .match_indices('x')
+                .map(|(offset, _)| offset)
+                .collect::<Vec<_>>()
+        );
+        for (start, end) in ranges {
+            assert_eq!(&source[start..end], "x");
+        }
+    }
+
+    #[test]
+    fn declarations_parameters_fields_and_methods_have_named_slots() {
+        let source = "local first,second=1,2\nlocal function localfn(arg,other,...)return arg end\nfunction obj.part:method(param,...) return param end\nfor index=1,2 do end\nfor key,value in pairs(values)do end\nlocal t={7,field=1,[3]=2,other=4}\n::again:: goto again\n";
+        let (ast, _, positions) = parse_source_with_positions(source).unwrap();
+        let mut counts = [0; 7];
+        for (i, node) in ast.nodes.iter().enumerate() {
+            let id = i as NodeId;
+            match node {
+                Node::Local(names, _) if names.len() == 2 => {
+                    assert_eq!(name(source, &positions, id, NameSite::Binding(0)), "first");
+                    assert_eq!(name(source, &positions, id, NameSite::Binding(1)), "second");
+                    counts[0] += 1;
+                }
+                Node::Localfunc(_, _) => {
+                    assert_eq!(
+                        name(source, &positions, id, NameSite::Binding(0)),
+                        "localfn"
+                    );
+                    counts[1] += 1;
+                }
+                Node::Function(params, _, _) => {
+                    for (index, param) in params.iter().enumerate() {
+                        assert_eq!(
+                            name(source, &positions, id, NameSite::Parameter(index as u32)),
+                            ast.strings.get(*param)
+                        );
+                    }
+                    assert_eq!(
+                        positions.name_span(id, NameSite::Parameter(params.len() as u32)),
+                        None
+                    );
+                    counts[2] += 1;
+                }
+                Node::Methodname(_, _) => {
+                    assert_eq!(name(source, &positions, id, NameSite::Member), "method");
+                    counts[3] += 1;
+                }
+                Node::Fornum(..) => {
+                    assert_eq!(name(source, &positions, id, NameSite::Binding(0)), "index");
+                    counts[4] += 1;
+                }
+                Node::Forin(_, _, _) => {
+                    assert_eq!(name(source, &positions, id, NameSite::Binding(0)), "key");
+                    assert_eq!(name(source, &positions, id, NameSite::Binding(1)), "value");
+                    counts[4] += 1;
+                }
+                Node::Table(_) => {
+                    assert_eq!(name(source, &positions, id, NameSite::Field(1)), "field");
+                    assert_eq!(name(source, &positions, id, NameSite::Field(3)), "other");
+                    assert_eq!(positions.name_span(id, NameSite::Field(0)), None);
+                    assert_eq!(positions.name_span(id, NameSite::Field(2)), None);
+                    counts[5] += 1;
+                }
+                Node::Label(_) | Node::Goto(_) => {
+                    assert_eq!(name(source, &positions, id, NameSite::Label), "again");
+                    counts[6] += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(counts, [1, 1, 2, 1, 2, 1, 2]);
+    }
+
+    #[test]
+    fn unicode_crlf_function_and_empty_blocks_stay_on_real_boundaries() {
+        let source = "-- 😀雪\r\nlocal f=function(a) return '雪😀',a end\r\ndo end\r\n";
+        let (ast, _, positions) = parse_source_with_positions(source).unwrap();
+        let mut empty = 0;
+        let mut functions = 0;
+        for (i, node) in ast.nodes.iter().enumerate() {
+            let (start, end) = positions.span(i as NodeId).unwrap();
+            assert!(start <= end && end <= source.len());
+            assert!(source.is_char_boundary(start) && source.is_char_boundary(end));
+            if matches!(node, Node::Function(..)) {
+                assert_eq!(&source[start..end], "function(a) return '雪😀',a end");
+                functions += 1;
+            }
+            if matches!(node, Node::Block(statements) if statements.is_empty()) {
+                assert_eq!(start, end);
+                assert!(source[start..].starts_with("end"));
+                empty += 1;
+            }
+        }
+        assert_eq!((functions, empty), (1, 1));
+        for source in ["", "  -- comment\r\n"] {
+            let (_, root, positions) = parse_source_with_positions(source).unwrap();
+            assert_eq!(positions.span(root), Some((source.len(), source.len())));
+        }
+    }
+
+    #[test]
+    fn tracking_does_not_change_ast_or_default_printer_and_is_opt_in() {
+        for source in [
+            "local a,b=1,2 return a+b",
+            "function obj:m(x,...) return x,... end",
+            "local t={a=1}; t.a=t['a']+1",
+            "return function(...)return ... end",
+        ] {
+            let (ast, root) = parse_source(source).unwrap();
+            let (tracked, tracked_root, positions) = parse_source_with_positions(source).unwrap();
+            assert!(ast == tracked);
+            assert_eq!(root, tracked_root);
+            assert_eq!(positions.spans.len(), ast.nodes.len());
+            for zero in [false, true] {
+                assert_eq!(
+                    crate::print::Printer::new(&ast, zero).output(root),
+                    crate::print::Printer::new(&tracked, zero).output(root)
+                );
+            }
+            let mut parser = Parser::new(source).unwrap();
+            parser.parse().unwrap();
+            let (_, omitted) = parser.into_ast_with_positions();
+            assert!(
+                omitted.positions.is_empty()
+                    && omitted.spans.is_empty()
+                    && omitted.names.is_empty()
             );
         }
     }

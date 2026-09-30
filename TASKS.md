@@ -63,8 +63,13 @@ Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへID
 
 ## v0.2.1からv0.3.0への順序
 
-0.2.1の最大探索/未達target同一出力ゲート、配布物検証、GitHub・npm公開と再導入を完了してから、[由来情報計画](docs/design/source-provenance.md)のP2〜P5を0.3.0として開始する。
+0.2.1の同一出力ゲート・GitHub/Playground公開は完了。npmの公開自動化を整備し、初回Trusted Publisher承認は公開運用の残件として分離する。[由来情報計画](docs/design/source-provenance.md)のP2〜P5を専用branchで開発する。
 
 ## v0.2.1 残件（2026-09-30）
 
-GitHubとPlaygroundは公開・再取得・本番検証済み。npm認証更新、検査済みtarballのregistry公開、registryからの独立導入、公開状態文書の更新が未完了。完了してからv0.3.0のP2〜P5を開始する。詳細は[公開記録](docs/verification/release-0.2.1.md)。
+GitHubとPlaygroundは公開・再取得・本番検証済み。npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの独立導入、公開状態文書の更新が未完了。v0.3.0の開発とは分離して追跡する。詳細は[公開記録](docs/verification/release-0.2.1.md)。
+
+
+## v0.3.0 の次の工程
+
+Parser/Printerの範囲記録は実装・検証済み。P2の由来IDテーブルを変換と候補分岐へ接続し、P3の各パスへ伝播規則を追加する。P4で最終mapをRust/WASM/TSへ公開し、P5でPlaygroundを接続する。全工程の完了は[計画](docs/design/source-provenance.md)で管理する。npmの初回承認待ちは公開運用の残件とし、開発の保留条件にしない。

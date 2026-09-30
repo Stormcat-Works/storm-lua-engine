@@ -89,3 +89,12 @@ Printerは実際に返す最終`code`に対して生成範囲を記録する。c
 [ECMA-426 Source Map](https://tc39.es/ecma426/) / [Lua 5.3 debug interface](https://www.lua.org/manual/5.3/manual.html#4.9) / [LLVM source-level debugging](https://llvm.org/docs/SourceLevelDebugging.html)。形式の採用と高度なデバッグ機能の実装完了を混同しない。
 
 P0/P1の実行結果、性能比較、既知の未実装範囲は[検証記録](../verification/source-provenance-20260930.md)を参照する。残りのP2〜P5を完了扱いしない。
+
+
+## v0.3.0 P2の進捗（2026-09-30）
+
+Parserの全ノードspanとNameSite、Printerの生成byte範囲記録を実装した。変換しない同じAST上では、原文の名前・式と最終印字範囲を対応付けられる。既存診断のpointと通常Printerの文字列は維持する。[検証と実行例](../verification/source-emissions-030-20260930.md)。
+
+P2全体のチェックはまだ閉じない。由来IDテーブルの候補分岐・Arena再生成・置換への引き継ぎと、P3の各最適化パスの監査が必要である。ParserのNodePositionsを最適化済みASTへ無更新で添付してmap完成と扱わない。TS/Workerの最終map公開とPlayground接続も残る。
+
+npm自動公開は[別workflow](publication-workflow.md)へ実装済み。npmの初回Trusted Publisher承認は公開運用の残件として記録し、v0.3.0の開発は専用branchで継続する。公開済み0.2.1のtagやtarballを変更しない。

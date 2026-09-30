@@ -14,8 +14,9 @@ pub mod source_tools;
 pub use ast::{Ast, IfArm, Node, NodeId, SymbolId, TableField};
 pub use lexer::{LexError, Lexer, StormComment, Token, TokenKind};
 pub use parser::{
-    parse_source, parse_source_with_positions, NodePositions, ParseError, Parser, ParserError,
+    parse_source, parse_source_with_positions, NameSite, NodePositions, ParseError, Parser,
+    ParserError,
 };
-pub use print::{token_minify, Printer};
+pub use print::{token_minify, NodeEmission, PrintedSource, Printer};
 
 pub mod source_position;

@@ -1,0 +1,69 @@
+{
+  "date": "2026-09-30",
+  "developmentVersion": "0.3.0",
+  "published": false,
+  "baseRevision": "91afd9fe51366e53b3273f1175c8f0dfe6290560",
+  "nativePassed": 523,
+  "sdkPassed": 30,
+  "wasmPassed": 69,
+  "compilerTestsPassed": 17,
+  "browserEngines": [
+    "chromium",
+    "firefox",
+    "webkit"
+  ],
+  "parity": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "47426d8405716db04dbf39f85c02ef968df640244058f5cf7268fba8523de9dd",
+      "candidate": "c250a321b8bba34a75a7b04cad65e49d7d9d98b3d86e7ad33e5de6d57150936c"
+    },
+    "configurationComparisons": 240,
+    "targetComparisons": 30
+  },
+  "performance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "47426d8405716db04dbf39f85c02ef968df640244058f5cf7268fba8523de9dd",
+      "candidate": "c250a321b8bba34a75a7b04cad65e49d7d9d98b3d86e7ad33e5de6d57150936c"
+    },
+    "notes": [
+      "3 repetitions, median; paired alternating instance order, same process.",
+      "Initialization/file IO and hashing excluded; tracking-enabled printer cost is not measured here.",
+      "Compilation uses the ordinary no-generated-emission mode; no optimized source-map API exists yet."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "baseline": 3789.3658399999986,
+        "candidate": 3287.267187999998,
+        "ratio": 0.8674979737506683
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "baseline": 354.8922969999985,
+        "candidate": 397.1208959999931,
+        "ratio": 1.118989900194973
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "baseline": 3322.9695119999815,
+        "candidate": 3420.8011759999936,
+        "ratio": 1.029441035690132
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "baseline": 3725.59528400001,
+        "candidate": 3733.3640290000185,
+        "ratio": 1.0020852358905896
+      }
+    ]
+  },
+  "scope": "Parser/Printer initial source and generated ranges; no transformed-AST provenance propagation or optimized minify map API yet."
+}

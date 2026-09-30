@@ -57,3 +57,12 @@ This map does not restore optimized-away variables, original evaluation order, i
 - `examples/consumer/source-map.mjs`: independent installed SDK consumer of the non-minified path.
 
 Test existence is not a claim that a particular revision passed; executed commands and results belong in verification records. The trace-mapping package is an example/test dependency, not a runtime dependency of the SDK.
+
+
+## v0.3.0開発中: 構文/印字レイヤーの範囲記録
+
+`parse_source_with_positions`のNodePositionsは、同じパース済みASTの全node byte spanと、NameSiteで識別した名前出現の範囲を保持する。従来の診断用pointも保持する。位置はUTF-8バイトで、最適化後のASTにはそのまま流用できない。
+
+`Printer.output_with_positions`は`PrintedSource { code, emissions }`を返す。NodeEmissionは最終生成コード上の半開UTF-8 byte範囲、同じAST内のNodeId、任意のNameSiteを示す。範囲は入れ子になり得る。省略されたnodeには生成範囲を捏造しない。通常のPrinterと同じコードと改行数を生成する。
+
+これは最適化後Source Mapの完成APIではない。入力ASTが変換されている場合、元範囲は各変換の由来情報から取得する必要がある。`minify`/`build(minify:true)`がmapを返すようになったとは扱わない。

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## Unreleased — v0.3.0 development
+
+- Parserで式全体と名前出現の範囲を保持し、Printerへ最終生成byte範囲の記録を追加。原文・生成位置の接続基盤であり、最適化後minify mapはまだ提供しない。
 
 最適化後minifyソースマップはv0.3.0で実装する。0.2.1には含まない。
 

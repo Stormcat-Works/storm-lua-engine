@@ -301,3 +301,67 @@ mod tests {
         assert!(output.contains("__sc0"), "{output}");
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod provenance_trial_tests {
+    use super::*;
+    use storm_lua_syntax::provenance::GeneratedOrigins;
+    use storm_lua_syntax::{parse_source, parse_source_with_origins};
+
+    #[test]
+    fn cost_trials_replay_full_origins_for_exhaustive_greedy_and_no_op_choices() {
+        // Three groups exercise subset enumeration; thirteen exercise the greedy
+        // path. A single use is intentionally unprofitable and must stay intact.
+        for (count, repeats) in [(3, 5), (13, 5), (1, 1)] {
+            let calls = (0..count)
+                .map(|i| format!("screen.setColor({},234,56,78) ", 100 + i))
+                .collect::<String>();
+            let source = format!("function onDraw(){}end", calls.repeat(repeats));
+            let (tracked, root) = parse_source_with_origins("cost-trial.lua", &source).unwrap();
+            let groups = collect_groups(&tracked, root);
+            assert_eq!(groups.len(), count);
+            let before = serde_json::to_vec(&tracked).unwrap();
+            let mut actual = tracked.clone();
+            let result = factor_repeated_screen_calls(&mut actual, root);
+            let (mut plain, plain_root) = parse_source(&source).unwrap();
+            let plain_result = factor_repeated_screen_calls(&mut plain, plain_root);
+            assert!(actual == plain);
+            assert_eq!(result.saved, plain_result.saved);
+            assert_eq!(result.details, plain_result.details);
+            let selected = result
+                .details
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(|detail| {
+                    groups
+                        .iter()
+                        .position(|g| format!("call={};uses={}", g.key, g.sites.len()) == *detail)
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            if repeats > 1 {
+                assert!(!selected.is_empty());
+            } else {
+                assert!(selected.is_empty());
+            }
+            let expected = make_candidate(&tracked, root, &groups, &selected);
+            // The complete arena serialization includes all reasons, dispositions,
+            // typed relations and inline context, including currently unused nodes.
+            assert_eq!(
+                serde_json::to_vec(&actual).unwrap(),
+                serde_json::to_vec(&expected).unwrap()
+            );
+            assert_eq!(serde_json::to_vec(&tracked).unwrap(), before);
+            for zero in [false, true] {
+                let printed = Printer::new(&actual, zero).output_with_positions(root);
+                let expected = Printer::new(&expected, zero).output_with_positions(root);
+                let origins = GeneratedOrigins::from_print(&actual, &printed).unwrap();
+                origins.validate_for_code(&printed.code).unwrap();
+                assert_eq!(origins.unknown_bytes(), 0);
+                assert_eq!(printed.code, expected.code);
+            }
+        }
+    }
+}

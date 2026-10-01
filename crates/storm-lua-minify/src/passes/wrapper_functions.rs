@@ -642,3 +642,57 @@ mod tests {
         assert!(result.saved.unwrap_or(0) > 0);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod provenance_trial_tests {
+    use super::*;
+    use storm_lua_syntax::provenance::GeneratedOrigins;
+    use storm_lua_syntax::{parse_source, parse_source_with_origins, Printer};
+
+    #[test]
+    fn wrapper_winner_replay_preserves_relations_with_multiple_candidates_and_missing_data() {
+        let source="function first()screen.setColor(45,45,55)end function second()screen.setColor(60,60,70)end function third()screen.setColor(180,180,200)end function onDraw()first()second()third()first()second()third()first()second()third()end";
+        for transform in [
+            merge_translated_constant_wrappers,
+            merge_affine_constant_wrappers,
+        ] {
+            for missing in [false, true] {
+                let (mut original, root) =
+                    parse_source_with_origins("wrappers.lua", source).unwrap();
+                if missing {
+                    for i in 0..original.nodes.len() {
+                        let value = original.nodes[i].clone();
+                        original.nodes[i] = value;
+                    }
+                }
+                let before = serde_json::to_vec(&original).unwrap();
+                let mut actual = original.clone();
+                let result = transform(&mut actual, root);
+                let (mut plain, plain_root) = parse_source(source).unwrap();
+                let plain_result = transform(&mut plain, plain_root);
+                assert!(
+                    result.saved.unwrap_or(0) > 0,
+                    "fixture must adopt a real merge"
+                );
+                assert_eq!(result.saved, plain_result.saved);
+                assert_eq!(result.details, plain_result.details);
+                assert!(actual == plain);
+                assert_eq!(serde_json::to_vec(&original).unwrap(), before);
+                let printed = Printer::new(&actual, false).output_with_positions(root);
+                let origins = GeneratedOrigins::from_print(&actual, &printed).unwrap();
+                origins.validate_for_code(&printed.code).unwrap();
+                if missing {
+                    assert!(
+                        origins.unknown_bytes() > 0,
+                        "syntax-only trials must not manufacture original positions"
+                    );
+                } else {
+                    assert_eq!(origins.unknown_bytes(), 0);
+                    assert!(!origins.dispositions.is_empty());
+                    assert!(origins.origins.iter().any(|o| !o.related.is_empty()));
+                }
+            }
+        }
+    }
+}

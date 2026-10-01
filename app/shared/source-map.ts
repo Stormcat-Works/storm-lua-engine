@@ -69,7 +69,15 @@ export class MapDocument {
  validateSelection(s:MapSelection):void {if(!this.sources[s.source])throw new RangeError('選択sourceがありません');(s.side==='generated'?this.generated:this.sources[s.source]!.coordinates).range(s.start,s.end);}
  generatedHits(start:number,end=start):MapHit[]{
   this.generated.range(start,end);
-  return this.data.mappings.filter(m=>overlaps(start,end,m.start,m.end)).map(m=>({start:m.start,end:m.end,origin:m.origin,via:'primary',original:m.origin===null?null:this.data.origins[m.origin]!.primary}));
+  return this.data.mappings.filter(m=>overlaps(start,end,m.start,m.end)).map(m=>{
+   if(m.copied){
+    // Only a validated equal-byte copy permits interpolation. Preserve a caret
+    // as a point, and restrict a range/line query to its actual overlap.
+    const a=Math.max(start,m.start),b=start===end?a:Math.min(end,m.end);
+    return {start:a,end:b,origin:m.origin,via:'copy',original:{source:m.copied.source,start:m.copied.start+a-m.start,end:m.copied.start+b-m.start}};
+   }
+   return {start:m.start,end:m.end,origin:m.origin,via:'primary',original:m.origin===null?null:this.data.origins[m.origin]!.primary};
+  });
  }
  originalHits(source:number,start:number,end=start):MapHit[]{
   const buffer=this.sources[source];if(!buffer)throw new RangeError('sourceがありません');buffer.coordinates.range(start,end);

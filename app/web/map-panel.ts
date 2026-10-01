@@ -1,3 +1,4 @@
+import {moveMapSelection} from './map-selection.js';
 /** Playground consumer UI. All sources and explanations are rendered as text. */
 import {MapDocument,type MapSelection,type MapHit,type ValidateMap} from '../shared/source-map.js';
 import {object,text,stringify,errorMessage} from '../shared/wire.js';
@@ -13,6 +14,11 @@ export class MapPanel {
   for(const side of ['original','generated'] as const){
    const area=el<HTMLTextAreaElement>(`map-${side}`);
    const select=()=>{try{this.readSelection(side);}catch(e){this.message(errorMessage(e));}};
+   area.addEventListener('keydown',event=>{
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
+    const moved=moveMapSelection(area.value,{start:area.selectionStart,end:area.selectionEnd,direction:area.selectionDirection},event.key,event.shiftKey);
+    if(moved){event.preventDefault();area.setSelectionRange(moved.start,moved.end,moved.direction);}
+   });
    area.addEventListener('mouseup',select);area.addEventListener('keyup',select);
    el(`map-select-${side}`).addEventListener('click',select);
   }
@@ -65,11 +71,15 @@ export class MapPanel {
    el<HTMLButtonElement>(`map-${action}`).disabled=this.#busy||!this.#loaded||(['continue','into','over','out'].includes(action)&&!this.#paused);
   }
  }
- private showSource(i:number):void{const s=this.#doc?.sources[i];if(!s)throw new Error('元ファイルがありません');el<HTMLSelectElement>('map-source').value=String(i);el<HTMLTextAreaElement>('map-original').value=s.coordinates.value;}
+ private showSource(i:number):void{const s=this.#doc?.sources[i];if(!s)throw new Error('元ファイルがありません');el<HTMLSelectElement>('map-source').value=String(i);const area=el<HTMLTextAreaElement>('map-original');if(area.value!==s.coordinates.value)area.value=s.coordinates.value;}
  private highlight(side:'original'|'generated',start:number,end:number,source=Number(el<HTMLSelectElement>('map-source').value),focus=false):void{
   const doc=this.#doc!;if(side==='original')this.showSource(source);
   const coords=side==='generated'?doc.generated:doc.sources[source]!.coordinates;
-  const area=el<HTMLTextAreaElement>(`map-${side}`);if(focus)area.focus({preventScroll:true});area.setSelectionRange(coords.uiAt(start),coords.uiAt(end,true));
+  const area=el<HTMLTextAreaElement>(`map-${side}`);if(focus)area.focus({preventScroll:true});
+  const first=coords.uiAt(start),last=coords.uiAt(end,true);
+  // Keep the active end of a user's Shift selection when the model returns
+  // the same range, rather than resetting its direction to forward.
+  if(area.selectionStart!==first||area.selectionEnd!==last)area.setSelectionRange(first,last);
   const p=coords.position(start),q=coords.position(end);el(`map-${side}-position`).textContent=`${p.line}:${p.column} → ${q.line}:${q.column}（UTF-16列・終端除外）`;
   const excerpt=coords.slice(start,end);el(`map-${side}-selection`).textContent=excerpt.length?`選択: ${excerpt.length>160?excerpt.slice(0,160)+'…':excerpt}`:'カーソル位置';
   // Bring the selected line into the existing scrollable editor, not the whole page.
@@ -97,7 +107,7 @@ export class MapPanel {
  private sourceButton(span:OriginalSpan,role:string):HTMLButtonElement{
   const s=this.#doc!.sources[span.source]!,snippet=s.coordinates.slice(span.start,span.end);
   const b=node('button',`${role} · ${this.label(span)} · ${snippet.length>160?snippet.slice(0,160)+'…':snippet}`);b.className='map-source-link';
-  b.addEventListener('click',()=>{this.choose({side:'original',source:span.source,start:span.start,end:span.end});this.highlight('original',span.start,span.end,span.source,true);});return b;
+  b.addEventListener('click',()=>{el<HTMLTextAreaElement>('map-original').focus({preventScroll:true});this.choose({side:'original',source:span.source,start:span.start,end:span.end});});return b;
  }
  private renderCandidates():void{
   const root=el('map-candidates');root.replaceChildren();const pages=Math.max(1,Math.ceil(this.#hits.length/40));this.#page=Math.min(this.#page,pages-1);
@@ -119,7 +129,8 @@ export class MapPanel {
   const o=h.origin===null?null:d.origins[h.origin]!;
   root.append(node('h3',o?`${o.kind} / ${o.precision}${o.name?' · '+o.name:''}`:'Unknown / 由来未取得'));
   if(!o){root.append(node('p','この区間の元位置は記録されていません。自動生成や近隣位置へ置き換えません。'));this.changed();return;}
-  if(o.primary){root.append(this.sourceButton(o.primary,'主な由来'));if(this.#selection?.side==='generated')this.highlight('original',o.primary.start,o.primary.end,o.primary.source);}
+  const original=h.via==='copy'?h.original:o.primary;
+  if(original){root.append(this.sourceButton(original,h.via==='copy'?'選択範囲のcopy対応':'主な由来'));if(this.#selection?.side==='generated')this.highlight('original',original.start,original.end,original.source);}
   else root.append(node('p','コンパイラが生成したコードです。元の一行・一文字に対応させません。'));
   const ms=d.mappings.filter(m=>m.start<=h.start&&h.start<m.end);
   const copy=ms[0]?.copied;root.append(node('p',copy?'copy: 元snapshotと同じバイト列です。区間内部の位置も対応します。':'構文の由来です。文字位置を差分で補間しません。'));
@@ -169,7 +180,7 @@ export class MapPanel {
   root.append(node('p',`chunk ${r.chunk} · 実行世代 ${r.generation}`));if(r.error)root.append(node('pre',r.error));
   for(const location of r.locations){
    const l=location.association;const b=node('button',`${location.kind} · ${location.chunk}:${location.line} · ${l?'生成行のみ（列不明）'+(l.ambiguous?' / 複数の元位置':''):'対応する生成物なし'}`);
-   b.disabled=!l;b.addEventListener('click',()=>{if(!this.#doc||!l)return;const range=this.#doc.generated.line(l.line);if(range)this.choose({side:'generated',source:0,...range});});root.append(b);
+   b.disabled=!l;b.addEventListener('click',()=>{if(!this.#doc||!l)return;const range=this.#doc.generated.line(l.line);if(range){el<HTMLTextAreaElement>('map-generated').focus({preventScroll:true});this.choose({side:'generated',source:0,...range});}});root.append(b);
   }
   root.append(node('p','生成行から実際の列や元変数の値は復元しません。ステップとbreakpointは生成Luaの実行位置に作用します。'));
   const data=document.createElement('details');data.append(node('summary','生成VMのstack・I/O・ログ'),node('pre',stringify({stack:r.stack,io:r.io,logs:r.logs})));root.append(data);

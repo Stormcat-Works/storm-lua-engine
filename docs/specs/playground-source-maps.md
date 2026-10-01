@@ -16,9 +16,9 @@
 
 逆引きでは、同じ選択に対するより小さい元範囲や明示的なdispositionがある場合、これらを完全包含する粗い範囲を候補から外す。関数全体に対応した括弧が、その関数内の削除済みの行を実行しているかのように表示しないためである。親constructの説明は詳細欄から参照できる。この優先付けは元コードを再解析した停止可能性の判定ではない。
 
-Source/Derived/Synthetic/Unknownと精度name/token/expression/statement/groupを別々に表示する。Unknownには元位置を付けない。SyntheticをUnknownの別名にせず、実際の生成理由を表示する。copyのみ区間内部を等バイトの差分で対応付ける。
+Source/Derived/Synthetic/Unknownと精度name/token/expression/statement/groupを別々に表示する。Unknownには元位置を付けない。SyntheticをUnknownの別名にせず、実際の生成理由を表示する。copyのみ区間内部を等バイトの差分で対応付ける。生成→原文でも原文→生成でも、copy区間は選択範囲との交差だけに限定する。カーソルは正確な一点に対応させる。原文をそのまま返すidentityがファイル全体の1区間であっても、選択やruntime行を原文全体へ拡張しない。
 
-textareaの選択位置はUTF-16で、CRLFが画面上でLFへ正規化される。原文snapshotは正規化せずUTF-8 byte座標を維持し、明示的な座標変換表を使用する。サロゲート/UTF-8文字途中の選択は拒否する。画面表示の行と列は1-based、範囲の終端は除外する。
+textareaの選択位置はUTF-16で、CRLFが画面上でLFへ正規化される。原文snapshotは正規化せずUTF-8 byte座標を維持し、明示的な座標変換表を使用する。サロゲート/UTF-8文字途中の選択は拒否する。読み取り専用欄でも方向キー・Home/End・Shift範囲選択が各ブラウザーで同じ論理位置を移動するよう明示処理し、文字の変更を許可しない。画面表示の行と列は1-based、範囲の終端は除外する。
 
 ## 理由・関連元・削除
 

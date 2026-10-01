@@ -4,7 +4,11 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
 async function complete(page){
- await page.waitForFunction(()=>['complete','error'].includes(document.body.dataset.runState));
+ try{await page.waitForFunction(()=>['complete','error'].includes(document.body.dataset.runState));}
+ catch(cause){
+  const state=await page.evaluate(()=>({runState:document.body.dataset.runState,progress:document.querySelector('#progress').textContent,mapMessage:document.querySelector('#map-message').textContent,error:document.querySelector('#error-banner').textContent,runtime:document.querySelector('#map-runtime-result').textContent,mapLoadDisabled:document.querySelector('#map-load').disabled,active:document.activeElement?.id}));
+  throw new Error(`Playground action did not finish: ${JSON.stringify(state)}`,{cause});
+ }
  assert.equal(await page.locator('body').getAttribute('data-run-state'),'complete',await page.locator('#error-banner').textContent());
 }
 async function saved(page){await page.waitForFunction(()=>document.querySelector('#saved').textContent==='この端末に保存済み');}
@@ -75,6 +79,46 @@ export async function sourceMapBrowser({page,browser,name,url,evidence}){
   assert.equal(await other.locator('#map-tick').isDisabled(),true);
   assert.match(await other.locator('#map-detail').textContent(),/constant-folding/);
  }finally{await fresh.close();}
+ // A verbatim/identity artifact may contain one copy range for the entire
+ // program. Selection and runtime lines must project only their exact overlap.
+ const identitySource='-- 😀雪\r\nfunction onTick()\r\n output.setNumber(1,7)\r\n output.setNumber(2,8)\r\nend\r\n';
+ await page.locator('#steps-tab').click();
+ await page.locator('#steps').fill(JSON.stringify([{op:'minify',source:identitySource,options:{sourceMap:true,sourceName:'identity.lua',targetSize:8192}}]));
+ await page.locator('#run').click();await complete(page);
+ assert.equal(await page.locator('#map-generated').inputValue(),identitySource.replaceAll('\r\n','\n'));
+ await select(page,'generated','output');
+ const selectedText=side=>page.locator(`#map-${side}`).evaluate(area=>area.value.slice(area.selectionStart,area.selectionEnd));
+ assert.equal(await selectedText('original'),'output','identity must not select the entire source');
+ assert.match(await page.locator('#map-original-position').textContent(),/^3:2 → 3:8/);
+ await select(page,'generated','😀');assert.equal(await selectedText('original'),'😀');
+ await select(page,'generated','output',{offset:2,length:0});
+ assert.match(await page.locator('#map-original-position').textContent(),/^3:4 → 3:4/);
+ await page.locator('#map-generated').focus();await page.keyboard.press('ArrowRight');
+ await page.waitForFunction(()=>document.querySelector('#map-original-position').textContent.startsWith('3:5 → 3:5'));
+ assert.match(await page.locator('#map-original-position').textContent(),/^3:5 → 3:5/);
+ await page.keyboard.press('Shift+ArrowLeft');await page.keyboard.press('Shift+ArrowLeft');
+ await page.waitForFunction(()=>document.querySelector('#map-original-selection').textContent==='選択: ut');
+ assert.equal(await selectedText('generated'),'ut');assert.equal(await selectedText('original'),'ut');
+ await page.keyboard.press('Home');await page.keyboard.press('End');
+ await page.waitForFunction(()=>document.querySelector('#map-generated').selectionStart===document.querySelector('#map-generated').value.indexOf(' output.setNumber(1,7)')+' output.setNumber(1,7)'.length);
+ await page.locator('#map-original').focus();await page.keyboard.press('Home');await page.keyboard.press('Shift+ArrowRight');
+ assert.equal(await selectedText('original'),' ');
+
+ await select(page,'generated','output');await saved(page);
+ await page.reload();await page.locator('#map-panel').waitFor({state:'visible'});await saved(page);
+ assert.equal(await selectedText('original'),'output','identity copy selection must survive reload');
+ assert.equal(await page.locator('#map-tick').isDisabled(),true);
+ if(name==='chromium')await page.locator('#map-panel').screenshot({path:join(evidence,'source-map-identity-copy.png'),caret:'initial'});
+ await page.locator('#map-load').click();await complete(page);
+ await select(page,'original','output');await page.locator('#map-breakpoints').click();await complete(page);
+ await page.locator('#map-tick').click();await complete(page);
+ assert.match(await page.locator('#map-runtime-result>strong').textContent(),/suspended/);
+ await page.locator('#map-runtime-result>button').filter({hasText:'pause ·'}).first().click();
+ assert.equal(await selectedText('original'),' output.setNumber(1,7)\n','line-only pause must map that line, not file start');
+ assert.match(await page.locator('#map-runtime-result').textContent(),/生成行のみ（列不明）/);
+ await page.locator('#map-clearBreakpoints').click();await complete(page);
+ await page.locator('#map-continue').click();await complete(page);
+ assert.match(await page.locator('#map-runtime-result>strong').textContent(),/completed/);
  // Module selection is from embedded snapshots, not from filesystem fetches.
  await page.locator('[data-recipe="source-map-modules"]').click();await page.locator('#run').click();await complete(page);
  const options=await page.locator('#map-source option').allTextContents();assert.ok(options.includes('main.lua')&&options.includes('lib.lua'));
@@ -153,5 +197,5 @@ export async function sourceMapBrowser({page,browser,name,url,evidence}){
  }
  assert.equal(await page.locator('vite-error-overlay').count(),0);
  console.log(`${name}: source maps, reasons, reverse selection, snapshots, portable workspace, pause/step/log/error and stale-artifact rejection passed`);
- return {bidirectional:true,inlineContexts:true,reasons:true,removedSource:true,workspaceRoundtrip:true,staleRejection:true,multiFile:true,runtimePause:true,runtimeError:true,lineOnlyAmbiguity:true};
+ return {identityCopySelection:true,identityRuntimeLine:true,unicodeCaret:true,bidirectional:true,inlineContexts:true,reasons:true,removedSource:true,workspaceRoundtrip:true,staleRejection:true,multiFile:true,runtimePause:true,runtimeError:true,lineOnlyAmbiguity:true};
 }

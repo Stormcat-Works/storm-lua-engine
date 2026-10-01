@@ -71,3 +71,8 @@ Addon Labの現在のソース・CI参照は撤去済みです。過去版Releas
 利用ガイドはdocs.makkii.jpのstorm-lua-engine配下に移しました。本リポジトリのdocs/guideは移設先だけを示し、本文を複製しません。契約・設計・検証・リリース手順とconsumerコードは本リポで検査します。
 
 公開時はSDKパッケージ、ガイド、Playgroundを対応版で配備し、ブログ下書きのdraft解除はその公開状態を確認してから行います。npm publish・Worker配備・ブログ公開を、通常のコードcommitと同一視しません。
+
+
+## v0.3.0の性能ラウンド後の検査済み成果物
+
+P5完成後の限定性能改善と最終tarball/ZIPの検査は[2026-10-02の記録](verification/source-map-performance-20261002.md)へ集約した。性能改善前のP5 tarballと混同せず、公開時は採用commitと同じproducer/revisionを持つ検査済み成果物を使う。公開・registry再導入・本番配備は引き続き別の明示工程である。

@@ -4,7 +4,7 @@
 
 ## 前提
 
-最適化後Source Mapは明示opt-inである。SDKの `sourceMap:true`、CLIの `--source-map` などを指定した場合だけ詳細由来・理由・Source Map v3 + `x_storm` を生成する。通常の `sourceMap:false` は既存の短縮結果と通常性能を維持する。
+最適化後Source Mapは明示opt-inである。SDKの `sourceMap:true`、CLIの `--source-map` などを指定した場合だけ詳細由来・理由・Source Map v3 + `x_storm` を生成する。通常の `sourceMap:false` は既存の短縮結果と通常性能を維持する。ここでいうopt-inは最適化後の詳細mapであり、非短縮buildが従来から返す標準mapの動作は変更しない。
 
 現行v0.3.0開発版はP0〜P5まで完了し、全67最適化パスの由来伝播、標準Source Map v3、`x_storm schemaVersion:1`、producer/version/revision、原文・生成物指紋、Playground/CLI/実VM接続まで検証済みである。この性能作業で精度や契約を弱めない。
 
@@ -92,3 +92,12 @@ profile上位の明白な無駄を3〜5件処理した時点で再計測する�
 ## 完了状態
 
 この計画を保存後、profile → 上位コスト修正 → 回帰 → 再計測 → 文書更新を行う。v0.3.0のpublish/tag/releaseブランチ更新・本番Playground配備は別の明示工程であり、この作業では実施しない。
+
+
+## 実施結果（2026-10-02）
+
+計画保存→工程/パスの計測→3系統の明白な無駄の削減→回帰/同条件比較まで完了した。具体的にはサイズ測定だけのscope rename、screen callの部分集合試行、translated/affine wrapper試行で、捨てる候補の由来を作らず採用した変換だけを元の追跡付き入力へ適用する。
+
+生成Lua、候補サイズ、標準map、拡張の位置・理由・関係・文脈・削除記録は維持した。240設定でproducer/integrity以外のmap JSON全体が一致し、両版間のvalidatorも互換。mapサイズは縮小していない。5回ずつの新旧/ON/OFF交互WASM計測と全ゲートは[最終検証](../verification/source-map-performance-20261002.md)へ保存した。
+
+このラウンドでv0.3.0向けの性能対応は終了し、追加改善はv0.3.1以降とする。1.5〜1.7倍の目安のために精度や短縮品質を犠牲にしたり、公開を無期限に延期したりしない。

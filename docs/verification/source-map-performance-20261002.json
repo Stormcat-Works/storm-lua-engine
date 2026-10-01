@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-02",
+  "developmentVersion": "0.3.0",
+  "planRevision": "96deaec006a7a3e1a11a114c7a49080c59ed9ec5",
+  "implementationRevision": "31099f16456e2318ef1f48cbd4b626e3608a8030",
+  "verifiedRevision": "b57a3a3a9fe4ce4cd9c113e40bf08a0ca251925c",
+  "scope": "One bounded performance round; no optimizer quality changes, schema changes, attribution coarsening, or publication.",
+  "baseline": {
+    "source": "previous checked P5 SDK tarball",
+    "revision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+    "packageSha256": "07df2c4af58ae9c1678dd38f8548ae43ec6e9944eafb38039a48bc3353a9d39e",
+    "compilerSha256": "cc88b71ae9da4ee6687a8c23731ce7b546bb76c637320a9e8b9b9d67a78476fd"
+  },
+  "wasmPerformance": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "cc88b71ae9da4ee6687a8c23731ce7b546bb76c637320a9e8b9b9d67a78476fd",
+      "candidate": "c76364829bc4e7f882c1f208f34d8609fedbc28675f7039a0e4a03f39c4440d5"
+    },
+    "producers": {
+      "baseline": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+        "dirty": false
+      },
+      "candidate": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "b57a3a3a9fe4ce4cd9c113e40bf08a0ca251925c",
+        "dirty": false
+      }
+    },
+    "notes": [
+      "Five repetitions; four mode/module combinations with rotated order and equal untimed warmups.",
+      "Compile call includes tracking and final map JSON; read/init/hash/validation excluded. Validation separately timed.",
+      "Same Node process, two independent compiler WASM modules. Not a browser or game execution benchmark."
+    ],
+    "summary": [
+      {
+        "case": "vehicle-control",
+        "target": false,
+        "samples": 5,
+        "baselinePlainMs": 2828.387566000005,
+        "baselineMappedMs": 4679.435415000007,
+        "candidatePlainMs": 2838.0638899999976,
+        "candidateMappedMs": 4521.967282999998,
+        "baselineValidationMs": 35.96090499999991,
+        "candidateValidationMs": 35.52613500000007,
+        "baselineMapBytes": 1374918,
+        "candidateMapBytes": 1374918,
+        "baselineOverhead": 1.6544533964338604,
+        "candidateOverhead": 1.5933282189077154,
+        "mappedImprovement": 0.03365109634705976,
+        "plainChange": 0.003421145007251436
+      },
+      {
+        "case": "vehicle-control",
+        "target": true,
+        "samples": 5,
+        "baselinePlainMs": 308.6424640000041,
+        "baselineMappedMs": 513.9968860000081,
+        "candidatePlainMs": 311.55743000000075,
+        "candidateMappedMs": 470.58979699999327,
+        "baselineValidationMs": 38.61231599999883,
+        "candidateValidationMs": 40.15712000000349,
+        "baselineMapBytes": 1523794,
+        "candidateMapBytes": 1523794,
+        "baselineOverhead": 1.6653472737957447,
+        "candidateOverhead": 1.5104431853863736,
+        "mappedImprovement": 0.08445010112379192,
+        "plainChange": 0.00944447488598521
+      },
+      {
+        "case": "draw-4096",
+        "target": false,
+        "samples": 5,
+        "baselinePlainMs": 2923.6873599999817,
+        "baselineMappedMs": 5949.097571999999,
+        "candidatePlainMs": 2928.3204149999947,
+        "candidateMappedMs": 5389.123823000002,
+        "baselineValidationMs": 224.69247100001667,
+        "candidateValidationMs": 222.9437040000048,
+        "baselineMapBytes": 8226791,
+        "candidateMapBytes": 8226791,
+        "baselineOverhead": 2.034792657173863,
+        "candidateOverhead": 1.8403463621654297,
+        "mappedImprovement": 0.09412751131122266,
+        "plainChange": 0.0015846615692907129
+      },
+      {
+        "case": "draw-4096",
+        "target": true,
+        "samples": 5,
+        "baselinePlainMs": 2917.717345000012,
+        "baselineMappedMs": 6161.812810000003,
+        "candidatePlainMs": 2905.3679739999934,
+        "candidateMappedMs": 5573.042553000036,
+        "baselineValidationMs": 222.23281499999575,
+        "candidateValidationMs": 226.89077200001338,
+        "baselineMapBytes": 8226791,
+        "candidateMapBytes": 8226791,
+        "baselineOverhead": 2.111860773820083,
+        "candidateOverhead": 1.918188196081509,
+        "mappedImprovement": 0.09555146758831301,
+        "plainChange": -0.004232545356451678
+      }
+    ]
+  },
+  "fullMapRegression": {
+    "ok": true,
+    "node": "v22.22.1",
+    "wasmSha256": {
+      "baseline": "cc88b71ae9da4ee6687a8c23731ce7b546bb76c637320a9e8b9b9d67a78476fd",
+      "candidate": "c76364829bc4e7f882c1f208f34d8609fedbc28675f7039a0e4a03f39c4440d5"
+    },
+    "producers": {
+      "baseline": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+        "dirty": false
+      },
+      "candidate": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "b57a3a3a9fe4ce4cd9c113e40bf08a0ca251925c",
+        "dirty": false
+      }
+    },
+    "inputCount": 30,
+    "configurations": 240,
+    "targetComparisons": 240,
+    "mutualValidationComparisons": 480,
+    "excludedFromMapComparison": [
+      "x_storm.producer",
+      "x_storm.integrity"
+    ]
+  },
+  "nativePassed": 764,
+  "sdkPassed": 30,
+  "wasmPassed": 81,
+  "playgroundPassed": 38,
+  "newUnitTests": 3,
+  "hostedCi": {
+    "run": 36936969015,
+    "revision": "b57a3a3a9fe4ce4cd9c113e40bf08a0ca251925c",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "gates": {
+    "fmt": 0,
+    "architecture": 0,
+    "default": 0,
+    "native": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "python": 0,
+    "licenses": 0,
+    "screen": 0,
+    "publication-tests": 0,
+    "sdk": 0,
+    "runtime-build": 0,
+    "compiler-build": 0,
+    "wasm": 0,
+    "runtime-browser": 0,
+    "compiler-browser": 0,
+    "app-install": 0,
+    "app-build": 0,
+    "app-test": 0,
+    "app-browser": 0,
+    "artifacts": 0,
+    "package-shape": 0,
+    "consumer": 0,
+    "deploy-dry-run": 0,
+    "diff": 0
+  },
+  "browserEvidence": {
+    "route": "/tools/stormworks/storm-lua-engine/",
+    "browserPlugin": "absent",
+    "receipts": [
+      {
+        "browser": "chromium",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "firefox",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "webkit",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      }
+    ]
+  },
+  "artifacts": {
+    "schemaVersion": 1,
+    "version": "0.3.0",
+    "sourceRevision": "b57a3a3a9fe4ce4cd9c113e40bf08a0ca251925c",
+    "publication": "not published",
+    "assets": {
+      "storm-lua-engine-playground-0.3.0.zip": "5ff062a19c951465fa8715169f92765db634c2a31a2af801379f71b170b025d2",
+      "stormcat-works-storm-lua-engine-0.3.0.tgz": "1e79aa556e5da4384d7c3218833fba67cb28cfb0d977eda4bebc373a44f48606"
+    },
+    "wasm": {
+      "dist/wasm/storm_lua_wasm.wasm": "61c82e446fe8cd9ce4a0aa61f9449aa2d34800cafd02e5d492827a36cbeaac3f",
+      "dist/wasm/screen.wasm": "6d7ef8c0d90e58a0d8327af530f60acfbeff129b3ba6c226da4f1f66eef339c0",
+      "dist/compiler-wasm/compiler_bg.wasm": "c76364829bc4e7f882c1f208f34d8609fedbc28675f7039a0e4a03f39c4440d5"
+    },
+    "scope": "Bounded source-map performance round; same generated Lua and schema1 map meaning; further optimization deferred to 0.3.1 or later."
+  },
+  "profiling": {
+    "method": "Native compile/encode boundary timings and pass elapsed times; not sampled CPU profiling",
+    "perfAvailable": false,
+    "perfExitCode": 1,
+    "optimizerProductInstrumentationRemoved": true,
+    "jsonDuplicateCheck": {
+      "fixture": "draw-4096",
+      "origins": 13715,
+      "uniqueOrigins": 13715,
+      "mappings": 27764,
+      "mergeableAdjacentMappings": 0,
+      "constructs": 20747,
+      "uniqueConstructs": 20747,
+      "mapBytes": 8226791
+    }
+  },
+  "deferredUntil": "v0.3.1 or later",
+  "notMeasured": [
+    "Peak resident memory before/after",
+    "Browser interactive latency benchmark",
+    "Real Stormworks execution speed",
+    "Exhaustive benchmarking of arbitrary source programs"
+  ]
+}

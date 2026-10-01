@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-01",
+  "developmentVersion": "0.3.0",
+  "implementationRevision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+  "baseP5Revision": "1d21821e563d9169c9bda2f74275a93b6d9e2f8b",
+  "scope": "Finish P5 copy selection and keyboard/runtime behavior; recheck CLI, app, SDK and package gates. Do not change optimization algorithms or deploy.",
+  "nativePassed": 761,
+  "sdkPassed": 30,
+  "wasmPassed": 81,
+  "playgroundPassed": 38,
+  "newPlaygroundRegressions": 7,
+  "browserEvidence": {
+    "route": "/tools/stormworks/storm-lua-engine/",
+    "browserPlugin": "absent",
+    "receipts": [
+      {
+        "browser": "chromium",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "firefox",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      },
+      {
+        "browser": "webkit",
+        "recipes": 16,
+        "desktop": [
+          1440,
+          1100
+        ],
+        "mobile": [
+          390,
+          844
+        ],
+        "sourceMaps": {
+          "identityCopySelection": true,
+          "identityRuntimeLine": true,
+          "unicodeCaret": true,
+          "bidirectional": true,
+          "inlineContexts": true,
+          "reasons": true,
+          "removedSource": true,
+          "workspaceRoundtrip": true,
+          "staleRejection": true,
+          "multiFile": true,
+          "runtimePause": true,
+          "runtimeError": true,
+          "lineOnlyAmbiguity": true
+        },
+        "reload": true,
+        "invalidImportPreserved": true,
+        "cancel": true,
+        "compilerOnly": true,
+        "rasterOnly": true,
+        "errors": []
+      }
+    ]
+  },
+  "gates": {
+    "fmt": 0,
+    "architecture": 0,
+    "default": 0,
+    "native": 0,
+    "clippy": 0,
+    "rustdoc": 0,
+    "python": 0,
+    "licenses": 0,
+    "screen-contract": 0,
+    "publication-tests": 0,
+    "sdk": 0,
+    "runtime-build": 0,
+    "compiler-build": 0,
+    "wasm": 0,
+    "runtime-browser": 0,
+    "compiler-browser": 0,
+    "app-install": 0,
+    "app-build": 0,
+    "app-test": 0,
+    "app-browser": 0,
+    "artifact-paths": 0,
+    "package-shape": 0,
+    "consumer": 0,
+    "deploy-dry-run": 0,
+    "diff": 0
+  },
+  "hostedCi": {
+    "run": 36800675476,
+    "revision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "wasm",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "native (macos-latest)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "package": {
+    "schemaVersion": 1,
+    "version": "0.3.0",
+    "sourceRevision": "c851ac3d4f262aa93aae32d3e13b0b3ff397a545",
+    "publication": "not published",
+    "assets": {
+      "storm-lua-engine-playground-0.3.0.zip": "8ee754dd038e43b1f8b6e7b2ea5f422861dc618fd6ed83b0bd4e46584a82d656",
+      "stormcat-works-storm-lua-engine-0.3.0.tgz": "07df2c4af58ae9c1678dd38f8548ae43ec6e9944eafb38039a48bc3353a9d39e"
+    },
+    "wasm": {
+      "dist/wasm/storm_lua_wasm.wasm": "61c82e446fe8cd9ce4a0aa61f9449aa2d34800cafd02e5d492827a36cbeaac3f",
+      "dist/wasm/screen.wasm": "6d7ef8c0d90e58a0d8327af530f60acfbeff129b3ba6c226da4f1f66eef339c0",
+      "dist/compiler-wasm/compiler_bg.wasm": "cc88b71ae9da4ee6687a8c23731ce7b546bb76c637320a9e8b9b9d67a78476fd"
+    },
+    "sourceMaps": "Source Map v3 plus x_storm schema 1",
+    "playgroundState": "IndexedDB state version 2; portable workspace version 1",
+    "scope": "P5 UI, CLI, artifact roundtrip and real-runtime validation; additional optimizer/performance work deferred."
+  },
+  "optimizerChanges": false,
+  "performanceMeasurements": "deferred as requested; no new performance claims",
+  "representative240Matrix": "not rerun for this app-only change; previous SDK evidence remains versioned separately",
+  "publishedRefsChanged": false,
+  "notDone": [
+    "v0.3.0 GitHub/npm publication and production deployment (separate explicit release operation)",
+    "Extra performance work",
+    "Original variable value/lifetime recovery, virtual frame reconstruction, PC/column recovery and per-loop-iteration dynamic mapping"
+  ]
+}

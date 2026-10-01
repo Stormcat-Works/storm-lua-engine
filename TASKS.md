@@ -67,7 +67,7 @@ v0.2.1の公開、P0/P1の探索/リンク、P2の候補/Worker由来、P3の全
 
 [元の実測例の更新](docs/verification/provenance-examples-20261001.md)に、細かな位置・copy・文脈・理由が実際に返る例を残した。理由のbasis/factsは、実装が観測した条件・数値だけを格納する。全パスの網羅的な正当化証明や、不採用候補の全探索履歴は約束しない。
 
-P5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と実runtimeの生成行への接続は完了。CLI/Web共通のartifact/workspace検証、再読み込み・別ブラウザーへの持ち運び、実際のbreakpoint/step/log/error、3ブラウザーと大容量mapを検証した。[P5と梱包の記録](docs/verification/p5-playground-20261001.md)。
+P5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と実runtimeの生成行への接続は完了。 原文をそのまま返すidentityを含め、選択範囲と生成runtime行を原文全体へ拡張しない。Shift・方向キー・Home・End、Unicode/CRLF、再読み込みまで[最終仕上げ](docs/verification/p5-final-selection-20261001.md)で確認した。CLI/Web共通のartifact/workspace検証、再読み込み・別ブラウザーへの持ち運び、実際のbreakpoint/step/log/error、3ブラウザーと大容量mapを検証した。[P5と梱包の記録](docs/verification/p5-playground-20261001.md)。
 
 コードとマップの組み違い、削除行の誤った逆引き、中断後の古い非同期結果の混入を防ぎ、入力や保存物を黙って置換しない。Native/WASMの代表240設定・全67パス回帰と配布tarballの独立導入を確認した。
 

@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.3.0 development
 
+- Playgroundのidentity/copyマップで、文字・カーソル・停止行の選択が元ファイル全体へ拡張される問題を修正。読み取り専用欄のUnicode対応キーボード選択と方向保持、保存復元を改善した。
+
 - Playgroundに理由付きSource Map検査を追加。元/生成コードの双方向選択、元module、複数由来・inline文脈・削除理由と、実行時の停止/ログ/エラーの生成行を表示する。
 - Playground保存をIndexedDBの単一workspaceへ変更。成果物と選択も持ち運べるworkspace JSONを追加し、旧端末保存は救出可能な明示拒否にする。入力project JSON v1は継続受理する。
 - CLIの`--source-map`と`map-inspect`、workspaceの読込を追加。実行は明示操作で、mapの閲覧だけでVMを起動しない。

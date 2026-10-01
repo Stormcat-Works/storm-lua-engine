@@ -4,7 +4,7 @@
 
 ## v0.3.0の公開前準備
 
-v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。現在のnpm/GitHub/本番配備は0.2.1で、0.3.0のタグや公開はまだ実施していない。
+v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。現在のnpm/GitHub/本番配備は0.2.1で、0.3.0のタグや公開はまだ実施していない。
 
 公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。詳細の性能改善は保留されており、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
 

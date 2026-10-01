@@ -8,7 +8,7 @@
 
 全67パスの対応と、固定30入力・240設定のUnknown 0%/生成Lua一致は維持する。理由コードと構造操作は保持するが、全パスの適用根拠を形式的に証明するものではない。basis/factsの詳細は実際に記録した判断のみで、未記録の根拠を推測しない。Source/Derivedの名前・式・文などの精度と、Synthetic/Unknownを区別する。
 
-**P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
+**P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** identity/copyの文字選択・カーソル・runtime行の範囲を正確に保つ仕上げも完了した。Unicode/CRLFと読み取り専用欄のキーボード操作、保存復元を3ブラウザーで再確認。[最終確認](docs/verification/p5-final-selection-20261001.md)。 Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
 
 CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。追加の性能最適化は利用者指示で保留した。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0は未リリース**で、公開済みnpm版は0.2.1のまま。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
 

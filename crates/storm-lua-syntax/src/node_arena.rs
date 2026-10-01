@@ -201,6 +201,15 @@ impl NodeArena {
     pub fn tracks_origins(&self) -> bool {
         self.origins.is_some()
     }
+    /// Clone syntax for a temporary cost model without carrying debug provenance.
+    /// The returned NodeIds and symbol IDs stay identical; optimizers must never
+    /// commit this arena when source attribution is required.
+    pub(crate) fn clone_without_origins(&self) -> Self {
+        Self {
+            values: self.values.clone(),
+            origins: None,
+        }
+    }
     pub(crate) fn provenance(&self) -> Option<&ArenaOrigins> {
         self.origins.as_ref()
     }

@@ -10,7 +10,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId, TableField};
@@ -503,8 +503,7 @@ fn rewrite_signed(
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 pub fn factor_signed_expressions(

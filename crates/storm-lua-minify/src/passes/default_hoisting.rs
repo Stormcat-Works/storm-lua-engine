@@ -3,11 +3,10 @@
 use std::collections::HashSet;
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::resolve;
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone, Copy)]
 struct Site {
@@ -23,8 +22,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn is_control_barrier(node: &Node) -> bool {

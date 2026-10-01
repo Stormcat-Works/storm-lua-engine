@@ -8,11 +8,11 @@
 //! scope renaming and accepts only the smallest strict improvement.
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
-use storm_lua_syntax::size::{measure_expr, measure_size};
+use storm_lua_syntax::size::measure_expr;
 
 #[derive(Clone)]
 struct Carrier {
@@ -38,8 +38,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn without_parens(ast: &Ast, mut node: NodeId) -> NodeId {

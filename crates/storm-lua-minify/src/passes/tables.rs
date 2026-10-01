@@ -298,7 +298,7 @@ mod write_only_field_tests {
 // Phase 4c table scalarization/flattening passes
 // ---------------------------------------------------------------------------
 
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_syntax::ast::{SymbolId, TableField};
 use storm_lua_syntax::numeric::num_val;
 use storm_lua_syntax::size::measure_size;
@@ -310,8 +310,7 @@ fn clone_table_ast(source: &Ast) -> Ast {
 }
 
 fn renamed_table_size(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 #[derive(Clone, Debug, PartialEq)]

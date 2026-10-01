@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::resolve;
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
@@ -176,17 +176,25 @@ fn make_candidate(source: &Ast, root: NodeId, groups: &[Group], chosen: &[usize]
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
     let source = clone_ast(ast);
-    let groups = collect_groups(&source, root);
+    // Subset trials exist only to compare generated size. Building provenance for
+    // every losing subset is pure debug-work amplification, so tracked inputs use
+    // a syntax-identical untracked cost-model copy. The selected subset is replayed
+    // once against the tracked source below.
+    let trial_source_storage = source
+        .nodes
+        .tracks_origins()
+        .then(|| storm_lua_syntax::ast_utils::clone_without_origins(&source));
+    let trial_source = trial_source_storage.as_ref().unwrap_or(&source);
+    let groups = collect_groups(trial_source, root);
     let eligible = groups
         .iter()
         .enumerate()
-        .filter_map(|(index, group)| eligibility_cost(&source, group).then_some(index))
+        .filter_map(|(index, group)| eligibility_cost(trial_source, group).then_some(index))
         .collect::<Vec<_>>();
     if eligible.is_empty() {
         return PassResult {
@@ -196,9 +204,10 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
         };
     }
 
-    let baseline = measured(&source, root);
+    let baseline = measured(trial_source, root);
+    let tracking = source.nodes.tracks_origins();
     let mut chosen = Vec::<usize>::new();
-    let mut best_ast = clone_ast(&source);
+    let mut best_ast = (!tracking).then(|| clone_ast(&source));
     let mut best_length = baseline;
 
     if eligible.len() <= 12 {
@@ -208,11 +217,13 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
                 .enumerate()
                 .filter_map(|(bit, group)| ((mask & (1usize << bit)) != 0).then_some(*group))
                 .collect::<Vec<_>>();
-            let trial = make_candidate(&source, root, &groups, &subset);
+            let trial = make_candidate(trial_source, root, &groups, &subset);
             let length = measured(&trial, root);
             if length < best_length {
                 chosen = subset;
-                best_ast = trial;
+                if !tracking {
+                    best_ast = Some(trial);
+                }
                 best_length = length;
             }
         }
@@ -225,7 +236,7 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
                 }
                 let mut subset = chosen.clone();
                 subset.push(*group);
-                let trial = make_candidate(&source, root, &groups, &subset);
+                let trial = make_candidate(trial_source, root, &groups, &subset);
                 let length = measured(&trial, root);
                 if length < best_length
                     && next
@@ -239,12 +250,20 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
                 break;
             };
             chosen = subset;
-            best_ast = trial;
+            if !tracking {
+                best_ast = Some(trial);
+            }
             best_length = length;
         }
     }
 
-    *ast = best_ast;
+    *ast = if let Some(best_ast) = best_ast {
+        best_ast
+    } else if chosen.is_empty() {
+        clone_ast(&source)
+    } else {
+        make_candidate(&source, root, &groups, &chosen)
+    };
     PassResult {
         root,
         saved: Some(baseline.saturating_sub(best_length) as u64),

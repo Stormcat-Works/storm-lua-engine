@@ -446,6 +446,19 @@ impl Iterator for ShortNameIterStatic {
     }
 }
 
+/// Measure the scope-renamed size without building provenance for a disposable
+/// cost-model AST. The actual selected scope rename still receives the tracked AST.
+pub(crate) fn measure_renamed_size(ast: &Ast, root: NodeId) -> usize {
+    if ast.nodes.tracks_origins() {
+        let syntax = storm_lua_syntax::ast_utils::clone_without_origins(ast);
+        let renamed = scope_rename_fast(&syntax, root);
+        storm_lua_syntax::size::measure_size(&renamed.ast, renamed.root)
+    } else {
+        let renamed = scope_rename_fast(ast, root);
+        storm_lua_syntax::size::measure_size(&renamed.ast, renamed.root)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod allocation_regression_tests {
@@ -565,6 +578,20 @@ mod allocation_regression_tests {
         for (_, source, _) in SCOPE_CASES {
             check(source);
         }
+    }
+
+    #[test]
+    fn tracked_cost_model_matches_the_real_rename_without_mutating_provenance() {
+        let source = "local descriptive=1 function onTick()local other=descriptive+1 output.setNumber(1,other)end";
+        let (ast, root) = storm_lua_syntax::parse_source_with_origins("cost.lua", source).unwrap();
+        let before = serde_json::to_vec(&ast).unwrap();
+        let expected = scope_rename_fast(&ast, root);
+        assert_eq!(
+            measure_renamed_size(&ast, root),
+            storm_lua_syntax::size::measure_size(&expected.ast, expected.root)
+        );
+        assert_eq!(serde_json::to_vec(&ast).unwrap(), before);
+        assert!(expected.ast.nodes.tracks_origins());
     }
 
     #[test]

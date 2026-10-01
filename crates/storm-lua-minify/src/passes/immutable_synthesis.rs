@@ -8,12 +8,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::print::Printer;
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone)]
 struct Group {
@@ -42,8 +41,7 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn expression_key(ast: &Ast, node: NodeId) -> String {

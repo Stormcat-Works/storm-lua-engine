@@ -3,11 +3,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
 use storm_lua_syntax::numeric::{num_val, short_num};
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone)]
 struct Wrapper {
@@ -26,8 +25,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn renamed_size(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn collect_wrappers(ast: &Ast, res: &Resolution) -> Vec<Wrapper> {
@@ -405,6 +403,11 @@ fn construct_affine_candidate(
 
 pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult {
     let source = clone_ast(ast);
+    let trial_source_storage = source
+        .nodes
+        .tracks_origins()
+        .then(|| storm_lua_syntax::ast_utils::clone_without_origins(&source));
+    let trial_source = trial_source_storage.as_ref().unwrap_or(&source);
     let res = resolve(&source, root);
     let wrappers = collect_wrappers(&source, &res);
     if wrappers.len() < 2 {
@@ -419,7 +422,7 @@ pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassRe
         .map(|wrapper| wrapper.bid)
         .collect::<HashSet<_>>();
     let (calls, invalid) = wrapper_references(&source, root, &res, &wrapper_bids);
-    let original = renamed_size(&source, root);
+    let original = renamed_size(trial_source, root);
     let names = all_name_strings(&source, root);
     let mut serial = 0usize;
     let parameter = loop {
@@ -429,7 +432,8 @@ pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassRe
         }
         serial += 1;
     };
-    let mut best: Option<(Ast, usize)> = None;
+    let tracking = source.nodes.tracks_origins();
+    let mut best: Option<(Option<Ast>, usize, usize, usize, usize)> = None;
     for left in 0..wrappers.len() {
         for right in left + 1..wrappers.len() {
             let a = &wrappers[left];
@@ -438,7 +442,7 @@ pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassRe
                 || invalid.contains(&b.bid)
                 || calls.get(&a.bid).copied().unwrap_or(0) == 0
                 || calls.get(&b.bid).copied().unwrap_or(0) == 0
-                || !same_callee(&source, &res, a.callee, b.callee)
+                || !same_callee(trial_source, &res, a.callee, b.callee)
                 || a.values.len() != b.values.len()
             {
                 continue;
@@ -460,17 +464,38 @@ pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassRe
                 {
                     continue;
                 }
-                let candidate =
-                    construct_translated_candidate(&source, root, &res, a, b, base, &parameter);
+                let candidate = construct_translated_candidate(
+                    trial_source,
+                    root,
+                    &res,
+                    a,
+                    b,
+                    base,
+                    &parameter,
+                );
                 let size = renamed_size(&candidate, root);
-                if size < original && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
-                    best = Some((candidate, size));
+                if size < original
+                    && best
+                        .as_ref()
+                        .is_none_or(|(_, best_size, ..)| size < *best_size)
+                {
+                    best = Some(((!tracking).then_some(candidate), size, left, right, base));
                 }
             }
         }
     }
-    if let Some((candidate, size)) = best {
-        *ast = candidate;
+    if let Some((candidate, size, left, right, base)) = best {
+        *ast = candidate.unwrap_or_else(|| {
+            construct_translated_candidate(
+                &source,
+                root,
+                &res,
+                &wrappers[left],
+                &wrappers[right],
+                base,
+                &parameter,
+            )
+        });
         PassResult {
             root,
             saved: Some((original - size) as u64),
@@ -487,6 +512,11 @@ pub fn merge_translated_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassRe
 
 pub fn merge_affine_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult {
     let source = clone_ast(ast);
+    let trial_source_storage = source
+        .nodes
+        .tracks_origins()
+        .then(|| storm_lua_syntax::ast_utils::clone_without_origins(&source));
+    let trial_source = trial_source_storage.as_ref().unwrap_or(&source);
     let res = resolve(&source, root);
     let wrappers = collect_wrappers(&source, &res);
     let wrapper_bids = wrappers
@@ -494,7 +524,7 @@ pub fn merge_affine_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult
         .map(|wrapper| wrapper.bid)
         .collect::<HashSet<_>>();
     let (calls, invalid) = wrapper_references(&source, root, &res, &wrapper_bids);
-    let original = renamed_size(&source, root);
+    let original = renamed_size(trial_source, root);
     let names = all_name_strings(&source, root);
     let mut serial = 0usize;
     let parameter = loop {
@@ -504,7 +534,8 @@ pub fn merge_affine_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult
         }
         serial += 1;
     };
-    let mut best: Option<(Ast, usize)> = None;
+    let tracking = source.nodes.tracks_origins();
+    let mut best: Option<(Option<Ast>, usize, usize, usize)> = None;
     for left in 0..wrappers.len() {
         for right in left + 1..wrappers.len() {
             for &(a_index, b_index) in &[(left, right), (right, left)] {
@@ -514,21 +545,35 @@ pub fn merge_affine_constant_wrappers(ast: &mut Ast, root: NodeId) -> PassResult
                     || invalid.contains(&b.bid)
                     || calls.get(&a.bid).copied().unwrap_or(0) == 0
                     || calls.get(&b.bid).copied().unwrap_or(0) == 0
-                    || !same_callee(&source, &res, a.callee, b.callee)
+                    || !same_callee(trial_source, &res, a.callee, b.callee)
                     || a.values.len() != b.values.len()
                 {
                     continue;
                 }
-                let candidate = construct_affine_candidate(&source, root, &res, a, b, &parameter);
+                let candidate =
+                    construct_affine_candidate(trial_source, root, &res, a, b, &parameter);
                 let size = renamed_size(&candidate, root);
-                if size < original && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
-                    best = Some((candidate, size));
+                if size < original
+                    && best
+                        .as_ref()
+                        .is_none_or(|(_, best_size, ..)| size < *best_size)
+                {
+                    best = Some(((!tracking).then_some(candidate), size, a_index, b_index));
                 }
             }
         }
     }
-    if let Some((candidate, size)) = best {
-        *ast = candidate;
+    if let Some((candidate, size, a_index, b_index)) = best {
+        *ast = candidate.unwrap_or_else(|| {
+            construct_affine_candidate(
+                &source,
+                root,
+                &res,
+                &wrappers[a_index],
+                &wrappers[b_index],
+                &parameter,
+            )
+        });
         PassResult {
             root,
             saved: Some((original - size) as u64),

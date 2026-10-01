@@ -285,6 +285,15 @@ pub fn inherit_ast(source: &Ast) -> Ast {
     }
 }
 
+/// Syntax-only clone for disposable size/ranking trials. It deliberately drops
+/// provenance while preserving all NodeId/SymbolId values.
+pub fn clone_without_origins(source: &Ast) -> Ast {
+    Ast {
+        nodes: source.nodes.clone_without_origins(),
+        strings: source.strings.clone(),
+    }
+}
+
 /// Visit direct AST children in evaluation/structural order.
 #[inline]
 pub fn for_each_child<F: FnMut(NodeId) + ?Sized>(ast: &Ast, id: NodeId, f: &mut F) {

@@ -10,7 +10,6 @@ use crate::config::{pass_enabled, NumericTolerance as ConfigTolerance, PassRecor
 use crate::pass::{PassResult, TraceEntry};
 use crate::pass_ids::PassToggles;
 use crate::passes;
-use crate::scope_rename::scope_rename_fast;
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::print::Printer;
 use storm_lua_syntax::size::measure_size;
@@ -29,8 +28,7 @@ fn literal_tolerance(t: Option<ConfigTolerance>) -> ConfigTolerance {
 
 fn measured_size(ast: &Ast, root: NodeId, toggles: &PassToggles) -> usize {
     if pass_enabled(toggles, "scope-renaming") {
-        let renamed = scope_rename_fast(ast, root);
-        measure_size(&renamed.ast, renamed.root)
+        crate::scope_rename::measure_renamed_size(ast, root)
     } else {
         measure_size(ast, root)
     }

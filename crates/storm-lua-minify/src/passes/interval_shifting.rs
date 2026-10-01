@@ -1,7 +1,7 @@
 //! Interval origin shifting (`passes/interval-shifting.ts`).
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::{ast_same, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, BindingId, BindingKind, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
@@ -37,8 +37,7 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
 
 fn measured(ast: &Ast, root: NodeId, measure_renamed: bool) -> usize {
     if measure_renamed {
-        let renamed = scope_rename_fast(ast, root);
-        measure_size(&renamed.ast, renamed.root)
+        measure_renamed_size(ast, root)
     } else {
         measure_size(ast, root)
     }

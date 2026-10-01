@@ -112,8 +112,7 @@ fn constant_fold_with(
 
 fn renamed_size(ast: &Ast, root: NodeId, toggles: &PassToggles) -> usize {
     if pass_enabled(toggles, "scope-renaming") {
-        let renamed = scope_rename_fast(ast, root);
-        measure_size(&renamed.ast, renamed.root)
+        crate::scope_rename::measure_renamed_size(ast, root)
     } else {
         measure_size(ast, root)
     }

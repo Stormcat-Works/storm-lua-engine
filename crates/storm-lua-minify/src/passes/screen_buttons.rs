@@ -3,12 +3,11 @@
 use std::collections::HashMap;
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
 use storm_lua_syntax::numeric::num_val;
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone)]
 struct Site {
@@ -39,8 +38,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn renamed_size(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn expr_key(ast: &Ast, res: &Resolution, node: NodeId) -> String {

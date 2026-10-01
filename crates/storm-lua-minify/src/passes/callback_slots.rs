@@ -9,10 +9,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::resolver::{resolve, BindingId};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone)]
 struct Definition {
@@ -158,8 +157,7 @@ fn rewrite_names(
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 #[allow(clippy::too_many_arguments)]

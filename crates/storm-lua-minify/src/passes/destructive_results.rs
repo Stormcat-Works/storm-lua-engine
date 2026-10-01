@@ -6,10 +6,9 @@
 //! smallest one is committed in each round.
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::resolver::{resolve, BindingId, BindingKind, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
-use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone)]
 struct Candidate {
@@ -27,8 +26,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn has_nested_function(ast: &Ast, body: NodeId) -> bool {

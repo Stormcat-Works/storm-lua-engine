@@ -3,10 +3,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::resolver::{resolve, BindingId, BindingKind, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
-use storm_lua_syntax::size::{measure_expr, measure_size};
+use storm_lua_syntax::size::measure_expr;
 
 #[derive(Clone, Copy)]
 struct Factor {
@@ -41,8 +41,7 @@ fn clone_ast(source: &Ast) -> Ast {
 }
 
 fn renamed_size(ast: &Ast, root: NodeId) -> usize {
-    let renamed = scope_rename_fast(ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    measure_renamed_size(ast, root)
 }
 
 fn product_factors(ast: &Ast, node: NodeId, sign: i8, out: &mut Vec<Factor>) {

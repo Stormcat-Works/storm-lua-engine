@@ -70,7 +70,5 @@ console.log('Isolated installed package: Lua execution, raster, export paths and
   console.log(run(process.execPath,['source-map.mjs'],mapped).trim());
   await writeFile(join(mapped,'optimized-source-map.mjs'),await readFile(join(root,'examples/consumer/optimized-source-map.mjs')));
   console.log(run(process.execPath,['optimized-source-map.mjs'],mapped).trim());
-  await writeFile(join(mapped,'optimized-source-map.mjs'),await readFile(join(root,'examples/consumer/optimized-source-map.mjs')));
-  console.log(run(process.execPath,['optimized-source-map.mjs'],mapped).trim());
   console.log(`${provided?'Provided release tarball':`Packed ${packed.files.length} files`}; SDK has no runtime npm dependencies; mapped-debug consumer separately installs trace-mapping.`);
 }finally{await rm(temporary,{recursive:true,force:true});}

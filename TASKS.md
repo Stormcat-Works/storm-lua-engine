@@ -1,6 +1,6 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.2.1はnpm・GitHub・Playgroundへ公開済み。v0.3.0は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+現在地は[STATUS](STATUS.md)。**v0.3.0はnpm・GitHub・Playgroundへ公開し、registry再導入と本番検証まで完了しました。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -73,7 +73,7 @@ P5のPlayground双方向選択・理由/関連元/Unknown/Synthetic表示と実r
 
 限定性能ラウンドは[実装・検証済み](docs/verification/source-map-performance-20261002.md)。さらなる性能最適化・map容量削減はv0.3.1以降。各パスの詳細な適用根拠追加、元変数の値/storage/lifetime、bytecode PC、特定loop反復、実行履歴は独立の後続項目であり、P5完了条件に混ぜない。
 
-v0.3.0の公開は別の明示工程で行う。現在の開発コードをmain/release/npmの0.2.1へ混ぜない。
+v0.3.0の公開工程は2026-10-02に完了した。[公開記録](docs/verification/release-0.3.0.md)。既公開0.2.1のタグと配布物は固定したまま、main/release/npmは0.3.0へ更新した。
 
 
 ## v0.3.1以降のSource Map性能課題

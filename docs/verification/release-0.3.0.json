@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "version": "0.3.0",
+  "releasedAt": "2026-10-02T00:38:55Z",
+  "sourceRevision": "1e5d2efc4e05af685348d0eb369ce6199f17128f",
+  "status": "published-and-verified",
+  "sourceMaps": {
+    "standardVersion": 3,
+    "extensionSchema": 1,
+    "api": [
+      "Compiler.minify",
+      "Compiler.build",
+      "Compiler.buildLifeboat",
+      "Compiler.validateSourceMap",
+      "CompilerWorkerClient",
+      "serveCompiler"
+    ],
+    "detailedOffsets": "half-open UTF-8 bytes",
+    "standardColumns": "UTF-16",
+    "runtimePrecision": "generated line where provided; no invented PC/column/values"
+  },
+  "assets": {
+    "storm-lua-engine-playground-0.3.0.zip": "44485ef3cb2979aa910787185629ddf1b0b191239a4788e193620ea03f242e66",
+    "stormcat-works-storm-lua-engine-0.3.0.tgz": "27145ec5accc8c9f5c84261de71c77d096577a3564094396a7521c36808d2de4"
+  },
+  "wasm": {
+    "dist/compiler-wasm/compiler_bg.wasm": "86a21f79a5d9926b5baebc7fca72dc4d7500a4af8da567fb3b0b87927f13ebca",
+    "dist/wasm/screen.wasm": "6d7ef8c0d90e58a0d8327af530f60acfbeff129b3ba6c226da4f1f66eef339c0",
+    "dist/wasm/storm_lua_wasm.wasm": "61c82e446fe8cd9ce4a0aa61f9449aa2d34800cafd02e5d492827a36cbeaac3f"
+  },
+  "tests": {
+    "nativePassed": 764,
+    "sdkPassed": 30,
+    "wasmPassed": 81,
+    "playgroundPassed": 38,
+    "newInstalledMapExample": true
+  },
+  "ci": {
+    "run": 36946189312,
+    "conclusion": "success",
+    "jobs": {
+      "wasm": "success",
+      "native (macos-latest)": "success",
+      "native (windows-latest)": "success",
+      "native (ubuntu-latest)": "success"
+    }
+  },
+  "npm": {
+    "run": 36947042993,
+    "attempts": 2,
+    "firstAttempt": "publish succeeded; registry verification reported version not found during its 30-second visibility window",
+    "finalAttempt": "existing identical version detected; publish skipped; registry verification and consumer succeeded",
+    "verification": {
+      "version": "0.3.0",
+      "latest": "0.3.0",
+      "tarballSha256": "27145ec5accc8c9f5c84261de71c77d096577a3564094396a7521c36808d2de4",
+      "integrity": "sha512-f6PPr5D1iaL4CeQynLgHbNbcchwIPJ+scwiug+Wq1qAccvVDBTW5tuSRlBBD8QahFAuyd0+u4Y9l1MG2Zp07XQ==",
+      "publisher": "GitHub Actions",
+      "trustedPublisher": "github",
+      "attestation": {
+        "url": "https://registry.npmjs.org/-/npm/v1/attestations/@stormcat-works%2fstorm-lua-engine@0.3.0",
+        "provenance": {
+          "predicateType": "https://slsa.dev/provenance/v1"
+        }
+      },
+      "producer": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "1e5d2efc4e05af685348d0eb369ce6199f17128f",
+        "dirty": false
+      },
+      "nodeExample": {
+        "generated": "6",
+        "source": {
+          "source": "controller.lua",
+          "line": 6,
+          "column": 47,
+          "text": "2*3"
+        },
+        "inlineContextsVerified": true,
+        "staleMapRejected": true
+      },
+      "regularNpmInstall": true,
+      "installedTypeScriptApi": true,
+      "installedRealRuntimeMapping": true,
+      "checkedBytesEqualReleaseTarball": true
+    }
+  },
+  "playground": {
+    "url": "https://www.makkii.jp/tools/stormworks/storm-lua-engine/",
+    "trigger": "release branch push",
+    "deployed": {
+      "version": "0.3.0",
+      "revision": "1e5d2efc4e05af685348d0eb369ce6199f17128f"
+    },
+    "cloudflareBuild": "05c7a2e0-aa30-46c3-b642-41e5575d3cdc",
+    "checkStatus": "in_progress",
+    "checkConclusion": null,
+    "deploymentApi": {
+      "id": "c37a9d53-d9f9-4916-b243-8f9e0a7e6043",
+      "source": "wrangler",
+      "versions": [
+        {
+          "version_id": "aab04472-abcd-4075-959b-b33ee3e0e780",
+          "percentage": 100
+        }
+      ],
+      "created_on": "2026-10-02T00:46:09.285854Z"
+    },
+    "statusNote": "Production version, full browser flow and 100% deployment are verified; GitHub Cloudflare check completion notification is still pending at the final read.",
+    "browserValidation": {
+      "route": "/tools/stormworks/storm-lua-engine/",
+      "browserPlugin": "absent",
+      "receipts": [
+        {
+          "browser": "chromium",
+          "recipes": 16,
+          "desktop": [
+            1440,
+            1100
+          ],
+          "mobile": [
+            390,
+            844
+          ],
+          "sourceMaps": {
+            "identityCopySelection": true,
+            "identityRuntimeLine": true,
+            "unicodeCaret": true,
+            "bidirectional": true,
+            "inlineContexts": true,
+            "reasons": true,
+            "removedSource": true,
+            "workspaceRoundtrip": true,
+            "staleRejection": true,
+            "multiFile": true,
+            "runtimePause": true,
+            "runtimeError": true,
+            "lineOnlyAmbiguity": true
+          },
+          "reload": true,
+          "invalidImportPreserved": true,
+          "cancel": true,
+          "compilerOnly": true,
+          "rasterOnly": true,
+          "errors": []
+        },
+        {
+          "browser": "firefox",
+          "recipes": 16,
+          "desktop": [
+            1440,
+            1100
+          ],
+          "mobile": [
+            390,
+            844
+          ],
+          "sourceMaps": {
+            "identityCopySelection": true,
+            "identityRuntimeLine": true,
+            "unicodeCaret": true,
+            "bidirectional": true,
+            "inlineContexts": true,
+            "reasons": true,
+            "removedSource": true,
+            "workspaceRoundtrip": true,
+            "staleRejection": true,
+            "multiFile": true,
+            "runtimePause": true,
+            "runtimeError": true,
+            "lineOnlyAmbiguity": true
+          },
+          "reload": true,
+          "invalidImportPreserved": true,
+          "cancel": true,
+          "compilerOnly": true,
+          "rasterOnly": true,
+          "errors": []
+        },
+        {
+          "browser": "webkit",
+          "recipes": 16,
+          "desktop": [
+            1440,
+            1100
+          ],
+          "mobile": [
+            390,
+            844
+          ],
+          "sourceMaps": {
+            "identityCopySelection": true,
+            "identityRuntimeLine": true,
+            "unicodeCaret": true,
+            "bidirectional": true,
+            "inlineContexts": true,
+            "reasons": true,
+            "removedSource": true,
+            "workspaceRoundtrip": true,
+            "staleRejection": true,
+            "multiFile": true,
+            "runtimePause": true,
+            "runtimeError": true,
+            "lineOnlyAmbiguity": true
+          },
+          "reload": true,
+          "invalidImportPreserved": true,
+          "cancel": true,
+          "compilerOnly": true,
+          "rasterOnly": true,
+          "errors": []
+        }
+      ]
+    }
+  },
+  "docs": {
+    "repository": "makkiilikecat/docs-site",
+    "revision": "c125123918a1b46516888bc8482b5fe177af4882",
+    "mintValidate": true,
+    "mintBrokenLinks": true,
+    "publishedSourceMapGuideConfirmed": true,
+    "url": "https://docs.makkii.jp/storm-lua-engine/source-maps"
+  },
+  "compatibility": [
+    "Compiler JS/glue/WASM and opaque candidate serialization use the same version",
+    "Playground IndexedDB state v2 and portable workspace v1; legacy localStorage is not silently migrated",
+    "Drawing command ABI, Composite I/O and Addon savedata remain unchanged"
+  ],
+  "previous021TagPreserved": true,
+  "otherConsumerApplicationsModified": false,
+  "remaining": [
+    "Additional Source Map performance improvements deferred to v0.3.1+",
+    "Original runtime values/lifetimes/frames/PC or exact generated columns are not reconstructed by a static source map"
+  ]
+}

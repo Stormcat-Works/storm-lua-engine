@@ -2,7 +2,7 @@
 
 SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホスト接続を実際に試すCLI/Webです。Storm MinのCLI/Webとは併存し、置き換えません。ゲーム世界、仮物理、共同編集、クラウド保存は実装しません。
 
-Playgroundはv0.2.1を公開しています。SDKのnpm registryとGitHub配布も0.2.1で、公開後の再取得・導入検証まで完了しています。[公開状況](../docs/verification/release-0.2.1.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKのnpm版とGitタグは固定し、Webの配信設定はreleaseブランチから更新します。
+Playgroundとnpm SDKはv0.3.0を公開済みで、公開後のregistry導入・本番3ブラウザー検証まで完了しています。[公開記録](../docs/verification/release-0.3.0.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKとタグは固定し、Webはreleaseブランチから更新します。
 
 ## v0.3.0のSource Map検査
 

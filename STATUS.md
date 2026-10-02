@@ -1,6 +1,6 @@
 # Current status
 
-## v0.3.0 公開準備（2026-10-02）
+## v0.3.0 公開完了（2026-10-02）
 
 `feat/minify-source-provenance-v0.3`で全67パスの内部由来対応に加え、最適化理由付きSource Map v3をRust/WASM/TSの開発APIへ接続した。`sourceMap:true`で`map`を返し、`validateSourceMap(code,map)`で内容指紋と詳細/標準mapの整合性を確認する。通常/LifeBoatの複数ファイル合成と、Worker経由の取得も対応。[実装・検証・性能](docs/verification/optimization-explanations-20261001.md)。
 
@@ -10,7 +10,7 @@
 
 **P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** identity/copyの文字選択・カーソル・runtime行の範囲を正確に保つ仕上げも完了した。Unicode/CRLFと読み取り専用欄のキーボード操作、保存復元を3ブラウザーで再確認。[最終確認](docs/verification/p5-final-selection-20261001.md)。 Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
 
-CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。v0.3.0向けの[限定性能ラウンド](docs/verification/source-map-performance-20261002.md)を完了した。サイズ比較にしか使わない候補での由来処理を減らし、生成Luaとschema1の内容を維持。追加改善はv0.3.1以降へ送る。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0の公開を開始した。** 完了前の公開版は0.2.1であり、実行結果は[公開記録](docs/verification/release-0.3.0.md)に残す。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
+CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。v0.3.0向けの[限定性能ラウンド](docs/verification/source-map-performance-20261002.md)を完了した。サイズ比較にしか使わない候補での由来処理を減らし、生成Luaとschema1の内容を維持。追加改善はv0.3.1以降へ送る。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0をnpm・GitHub・Playgroundへ公開し、registry再導入と本番3ブラウザーの確認まで完了した。** npm latestは0.3.0。[公開記録](docs/verification/release-0.3.0.md)に対象commit・配布物・実行結果を残す。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
 
 ## v0.2.1 公開状況
 

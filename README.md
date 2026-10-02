@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-**v0.3.0: 最適化理由付きSource Map、SDK/Worker、Playgroundの双方向ソース検査を追加。** [公開状況](docs/verification/release-0.3.0.md)。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
+**v0.3.0をnpm・GitHub Release・Playgroundへ公開済み。** 最適化理由付きSource Map、SDK/Worker、Playgroundの双方向ソース検査を利用できます。 [公開状況](docs/verification/release-0.3.0.md)。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 

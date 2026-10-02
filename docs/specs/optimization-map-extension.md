@@ -1,6 +1,6 @@
 # 最適化説明付きSource Map — x_storm schema 1
 
-対象: 未公開のv0.3.0開発版。最適化器の詳細由来を正本に、標準Source Map v3と本拡張を一つのJSONとして返す。Source Map本体の`version`は3であり、`x_storm.schemaVersion`、`producer.version`とは独立である。[採用方針](../design/optimization-explanation-schema.md)。
+対象: v0.3.0。最適化器の詳細由来を正本に、標準Source Map v3と本拡張を一つのJSONとして返す。Source Map本体の`version`は3であり、`x_storm.schemaVersion`、`producer.version`とは独立である。[採用方針](../design/optimization-explanation-schema.md)。
 
 ## 公開API
 

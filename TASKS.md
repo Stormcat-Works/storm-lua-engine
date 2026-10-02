@@ -1,6 +1,6 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.2.1は公開済み。後続機能は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+現在地は[STATUS](STATUS.md)。**v0.2.1はnpm・GitHub・Playgroundへ公開済み。v0.3.0は別ブランチで検証し、公開済み成果物と区別します。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -81,3 +81,8 @@ v0.3.0の公開は別の明示工程で行う。現在の開発コードをmain/
 v0.3.0公開前の最小限ラウンドは完了。今後は追加profileの結果に基づき、他の候補/snapshotの複製、最終印字/由来平坦化、JSON構築・共有表・validatorのメモリ負荷を改善する。まず前後のピークmemoryを分離して測定する。現在の8.23MBという描画例のmap容量は未縮小である。
 
 優先度はP0〜P5の公開を阻害しない後続作業。生成Lua・候補選択・精度・理由・schema互換性とmapなし性能を維持し、同じ240設定と新旧完全map比較を再実行する。binary形式・schema非互換刷新・情報省略を先に決めない。
+
+
+## v0.2.1 公開工程（2026-09-30完了）
+
+npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの再取得・独立導入と公開状態文書の更新が完了した。GitHubとPlaygroundも公開・検証済み。詳細は[公開記録](docs/verification/release-0.2.1.md)。

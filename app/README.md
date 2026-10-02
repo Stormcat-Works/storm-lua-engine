@@ -4,9 +4,9 @@ SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホス�
 
 Playgroundはv0.2.1を公開しています。SDKのnpm registryとGitHub配布も0.2.1で、公開後の再取得・導入検証まで完了しています。[公開状況](../docs/verification/release-0.2.1.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKのnpm版とGitタグは固定し、Webの配信設定はreleaseブランチから更新します。
 
-## v0.3.0 開発版のSource Map検査
+## v0.3.0のSource Map検査
 
-本ブランチでは、原文と生成コードの双方向選択、複数由来・copy・理由・inline文脈・除去記録、実VMの停止/ログ/エラーとの接続を提供します。公開済みWebは上記0.2.1のままで、開発版は同じcheckoutから起動してください。[アプリの契約](../docs/specs/playground-source-maps.md)。
+本ブランチでは、原文と生成コードの双方向選択、複数由来・copy・理由・inline文脈・除去記録、実VMの停止/ログ/エラーとの接続を提供します。配備するSDK/アプリを同じcheckoutでビルドし、[0.3.0公開記録](../docs/verification/release-0.3.0.md)で本番更新の結果を確認してください。[アプリの契約](../docs/specs/playground-source-maps.md)。
 
 「Source Map / 最適化を説明する」はコンパイルとマップ検査だけを行います。「元ファイルへ戻る」は通常/LifeBoatのmodule対応、「停止・ログ・エラー」は実SDKのpause/step/意図した失敗を実行します。入力編集後の過去成果物はsnapshotとして区別し、実行時に生成行しか分からない場合は複数候補を残します。
 

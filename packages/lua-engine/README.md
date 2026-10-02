@@ -6,7 +6,7 @@
 
 ## インストール
 
-`npm install @stormcat-works/storm-lua-engine`
+`npm install @stormcat-works/storm-lua-engine@0.3.0`
 
 WASMと型定義は同梱済みです。利用時にRustやEmscriptenをインストールする必要はありません。
 
@@ -52,3 +52,14 @@ npm registryまたはGitHub Releasesのtarballからインストールできま�
 v0.2.0の`requireLoader`はextended専用です。ホストが同期で`{source,name}`を供給し、SDKが同じVMの継続で実行します。include-onceで戻り値を捨てる方式であり、Lua標準のmodule requireや静的buildとは別です。任意ファイルアクセスや再入は許可しません。
 
 Vehicleのloadは別チャンクの追加実行です。resetは正常完了した全loadを再実行し、required modulesのキャッシュも再作成します。Addonのloadは初回だけとし、開発用モジュールはrequireLoader経由で利用します。詳しくは[ソース読み込み](https://docs.makkii.jp/storm-lua-engine/source-loading)を参照してください。
+
+
+## 最適化後のソースマップ（v0.3.0）
+
+`/compiler`の`loadCompiler()`から、`compiler.minify(source, {sourceMap:true, sourceName:'controller.lua'})`を呼びます。成功時の`code`と`map`を一組で保存し、`compiler.validateSourceMap(code,map)`で検証済みの`OptimizationMap`を取得してください。標準Source Map v3と、最適化理由・関連元・inline文脈・削除記録を持つ`x_storm`が同じmap JSONに入ります。
+
+`build(project,{minify:true,sourceMap:true})`と`buildLifeboat`、CompilerWorkerClientも対応します。通常のminifyはmapを明示指定したときだけ詳細追跡します。mapなしと生成Luaは同じで、mapを8192文字制限のLuaへ埋め込む必要はありません。
+
+標準readerによる表示、UTF-8バイト範囲とエディタのUTF-16位置の変換、結果の保存、VMの生成行との接続はホストが担当します。SDK更新だけで既存エディタの画面やブレークポイントが自動的に元位置へ切り替わるわけではありません。実行環境が行しか返さない場合は列を推測せず候補を表示してください。
+
+マップには原文全文と固定化した設定を含みます。共有先を確認し、生成後のLuaに別の編集・minify・前置きを加えた古いmapは使わないでください。詳細な利用方法とNodeの実行例は[Source Mapガイド](https://docs.makkii.jp/storm-lua-engine/source-maps)にあります。

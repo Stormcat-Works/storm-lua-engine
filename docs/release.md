@@ -4,9 +4,9 @@
 
 ## v0.3.0の公開前準備
 
-v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。現在のnpm/GitHub/本番配備は0.2.1で、0.3.0のタグや公開はまだ実施していない。
+v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。v0.3.0の公開状態と検査済み成果物は[公開記録](verification/release-0.3.0.md)を参照する。
 
-公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。詳細の性能改善は保留されており、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
+公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。限定性能改善は完了し、追加の改善はv0.3.1以降へ送り、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
 
 以下の0.2.0/0.2.1固有範囲は過去版の条件であり、今回の完成状態とは区別する。
 
@@ -20,7 +20,7 @@ Source Mapは**非短縮リンク結果の行単位対応だけ**を今回の正
 
 ## 版と契約の確認
 
-現在の対象版は**0.2.1**です。target未達時の最大探索との同一出力、重複探索排除、詳細な非短縮map、ログ位置・ホスト操作・LifeBoatビルドを含みます。最適化後minify mapは**0.3.0**の別工程です。公開実行前に[0.2.1確認記録](verification/release-0.2.1.md)とCHANGELOGを確認します。
+0.2.1公開時の対象範囲は次のとおりです。target未達時の最大探索との同一出力、重複探索排除、詳細な非短縮map、ログ位置・ホスト操作・LifeBoatビルドを含みます。最適化後minify mapは**0.3.0**の別工程です。公開実行前に[0.2.1確認記録](verification/release-0.2.1.md)とCHANGELOGを確認します。
 
 Cargo workspaceと`packages/lua-engine/package.json`の版を揃え、`CHANGELOG.md`へ利用者に影響する変更を書きます。タグは`v<version>`とします。公開済みのタグやnpmの同じ版を差し替えず、修正は新しい版として出します。
 

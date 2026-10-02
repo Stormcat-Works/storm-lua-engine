@@ -1,35 +1,30 @@
 # Changelog
 
-## Unreleased — v0.3.0 development
+## 0.3.0 — 2026-10-02
 
-- 理由付きSource Mapで、長さ比較だけに使う一時的な名前短縮・画面呼び出し共有候補・wrapper統合候補の由来構築を削減。採用後に完全な由来付き変換を適用し、生成Lua・候補選択・標準マップとschema1の詳細を維持する。
+### 最適化後Source Mapと説明情報
 
-- Playgroundのidentity/copyマップで、文字・カーソル・停止行の選択が元ファイル全体へ拡張される問題を修正。読み取り専用欄のUnicode対応キーボード選択と方向保持、保存復元を改善した。
+- `minify` / `build` / `buildLifeboat`の`sourceMap:true`で、生成Luaに対応するSource Map v3と`x_storm.schemaVersion:1`を返す。通常のminifyはopt-inで、非短縮buildの標準mapは従来どおり返す。
+- Rust、compiler専用WASM、TypeScript型、CompilerWorkerClient/serveCompilerを同じ版へ更新。`validateSourceMap(code,map)`で生成コード・原文snapshot・設定の指紋、範囲・参照、標準mapとの整合性を検証する。
+- 全67最適化パスで元の名前・トークン・式・文・複数の寄与元を保持。元情報が不足する場合はUnknown、制御/保存の補助コードはSyntheticとして区別する。原文をそのまま返す経路は検証済みcopyとして区間内部も正確に対応する。
+- 変換理由、実際に記録したbasis/facts、型付き関連元、インライン文脈、除去/置換記録、producerの版/revision/dirtyを出力する。形式的な正当性証明、元変数値や消えたフレームの復元は含まない。
+- 複数moduleの元位置をリンク前のファイルへ合成する。標準mapの列はUTF-16、詳細範囲は半開UTF-8バイト区間である。
 
-- Playgroundに理由付きSource Map検査を追加。元/生成コードの双方向選択、元module、複数由来・inline文脈・削除理由と、実行時の停止/ログ/エラーの生成行を表示する。
-- Playground保存をIndexedDBの単一workspaceへ変更。成果物と選択も持ち運べるworkspace JSONを追加し、旧端末保存は救出可能な明示拒否にする。入力project JSON v1は継続受理する。
-- CLIの`--source-map`と`map-inspect`、workspaceの読込を追加。実行は明示操作で、mapの閲覧だけでVMを起動しない。
+### Playgroundと利用例
 
-- `sourceMap:true`で最適化後のSource Map v3＋`x_storm`理由/由来を返す。Rust/WASM/TS、通常/LifeBoat project、Workerを接続し、`validateSourceMap`でcode/source/設定/mapの指紋と構造を検証する。
-- 保持tokenとidentity/copyの精度を追加。子リテラルのinline context、型付き関係、削除/置換記録、数値評価・近似・共有引数・既知条件/未使用宣言の判断事実を保持する。全適用条件の形式証明やruntime値復元ではない。
-- エンジンversion/revisionと独立した拡張schemaVersionを格納する。理由/関連元の共有と出力時のプール化、UTF-16索引、ブロック差分の集合化でメタデータの複製負荷を抑える。
+- 原文/生成コードの双方向選択、理由・関連元・削除記録、通常/LifeBoat module対応、実VMのpause/step/log/errorの生成行との接続を追加。列が分からない実行位置は複数候補として示し、推測しない。
+- CLIの`--source-map`と`map-inspect`、成果物JSONの検査を追加。閲覧だけではLuaを実行しない。
+- 選択・生成物・結果をIndexedDBの単一workspaceへ保存し、portable workspace JSONで移せる。旧localStorageの端末保存は自動変換せず救出可能な明示拒否とする。入力project JSON v1は継続受理する。
+- identity/copyの選択が元ファイル全体へ広がる問題を修正。Unicode/CRLF、カーソル、Shift・方向キー・Home・End、再読み込みを検証した。
+- `examples/consumer/optimized-source-map.mjs`に、公開SDKからのmap生成・検証、標準reader、詳細な理由・関連元の参照例を追加。
 
-- 全67最適化パスの由来伝播を実装。引数/table/Boolean特殊化、interval/係数/商・剰余・radix/共有値、出力・描画helper、および全描画record候補/codecへ対応した。各パスの実変換・欠落入力・転送・実コンパイラ組み合わせの回帰を追加し、生成Luaと既存240設定の0%を維持する。標準mapの公開APIとPlaygroundはP4/P5として残る。
+### 性能・互換性
 
-- 代表240設定すべてで内部の由来不明を解消。排他的関数配置、数値の再表現/共有、元の呼び出しの復元、描画ループ・共有辞書・繰り返し描画への由来伝播を追加した。生成コード・候補選択・Unknownの失効規則は維持する。高レベルの最適化後Source Map APIは後続工程。
-
-- 固定テーブル・名前空間scalar化、関数本体の一回展開、符号付き共通式、field名短縮、末尾引数省略の由来伝播を追加。各定義/使用位置、引用符付きキー、call/return位置を分離し、Unknownを広い親範囲で埋めない。生成Luaと候補選択は維持する。
-
-- 最適化走査で変更しない代入・分岐・ブロックの由来を失う経路を修正。条件式化、商の融合、共通不変式の再利用、二重否定にも元の式・関連する元範囲を保持する。短縮結果とUnknownの失効規則は維持し、入力に欠けた由来がある場合は推測で埋めない。
-
-- 関数localの共有スロット化・不要table nil代入除去で、無関係な構文まで由来を失う問題を修正。ローカル式/リテラルの置換、hybrid globalization、一時global packingでも各宣言・参照の元位置を保持する。短縮結果と候補選択は維持する。
-
-- 内部最適化APIに由来追跡を追加し、候補・Workerと位置情報を一体で保持。元情報が不足する箇所は明示Unknown。標準のminify Source Map SDK公開は後続。
-- 低レベルAst.nodesは位置失効を管理するNodeArenaへ変更。元の構文的比較と通常のJSON形は維持するが、binary Worker contextは同じcompiler版で使用する。
-
-- Parserで式全体と名前出現の範囲を保持し、Printerへ最終生成byte範囲の記録を追加。原文・生成位置の接続基盤であり、最適化後minify mapはまだ提供しない。
-
-最適化後minifyソースマップはv0.3.0で実装する。0.2.1には含まない。
+- サイズ比較だけのscope rename、画面呼び出し共有の試行、translated/affine wrapper試行で、捨てる候補の由来構築を削減。採用した変換のみを元の由来付き入力へ適用する。短縮結果、候補順、マップ内容を維持する。
+- 代表30入力・240設定でUnknown 0%、map有無の生成Lua一致を確認。性能改善前後もproducer/integrityを除くmap全体が一致した。これは任意入力の完全性や実行時間の上限を保証しない。
+- 低レベルRustの`Ast.nodes`は由来失効を管理する`NodeArena`へ変更。内部candidateのJSON/binary context、JS glueとWASMは同じcompiler版で使用する。
+- 描画命令ABI、Composite I/O、Addon savedataの形式と既定のgame/extended契約は維持する。
+- 追加の性能・map容量改善はv0.3.1以降。schema1を今回変更せず、位置・理由の精度も落とさない。
 
 ## 0.2.1 — 2026-09-30
 

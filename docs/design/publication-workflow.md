@@ -48,3 +48,8 @@ Engineの通常pushはmain/developだけ、作業branchはPRまたは明示dispa
 `node --test tools/release/*.test.mjs`で不正tag、archive path、checksum重複、receipt/registry不一致、欠けたCI成功、latestの逆行を検査する。workflow YAMLはactionlintで確認する。実際の公開/registry再導入の状態はrelease verificationへ記録する。
 
 参考: [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)、[npm trust](https://docs.npmjs.com/cli/v12/commands/npm-trust/)、[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)。
+
+
+## 実行結果
+
+[2026-09-30の検証記録](../verification/publication-workflow-20260930.md)に、Hosted dry-runの成功、実際のnpm認証エラー、registry確認スクリプトの試験を分離して記録する。

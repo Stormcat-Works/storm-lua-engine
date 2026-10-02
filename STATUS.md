@@ -1,6 +1,6 @@
 # Current status
 
-## v0.3.0 開発中
+## v0.3.0 公開準備（2026-10-02）
 
 `feat/minify-source-provenance-v0.3`で全67パスの内部由来対応に加え、最適化理由付きSource Map v3をRust/WASM/TSの開発APIへ接続した。`sourceMap:true`で`map`を返し、`validateSourceMap(code,map)`で内容指紋と詳細/標準mapの整合性を確認する。通常/LifeBoatの複数ファイル合成と、Worker経由の取得も対応。[実装・検証・性能](docs/verification/optimization-explanations-20261001.md)。
 
@@ -10,11 +10,13 @@
 
 **P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** identity/copyの文字選択・カーソル・runtime行の範囲を正確に保つ仕上げも完了した。Unicode/CRLFと読み取り専用欄のキーボード操作、保存復元を3ブラウザーで再確認。[最終確認](docs/verification/p5-final-selection-20261001.md)。 Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
 
-CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。v0.3.0向けの[限定性能ラウンド](docs/verification/source-map-performance-20261002.md)を完了した。サイズ比較にしか使わない候補での由来処理を減らし、生成Luaとschema1の内容を維持。追加改善はv0.3.1以降へ送る。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0は未リリース**で、公開済みnpm版は0.2.1のまま。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
+CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。v0.3.0向けの[限定性能ラウンド](docs/verification/source-map-performance-20261002.md)を完了した。サイズ比較にしか使わない候補での由来処理を減らし、生成Luaとschema1の内容を維持。追加改善はv0.3.1以降へ送る。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0の公開を開始した。** 完了前の公開版は0.2.1であり、実行結果は[公開記録](docs/verification/release-0.3.0.md)に残す。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
 
 ## v0.2.1 公開状況
 
-2026-09-30: npm/GitHub/Playgroundへの公開とregistryからの独立導入検証は完了。npm latestは0.2.1。Trusted Publishingの初回承認は済んでおり、認証待ちは残っていない。[公開記録](docs/verification/release-0.2.1.md)。公開済みtag、tarball、release branchへv0.3.0開発コードを混ぜない。
+2026-09-30: GitHub Release・タグ・検査済みSDK tarballとPlaygroundの本番配備は完了した。**npmもTrusted Publishingで公開し、latest=0.2.1とregistry再導入を確認済み**。未達targetはfast/beam設定によらず最大探索と同一出力を返す。513 Native、実WASM、3 OS CI、716未達比較、本番3ブラウザを確認。[公開完了記録](docs/verification/release-0.2.1.md)。
+
+npm公開workflowは実公開まで成功した。[run 36667537171](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36667537171)のattempt 1で公開し、attempt 2で同一版の再公開を省略してregistry再取得・consumerを確認した。[自動化の検証記録](docs/verification/publication-workflow-20260930.md)。v0.3.0は専用branch `feat/minify-source-provenance-v0.3`で開発中であり、本公開とは分離する。
 
 以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は本節が正本である。
 

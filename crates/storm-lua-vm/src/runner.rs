@@ -116,6 +116,7 @@ pub struct Vm {
     pub(crate) control: Rc<RefCell<HookControl>>,
     pub(crate) limits: ExecutionLimits,
     failed: bool,
+    addon_callbacks: bool,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     pub(crate) logs: Rc<RefCell<crate::logging::LogBuffer>>,
     #[cfg(feature = "debug")]
@@ -163,11 +164,22 @@ impl Vm {
             control,
             limits,
             failed: false,
+            addon_callbacks: false,
             environment_profile,
             logs,
             #[cfg(feature = "debug")]
             debugger,
         })
+    }
+    /// Addon callbacks retain their VM after ordinary Lua errors. Resource limits
+    /// still fail closed; non-function callback globals are treated as absent.
+    pub fn with_addon_environment(
+        limits: ExecutionLimits,
+        environment_profile: storm_lua_spec::environment::EnvironmentProfile,
+    ) -> Result<Self, VmError> {
+        let mut vm = Self::with_environment(limits, environment_profile)?;
+        vm.addon_callbacks = true;
+        Ok(vm)
     }
     /// バックエンド密結合な明示的拡張フィーチャーを通じてホストバインディングを設定します。
     #[cfg(feature = "backend-mlua")]
@@ -232,6 +244,7 @@ impl Vm {
             Value::Function(function) => {
                 self.start(function, crate::value::encode(&self.lua, arguments)?)
             }
+            _ if self.addon_callbacks => Ok(RunOutcome::Missing),
             _ => Err(VmError::new(
                 ErrorKind::InvalidArgument,
                 format!("{name} is not a function"),
@@ -351,9 +364,10 @@ impl Vm {
         }
         match result {
             Err(error) => {
-                self.failed = true;
+                let error = VmError::from(error);
+                self.failed = !self.addon_callbacks || error.kind != ErrorKind::Lua;
                 self.pending = None;
-                Err(error.into())
+                Err(error)
             }
             Ok(_) => {
                 if thread.status() == ThreadStatus::Resumable {

@@ -4,6 +4,8 @@ mod bindings;
 #[cfg(feature = "debug")]
 mod debugger;
 mod matrix;
+#[cfg(test)]
+mod tests;
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use storm_lua_spec::{
     http::{HttpError, HttpQueue, HttpRequest, HttpToken},
@@ -87,6 +89,7 @@ pub struct Addon {
     stage: Stage,
     source: Vec<u8>,
     source_name: String,
+    tick_disabled: bool,
 }
 fn invalid(message: &str) -> VmError {
     VmError::new(ErrorKind::InvalidArgument, message)
@@ -142,7 +145,7 @@ impl Addon {
                 ));
             }
         }
-        let mut vm = Vm::with_environment(config.limits, config.environment)?;
+        let mut vm = Vm::with_addon_environment(config.limits, config.environment)?;
         if let Some(savedata) = &config.savedata {
             if !matches!(savedata, LuaValue::Table(_)) {
                 return Err(invalid("savedata must be a table"));
@@ -157,7 +160,12 @@ impl Addon {
             definitions: BTreeMap::new(),
             http: HttpQueue::new().map_err(http_error)?,
         }));
-        vm.configure(|lua, env| bindings::install(lua, env, Rc::clone(&state)))?;
+        vm.configure(|lua, env| {
+            if config.environment == storm_lua_spec::environment::EnvironmentProfile::Game {
+                env.raw_set("select", storm_lua_vm::backend::Value::Nil)?;
+            }
+            bindings::install(lua, env, Rc::clone(&state))
+        })?;
         vm.install_bindings(&config.bindings)?;
         if let Some(loader) = &config.require_loader {
             vm.install_require_loader(loader)?;
@@ -175,6 +183,7 @@ impl Addon {
             stage: Stage::Empty,
             source: Vec::new(),
             source_name: String::new(),
+            tick_disabled: false,
         })
     }
     fn require(&self, stage: Stage) -> Result<(), VmError> {
@@ -190,7 +199,7 @@ impl Addon {
         }
         Ok(())
     }
-    /// トップレベルコードを1度実行します。既存のsavedataはこれが完了した後にのみ適用されます（再開後も同様）。
+    /// トップレベルコードを1度実行します。Luaエラー時も既存のsavedataを復元し、startを許可します。
     pub fn load(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.require(Stage::Empty)?;
         if source.len() > 1024 * 1024 || name.len() > 1024 {
@@ -211,11 +220,15 @@ impl Addon {
             .call_with("onCreate", &[LuaValue::Bool(self.config.is_world_create)]);
         self.finish(result)
     }
-    /// Composite信号ではなく経過ゲームtick数を用いて、アドオンの1 tickを駆動します。
+    /// Composite信号ではなくゲーム進行倍率を用いて、アドオンの1 tickを駆動します。
+    /// 通常のLuaエラー後はonTickを抑止し、Missingを返します。
     pub fn tick(&mut self, game_ticks: u32) -> Result<RunOutcome, VmError> {
         self.require(Stage::Ready)?;
         if game_ticks == 0 {
             return Err(invalid("game_ticks must be positive"));
+        }
+        if self.tick_disabled {
+            return Ok(RunOutcome::Missing);
         }
         self.run_event("onTick", &[LuaValue::Integer(i64::from(game_ticks))])
     }
@@ -244,26 +257,32 @@ impl Addon {
         self.finish(result)
     }
     fn finish(&mut self, result: Result<RunOutcome, VmError>) -> Result<RunOutcome, VmError> {
-        match &result {
-            Ok(RunOutcome::Suspended) => {}
-            Err(_) => self.stage = Stage::Failed,
-            Ok(_) => {
-                self.stage = match self.stage {
-                    Stage::Loading => {
-                        if let Some(savedata) = &self.config.savedata {
-                            if let Err(error) = self.vm.set_global("g_savedata", savedata) {
-                                self.stage = Stage::Failed;
-                                return Err(error);
-                            }
-                        }
-                        Stage::Loaded
-                    }
-                    Stage::Creating | Stage::Callback => Stage::Ready,
-                    Stage::Destroying => Stage::Destroyed,
-                    other => other,
-                };
-            }
+        if matches!(result, Ok(RunOutcome::Suspended)) {
+            return result;
         }
+        if let Err(error) = &result {
+            if error.kind != ErrorKind::Lua || self.vm.is_failed() {
+                self.stage = Stage::Failed;
+                return result;
+            }
+            // Ordinary script errors stop ticking, but retain globals and allow
+            // later non-tick callbacks, including onCreate and onDestroy.
+            self.tick_disabled = true;
+        }
+        self.stage = match self.stage {
+            Stage::Loading => {
+                if let Some(savedata) = &self.config.savedata {
+                    if let Err(error) = self.vm.set_global("g_savedata", savedata) {
+                        self.stage = Stage::Failed;
+                        return Err(error);
+                    }
+                }
+                Stage::Loaded
+            }
+            Stage::Creating | Stage::Callback => Stage::Ready,
+            Stage::Destroying => Stage::Destroyed,
+            other => other,
+        };
         result
     }
     /// Luaを実行せずに現在のg_savedataをコピーします（VM全体のスナップショットやゲームXMLではありません）。
@@ -339,7 +358,8 @@ impl Addon {
     pub fn is_suspended(&self) -> bool {
         self.vm.is_suspended()
     }
-    /// 実行時エラーまたはライフサイクル初期化失敗により再作成が必要かどうか。
+    /// 制限超過またはホスト境界の失敗により再作成が必要かどうか。
+    /// 通常のLuaエラーではfalseのまま通常イベントを配送できます。
     pub fn is_failed(&self) -> bool {
         self.stage == Stage::Failed || self.vm.is_failed()
     }

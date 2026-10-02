@@ -4,7 +4,7 @@
 
 `storm-lua-addon`がAddonの名前空間、初期化順、イベント、menu property、HTTPキューを所有する。`storm-lua-vm`の制限・debugger・owned values・loggingを共有し、microcontrollerやrasterへ依存しない。
 
-Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
+Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
 
 server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。`httpGet`は予約され上書き不可。
 
@@ -12,7 +12,7 @@ server関数はホストが名前と同期実装を明示登録する。エン�
 
 ## Lifecycle
 
-Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。別のcallbackやstartは重ねない。実行失敗したVMは再利用せず、明示的にreload／recreateする。
+Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。別のcallbackやstartは重ねない。通常のLuaエラーは呼び出し元へ返して保持し、以後のonTickを抑止するが、同じVMの通常イベント・onCreate・onDestroyは実行できる。sourceの実行がLuaエラーになった場合もcheckpointの復元とonCreateへ進める。命令数・メモリ制限やホスト境界の失敗は再利用せず、明示的にreload／recreateする。callbackのglobalがfunction以外なら未定義として扱い、Luaの返値は捨てる。errorのpeerへの報告と、通常callbackエラーの報告後のtick再開は現在のホストAPIでは未対応。
 
 新規ワールドではtop-levelの初期g_savedataを保持する。既存ワールドではcheckpointを事前検証し、top-levelが完了した後にg_savedataへ適用してからonCreate(false)を実行する。checkpointの適用で古いテーブル参照・upvalueを自動書き換えしない。
 

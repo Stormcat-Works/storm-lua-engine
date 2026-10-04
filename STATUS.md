@@ -1,5 +1,11 @@
 # Current status
 
+## v0.3.1 依存解析と構文比較の高速化（2026-10-05）
+
+`353522c`までの関数summary依存の再利用、文字列snapshotなしの構文比較、安定aliasの借用、ASCII文字数計測を検証済み。[実装と実測](docs/verification/compile-summary-dependencies-20261005.md)。全探索4,054成功組の平均は前の検証済み版よりMapなし3.0%、Mapあり1.9%短縮。最大1.2倍は未達であり、負の反復観測も残している。
+
+Native834、SDK30、実WASM83、Playground/CLI38、3ブラウザー、全mapを含む固定240設定・実コーパス8,182成功組を確認した。公開版ではなく、v0.3.1開発ブランチのcommitのみ。次のラウンドはこの同一binaryを基準にする。
+
 ## v0.3.1 全経路高速化の継続（2026-10-05）
 
 `feat/minify-performance-v0.3.1`で、借用したAPI参照の分類、ASTの葉/演算子snapshot、1文字の短縮名、UTF-16座標cursorと字句識別子の共有を実装した。対象実装は`0de60afd5b4ee106a9cc48be3ad24c1c099fcbe5`。[実装・実測・回帰・未達条件](docs/verification/compile-continuation-20261005.md)。

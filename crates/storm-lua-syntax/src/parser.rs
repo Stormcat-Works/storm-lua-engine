@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::ast::{Ast, IfArm, NodeId, TableField};
-use crate::lexer::{LexError, Lexer, Token, TokenKind};
+use crate::lexer::{LexError, Lexer, TokenKind};
 
 /// A syntactic failure after successful tokenization.
 #[derive(Debug)]
@@ -75,9 +75,27 @@ impl NodePositions {
     }
 }
 
+// Retain one input buffer rather than allocating each token spelling and then
+// cloning punctuation during parsing. Ranges come only from our lexer and stay
+// valid for this immutable buffer. The public Parser still owns its input.
+#[derive(Clone, Copy, Debug)]
+struct ParserToken {
+    k: TokenKind,
+    p: usize,
+    end: usize,
+    line: u32,
+    col: u32,
+}
+impl ParserToken {
+    fn text<'a>(&self, source: &'a str) -> &'a str {
+        &source[self.p..self.end]
+    }
+}
+
 /// Parser state and the arena it constructs from a source chunk.
 pub struct Parser {
-    ts: Vec<Token>,
+    source: Box<str>,
+    ts: Vec<ParserToken>,
     i: usize,
     ast: Ast,
     capture_positions: bool,
@@ -115,8 +133,23 @@ fn is_unary(v: &str) -> bool {
 impl Parser {
     /// Tokenize the source and prepare an empty parser arena.
     pub fn new(source: &str) -> Result<Self, LexError> {
-        let ts = Lexer::new(source).all()?;
+        let mut lexer = Lexer::new(source);
+        let mut ts = Vec::new();
+        loop {
+            let t = lexer.next_borrowed()?;
+            ts.push(ParserToken {
+                k: t.k,
+                p: t.p,
+                end: t.p + t.v.len(),
+                line: t.line,
+                col: t.col,
+            });
+            if t.k == TokenKind::Eof {
+                break;
+            }
+        }
         Ok(Self {
+            source: source.into(),
             ts,
             i: 0,
             ast: Ast::new(),
@@ -173,10 +206,7 @@ impl Parser {
 
     fn span_from(&mut self, id: NodeId, start: usize) {
         if self.capture_ranges {
-            let end = self
-                .i
-                .checked_sub(1)
-                .map_or(start, |i| self.ts[i].p + self.ts[i].v.len());
+            let end = self.i.checked_sub(1).map_or(start, |i| self.ts[i].end);
             self.spans.resize(self.ast.nodes.len(), None);
             self.spans[id as usize] = Some((start, end.max(start)));
         }
@@ -186,8 +216,7 @@ impl Parser {
         if self.capture_ranges {
             let token = &self.ts[token];
             debug_assert_eq!(token.k, TokenKind::Id);
-            self.names
-                .insert((id, site), (token.p, token.p + token.v.len()));
+            self.names.insert((id, site), (token.p, token.end));
         }
     }
 
@@ -197,36 +226,41 @@ impl Parser {
         }
     }
 
-    fn cur(&self) -> &Token {
+    fn cur(&self) -> &ParserToken {
         &self.ts[self.i]
     }
     fn cur_v(&self) -> &str {
-        &self.ts[self.i].v
+        self.ts[self.i].text(&self.source)
     }
     fn cur_k(&self) -> TokenKind {
         self.ts[self.i].k
     }
     fn at(&self, v: Option<&str>, k: Option<TokenKind>) -> bool {
         let t = &self.ts[self.i];
-        v.is_none_or(|vv| t.v == vv) && k.is_none_or(|kk| t.k == kk)
+        v.is_none_or(|vv| t.text(&self.source) == vv) && k.is_none_or(|kk| t.k == kk)
     }
     fn identifier(&mut self) -> Result<String, ParseError> {
         if self.cur_k() != TokenKind::Id {
             let token = self.cur();
             return Err(ParseError(format!(
                 "expected identifier, got {} at {}:{}",
-                token.v, token.line, token.col
+                token.text(&self.source),
+                token.line,
+                token.col
             )));
         }
-        Ok(self.pop(None)?.v)
+        Ok(self.pop(None)?.text(&self.source).to_owned())
     }
-    fn pop(&mut self, v: Option<&str>) -> Result<Token, ParseError> {
-        let t = self.ts[self.i].clone();
+    fn pop(&mut self, v: Option<&str>) -> Result<ParserToken, ParseError> {
+        let t = self.ts[self.i];
         if let Some(vv) = v {
-            if t.v != vv {
+            if t.text(&self.source) != vv {
                 return Err(ParseError(format!(
                     "expected {}, got {} at {}:{}",
-                    vv, t.v, t.line, t.col
+                    vv,
+                    t.text(&self.source),
+                    t.line,
+                    t.col
                 )));
             }
         }
@@ -234,7 +268,7 @@ impl Parser {
         Ok(t)
     }
     fn accept(&mut self, v: &str) -> bool {
-        if self.ts[self.i].v == v {
+        if self.cur_v() == v {
             self.i += 1;
             return true;
         }
@@ -525,12 +559,12 @@ impl Parser {
     }
 
     fn expr_min(&mut self, minp: u32) -> Result<NodeId, ParseError> {
-        let tok = self.ts[self.i].clone();
+        let tok = self.ts[self.i];
         let mut left: NodeId;
-        if is_unary(&tok.v) {
+        if is_unary(tok.text(&self.source)) {
             self.pop(None)?;
             let e = self.expr_min(12)?;
-            left = self.ast.un(&tok.v, e);
+            left = self.ast.un(tok.text(&self.source), e);
             self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("nil") {
             left = self.ast.nil();
@@ -546,11 +580,11 @@ impl Parser {
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Num {
             self.pop(None)?;
-            left = self.ast.num(tok.v);
+            left = self.ast.num(tok.text(&self.source).to_owned());
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Str {
             self.pop(None)?;
-            left = self.ast.str(tok.v);
+            left = self.ast.str(tok.text(&self.source).to_owned());
             self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("function") {
             left = self.func_body()?;
@@ -564,11 +598,10 @@ impl Parser {
             if lp < minp {
                 break;
             }
-            let op_tok = self.cur().clone();
-            let op = op_tok.v.clone();
+            let op_tok = *self.cur();
             self.pop(None)?;
             let r = self.expr_min(rp)?;
-            left = self.ast.bin(&op, left, r);
+            left = self.ast.bin(op_tok.text(&self.source), left, r);
             self.mark(left, op_tok.line, op_tok.col, tok.p);
         }
         Ok(left)
@@ -591,7 +624,10 @@ impl Parser {
                 let v = self.expr()?;
                 fs.push(TableField::KVar(k, v));
             } else if self.cur_k() == TokenKind::Id
-                && self.ts.get(self.i + 1).is_some_and(|t| t.v == "=")
+                && self
+                    .ts
+                    .get(self.i + 1)
+                    .is_some_and(|t| t.text(&self.source) == "=")
             {
                 if self.capture_ranges {
                     field_tokens.push((fs.len(), self.i));
@@ -636,10 +672,12 @@ impl Parser {
             self.pop(Some(")"))?;
             self.mark(e, line0, col0, start);
         } else {
-            let t = self.cur().clone();
+            let t = self.cur();
             return Err(ParseError(format!(
                 "expected expression at {}:{}, got {}",
-                t.line, t.col, t.v
+                t.line,
+                t.col,
+                t.text(&self.source)
             )));
         }
         loop {
@@ -1256,6 +1294,73 @@ mod diagnostic_point_tests {
                     .unwrap()
                     .to_string()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod source_token_storage_tests {
+    use super::*;
+    #[test]
+    fn range_tokens_reproduce_owned_lexer_spelling_kind_and_positions() {
+        for source in [
+            "",
+            "-- only comment\r\n",
+            "-- 😀雪\r\nlocal value=0x10;return value,'escaped\\nstring',[==[long\ntext]==]",
+            "local t={a=1,[ [=[key]=] ]=2};function obj:method(x,...)return -x^2,1 .. 'a',... end",
+            "\u{feff}function onTick()output.setNumber(1,2*3)end",
+        ] {
+            let expected = Lexer::new(source).all().unwrap();
+            let parser = Parser::new(source).unwrap();
+            assert_eq!(parser.ts.len(), expected.len());
+            for (a, b) in parser.ts.iter().zip(&expected) {
+                assert_eq!(
+                    (a.k, a.text(&parser.source), a.p, a.line, a.col),
+                    (b.k, b.v.as_str(), b.p, b.line, b.col)
+                );
+                assert_eq!(a.end, b.p + b.v.len());
+            }
+            let mut consumed = parser;
+            for token in expected {
+                let at = consumed.pop(None).unwrap();
+                assert_eq!(at.text(&consumed.source), token.v);
+            }
+        }
+    }
+    #[test]
+    fn parser_remains_owned_after_caller_drops_or_edits_input() {
+        let mut input = String::from("local x=1;function f(v)return v+x end");
+        let mut parser = Parser::new_capturing_positions(&input).unwrap();
+        input.clear();
+        input.push_str("local =");
+        drop(input);
+        let root = parser.parse().unwrap();
+        let (ast, positions) = parser.into_ast_with_positions();
+        assert!(matches!(ast.node(root), crate::Node::Block(_)));
+        assert_eq!(
+            positions.span(root),
+            Some((0, "local x=1;function f(v)return v+x end".len()))
+        );
+        assert_eq!(
+            crate::Printer::new(&ast, false).output(root),
+            "local x=1 function f(v)return v+x end"
+        );
+    }
+    #[test]
+    fn lexical_errors_still_precede_syntax_errors_and_have_the_same_message() {
+        for input in [
+            "local = 'unterminated",
+            "return [=[open",
+            "local x=1 @",
+            "--[=[unfinished",
+        ] {
+            let expected = Lexer::new(input).all().unwrap_err().to_string();
+            let actual = match Parser::new(input) {
+                Ok(_) => panic!("invalid lexical input accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert_eq!(actual, expected);
         }
     }
 }

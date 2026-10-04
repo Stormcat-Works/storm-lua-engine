@@ -601,7 +601,7 @@ fn annotate_wrapper_argument(
     if !target.nodes.tracks_origins() {
         return;
     }
-    let complete = inputs.iter().all(|&n| source.nodes.origin(n).is_some());
+    let complete = inputs.iter().all(|&n| source.nodes.has_origin(n));
     for id in first..target.nodes.len() {
         let id = id as NodeId;
         if matches!(target.node(id), Node::Name(_)) {

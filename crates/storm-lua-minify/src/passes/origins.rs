@@ -6,7 +6,7 @@ use storm_lua_syntax::{Ast, NodeId};
 pub(super) fn known(ast: &Ast, node: NodeId) -> bool {
     let mut known = true;
     storm_lua_syntax::ast_utils::walk(ast, node, &mut |id| {
-        known &= ast.nodes.origin(id).is_some()
+        known &= ast.nodes.has_origin(id)
             || (matches!(ast.node(id), storm_lua_syntax::Node::Name(_))
                 && ast
                     .nodes
@@ -34,11 +34,9 @@ pub(super) fn derive(
     target
         .nodes
         .derive_from(result, &source.nodes, inputs[0], reason);
-    for &input in &inputs[1..] {
-        target
-            .nodes
-            .relate_from(result, &source.nodes, input, reason);
-    }
+    target
+        .nodes
+        .relate_many_from(result, &source.nodes, &inputs[1..], reason);
 }
 
 pub(super) fn within(target: &mut Ast, result: NodeId, inputs: &[NodeId], reason: &str) {

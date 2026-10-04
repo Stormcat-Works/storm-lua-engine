@@ -340,48 +340,85 @@ fn apply_renames(
         if std::mem::replace(&mut visited[id as usize], true) {
             continue;
         }
-        // Only symbols change. The arena is already cloned, so preserve its
-        // owned nodes and declaration lists instead of copying them again.
-        // Keep the original traversal/intern order and unreachable nodes.
-        let origin = ast.nodes.capture_origin(id);
-        match &mut ast.nodes[id as usize] {
+        // Determine renames through immutable access first. Mutable indexing of a
+        // tracked NodeArena deliberately invalidates provenance, so touching every
+        // non-name node would force a capture/restore allocation for no semantic
+        // change. Only mutate nodes whose emitted identifier spelling changes.
+        let mut single = None::<&str>;
+        let mut multiple = Vec::<(usize, &str)>::new();
+        match source.node(id) {
             Node::Name(symbol) | Node::Localfunc(symbol, _) | Node::Fornum(symbol, ..) => {
                 if let Some(bid) = resolution.node_bid[id as usize] {
-                    if let Some(name) = names[bid as usize].as_ref() {
-                        *symbol = ast.strings.intern(name);
+                    if let Some(name) = names[bid as usize].as_deref() {
+                        if source.strings.get(*symbol) != name {
+                            single = Some(name);
+                        }
                     }
                 }
             }
             Node::Local(symbols, _) | Node::Forin(symbols, ..) | Node::Function(symbols, ..) => {
                 if let Some(bids) = resolution.node_bids.get(id as usize) {
-                    for (symbol, bid) in symbols.iter_mut().zip(bids) {
-                        if let Some(name) = names[*bid as usize].as_ref() {
-                            *symbol = ast.strings.intern(name);
+                    for (index, (symbol, bid)) in symbols.iter().zip(bids).enumerate() {
+                        if let Some(name) = names[*bid as usize].as_deref() {
+                            if source.strings.get(*symbol) != name {
+                                multiple.push((index, name));
+                            }
                         }
                     }
                 }
             }
             _ => {}
         }
-        ast.nodes.finish_rename(id, origin);
+        if let Some(name) = single {
+            let replacement = ast.strings.intern(name);
+            let origin = ast.nodes.capture_origin(id);
+            match &mut ast.nodes[id as usize] {
+                Node::Name(symbol) | Node::Localfunc(symbol, _) | Node::Fornum(symbol, ..) => {
+                    *symbol = replacement;
+                }
+                _ => unreachable!("single rename action changed node shape"),
+            }
+            ast.nodes.finish_rename(id, origin);
+        } else if !multiple.is_empty() {
+            let replacements = multiple
+                .into_iter()
+                .map(|(index, name)| (index, ast.strings.intern(name)))
+                .collect::<Vec<_>>();
+            let origin = ast.nodes.capture_origin(id);
+            match &mut ast.nodes[id as usize] {
+                Node::Local(symbols, _)
+                | Node::Forin(symbols, ..)
+                | Node::Function(symbols, ..) => {
+                    for (index, replacement) in replacements {
+                        symbols[index] = replacement;
+                    }
+                }
+                _ => unreachable!("multi rename action changed node shape"),
+            }
+            ast.nodes.finish_rename(id, origin);
+        }
         storm_lua_analysis::resolver::for_each_child(&ast, id, &mut |child| stack.push(child));
     }
     (ast, root)
 }
 
 /// scope_rename パスの公開エントリ（TS scopeRename）。
-fn scope_rename_impl(ast: &Ast, root: NodeId, collect_mapping: bool) -> ScopeRenameResult {
+fn rename_plan(ast: &Ast, root: NodeId) -> (Resolution, RenameNames) {
     let resolution = resolve(ast, root);
     let mut names: RenameNames = vec![None; resolution.bindings.len()];
     let mut used: HashSet<String> = HashSet::new();
 
     rename_globals(ast, &resolution, &mut names, &mut used);
     let subtree_refs = get_subtree_refs(&resolution);
-
     rename_top_locals(ast, &resolution, &mut names, &mut used);
     for &c in &resolution.scope(0).children {
         rename_nested_scope(c, &resolution, &mut names, &subtree_refs);
     }
+    (resolution, names)
+}
+
+fn scope_rename_impl(ast: &Ast, root: NodeId, collect_mapping: bool) -> ScopeRenameResult {
+    let (resolution, names) = rename_plan(ast, root);
 
     let mut mapping: HashMap<String, String> = HashMap::new();
     if collect_mapping {
@@ -448,15 +485,51 @@ impl Iterator for ShortNameIterStatic {
 
 /// Measure the scope-renamed size without building provenance for a disposable
 /// cost-model AST. The actual selected scope rename still receives the tracked AST.
-pub(crate) fn measure_renamed_size(ast: &Ast, root: NodeId) -> usize {
-    if ast.nodes.tracks_origins() {
-        let syntax = storm_lua_syntax::ast_utils::clone_without_origins(ast);
-        let renamed = scope_rename_fast(&syntax, root);
-        storm_lua_syntax::size::measure_size(&renamed.ast, renamed.root)
-    } else {
-        let renamed = scope_rename_fast(ast, root);
-        storm_lua_syntax::size::measure_size(&renamed.ast, renamed.root)
+struct RenameSizeResolver<'a> {
+    resolution: &'a Resolution,
+    names: &'a RenameNames,
+}
+
+impl storm_lua_syntax::size::SizeNameResolver for RenameSizeResolver<'_> {
+    fn replacement(&self, node: NodeId, site: storm_lua_syntax::parser::NameSite) -> Option<&str> {
+        use storm_lua_syntax::parser::NameSite;
+        let bid = match site {
+            NameSite::Reference => self
+                .resolution
+                .node_bid
+                .get(node as usize)
+                .copied()
+                .flatten(),
+            NameSite::Binding(index) | NameSite::Parameter(index) => self
+                .resolution
+                .node_bids
+                .get(node as usize)
+                .and_then(|bids| bids.get(index as usize))
+                .copied()
+                .or_else(|| {
+                    (index == 0)
+                        .then(|| {
+                            self.resolution
+                                .node_bid
+                                .get(node as usize)
+                                .copied()
+                                .flatten()
+                        })
+                        .flatten()
+                }),
+            NameSite::Field(_) | NameSite::Member | NameSite::Label => None,
+        }?;
+        self.names.get(bid as usize)?.as_deref()
     }
+}
+
+pub(crate) fn measure_renamed_size(ast: &Ast, root: NodeId) -> usize {
+    let (resolution, names) = rename_plan(ast, root);
+    let resolver = RenameSizeResolver {
+        resolution: &resolution,
+        names: &names,
+    };
+    storm_lua_syntax::size::measure_size_with_names(ast, root, &resolver)
 }
 
 #[cfg(test)]
@@ -606,6 +679,51 @@ mod allocation_regression_tests {
                 params.join(","), params.join("+")
             );
             check(&source);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod cost_only_name_tests {
+    use super::*;
+    #[test]
+    fn borrowed_rename_size_matches_materialized_ast_for_every_registered_fixture() {
+        for &id in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let text = crate::provenance_pass_matrix::fixture(id);
+            let (mut ast, root) =
+                storm_lua_syntax::parse_source_with_origins("cost.lua", &text).unwrap();
+            let root = crate::provenance_pass_matrix::apply(id, &mut ast, root);
+            let frozen = serde_json::to_vec(&ast).unwrap();
+            let actual = measure_renamed_size(&ast, root);
+            let old = scope_rename_fast(&ast, root);
+            assert_eq!(
+                actual,
+                storm_lua_syntax::size::measure_size(&old.ast, old.root),
+                "{id}"
+            );
+            assert_eq!(
+                serde_json::to_vec(&ast).unwrap(),
+                frozen,
+                "{id}: cost calculation mutated source"
+            );
+        }
+    }
+    #[test]
+    fn cost_only_names_do_not_rename_fields_methods_labels_or_shadowed_declarations() {
+        for text in [
+            "local first,second=1,2 for first=1,10 do for second,third in pairs({hello=first})do print(second,third)end end",
+            "local function recurse(n)if n>0 then return recurse(n-1)end end return recurse(3)",
+            "local object={}function object:method(value)return self.field+value end return object:method(7)",
+            "local object={}function object.method(a,...)return a,... end return object.method(1,2)",
+            "local result='雪😀' ::again::do local result=result output.setNumber(1,#result)end if flag then goto again end",
+            "local same=1 do local same=same+1 print(same)end print(same)",
+            "local a,a=1,2 local function f(a,a)return a end print(a,f(3,4))",
+            "local unused = nil local a,b,c=f() output.setNumber(1,a+b+c)",
+        ] {
+            let (ast,root)=storm_lua_syntax::parse_source_with_origins("names.lua",text).unwrap();
+            let materialized=scope_rename_fast(&ast,root);
+            assert_eq!(measure_renamed_size(&ast,root),storm_lua_syntax::size::measure_size(&materialized.ast,materialized.root),"{text}");
         }
     }
 }

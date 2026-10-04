@@ -23,3 +23,5 @@ pub mod optimized_source_map;
 mod map_composition;
 #[cfg(test)]
 mod optimized_map_tests;
+
+mod canonical_map;

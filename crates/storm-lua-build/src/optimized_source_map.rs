@@ -251,12 +251,8 @@ pub fn encode(
     compilation: Value,
 ) -> Result<String, String> {
     origins.validate_for_code(code)?;
-    let mut map = standard_map(code, origins)?;
-    map["x_storm"] =
-        serde_json::to_value(extension(code, origins, compilation)).map_err(|e| e.to_string())?;
-    let integrity = digest(&serde_json::to_vec(&map).map_err(|e| e.to_string())?);
-    map["x_storm"]["integrity"] = Value::String(integrity);
-    serde_json::to_string(&map).map_err(|e| e.to_string())
+    let map = standard_map(code, origins)?;
+    crate::canonical_map::encode(&map, extension(code, origins, compilation))
 }
 // One producer for the standard view. Validation compares that view with the
 // detailed ranges, rather than trusting a checksum recomputed over mismatches.

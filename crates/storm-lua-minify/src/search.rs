@@ -12,10 +12,11 @@ use crate::pass_ids::OPTIMIZATION_PASS_IDS;
 use crate::passes;
 use crate::scope_rename::scope_rename_fast;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use storm_lua_syntax::ast::{Ast, NodeId};
 use storm_lua_syntax::parser::parse_source;
-use storm_lua_syntax::print::Printer;
-use storm_lua_syntax::provenance::GeneratedOrigins;
+use storm_lua_syntax::print::{PrintedSource, Printer};
+use storm_lua_syntax::provenance::{DeferredGeneratedOrigins, GeneratedOrigins};
 use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -28,7 +29,7 @@ struct Variant {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Candidate {
-    origins: Option<GeneratedOrigins>,
+    origins: Option<Arc<DeferredGeneratedOrigins>>,
     structural: String,
     layout: String,
     code: String,
@@ -235,15 +236,57 @@ fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, Node
     }
 }
 
-fn final_output(ast: &Ast, root: NodeId, zero: bool) -> (String, u32, Option<GeneratedOrigins>) {
+enum FinalPrint {
+    Plain {
+        code: String,
+        newline_count: u32,
+    },
+    Tracked {
+        printed: PrintedSource,
+        newline_count: u32,
+    },
+}
+
+impl FinalPrint {
+    fn code(&self) -> &str {
+        match self {
+            Self::Plain { code, .. } => code,
+            Self::Tracked { printed, .. } => &printed.code,
+        }
+    }
+
+    fn finish(self, ast: &Ast) -> (String, u32, Option<DeferredGeneratedOrigins>) {
+        match self {
+            Self::Plain {
+                code,
+                newline_count,
+            } => (code, newline_count, None),
+            Self::Tracked {
+                printed,
+                newline_count,
+            } => {
+                let code = printed.code.clone();
+                let origins = DeferredGeneratedOrigins::from_print(ast, printed);
+                (code, newline_count, origins)
+            }
+        }
+    }
+}
+
+fn print_final(ast: &Ast, root: NodeId, zero: bool) -> FinalPrint {
     let mut printer = Printer::new(ast, zero);
     if ast.nodes.tracks_origins() {
         let printed = printer.output_with_positions(root);
-        let origins = GeneratedOrigins::from_print(ast, &printed);
-        (printed.code, printer.newline_count(), origins)
+        FinalPrint::Tracked {
+            printed,
+            newline_count: printer.newline_count(),
+        }
     } else {
         let code = printer.output(root);
-        (code, printer.newline_count(), None)
+        FinalPrint::Plain {
+            code,
+            newline_count: printer.newline_count(),
+        }
     }
 }
 
@@ -559,7 +602,10 @@ fn evaluate_candidate_with_verifier(
         }
         return Ok(CandidateBatch {
             candidates: vec![Candidate {
-                origins: job.lexical_origins.clone(),
+                origins: job
+                    .lexical_origins
+                    .clone()
+                    .map(|value| Arc::new(DeferredGeneratedOrigins::ready(value))),
                 structural: "lexical".into(),
                 layout: "tokens".into(),
                 code: code.clone(),
@@ -1006,25 +1052,28 @@ fn evaluate_candidate_with_verifier(
         )]
         let (candidate_ast, candidate_root, candidate_passes) =
             final_variant.expect("at least one final variant");
-        let compact = Printer::new(&candidate_ast, false).output(candidate_root);
-        if parse_source(&compact).is_err() {
+        let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
+        if parse_source(output.code()).is_err() {
             parse_rejected += 1;
             continue;
         }
         if let Some(verify) = verify_candidate.as_deref_mut() {
-            if !verify(&compact) {
+            // The external verifier contract uses compact Lua even when the
+            // selected output requests zero-cost newlines.
+            let compact = zero_cost_newlines
+                .then(|| Printer::new(&candidate_ast, false).output(candidate_root));
+            if !verify(compact.as_deref().unwrap_or_else(|| output.code())) {
                 semantic_rejected += 1;
                 continue;
             }
         }
-        let size = target_char_size(&compact);
-        let (code, newline_count, origins) =
-            final_output(&candidate_ast, candidate_root, zero_cost_newlines);
-        if target_char_size(&code) != size {
+        let size = target_char_size(output.code());
+        if size != final_size {
             return Err("zero-cost newline printer changed size".into());
         }
+        let (code, newline_count, origins) = output.finish(&candidate_ast);
         candidates.push(Candidate {
-            origins,
+            origins: origins.map(Arc::new),
             structural: structural_name.clone(),
             layout: layout.to_string(),
             code,
@@ -1070,14 +1119,18 @@ fn select_best_candidates(
         })
         .collect::<Vec<_>>();
     let best = candidates.remove(0);
-    if let Some(origins) = &best.origins {
+    let origins = best.origins.map(|value| match Arc::try_unwrap(value) {
+        Ok(value) => value.into_owned(),
+        Err(shared) => shared.get().clone(),
+    });
+    if let Some(origins) = &origins {
         origins.validate_for_code(&best.code)?;
     }
     let lexical_target_met = context
         .lexical_target
         .is_some_and(|target| best.size <= target);
     Ok(CompileCodeResult {
-        origins: best.origins,
+        origins,
         code: best.code,
         passes: best.passes,
         api_aliases: best.aliases,
@@ -1141,18 +1194,14 @@ fn render_variant_candidate(
     } else {
         (variant.ast.clone(), variant.root)
     };
-    let compact = Printer::new(&candidate_ast, false).output(candidate_root);
-    if parse_source(&compact).is_err() {
+    let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
+    if parse_source(output.code()).is_err() {
         return Err("satisficing checkpoint failed reparse validation".into());
     }
-    let size = target_char_size(&compact);
-    let (code, newline_count, origins) =
-        final_output(&candidate_ast, candidate_root, zero_cost_newlines);
-    if target_char_size(&code) != size {
-        return Err("zero-cost newline printer changed size".into());
-    }
+    let size = target_char_size(output.code());
+    let (code, newline_count, origins) = output.finish(&candidate_ast);
     Ok(Candidate {
-        origins,
+        origins: origins.map(Arc::new),
         structural: variant.name.clone(),
         layout: "none".into(),
         code,
@@ -1223,7 +1272,21 @@ pub fn try_satisficing(
         .target_size
         .ok_or("try_satisficing requires target_size")?;
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
-    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
+    // Source-sized targets with runtime properties stop at the identity
+    // checkpoint. Parse and validate them normally, but do not construct a
+    // per-node origin table that the exact-copy result will immediately discard.
+    // Hardcoded properties can alter the input, so they retain full tracking.
+    let identity_checkpoint = options.origin_source.is_some()
+        && target_char_size(source) <= target_size
+        && options
+            .property
+            .as_ref()
+            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
+    let (parsed_ast, parsed_root) = if identity_checkpoint {
+        parse_source(source).map_err(|error| error.to_string())?
+    } else {
+        parse_for_search(source, options)?
+    };
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -1333,10 +1396,11 @@ pub fn try_satisficing(
     // AST first so the requested option is still honored.
     if property_reads_hardcoded == 0 {
         explored.push(Candidate {
-            origins: options
-                .origin_source
-                .as_ref()
-                .map(|name| GeneratedOrigins::identity(name, source)),
+            origins: options.origin_source.as_ref().map(|name| {
+                Arc::new(DeferredGeneratedOrigins::ready(GeneratedOrigins::identity(
+                    name, source,
+                )))
+            }),
             structural: "target:source".into(),
             layout: "source".into(),
             code: source.to_string(),
@@ -1880,5 +1944,85 @@ mod phase7_serialization_tests {
         let context_bytes = encode_search_context(&context).expect("encode context");
         let decoded = decode_search_context(&context_bytes).expect("decode context");
         assert_eq!(decoded.structural_names, context.structural_names);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod identity_origin_tests {
+    use super::*;
+    use crate::config::{PropertyConfig, PropertyMode};
+
+    #[test]
+    fn source_sized_target_keeps_the_exact_identity_contract_and_validation() {
+        for source in [
+            "function onTick()output.setNumber(1,2*3)end",
+            "-- 😀雪\r\nfunction onTick()\r\n output.setNumber(1,2)\r\nend\r\n",
+            "-- comment-only source",
+            "",
+        ] {
+            for zero in [false, true] {
+                let config = CompileOptions {
+                    target_size: Some(8192),
+                    origin_source: Some("input.lua".into()),
+                    zero_cost_newlines: zero,
+                    ..Default::default()
+                };
+                let result = try_satisficing(source, &config, None).unwrap().result;
+                assert_eq!(result.code, source);
+                assert!(result.stats.target_met);
+                assert_eq!(result.stats.winner_structural, "target:source");
+                let origins = result.origins.unwrap();
+                origins.validate_for_code(source).unwrap();
+                assert_eq!(origins, GeneratedOrigins::identity("input.lua", source));
+            }
+        }
+        let config = CompileOptions {
+            target_size: Some(8192),
+            origin_source: Some("input.lua".into()),
+            ..Default::default()
+        };
+        assert!(try_satisficing("local =", &config, None).is_err());
+        assert!(
+            try_satisficing("function onTick()pcall(function()end)end", &config, None).is_err()
+        );
+    }
+
+    #[test]
+    fn property_and_lexical_paths_are_not_mistaken_for_identity_copies() {
+        let source = "function onTick()output.setNumber(1,property.getNumber('value'))end";
+        let mut config = CompileOptions {
+            target_size: Some(8192),
+            origin_source: Some("input.lua".into()),
+            property: Some(PropertyConfig {
+                mode: PropertyMode::Hardcode,
+                numbers: Some(std::collections::BTreeMap::from([("value".into(), 7.0)])),
+                bools: None,
+                texts: None,
+            }),
+            ..Default::default()
+        };
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_ne!(result.code, source);
+        assert!(!result.code.contains("getNumber"));
+        assert_eq!(result.stats.winner_structural, "target:property");
+        let origins = result.origins.unwrap();
+        origins.validate_for_code(&result.code).unwrap();
+        assert_eq!(origins.unknown_bytes(), 0);
+        config.property.as_mut().unwrap().mode = PropertyMode::Runtime;
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_eq!(result.code, source);
+        assert_eq!(
+            result.origins.unwrap(),
+            GeneratedOrigins::identity("input.lua", source)
+        );
+        config.property = None;
+        let source = "local _ENV=_ENV -- not identity\nfunction onTick()output.setNumber(1,2)end";
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_eq!(result.stats.winner_structural, "lexical");
+        let (expected_code, expected_origins) =
+            storm_lua_syntax::print::lexical_minify_with_origins("input.lua", source).unwrap();
+        assert_eq!(result.code, expected_code);
+        assert_eq!(result.origins.unwrap(), expected_origins);
     }
 }

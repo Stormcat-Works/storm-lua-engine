@@ -452,7 +452,7 @@ fn failure_diagnostics(source: &str, error: &str) -> Vec<Diagnostic> {
 }
 
 /// `compile()` の既知ハザード診断。位置サイドテーブル付きで再パースする
-/// （検索ホットパスの `parse_source` とは別経路。`success()` で1回だけ呼ばれる非ホットパス）。
+/// （検索側とは別経路。完了時に一度だけ実行し、成功結果にも同じ診断を渡す）。
 fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnostic>, String> {
     let (ast, root, positions) = parse_source_with_positions(source).map_err(|e| e.to_string())?;
     let mut diagnostics = storm_lua_analysis::environment_checks::diagnostics(
@@ -529,14 +529,12 @@ fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats 
     }
 }
 
-fn success(source: &str, options: &CompileOptions, result: CompileCodeResult) -> ApiCompileResult {
-    let diagnostics = match detect_hazards(source, options) {
-        Ok(diagnostics) => diagnostics,
-        Err(error) => return ApiCompileResult::failure(source, error),
-    };
-    if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
-        return ApiCompileResult::with_error(error.message.clone(), diagnostics);
-    }
+fn success(
+    source: &str,
+    options: &CompileOptions,
+    result: CompileCodeResult,
+    diagnostics: Vec<Diagnostic>,
+) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
     let original = source.encode_utf16().count();
     let baseline = token_minify(source)
@@ -635,16 +633,17 @@ pub fn finish_compile_result(
     options: &CompileOptions,
     result: Result<CompileCodeResult, String>,
 ) -> ApiCompileResult {
-    match detect_hazards(source, options) {
+    let diagnostics = match detect_hazards(source, options) {
         Ok(diagnostics) => {
             if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
                 return ApiCompileResult::with_error(error.message.clone(), diagnostics);
             }
+            diagnostics
         }
         Err(error) => return ApiCompileResult::failure(source, error),
-    }
+    };
     match result {
-        Ok(result) => success(source, options, result),
+        Ok(result) => success(source, options, result, diagnostics),
         Err(error) => ApiCompileResult::failure(source, error),
     }
 }

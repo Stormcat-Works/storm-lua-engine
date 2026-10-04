@@ -1,10 +1,12 @@
 //! Source origins carried independently of AST equality and optimization decisions.
 //! Unknown origin is `None`, never a nearby source position or a synthetic claim.
 
+use crate::deferred_origin::StoredOrigin;
 use crate::explanation::{
     InlineContext, OptimizationReason, ReasonOperation, SourceDisposition, SourceRelation,
     SyntaxSite,
 };
+use crate::origin_slots::OriginSlots;
 use crate::{Ast, NameSite, Node, NodeId, NodePositions, PrintedSource};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -81,18 +83,52 @@ pub struct Origin {
     pub reasons: Arc<Vec<OptimizationReason>>,
 }
 
+// These are immutable empty values, not caches keyed by user source. Most
+// parsed nodes have no relationships or reasons; allocating identical empty
+// Vec headers per token/node amplifies source-map-only allocation pressure.
+pub(crate) fn empty_related() -> Arc<Vec<SourceSpan>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<SourceSpan>>> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+pub(crate) fn empty_relations() -> Arc<Vec<SourceRelation>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<SourceRelation>>> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+pub(crate) fn empty_reasons() -> Arc<Vec<OptimizationReason>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<OptimizationReason>>> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+pub(crate) fn empty_contexts() -> Arc<Vec<InlineContext>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<InlineContext>>> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+pub(crate) fn empty_dispositions() -> Arc<Vec<SourceDisposition>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<SourceDisposition>>> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+fn empty_names() -> Arc<Vec<(NameSite, StoredOrigin)>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<(NameSite, StoredOrigin)>>> =
+        std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+fn empty_tokens() -> Arc<Vec<(SyntaxSite, StoredOrigin)>> {
+    static EMPTY: std::sync::OnceLock<Arc<Vec<(SyntaxSite, StoredOrigin)>>> =
+        std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(Arc::default))
+}
+
 impl Origin {
     /// Attribute a construct to one original source range.
     pub fn source(span: SourceSpan, precision: OriginPrecision, name: Option<Arc<str>>) -> Self {
         Self {
             kind: OriginKind::Source,
             primary: Some(span),
-            related: Arc::default(),
+            related: empty_related(),
             transformation: None,
             precision,
             name,
-            relations: Arc::default(),
-            reasons: Arc::default(),
+            relations: empty_relations(),
+            reasons: empty_reasons(),
         }
     }
     /// Describe compiler-created code without inventing a source location.
@@ -100,11 +136,11 @@ impl Origin {
         Self {
             kind: OriginKind::Synthetic,
             primary: None,
-            related: Arc::default(),
+            related: empty_related(),
             transformation: Some(transformation.into()),
             precision: OriginPrecision::Group,
             name: None,
-            relations: Arc::default(),
+            relations: empty_relations(),
             reasons: Arc::new(vec![OptimizationReason::action(
                 transformation,
                 ReasonOperation::Synthesize,
@@ -114,15 +150,23 @@ impl Origin {
     /// Preserve source attribution but identify it as a transformation result.
     pub fn derived(&self, transformation: &str) -> Self {
         let mut result = self.clone();
-        if result.kind != OriginKind::Synthetic {
-            result.kind = OriginKind::Derived;
+        result.derive_in_place(transformation);
+        result
+    }
+    /// Record the same derivation on an already uniquely owned origin. Callers
+    /// updating a retained slot avoid sharing its vectors with a temporary clone
+    /// immediately before appending a reason (which forces a full COW copy).
+    pub(crate) fn derive_in_place(&mut self, transformation: &str) {
+        if self.kind != OriginKind::Synthetic {
+            self.kind = OriginKind::Derived;
         }
-        result.transformation = Some(transformation.into());
-        result.add_reason(OptimizationReason::action(
+        if self.transformation.as_deref() != Some(transformation) {
+            self.transformation = Some(transformation.into());
+        }
+        self.add_reason(OptimizationReason::action(
             transformation,
             ReasonOperation::Rewrite,
         ));
-        result
     }
     pub(crate) fn add_reason(&mut self, reason: OptimizationReason) {
         // Equal rule names do not mean equal decisions: operands and checked
@@ -180,20 +224,32 @@ impl Origin {
 }
 
 /// One arena slot's origin, shared when candidate ASTs are cloned.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct NodeOrigin {
-    pub origin: Option<Origin>,
+    pub origin: Option<StoredOrigin>,
     // A vector keeps parameterized NameSite variants valid in JSON (not object keys).
-    pub names: Vec<(NameSite, Origin)>,
+    pub names: Arc<Vec<(NameSite, StoredOrigin)>>,
     pub contexts: Arc<Vec<InlineContext>>,
-    pub tokens: Vec<(SyntaxSite, Origin)>,
+    pub tokens: Arc<Vec<(SyntaxSite, StoredOrigin)>>,
     pub dispositions: Arc<Vec<SourceDisposition>>,
+}
+
+impl Default for NodeOrigin {
+    fn default() -> Self {
+        Self {
+            origin: None,
+            names: empty_names(),
+            contexts: empty_contexts(),
+            tokens: empty_tokens(),
+            dispositions: empty_dispositions(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ArenaOrigins {
     pub sources: Arc<Vec<SourceSnapshot>>,
-    pub slots: Vec<Option<Arc<NodeOrigin>>>,
+    pub slots: Arc<OriginSlots>,
     pub dispositions: Arc<Vec<SourceDisposition>>,
 }
 impl ArenaOrigins {
@@ -286,24 +342,32 @@ impl ArenaOrigins {
                             },
                             OriginPrecision::Token,
                             None,
-                        ),
+                        )
+                        .into(),
                     ));
                 }
             }
             slots.push(Some(Arc::new(NodeOrigin {
-                origin: Some(Origin::source(
-                    SourceSpan {
-                        source: 0,
-                        start,
-                        end,
-                    },
-                    precision,
-                    None,
-                )),
-                names: Vec::new(),
-                contexts: Arc::default(),
-                tokens: syntax_tokens,
-                dispositions: Arc::default(),
+                origin: Some(
+                    Origin::source(
+                        SourceSpan {
+                            source: 0,
+                            start,
+                            end,
+                        },
+                        precision,
+                        None,
+                    )
+                    .into(),
+                ),
+                names: empty_names(),
+                contexts: empty_contexts(),
+                tokens: if syntax_tokens.is_empty() {
+                    empty_tokens()
+                } else {
+                    Arc::new(syntax_tokens)
+                },
+                dispositions: empty_dispositions(),
             })));
         }
         for ((node, site), (start, end)) in positions.name_spans() {
@@ -314,7 +378,7 @@ impl ArenaOrigins {
                 .get_mut(node as usize)
                 .and_then(Option::as_mut)
                 .ok_or("name refers to an unknown parsed node")?;
-            Arc::make_mut(slot).names.push((
+            Arc::make_mut(&mut Arc::make_mut(slot).names).push((
                 site,
                 Origin::source(
                     SourceSpan {
@@ -324,13 +388,14 @@ impl ArenaOrigins {
                     },
                     OriginPrecision::Name,
                     Some(original.into()),
-                ),
+                )
+                .into(),
             ));
         }
         let result = Self {
             sources,
-            slots,
-            dispositions: Arc::default(),
+            slots: Arc::new(OriginSlots::from(slots)),
+            dispositions: empty_dispositions(),
         };
         result.validate(ast.nodes.len())?;
         Ok(result)
@@ -341,10 +406,10 @@ impl ArenaOrigins {
         }
         for slot in self.slots.iter().flatten() {
             if let Some(origin) = &slot.origin {
-                origin.validate(&self.sources)?;
+                origin.get().validate(&self.sources)?;
             }
-            for (_, origin) in &slot.tokens {
-                origin.validate(&self.sources)?;
+            for (_, origin) in slot.tokens.iter() {
+                origin.get().validate(&self.sources)?;
             }
             for context in slot.contexts.iter() {
                 for span in [context.definition, context.call_site] {
@@ -364,19 +429,19 @@ impl ArenaOrigins {
             for reason in slot
                 .origin
                 .iter()
-                .flat_map(|o| o.reasons.iter())
-                .chain(slot.names.iter().flat_map(|(_, o)| o.reasons.iter()))
+                .flat_map(|o| o.get().reasons.iter())
+                .chain(slot.names.iter().flat_map(|(_, o)| o.get().reasons.iter()))
             {
                 if reason.code.is_empty() {
                     return Err("optimization reason has empty code".into());
                 }
             }
             let mut sites = BTreeSet::new();
-            for (site, origin) in &slot.names {
+            for (site, origin) in slot.names.iter() {
                 if !sites.insert(*site) {
                     return Err("duplicate name occurrence in origin table".into());
                 }
-                origin.validate(&self.sources)?;
+                origin.get().validate(&self.sources)?;
             }
         }
         Ok(())
@@ -435,6 +500,9 @@ impl GeneratedOrigins {
     /// A missing child origin masks a known enclosing expression, not vice versa.
     pub fn from_print(ast: &Ast, printed: &PrintedSource) -> Option<Self> {
         let arena = ast.nodes.provenance()?;
+        Self::from_arena(arena, printed)
+    }
+    fn from_arena(arena: &ArenaOrigins, printed: &PrintedSource) -> Option<Self> {
         let mut events = Vec::with_capacity(printed.emissions.len() * 2);
         for (index, emission) in printed.emissions.iter().enumerate() {
             assert!(emission.start < emission.end && emission.end <= printed.code.len());
@@ -452,6 +520,7 @@ impl GeneratedOrigins {
             )
         };
         let mut active = BTreeSet::<(usize, bool, usize)>::new();
+        let mut active_contexts = BTreeSet::<(usize, bool, usize)>::new();
         let mut result = Self {
             sources: Arc::clone(&arena.sources),
             origins: Vec::new(),
@@ -462,11 +531,6 @@ impl GeneratedOrigins {
         };
         let mut interned = HashMap::new();
         let mut context_ids = HashMap::<InlineContext, u32>::new();
-        let has_contexts = arena
-            .slots
-            .iter()
-            .flatten()
-            .any(|slot| !slot.contexts.is_empty());
         let mut cursor = 0;
         for (offset, start, index) in events {
             if cursor < offset {
@@ -481,7 +545,7 @@ impl GeneratedOrigins {
                             slot.tokens
                                 .iter()
                                 .find(|(key, _)| *key == site)
-                                .map(|(_, o)| o)
+                                .map(|(_, o)| o.get())
                         })
                         .or_else(|| {
                             emission
@@ -490,9 +554,9 @@ impl GeneratedOrigins {
                                     slot.names
                                         .iter()
                                         .find(|(key, _)| *key == site)
-                                        .map(|(_, value)| value)
+                                        .map(|(_, value)| value.get())
                                 })
-                                .or(slot.origin.as_ref())
+                                .or_else(|| slot.origin.as_ref().map(StoredOrigin::get))
                         })
                 });
                 let printed_origin = origin.zip(emission).and_then(|(origin, e)| {
@@ -525,31 +589,36 @@ impl GeneratedOrigins {
                         }
                     });
                 let mut contexts = Vec::new();
-                if has_contexts {
-                    for &(_, _, index) in active.iter().rev() {
-                        if let Some(slot) =
-                            arena.slots[printed.emissions[index].node as usize].as_ref()
-                        {
-                            for context in slot.contexts.iter() {
-                                let id = *context_ids.entry(context.clone()).or_insert_with(|| {
-                                    let id = result.contexts.len() as u32;
-                                    result.contexts.push(context.clone());
-                                    id
-                                });
-                                if !contexts.contains(&id) {
-                                    contexts.push(id);
-                                }
-                            }
+                for &(_, _, index) in active_contexts.iter().rev() {
+                    let slot = arena.slots[printed.emissions[index].node as usize].as_ref()?;
+                    for context in slot.contexts.iter() {
+                        let id = *context_ids.entry(context.clone()).or_insert_with(|| {
+                            let id = result.contexts.len() as u32;
+                            result.contexts.push(context.clone());
+                            id
+                        });
+                        if !contexts.contains(&id) {
+                            contexts.push(id);
                         }
                     }
                 }
                 result.append_detail(cursor, offset, origin, copied, contexts, &mut interned);
                 cursor = offset;
             }
+            let event_key = key(index);
+            let carries_context = arena.slots[printed.emissions[index].node as usize]
+                .as_ref()
+                .is_some_and(|slot| !slot.contexts.is_empty());
             if start {
-                active.insert(key(index));
+                active.insert(event_key);
+                if carries_context {
+                    active_contexts.insert(event_key);
+                }
             } else {
-                active.remove(&key(index));
+                active.remove(&event_key);
+                if carries_context {
+                    active_contexts.remove(&event_key);
+                }
             }
         }
         if cursor < printed.code.len() {
@@ -575,7 +644,8 @@ impl GeneratedOrigins {
         {
             let origin = arena.slots[emission.node as usize]
                 .as_ref()
-                .and_then(|slot| slot.origin.as_ref());
+                .and_then(|slot| slot.origin.as_ref())
+                .map(StoredOrigin::get);
             let printed_origin = origin.and_then(|origin| {
                 emission.reason.as_ref().map(|reason| {
                     let mut changed = origin.clone();
@@ -672,7 +742,7 @@ impl GeneratedOrigins {
             )],
             contexts: Vec::new(),
             constructs: Vec::new(),
-            dispositions: Arc::default(),
+            dispositions: empty_dispositions(),
             mappings: if source.is_empty() {
                 Vec::new()
             } else {
@@ -724,7 +794,7 @@ impl GeneratedOrigins {
             mappings: Vec::new(),
             contexts: Vec::new(),
             constructs: Vec::new(),
-            dispositions: Arc::default(),
+            dispositions: empty_dispositions(),
         };
         let mut interned = HashMap::new();
         let mut cursor = 0;
@@ -1036,6 +1106,253 @@ mod tests {
                     &source[span.start..span.end]
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod owned_reason_tests {
+    use super::*;
+
+    // Independent definition of the prior borrowed derive/replace behavior.
+    fn reference(mut origin: Origin, rule: &str, operation: ReasonOperation) -> Origin {
+        if origin.kind != OriginKind::Synthetic {
+            origin.kind = OriginKind::Derived;
+        }
+        origin.transformation = Some(rule.into());
+        let reason = OptimizationReason::action(rule, ReasonOperation::Rewrite);
+        if origin.reasons.last() != Some(&reason) {
+            Arc::make_mut(&mut origin.reasons).push(reason);
+        }
+        if let Some(last) = Arc::make_mut(&mut origin.reasons).last_mut() {
+            last.operation = operation;
+        }
+        origin
+    }
+    #[test]
+    fn owned_derivation_preserves_repeated_relation_and_fact_history() {
+        for synthetic in [false, true] {
+            let original = if synthetic {
+                Origin::synthetic("storage")
+            } else {
+                Origin::source(
+                    SourceSpan {
+                        source: 0,
+                        start: 2,
+                        end: 7,
+                    },
+                    OriginPrecision::Expression,
+                    None,
+                )
+            };
+            let mut actual = original.clone();
+            let mut expected = original.clone();
+            let decision = OptimizationReason::decision(
+                "fold",
+                "known-operands",
+                [("value", "i64:6".to_owned())],
+            );
+            actual.add_reason(decision.clone());
+            expected.add_reason(decision);
+            for i in 0..200 {
+                let rule = if i % 3 == 0 { "join" } else { "copy" };
+                let operation = if i % 7 == 0 {
+                    ReasonOperation::Rename
+                } else {
+                    ReasonOperation::Relate
+                };
+                expected = reference(expected, rule, operation);
+                actual.derive_in_place(rule);
+                Arc::make_mut(&mut actual.reasons)
+                    .last_mut()
+                    .unwrap()
+                    .operation = operation;
+            }
+            assert_eq!(actual, expected);
+            assert_eq!(
+                serde_json::to_string(&actual).unwrap(),
+                serde_json::to_string(&expected).unwrap()
+            );
+            assert_eq!(
+                original.kind,
+                if synthetic {
+                    OriginKind::Synthetic
+                } else {
+                    OriginKind::Source
+                }
+            );
+        }
+    }
+    #[test]
+    fn uniquely_owned_reason_buffer_is_not_copied_on_every_append() {
+        let mut origin = Origin::source(
+            SourceSpan {
+                source: 0,
+                start: 0,
+                end: 1,
+            },
+            OriginPrecision::Token,
+            None,
+        );
+        Arc::make_mut(&mut origin.reasons).reserve(128);
+        let allocation = Arc::as_ptr(&origin.reasons);
+        let buffer = origin.reasons.as_ptr();
+        for _ in 0..100 {
+            origin.derive_in_place("source-contribution");
+            Arc::make_mut(&mut origin.reasons)
+                .last_mut()
+                .unwrap()
+                .operation = ReasonOperation::Relate;
+            assert_eq!(Arc::as_ptr(&origin.reasons), allocation);
+            assert_eq!(origin.reasons.as_ptr(), buffer);
+        }
+        assert_eq!(
+            origin.reasons.len(),
+            100,
+            "Repeated Relate actions are not silently deduplicated"
+        );
+        let snapshot = origin.clone();
+        origin.derive_in_place("different-rule");
+        assert_eq!(
+            snapshot.reasons.len(),
+            100,
+            "A shared candidate must remain immutable"
+        );
+        assert_eq!(origin.reasons.len(), 101);
+    }
+}
+
+/// Delayed resolution of final emitted positions. This is an internal compiler
+/// transport optimization: serialization still emits the ordinary GeneratedOrigins.
+#[doc(hidden)]
+pub struct DeferredGeneratedOrigins {
+    input: Option<PendingOriginInput>,
+    resolved: std::sync::OnceLock<GeneratedOrigins>,
+}
+struct PendingOriginInput {
+    arena: ArenaOrigins,
+    printed: PrintedSource,
+}
+impl DeferredGeneratedOrigins {
+    /// Keep only slots actually referenced by this immutable final print.
+    pub fn from_print(ast: &Ast, printed: PrintedSource) -> Option<Self> {
+        let original = ast.nodes.provenance()?;
+        let len = std::iter::once(printed.root)
+            .chain(printed.emissions.iter().map(|e| e.node))
+            .max()
+            .map_or(0, |id| id as usize + 1);
+        let mut slots = vec![None; len];
+        for id in std::iter::once(printed.root).chain(printed.emissions.iter().map(|e| e.node)) {
+            if slots[id as usize].is_none() {
+                slots[id as usize] = original.slots[id as usize].clone();
+            }
+        }
+        let arena = ArenaOrigins {
+            sources: Arc::clone(&original.sources),
+            slots: Arc::new(OriginSlots::from(slots)),
+            dispositions: Arc::clone(&original.dispositions),
+        };
+        Some(Self {
+            input: Some(PendingOriginInput { arena, printed }),
+            resolved: std::sync::OnceLock::new(),
+        })
+    }
+    /// Ready origins use the same container for identity and lexical paths.
+    pub fn ready(value: GeneratedOrigins) -> Self {
+        Self {
+            input: None,
+            resolved: std::sync::OnceLock::from(value),
+        }
+    }
+    /// Resolve once when selected, inspected or sent across a worker boundary.
+    #[expect(
+        clippy::expect_used,
+        reason = "A deferred value is constructed only from a tracked, immutable print; its referenced slots are retained"
+    )]
+    pub fn get(&self) -> &GeneratedOrigins {
+        self.resolved.get_or_init(|| {
+            let input = self
+                .input
+                .as_ref()
+                .expect("unresolved print has captured origins");
+            GeneratedOrigins::from_arena(&input.arena, &input.printed)
+                .expect("captured print retains its origin table")
+        })
+    }
+    /// Move the selected result without retaining discarded print/slot storage.
+    #[expect(
+        clippy::expect_used,
+        reason = "Ready values own a result, deferred values own the exact tracked print"
+    )]
+    pub fn into_owned(self) -> GeneratedOrigins {
+        if let Some(resolved) = self.resolved.into_inner() {
+            return resolved;
+        }
+        let input = self.input.expect("unresolved print has captured origins");
+        GeneratedOrigins::from_arena(&input.arena, &input.printed)
+            .expect("captured print retains its origin table")
+    }
+}
+impl std::fmt::Debug for DeferredGeneratedOrigins {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get().fmt(f)
+    }
+}
+impl Serialize for DeferredGeneratedOrigins {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.get().serialize(s)
+    }
+}
+impl<'de> Deserialize<'de> for DeferredGeneratedOrigins {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        GeneratedOrigins::deserialize(d).map(Self::ready)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod deferred_final_tests {
+    use super::*;
+    use crate::{parse_source_with_origins, Printer};
+    #[test]
+    fn deferred_final_snapshot_is_exact_and_independent_of_later_arena_changes() {
+        for text in [
+            "local x=2 output.setNumber(1,x)",
+            "-- 雪😀\r\nfunction onTick()output.setNumber(1,3)end",
+            "local unused=99",
+            "",
+        ] {
+            let (mut ast, root) = parse_source_with_origins("deferred.lua", text).unwrap();
+            let before = serde_json::to_vec(&ast).unwrap();
+            for zero in [false, true] {
+                let printed = Printer::new(&ast, zero).output_with_positions(root);
+                let expected = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+                let pending = DeferredGeneratedOrigins::from_print(&ast, printed).unwrap();
+                assert!(pending.resolved.get().is_none());
+                let mut changed = ast.clone();
+                let value = changed.node(root).clone();
+                changed.nodes[root as usize] = value;
+                assert_eq!(pending.get(), &expected);
+                assert_eq!(
+                    serde_json::to_vec(&pending).unwrap(),
+                    serde_json::to_vec(&expected).unwrap()
+                );
+                let decoded: DeferredGeneratedOrigins =
+                    serde_json::from_slice(&serde_json::to_vec(&pending).unwrap()).unwrap();
+                assert_eq!(decoded.into_owned(), expected);
+                assert_eq!(pending.into_owned(), expected);
+            }
+            assert_eq!(serde_json::to_vec(&ast).unwrap(), before);
+            ast.nodes.retain_block_statements(|_| false, "remove-all");
+            let printed = Printer::new(&ast, false).output_with_positions(root);
+            let expected = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+            let pending = DeferredGeneratedOrigins::from_print(&ast, printed).unwrap();
+            assert_eq!(
+                pending.into_owned(),
+                expected,
+                "removed roots survive even empty output"
+            );
         }
     }
 }

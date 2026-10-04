@@ -2,6 +2,9 @@
 
 ## Unreleased — v0.3.1 development
 
+- 効果判定で組込みAPI名を組み立てずに分類し、AST走査で葉/演算子の不要な所有snapshotを避ける。公開の結果型、callbackの順序・親slotの扱い、効果の判定は維持する。
+- 1文字の短縮名を静的alphabetから借用し、マップのUTF-16変換区間と字句識別子storageを再利用する。originの出現位置・ID・順序・完全なmap出力は変えない。
+
 - Map有無の両経路を対象に、変化していないblockの束縛/効果解析と、単一ソース・moduleのparse/診断を再利用する。変更後は解析を再構築し、探索順・短縮結果・診断を維持する。
 - Lexerの借用token、元spanの直接index、診断で使う位置だけの取得、使用済みindexの早期解放で重複走査とallocationを削減する。
 - 字句短縮では使わないAST由来を構築せず、生成tokenの検証をstreamする。Map有無でトークン表記・行とUnknownの扱いを維持する。

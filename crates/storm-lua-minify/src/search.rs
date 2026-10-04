@@ -610,12 +610,12 @@ fn prepare_search_from_base(
 }
 
 fn evaluate_candidate_with_verifier(
-    job: CandidateJob,
+    mut job: CandidateJob,
     verify_candidate: &mut Option<&mut dyn FnMut(&str) -> bool>,
 ) -> Result<CandidateBatch, String> {
-    if let Some(code) = job.lexical_source.as_ref() {
+    if let Some(code) = job.lexical_source.take() {
         if let Some(verify) = verify_candidate.as_deref_mut() {
-            if !verify(code) {
+            if !verify(&code) {
                 return Ok(CandidateBatch {
                     candidates: Vec::new(),
                     attempted: 1,
@@ -624,16 +624,18 @@ fn evaluate_candidate_with_verifier(
                 });
             }
         }
+        // This job is consumed, not shared. Retain the already completed
+        // lexical code and mapping vectors rather than cloning both payloads.
+        let size = target_char_size(&code);
         return Ok(CandidateBatch {
             candidates: vec![Candidate {
                 origins: job
                     .lexical_origins
-                    .clone()
                     .map(|value| Arc::new(DeferredGeneratedOrigins::ready(value))),
                 structural: "lexical".into(),
                 layout: "tokens".into(),
-                code: code.clone(),
-                size: target_char_size(code),
+                code,
+                size,
                 order: 0,
                 passes: Vec::new(),
                 aliases: Vec::new(),
@@ -2207,6 +2209,71 @@ mod shared_single_source_tests {
                     pair => panic!("result mismatch: {pair:?}"),
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod owned_lexical_candidate_tests {
+    use super::*;
+    #[test]
+    fn lexical_job_transfers_its_exact_buffers_and_preserves_verifier_decisions() {
+        let source = "local _ENV=_ENV -- 雪😀\r\nfunction onTick()output.setNumber(1,2)end\r\n";
+        for mapped in [false, true] {
+            let config = CompileOptions {
+                origin_source: mapped.then(|| "lexical.lua".into()),
+                ..Default::default()
+            };
+            let (_, mut jobs) = prepare_search(source, &config).unwrap();
+            assert_eq!(jobs.len(), 1);
+            let job = jobs.pop().unwrap();
+            let code_pointer = job.lexical_source.as_ref().unwrap().as_ptr();
+            let map_pointer = job.lexical_origins.as_ref().map(|o| o.mappings.as_ptr());
+            let expected_code = job.lexical_source.as_ref().unwrap().clone();
+            let expected_origins = job.lexical_origins.clone();
+            let mut calls = Vec::new();
+            let mut verify = |text: &str| {
+                calls.push(text.to_string());
+                true
+            };
+            let batch = evaluate_candidate_with_verifier(job, &mut Some(&mut verify)).unwrap();
+            assert_eq!(calls, vec![expected_code.clone()]);
+            assert_eq!(batch.attempted, 1);
+            assert_eq!(batch.parse_rejected, 0);
+            assert_eq!(batch.semantic_rejected, 0);
+            let candidate = &batch.candidates[0];
+            assert_eq!(candidate.code, expected_code);
+            assert_eq!(
+                candidate.code.as_ptr(),
+                code_pointer,
+                "consuming a job must not duplicate its completed source"
+            );
+            assert_eq!(
+                candidate
+                    .origins
+                    .as_ref()
+                    .map(|o| o.get().mappings.as_ptr()),
+                map_pointer,
+                "completed mapping vectors must move unchanged"
+            );
+            assert_eq!(
+                candidate.origins.as_ref().map(|o| o.get()),
+                expected_origins.as_ref()
+            );
+            let (_, mut jobs) = prepare_search(source, &config).unwrap();
+            let mut rejected = 0;
+            let mut reject = |text: &str| {
+                assert_eq!(text, expected_code);
+                rejected += 1;
+                false
+            };
+            let batch =
+                evaluate_candidate_with_verifier(jobs.pop().unwrap(), &mut Some(&mut reject))
+                    .unwrap();
+            assert_eq!(rejected, 1);
+            assert!(batch.candidates.is_empty());
+            assert_eq!(batch.semantic_rejected, 1);
         }
     }
 }

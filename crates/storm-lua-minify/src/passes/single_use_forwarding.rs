@@ -300,12 +300,23 @@ fn statement_size(ast: &Ast, statement: NodeId) -> usize {
     Printer::new(ast, false).stat_public(statement).len()
 }
 
-fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
-    let resolution = resolve(ast, root);
-    let plans = {
-        let analyzer = EffectAnalyzer::new(ast, &resolution, root, true);
-        collect_plans(ast, &resolution, &analyzer, block, root)
+// An assignment without a following statement cannot have a later use in
+// this block. This is only a syntactic necessary condition, not an effect test.
+fn candidate_shape(ast: &Ast, block: NodeId) -> bool {
+    let Node::Block(statements) = ast.node(block) else {
+        return false;
     };
+    statements
+        .iter()
+        .take(statements.len().saturating_sub(1))
+        .any(|&statement| {
+            matches!(ast.node(statement),Node::Assign(targets,values)
+            if !targets.is_empty() && targets.len()==values.len()
+                && targets.iter().all(|&target|matches!(ast.node(target),Node::Name(_))))
+        })
+}
+
+fn apply_plans(ast: &mut Ast, resolution: &Resolution, block: NodeId, plans: Vec<Plan>) -> bool {
     let Node::Block(base_statements) = ast.node(block).clone() else {
         return false;
     };
@@ -318,7 +329,7 @@ fn try_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
         let checkpoint = ast.nodes.len();
         let replaced = clone_replacing_reads(
             ast,
-            &resolution,
+            resolution,
             base_statements[plan.use_index],
             plan.target_bid,
             plan.expression,
@@ -394,8 +405,35 @@ pub fn forward_single_use_globals(ast: &mut Ast, root: NodeId) -> PassResult {
         let mut blocks = Vec::new();
         collect_blocks_postorder(ast, root, &mut HashSet::new(), &mut blocks);
         let mut applied = 0usize;
-        for block in blocks {
-            if try_block(ast, root, block) {
+        let mut next = 0;
+        // A run of blocks without eligible plans observes exactly the same AST.
+        // Resolve/analyze it once, rather than rebuilding the whole chunk for
+        // every such block. Drop the borrowed analysis before any trial mutation,
+        // then rebuild it for the next block even when the trial rolled back.
+        while let Some(first) = blocks[next..]
+            .iter()
+            .position(|&block| candidate_shape(ast, block))
+        {
+            next += first;
+            let resolution = resolve(ast, root);
+            let candidate = {
+                let analyzer = EffectAnalyzer::new(ast, &resolution, root, true);
+                blocks[next..]
+                    .iter()
+                    .enumerate()
+                    .find_map(|(offset, &block)| {
+                        if !candidate_shape(ast, block) {
+                            return None;
+                        }
+                        let plans = collect_plans(ast, &resolution, &analyzer, block, root);
+                        (!plans.is_empty()).then_some((next + offset, block, plans))
+                    })
+            };
+            let Some((index, block, plans)) = candidate else {
+                break;
+            };
+            next = index + 1;
+            if apply_plans(ast, &resolution, block, plans) {
                 applied += 1;
             }
         }
@@ -454,5 +492,116 @@ mod tests {
     fn preserves_loop_carried_accumulation() {
         let source = "sum=0 for i=1,4 do sum=sum+input.getNumber(i)end output.setNumber(1,sum)";
         assert_eq!(output(source), source.replace(" then ", "then"));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod analysis_reuse_tests {
+    use super::*;
+    use storm_lua_syntax::provenance::GeneratedOrigins;
+    use storm_lua_syntax::{parse_source_with_origins, Printer};
+    fn reference_block(ast: &mut Ast, root: NodeId, block: NodeId) -> bool {
+        let resolution = resolve(ast, root);
+        let plans = {
+            let analyzer = EffectAnalyzer::new(ast, &resolution, root, true);
+            collect_plans(ast, &resolution, &analyzer, block, root)
+        };
+        apply_plans(ast, &resolution, block, plans)
+    }
+    fn reference(ast: &mut Ast, root: NodeId) -> PassResult {
+        let original_size = measure_size(ast, root);
+        let mut forwarded = 0usize;
+        for _ in 0..16 {
+            if dynamic_globals(ast, root) {
+                break;
+            }
+            let mut blocks = Vec::new();
+            collect_blocks_postorder(ast, root, &mut HashSet::new(), &mut blocks);
+            let mut applied = 0usize;
+            for block in blocks {
+                if reference_block(ast, root, block) {
+                    applied += 1;
+                }
+            }
+            if applied == 0 {
+                break;
+            }
+            forwarded += applied;
+        }
+        PassResult {
+            root,
+            saved: Some(original_size.saturating_sub(measure_size(ast, root)) as u64),
+            details: Some(vec![format!("forwarded={forwarded}")]),
+        }
+    }
+
+    fn compare(ast: &Ast, root: NodeId) {
+        let before = serde_json::to_vec(ast).unwrap();
+        let mut a = ast.clone();
+        let mut b = ast.clone();
+        let expected = reference(&mut a, root);
+        let actual = forward_single_use_globals(&mut b, root);
+        assert_eq!(actual.root, expected.root);
+        assert_eq!(actual.saved, expected.saved);
+        assert_eq!(actual.details, expected.details);
+        assert_eq!(
+            serde_json::to_value(&a).unwrap(),
+            serde_json::to_value(&b).unwrap(),
+            "node/symbol order and full provenance differ"
+        );
+        for newlines in [false, true] {
+            let x = Printer::new(&a, newlines).output_with_positions(expected.root);
+            let y = Printer::new(&b, newlines).output_with_positions(actual.root);
+            assert_eq!(x.code, y.code);
+            assert_eq!(
+                GeneratedOrigins::from_print(&a, &x),
+                GeneratedOrigins::from_print(&b, &y)
+            );
+        }
+        assert_eq!(serde_json::to_vec(ast).unwrap(), before, "source mutated");
+    }
+    #[test]
+    fn repeated_block_analysis_matches_the_original_on_all_pass_fixture_states() {
+        for id in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let source = crate::provenance_pass_matrix::fixture(id);
+            let (ast, root) = parse_source_with_origins("reference.lua", &source).unwrap();
+            compare(&ast, root);
+            let mut transformed = ast.clone();
+            let root = crate::provenance_pass_matrix::apply(id, &mut transformed, root);
+            compare(&transformed, root);
+            compare(
+                &storm_lua_syntax::ast_utils::clone_without_origins(&transformed),
+                root,
+            );
+            let decoded: Ast =
+                serde_json::from_slice(&serde_json::to_vec(&transformed).unwrap()).unwrap();
+            compare(&decoded, root);
+        }
+    }
+    #[test]
+    fn earlier_changes_rebuild_analysis_before_later_blocks() {
+        for blocks in [1, 2, 8, 33] {
+            for variant in 0..5 {
+                let body=(0..blocks).map(|i|match variant {
+                    0=>format!("do global{i}=12345 output.setNumber(1,global{i})end "),
+                    1=>format!("do __s{} ,__s{}=2,2 output.setNumber(1,__s{})end ",i*2,i*2+1,i*2+1),
+                    2=>format!("do local shared{i}=input.getNumber(1) __fs{} ,__fs{}=shared{i}*2,shared{i}*2 output.setNumber(1,__fs{}) output.setNumber(2,__fs{})end ",i*2,i*2+1,i*2+1,i*2),
+                    3=>format!("do global{i}=input.getNumber(1) if input.getBool(1)then global{i}=3 end output.setNumber(1,global{i})end "),
+                    _=>format!("do local shadow=3 __s{} ,__s{}=shadow,shadow for j=1,3 do output.setNumber(j,__s{})end end ",i*2,i*2+1,i*2+1),
+                }).collect::<String>();
+                let source = format!(
+                    "function onTick(){body}end function onDraw()screen.drawText(0,0,global0)end"
+                );
+                let (mut ast, root) = parse_source_with_origins("blocks.lua", &source).unwrap();
+                compare(&ast, root);
+                let second = forward_single_use_globals(&mut ast, root);
+                compare(&ast, second.root);
+                for node in &mut ast.nodes {
+                    let _ = node;
+                }
+                compare(&ast, second.root);
+            }
+        }
     }
 }

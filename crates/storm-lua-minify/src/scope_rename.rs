@@ -5,6 +5,7 @@
 // shortNames() の決定的生成順を保つ。tie-break は TS localeCompare を ASCII では
 // バイト比較で再現する（識別子は ASCII 中心のため同値）。
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use storm_lua_analysis::resolver::{
@@ -23,7 +24,8 @@ pub struct ScopeRenameResult {
 
 /// shortNames(): 'a'..'z','A'..'Z','_' で始まり、以降は '+数字' を並べる。
 /// TS と同一生成順: 長さ1 の全候補 → 長さ2 → 長さ3 …。reserved/apiRoot は yield 前に除外。
-const SHORT_NAME_FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+const SHORT_NAME_FIRST_TEXT: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+const SHORT_NAME_FIRST: &[u8] = SHORT_NAME_FIRST_TEXT.as_bytes();
 const SHORT_NAME_TAIL: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
 
 struct ShortNames {
@@ -52,7 +54,11 @@ impl ShortNames {
         }
         (SHORT_NAME_FIRST.len() as u64) * (SHORT_NAME_TAIL.len() as u64).pow((len - 1) as u32)
     }
-    fn render(&self, len: usize, idx: u64) -> String {
+    fn render(&self, len: usize, idx: u64) -> Cow<'static, str> {
+        if len == 1 {
+            let offset = idx as usize;
+            return Cow::Borrowed(&SHORT_NAME_FIRST_TEXT[offset..offset + 1]);
+        }
         // mixed-radix: 最上位桁は chars(53)、以降の桁は tail(63)。
         // 識別子アルファベットは ASCII 固定なので、静的 byte slice から直接構築する。
         let mut v = idx;
@@ -69,9 +75,9 @@ impl ShortNames {
             text.push(char::from(alphabet[digit as usize]));
             v %= placeval.max(1);
         }
-        text
+        Cow::Owned(text)
     }
-    fn next_candidate(&mut self) -> String {
+    fn next_candidate(&mut self) -> Cow<'static, str> {
         if self.len == 1 && !self.started_len2 {
             let cur = self.render(1, self.idx);
             self.idx += 1;
@@ -95,7 +101,7 @@ impl ShortNames {
 /// 次の予約語でない短縮名（TS generator shortNames 相当）。
 struct ShortNameIter<'a>(&'a mut ShortNames);
 impl<'a> ShortNameIter<'a> {
-    fn next(&mut self) -> String {
+    fn next(&mut self) -> Cow<'static, str> {
         loop {
             let c = self.0.next_candidate();
             if !reserved(&c) && !api_roots(&c) {
@@ -153,7 +159,7 @@ fn scope0_bindings(resolution: &Resolution) -> &[u32] {
 }
 
 /// renameGlobals: fixed の名前を used に加え、scope0 のグローバルに短名を割り当てる。
-type RenameNames = Vec<Option<String>>;
+type RenameNames = Vec<Option<Cow<'static, str>>>;
 
 fn rename_globals(
     ast: &Ast,
@@ -187,17 +193,17 @@ fn rename_globals(
     for id in globals {
         let b = resolution.binding(id);
         if b.fixed || resolution.binding_write_counts[id as usize] == 0 {
-            names[id as usize] = Some(ast.strings.get(b.name).to_string());
+            names[id as usize] = Some(Cow::Owned(ast.strings.get(b.name).to_string()));
             continue;
         }
         let q = loop {
             let q = git.next();
-            if !used.contains(&q) {
+            if !used.contains(q.as_ref()) {
                 break q;
             }
         };
         names[id as usize] = Some(q.clone());
-        used.insert(q);
+        used.insert(q.into_owned());
     }
 }
 
@@ -263,7 +269,7 @@ fn rename_nested_scope(
     let mut assigned = Vec::<(u32, usize)>::with_capacity(local_ids.len());
     let mut generator = ShortNames::new();
     let mut candidates = ShortNameIter(&mut generator);
-    let mut short_names = Vec::<(String, bool)>::new();
+    let mut short_names = Vec::<(Cow<'static, str>, bool)>::new();
     let mut blocked = Vec::<bool>::new();
     for id in &local_ids {
         let b = resolution.binding(*id);
@@ -279,7 +285,7 @@ fn rename_nested_scope(
                 let name = candidates.next();
                 let available = !external
                     .iter()
-                    .any(|other| names[*other as usize].as_deref() == Some(name.as_str()));
+                    .any(|other| names[*other as usize].as_deref() == Some(name.as_ref()));
                 short_names.push((name, available));
                 blocked.push(false);
             }
@@ -322,12 +328,12 @@ fn rename_top_locals(
     for id in top_locals {
         let q = loop {
             let q = git.next();
-            if !used.contains(&q) && !own.contains(&q) {
+            if !used.contains(q.as_ref()) && !own.contains(q.as_ref()) {
                 break q;
             }
         };
         names[id as usize] = Some(q.clone());
-        own.insert(q);
+        own.insert(q.into_owned());
     }
 }
 
@@ -435,7 +441,10 @@ fn scope_rename_impl(ast: &Ast, root: NodeId, collect_mapping: bool) -> ScopeRen
             }
             if let Some(name) = names[i].as_ref() {
                 if !b.fixed {
-                    mapping.insert(format!("{}#{}", ast.strings.get(b.name), i), name.clone());
+                    mapping.insert(
+                        format!("{}#{}", ast.strings.get(b.name), i),
+                        name.to_string(),
+                    );
                 }
             }
         }
@@ -484,7 +493,7 @@ impl Iterator for ShortNameIterStatic {
         loop {
             let candidate = self.ss.next_candidate();
             if !reserved(&candidate) && !api_roots(&candidate) {
-                return Some(candidate);
+                return Some(candidate.into_owned());
             }
         }
     }
@@ -577,7 +586,7 @@ mod allocation_regression_tests {
         external.retain(|id| !local_set.contains(id) && names[*id as usize].is_some());
         let mut forbidden: HashSet<String> = HashSet::with_capacity(external.len());
         for id in &external {
-            forbidden.insert(names[*id as usize].clone().unwrap_or_default());
+            forbidden.insert(names[*id as usize].clone().unwrap_or_default().into_owned());
         }
 
         // TS: localIds.sort(freq desc || decl asc)
@@ -603,7 +612,7 @@ mod allocation_regression_tests {
             let mut index = 0;
             let q = loop {
                 if index == short_names.len() {
-                    short_names.push(candidates.next());
+                    short_names.push(candidates.next().into_owned());
                 }
                 let q = &short_names[index];
                 if !forbidden.contains(q) && !blocked.contains(q.as_str()) {
@@ -611,7 +620,7 @@ mod allocation_regression_tests {
                 }
                 index += 1;
             };
-            names[*id as usize] = Some(q);
+            names[*id as usize] = Some(Cow::Owned(q));
             assigned.push(*id);
         }
         for &c in &sc.children {
@@ -810,7 +819,7 @@ mod compact_capture_tests {
             let mut index = 0;
             let q = loop {
                 if index == short_names.len() {
-                    let name = candidates.next();
+                    let name = candidates.next().into_owned();
                     let available = !external
                         .iter()
                         .any(|other| names[*other as usize].as_deref() == Some(name.as_str()));
@@ -823,7 +832,7 @@ mod compact_capture_tests {
                 }
                 index += 1;
             };
-            names[*id as usize] = Some(q);
+            names[*id as usize] = Some(Cow::Owned(q));
             assigned.push((*id, index));
         }
         for &c in &sc.children {
@@ -878,5 +887,73 @@ mod compact_capture_tests {
                 storm_lua_syntax::parse_source_with_origins("nested.lua", &source).unwrap();
             compare(&ast, root);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_short_names_tests {
+    use super::*;
+    fn original_name(len: usize, index: u64) -> String {
+        let mut v = index;
+        let mut text = String::with_capacity(len);
+        for pos in 0..len {
+            let place = (SHORT_NAME_TAIL.len() as u64).pow((len - 1 - pos) as u32);
+            let alphabet = if pos == 0 {
+                SHORT_NAME_FIRST
+            } else {
+                SHORT_NAME_TAIL
+            };
+            let digit = (v / place) % alphabet.len() as u64;
+            text.push(alphabet[digit as usize] as char);
+            v %= place.max(1);
+        }
+        text
+    }
+    #[test]
+    fn borrowed_names_keep_the_complete_mixed_radix_order_and_owned_public_iterator() {
+        let mut generator = ShortNames::new();
+        let mut expected = Vec::new();
+        for len in 1..=3 {
+            let count = (SHORT_NAME_FIRST.len() as u64)
+                * (SHORT_NAME_TAIL.len() as u64).pow((len - 1) as u32);
+            for index in 0..count.min(10000) {
+                let want = original_name(len, index);
+                let actual = generator.next_candidate();
+                assert_eq!(actual, want);
+                assert_eq!(matches!(actual, Cow::Borrowed(_)), len == 1);
+                if !reserved(&want) && !api_roots(&want) {
+                    expected.push(want);
+                }
+            }
+        }
+        let actual: Vec<String> = short_names_debug().take(expected.len()).collect();
+        assert_eq!(actual, expected);
+    }
+    #[test]
+    fn short_name_plans_borrow_single_character_assignments_without_changing_source_names() {
+        let source =
+            "function onTick(first,second)local value=first+second output.setNumber(1,value)end";
+        let (ast, root) = storm_lua_syntax::parse_source_with_origins("short.lua", source).unwrap();
+        let (res, names) = rename_plan(&ast, root);
+        for (i, name) in names.iter().enumerate().skip(1) {
+            if let Some(name) = name {
+                if res.bindings[i].kind != BindingKind::Global {
+                    assert!(matches!(name, Cow::Borrowed(_)));
+                }
+            }
+        }
+        let result = scope_rename(&ast, root);
+        assert_eq!(
+            storm_lua_syntax::size::measure_size(&result.ast, result.root),
+            measure_renamed_size(&ast, root)
+        );
+        let printed =
+            storm_lua_syntax::Printer::new(&result.ast, false).output_with_positions(result.root);
+        let origins =
+            storm_lua_syntax::provenance::GeneratedOrigins::from_print(&result.ast, &printed)
+                .unwrap();
+        origins.validate_for_code(&printed.code).unwrap();
+        assert_eq!(origins.unknown_bytes(), 0);
     }
 }

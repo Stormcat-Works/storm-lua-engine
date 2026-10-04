@@ -1688,6 +1688,9 @@ pub fn compile_code_with_source_inspection(
             .map_err(|e| e.to_string())?
     };
     inspect(&ast, root, &positions);
+    // The origins own their ranges. Do not retain the original diagnostic/name
+    // indexes throughout every candidate search after the host has inspected them.
+    drop(positions);
     if let Some(target) = options.target_size {
         finish_target_attempt(
             try_satisficing_from_parsed(source, options, None, ast, root)?,

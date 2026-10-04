@@ -3,6 +3,7 @@
 //! numbers and dynamic values still pass through serde_json's normal encoder.
 use crate::optimized_source_map::{MapDisposition, MapExtension, MapOrigin};
 use serde::Serialize;
+#[cfg(test)]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
@@ -134,9 +135,13 @@ impl Writer {
         self.literal(b"}");
         Ok(())
     }
-    fn extension(&mut self, value: &MapExtension) -> Result<usize, serde_json::Error> {
+    fn extension(
+        &mut self,
+        value: &MapExtension,
+        compilation: &(impl Serialize + ?Sized),
+    ) -> Result<usize, serde_json::Error> {
         self.literal(b"{\"compilation\":");
-        self.value(&value.compilation)?;
+        self.value(compilation)?;
         self.literal(b",\"constructs\":");
         self.array(&value.constructs, Self::construct)?;
         self.literal(b",\"contexts\":");
@@ -178,10 +183,18 @@ impl Writer {
     }
 }
 
-pub(crate) fn encode(standard: &Value, extension: MapExtension) -> Result<String, String> {
-    let standard = standard
-        .as_object()
-        .ok_or("standard source map is not an object")?;
+pub(crate) fn encode(
+    standard: &(impl Serialize + ?Sized),
+    mut extension: MapExtension,
+) -> Result<String, String> {
+    let compilation = std::mem::take(&mut extension.compilation);
+    encode_with_settings(standard, extension, &compilation)
+}
+pub(crate) fn encode_with_settings(
+    standard: &(impl Serialize + ?Sized),
+    extension: MapExtension,
+    compilation: &(impl Serialize + ?Sized),
+) -> Result<String, String> {
     // Reserve a conservative size based only on records already in memory.
     // Actual dynamic strings can still grow the buffer normally; this is not
     // an output limit and does not allocate or retain a second JSON copy.
@@ -192,15 +205,18 @@ pub(crate) fn encode(standard: &Value, extension: MapExtension) -> Result<String
     let mut writer = Writer {
         bytes: Vec::with_capacity(capacity),
     };
-    writer.literal(b"{");
-    for (name, value) in standard {
-        writer.value(name).map_err(|e| e.to_string())?;
-        writer.literal(b":");
-        writer.value(value).map_err(|e| e.to_string())?;
+    writer.value(standard).map_err(|e| e.to_string())?;
+    if writer.bytes.first() != Some(&b'{') || writer.bytes.last() != Some(&b'}') {
+        return Err("standard source map is not an object".into());
+    }
+    writer.bytes.pop();
+    if writer.bytes.len() > 1 {
         writer.literal(b",");
     }
     writer.literal(b"\"x_storm\":");
-    let at = writer.extension(&extension).map_err(|e| e.to_string())?;
+    let at = writer
+        .extension(&extension, compilation)
+        .map_err(|e| e.to_string())?;
     writer.literal(b"}");
     // The canonical fingerprint is still computed with an EMPTY integrity
     // string. The reserved 64 characters are excluded from the hash input.

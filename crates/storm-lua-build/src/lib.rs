@@ -25,3 +25,5 @@ mod map_composition;
 mod optimized_map_tests;
 
 mod canonical_map;
+
+mod map_settings;

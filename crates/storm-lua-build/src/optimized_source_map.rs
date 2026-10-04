@@ -1,14 +1,20 @@
 //! Standard Source Map v3 plus the versioned Storm optimization explanation.
 //! This layer owns encoding and content fingerprints, not optimization semantics.
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+#[cfg(test)]
+use serde_json::json;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 #[cfg(test)]
 use sourcemap::SourceMapBuilder;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use storm_lua_minify::search::SearchStats;
-use storm_lua_minify::{CompileMode, CompileOptions, NumericMode, SearchMode};
+use storm_lua_minify::CompileOptions;
+#[cfg(test)]
+use storm_lua_minify::{CompileMode, NumericMode, SearchMode};
 use storm_lua_syntax::explanation::{
     InlineContext, OptimizationReason, RelationRole, SourceDisposition, SourceRelation,
 };
@@ -232,11 +238,22 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
         integrity: String::new(),
     }
 }
+#[cfg(test)]
 fn numeric(value: f64) -> String {
     format!("{:016x}", value.to_bits())
 }
 /// Resolved, deterministic compilation assumptions. No wall-clock timings or loser logs.
+#[expect(
+    clippy::expect_used,
+    reason = "Compilation metadata serializes only strings, integer ranges, booleans, options and IEEE bit strings; no fallible custom format or nonfinite JSON number"
+)]
 pub fn compilation_settings(options: &CompileOptions, stats: Option<&SearchStats>) -> Value {
+    serde_json::to_value(crate::map_settings::Settings { options, stats })
+        .expect("serializable compiler settings")
+}
+
+#[cfg(test)]
+fn reference_compilation_settings(options: &CompileOptions, stats: Option<&SearchStats>) -> Value {
     let folding = storm_lua_minify::config::resolve_folding_tolerance(options.numeric_tolerance);
     let literal = storm_lua_minify::config::resolve_literal_tolerance(options.numeric_tolerance);
     let resolved =
@@ -274,8 +291,24 @@ pub fn encode(
     compilation: Value,
 ) -> Result<String, String> {
     origins.validate_for_code(code)?;
-    let map = standard_map(code, origins)?;
+    let map = standard_fields(code, origins)?;
     crate::canonical_map::encode(&map, extension(code, origins, compilation))
+}
+/// Compiler-owned path writes resolved settings directly into final map JSON.
+/// The public Value-based encode API remains available for arbitrary metadata.
+pub(crate) fn encode_for_options(
+    code: &str,
+    origins: &GeneratedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+) -> Result<String, String> {
+    origins.validate_for_code(code)?;
+    let standard = standard_fields(code, origins)?;
+    crate::canonical_map::encode_with_settings(
+        &standard,
+        extension(code, origins, Value::Null),
+        &crate::map_settings::Settings { options, stats },
+    )
 }
 // One producer for the standard view. Validation compares that view with the
 // detailed ranges, rather than trusting a checksum recomputed over mismatches.
@@ -332,7 +365,22 @@ fn write_vlq(output: &mut String, value: i64) {
     }
 }
 
-fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
+// Canonical field order matches the prior sorted Value object. Snapshot text
+// remains borrowed until it is written into the final JSON, without copying it
+// into a temporary Value tree first.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StandardFields<'a> {
+    mappings: String,
+    names: Vec<&'a str>,
+    sources: Vec<&'a str>,
+    sources_content: Vec<&'a str>,
+    version: u32,
+}
+fn standard_fields<'a>(
+    code: &str,
+    origins: &'a GeneratedOrigins,
+) -> Result<StandardFields<'a>, String> {
     let generated = LineIndex::new(code);
     let indexes = origins
         .sources
@@ -351,28 +399,21 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
         }
     }
     let mut mappings = MappingEncoder::default();
-    let mut anchors = vec![0, code.len()];
-    anchors.extend(
-        code.bytes()
-            .enumerate()
-            .filter_map(|(i, b)| (b == b'\n').then_some(i + 1)),
-    );
-    for mapping in &origins.mappings {
-        anchors.push(mapping.start);
-        anchors.push(mapping.end);
-    }
+    let mut boundaries = origins
+        .mappings
+        .iter()
+        .flat_map(|m| [m.start, m.end])
+        .peekable();
+    let mut lines = code
+        .bytes()
+        .enumerate()
+        .filter_map(|(i, b)| (b == b'\n').then_some(i + 1))
+        .peekable();
     let mut lexer = Lexer::new(code);
-    loop {
-        let token = lexer.next_borrowed().map_err(|e| e.to_string())?;
-        anchors.push(token.p);
-        if token.k == storm_lua_syntax::lexer::TokenKind::Eof {
-            break;
-        }
-    }
-    anchors.sort_unstable();
-    anchors.dedup();
+    let mut token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+    let mut byte = 0;
     let mut current = 0;
-    for byte in anchors {
+    loop {
         while current < origins.mappings.len() && origins.mappings[current].end <= byte {
             current += 1;
         }
@@ -398,11 +439,15 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
             .utf16_position(byte)
             .ok_or("invalid generated anchor")?;
         if let Some((source, offset, name)) = original {
-            let (src_line, src_col) = indexes[source as usize]
-                .as_ref()
-                .unwrap_or(&generated)
-                .utf16_position(offset)
-                .ok_or("invalid original anchor")?;
+            let (src_line, src_col) = if indexes[source as usize].is_none() && offset == byte {
+                (line, col)
+            } else {
+                indexes[source as usize]
+                    .as_ref()
+                    .unwrap_or(&generated)
+                    .utf16_position(offset)
+                    .ok_or("invalid original anchor")?
+            };
             mappings.push(
                 line,
                 col,
@@ -411,12 +456,36 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
         } else {
             mappings.push(line, col, None);
         }
+        if byte == code.len() {
+            break;
+        }
+        while boundaries.peek().is_some_and(|&p| p <= byte) {
+            boundaries.next();
+        }
+        while lines.peek().is_some_and(|&p| p <= byte) {
+            lines.next();
+        }
+        while token.k != storm_lua_syntax::lexer::TokenKind::Eof && token.p <= byte {
+            token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+        }
+        // All three streams are sorted by construction; repeated boundaries
+        // are removed as they are consumed, with no sort or anchor allocation.
+        byte = token
+            .p
+            .min(boundaries.peek().copied().unwrap_or(code.len()))
+            .min(lines.peek().copied().unwrap_or(code.len()));
     }
-    Ok(
-        json!({"version":3,"mappings":mappings.output,"names":name_values,
-        "sources":origins.sources.iter().map(|s|s.name.as_ref()).collect::<Vec<_>>(),
-        "sourcesContent":origins.sources.iter().map(|s|s.text.as_ref()).collect::<Vec<_>>() }),
-    )
+    Ok(StandardFields {
+        mappings: mappings.output,
+        names: name_values,
+        sources: origins.sources.iter().map(|s| s.name.as_ref()).collect(),
+        sources_content: origins.sources.iter().map(|s| s.text.as_ref()).collect(),
+        version: 3,
+    })
+}
+#[cfg(test)]
+fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
+    serde_json::to_value(standard_fields(code, origins)?).map_err(|e| e.to_string())
 }
 
 /// Reject mismatched code, corrupted extension data or an unsupported schema.
@@ -546,13 +615,22 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
     if json.get("sourceRoot").is_some_and(|v| v != "") || json.get("sections").is_some() {
         return Err("unsupported standard source root or indexed map for this extension".into());
     }
-    let expected = standard_map(code, &generated)?;
-    for key in ["mappings", "names"] {
-        if json.get(key) != expected.get(key) {
-            return Err(format!(
-                "standard {key} do not agree with the detailed origins"
-            ));
-        }
+    let expected = standard_fields(code, &generated)?;
+    if json.get("mappings").and_then(Value::as_str) != Some(expected.mappings.as_str()) {
+        return Err("standard mappings do not agree with the detailed origins".into());
+    }
+    if !json
+        .get("names")
+        .and_then(Value::as_array)
+        .is_some_and(|names| {
+            names.len() == expected.names.len()
+                && names
+                    .iter()
+                    .zip(&expected.names)
+                    .all(|(a, &b)| a.as_str() == Some(b))
+        })
+    {
+        return Err("standard names do not agree with the detailed origins".into());
     }
     // Verify that the standard part is independently decodable, not just JSON.
     sourcemap::SourceMap::from_slice(map.as_bytes())
@@ -795,5 +873,106 @@ mod direct_mapping_tests {
         builder.into_sourcemap().to_writer(&mut bytes).unwrap();
         let expected: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(direct.output, expected["mappings"].as_str().unwrap());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_settings_tests {
+    use super::*;
+    use storm_lua_minify::config::{NumericTolerance, PropertyConfig, PropertyMode};
+    #[test]
+    fn borrowed_settings_preserve_value_and_canonical_bytes_including_numeric_bits() {
+        let base =
+            storm_lua_minify::search::compile_code("return 1", &CompileOptions::default()).unwrap();
+        for n in 0..48 {
+            let mut options = CompileOptions {
+                mode: if n % 2 == 0 {
+                    CompileMode::Safe
+                } else {
+                    CompileMode::Smallest
+                },
+                numeric_mode: if n % 3 == 0 {
+                    NumericMode::Exact
+                } else {
+                    NumericMode::Tolerant
+                },
+                numeric_tolerance: if n % 4 == 0 {
+                    None
+                } else {
+                    Some(NumericTolerance {
+                        abs: if n % 2 == 0 { -0.0 } else { 1e-8 },
+                        rel: 1e-13,
+                    })
+                },
+                search_mode: if n % 5 == 0 {
+                    SearchMode::Fast
+                } else {
+                    SearchMode::Exhaustive
+                },
+                target_size: (n % 3 == 0).then_some(n * 1024),
+                search_beam_width: 1 + n as u32 % 16,
+                zero_cost_newlines: n % 2 != 0,
+                ..CompileOptions::default()
+            };
+            if n % 3 != 0 {
+                options.host_bindings = vec!["user.value".into(), "custom".into()];
+            }
+            options.pass_toggles = storm_lua_minify::pass_ids::OPTIMIZATION_PASS_IDS
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| i % 5 == n % 5)
+                .map(|(i, &id)| (id, i % 2 == 0))
+                .collect();
+            if n % 4 != 0 {
+                options.property = Some(PropertyConfig {
+                    mode: if n % 2 == 0 {
+                        PropertyMode::Hardcode
+                    } else {
+                        PropertyMode::Runtime
+                    },
+                    numbers: Some(BTreeMap::from([
+                        ("negativeZero".into(), -0.0),
+                        ("infinity".into(), f64::INFINITY),
+                        ("nanPayload".into(), f64::from_bits(0x7ff800000000002a)),
+                        ("普通😀".into(), 1.23),
+                    ])),
+                    bools: Some(BTreeMap::from([("toggle".into(), true)])),
+                    texts: Some(BTreeMap::from([(
+                        "name".into(),
+                        "\"integrity\":\"\"雪😀\r\n".into(),
+                    )])),
+                });
+            }
+            let mut stats = base.stats.clone();
+            stats.winner_structural = if n % 3 == 0 {
+                "lexical".into()
+            } else {
+                "same-candidate".into()
+            };
+            stats.stopped_early = n % 2 == 0;
+            stats.target_met = n % 4 == 0;
+            for stats in [None, Some(&stats)] {
+                let expected = reference_compilation_settings(&options, stats);
+                assert_eq!(compilation_settings(&options, stats), expected);
+                assert_eq!(
+                    serde_json::to_string(&crate::map_settings::Settings {
+                        options: &options,
+                        stats
+                    })
+                    .unwrap(),
+                    serde_json::to_string(&expected).unwrap()
+                );
+                let code = "return 1";
+                let origins = GeneratedOrigins::identity("settings.lua", code);
+                let expected_map = encode(code, &origins, expected).unwrap();
+                let actual = encode_for_options(code, &origins, &options, stats).unwrap();
+                assert_eq!(
+                    actual, expected_map,
+                    "canonical full map including fingerprint changed"
+                );
+                validate(code, &actual).unwrap();
+            }
+        }
     }
 }

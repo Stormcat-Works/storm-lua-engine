@@ -564,10 +564,11 @@ fn success(
         },
     });
     let map = match result.origins.as_ref() {
-        Some(origins) => match crate::optimized_source_map::encode(
+        Some(origins) => match crate::optimized_source_map::encode_for_options(
             &result.code,
             origins,
-            crate::optimized_source_map::compilation_settings(options, Some(&result.stats)),
+            options,
+            Some(&result.stats),
         ) {
             Ok(map) => Some(map),
             Err(error) => return ApiCompileResult::failure(source, error),
@@ -958,10 +959,11 @@ pub fn compile_project(
             );
             match crate::map_composition::compose(project, &link, &linked_source, &origins)
                 .and_then(|o| {
-                    crate::optimized_source_map::encode(
+                    crate::optimized_source_map::encode_for_options(
                         &linked_source,
                         &o,
-                        crate::optimized_source_map::compilation_settings(&core_options, None),
+                        &core_options,
+                        None,
                     )
                 }) {
                 Ok(map) => Some(map),
@@ -1059,13 +1061,7 @@ pub fn compile_lifeboat(
                 let origins =
                     storm_lua_syntax::provenance::GeneratedOrigins::identity("linked.lua", source);
                 match crate::map_composition::compose(project, &link, source, &origins).and_then(
-                    |o| {
-                        crate::optimized_source_map::encode(
-                            source,
-                            &o,
-                            crate::optimized_source_map::compilation_settings(&core, None),
-                        )
-                    },
+                    |o| crate::optimized_source_map::encode_for_options(source, &o, &core, None),
                 ) {
                     Ok(map) => Some(map),
                     Err(error) => return ApiProjectCompileResult::compile_failure(error),

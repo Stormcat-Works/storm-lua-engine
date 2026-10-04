@@ -230,7 +230,14 @@ const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
 fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, NodeId), String> {
     if let Some(name) = &options.origin_source {
-        storm_lua_syntax::parse_source_with_origins(name, source)
+        storm_lua_syntax::parser::parse_source_with_conditional_origins(name, source, |ast| {
+            storm_lua_analysis::environment_checks::lexical_reason(
+                ast,
+                options.environment,
+                &options.host_bindings,
+            )
+            .is_none()
+        })
     } else {
         parse_source(source).map_err(|error| error.to_string())
     }

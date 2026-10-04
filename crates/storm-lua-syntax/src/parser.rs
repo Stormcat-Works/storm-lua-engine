@@ -728,10 +728,24 @@ pub fn parse_source_with_positions(
 /// Parse and initialize opt-in origins. The source name is a label, not a filesystem path.
 /// Origin tables follow candidate clones and are invalidated by unannotated writes.
 pub fn parse_source_with_origins(name: &str, source: &str) -> Result<(Ast, NodeId), String> {
+    parse_source_with_conditional_origins(name, source, |_| true)
+}
+
+/// Parse exactly once with positions, then initialize AST origins only if the
+/// caller will use AST transformations. A lexical-only path can retain its own
+/// token copies without first constructing and discarding a full origin arena.
+/// The predicate observes a successfully parsed immutable AST and runs once.
+pub fn parse_source_with_conditional_origins(
+    name: &str,
+    source: &str,
+    track: impl FnOnce(&Ast) -> bool,
+) -> Result<(Ast, NodeId), String> {
     let (mut ast, root, positions) =
         parse_source_with_positions(source).map_err(|error| error.to_string())?;
-    let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
-    ast.nodes.set_provenance(origins);
+    if track(&ast) {
+        let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
+        ast.nodes.set_provenance(origins);
+    }
     Ok((ast, root))
 }
 
@@ -1111,5 +1125,66 @@ mod provenance_span_tests {
                     && omitted.names.is_empty()
             );
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod conditional_origin_tests {
+    use super::*;
+    use std::cell::Cell;
+    #[test]
+    fn conditional_source_tracking_uses_the_same_parse_and_complete_origins() {
+        for source in [
+            "",
+            "-- comment",
+            "local _ENV=_ENV return 2*3",
+            "local text='_ENV' return text",
+            "-- 雪😀\r\nfunction f(x)return x+1 end\r\n",
+        ] {
+            let (mut expected, root, positions) = parse_source_with_positions(source).unwrap();
+            let origin = crate::provenance::ArenaOrigins::seed(
+                &expected,
+                &positions,
+                "original.lua",
+                source,
+            )
+            .unwrap();
+            expected.nodes.set_provenance(origin);
+            let called = Cell::new(0);
+            let (actual, actual_root) =
+                parse_source_with_conditional_origins("original.lua", source, |ast| {
+                    called.set(called.get() + 1);
+                    assert!(!ast.nodes.tracks_origins());
+                    true
+                })
+                .unwrap();
+            assert_eq!(called.get(), 1);
+            assert_eq!(actual_root, root);
+            assert_eq!(
+                serde_json::to_value(actual).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+            let (plain, plain_root) = parse_source(source).unwrap();
+            let (untracked, untracked_root) =
+                parse_source_with_conditional_origins("original.lua", source, |_| false).unwrap();
+            assert_eq!(plain_root, untracked_root);
+            assert_eq!(
+                serde_json::to_value(untracked).unwrap(),
+                serde_json::to_value(plain).unwrap()
+            );
+        }
+        let called = Cell::new(false);
+        assert!(
+            parse_source_with_conditional_origins("error.lua", "local =", |_| {
+                called.set(true);
+                false
+            })
+            .is_err()
+        );
+        assert!(
+            !called.get(),
+            "failed parses must not invoke a selection predicate"
+        );
     }
 }

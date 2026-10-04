@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::link::{analyze_structure, link_project, lookup_source_byte, LinkResult};
+#[cfg(test)]
+use crate::link::link_project;
+use crate::link::{analyze_structure, lookup_source_byte, LinkResult};
 use crate::source_map::generate_source_map;
 use storm_lua_analysis::diagnostic::{codes, Diagnostic, Range, Severity};
 use storm_lua_analysis::lint::collect_written_global_names;
@@ -870,8 +872,8 @@ fn remap_diagnostics_to_modules(
 ///   土台のため）が、`ok`/失敗判定は到達集合基準（タスク2: §7-2、`analyze` とのパリティは
 ///   診断集合のみ、`ok` 判定はここだけの独自ロジック）。
 /// - `minify:false`: リンク済み可読ソース + Source Map(v3) + `usedModules`/`injectedAmbient`。
-/// - `minify:true`: リンク済みソースを既存 `compile()` の minify パイプラインへそのまま通す。
-///   `map` は返さない（v1 は minify 後の Source Map を作らない。§6/§11 非目標・v2 予約）。
+/// - `minify:true`: リンク済みソースを既存のminifyパイプラインへ通す。
+///   `sourceMap:true`では、最適化後の位置を元モジュールへ合成してmapを返す。
 ///   `compile()` 由来の診断（`env-access` 等）はオフセット区間表で元モジュール・元行へ
 ///   逆引きしてから合流する（逆引き不能なら位置なし診断。位置は捏造しない）。
 pub fn compile_project(
@@ -887,41 +889,34 @@ pub fn compile_project(
             )])
         }
     };
-    let mut link = link_project(project);
-    if link.linked_source.is_none() {
-        // `link_project` が到達可能モジュールの error（またはモジュール無しのプロジェクト
-        // 全体診断）を検出済み。到達不能モジュールの error だけが残るケースはここには来ない
-        // （`link_project` はその場合リンクを継続する）。
-        return ApiProjectCompileResult::structural_failure(link.diagnostics);
-    }
-
-    // Stormworks 固有制限の検出（`analyze()` と同じロジック。severity のみ error）。
-    // `sw_restrict` は `analyze_structure` の外側にある独立レイヤーのため、ここで改めて
-    // 構造解析を行う（`analyze()` は warning として同じ検出を行うため、severity だけが
-    // 両者の違いになる）。診断は到達可否を問わず全モジュール分を追加する（`analyze` との
-    // パリティ維持）。
     let structural = analyze_structure(project);
+    if structural.has_blocking_error(project) {
+        return ApiProjectCompileResult::structural_failure(structural.diagnostics);
+    }
+    // Analyze each original module once for linking and restriction diagnostics.
+    // Unreachable module diagnostics are retained, with the same blocking rule.
+    let mut restrictions = Vec::new();
     let written_globals = collect_written_global_names(structural.modules.values());
     for (key, analysis) in &structural.modules {
-        link.diagnostics
-            .extend(sw_restrict::scan_module_in_environment(
-                key,
-                analysis,
-                &written_globals,
-                Severity::Error,
-                core_options.environment,
-                &core_options.host_bindings,
-            ));
+        restrictions.extend(sw_restrict::scan_module_in_environment(
+            key,
+            analysis,
+            &written_globals,
+            Severity::Error,
+            core_options.environment,
+            &core_options.host_bindings,
+        ));
     }
-    // ok/失敗判定は entry から到達するモジュールの error のみで決める（タスク2）。
-    // 到達不能モジュールの error は診断に残したまま、リンクは成功扱いを続ける。
-    if link
-        .diagnostics
+    if restrictions
         .iter()
         .any(|d| structural.is_blocking(project, d))
     {
-        return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        let mut diagnostics = structural.diagnostics;
+        diagnostics.extend(restrictions);
+        return ApiProjectCompileResult::structural_failure(diagnostics);
     }
+    let mut link = crate::link::link_analyzed_project(project, structural);
+    link.diagnostics.extend(restrictions);
     #[expect(
         clippy::expect_used,
         reason = "link_project produced this result and the preceding gate rejected every blocking diagnostic"
@@ -1509,5 +1504,192 @@ mod tests {
         let result = compile_project(&p, &ApiProjectCompileOptions::default());
         assert!(!result.ok);
         assert!(result.code.is_none());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_project_analysis_tests {
+    use super::*;
+    use serde_json::json;
+    fn reference_project(
+        project: &LuaProject,
+        options: &ApiProjectCompileOptions,
+    ) -> ApiProjectCompileResult {
+        let core_options = match options.compile.to_core() {
+            Ok(options) => options,
+            Err(error) => {
+                return ApiProjectCompileResult::structural_failure(vec![Diagnostic::error(
+                    options_error_code(&error),
+                    error,
+                )])
+            }
+        };
+        let mut link = link_project(project);
+        if link.linked_source.is_none() {
+            // `link_project` が到達可能モジュールの error（またはモジュール無しのプロジェクト
+            // 全体診断）を検出済み。到達不能モジュールの error だけが残るケースはここには来ない
+            // （`link_project` はその場合リンクを継続する）。
+            return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        }
+
+        // Stormworks 固有制限の検出（`analyze()` と同じロジック。severity のみ error）。
+        // `sw_restrict` は `analyze_structure` の外側にある独立レイヤーのため、ここで改めて
+        // 構造解析を行う（`analyze()` は warning として同じ検出を行うため、severity だけが
+        // 両者の違いになる）。診断は到達可否を問わず全モジュール分を追加する（`analyze` との
+        // パリティ維持）。
+        let structural = analyze_structure(project);
+        let written_globals = collect_written_global_names(structural.modules.values());
+        for (key, analysis) in &structural.modules {
+            link.diagnostics
+                .extend(sw_restrict::scan_module_in_environment(
+                    key,
+                    analysis,
+                    &written_globals,
+                    Severity::Error,
+                    core_options.environment,
+                    &core_options.host_bindings,
+                ));
+        }
+        // ok/失敗判定は entry から到達するモジュールの error のみで決める（タスク2）。
+        // 到達不能モジュールの error は診断に残したまま、リンクは成功扱いを続ける。
+        if link
+            .diagnostics
+            .iter()
+            .any(|d| structural.is_blocking(project, d))
+        {
+            return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        }
+        #[expect(
+            clippy::expect_used,
+            reason = "link_project produced this result and the preceding gate rejected every blocking diagnostic"
+        )]
+        let linked_source = link
+            .linked_source
+            .clone()
+            .expect("no error diagnostics -> link_project always returns linked_source");
+
+        if !options.minify.unwrap_or(true) {
+            let map = if core_options.origin_source.is_some() {
+                let origins = storm_lua_syntax::provenance::GeneratedOrigins::identity(
+                    "linked.lua",
+                    &linked_source,
+                );
+                match crate::map_composition::compose(project, &link, &linked_source, &origins)
+                    .and_then(|o| {
+                        crate::optimized_source_map::encode(
+                            &linked_source,
+                            &o,
+                            crate::optimized_source_map::compilation_settings(&core_options, None),
+                        )
+                    }) {
+                    Ok(map) => Some(map),
+                    Err(error) => return ApiProjectCompileResult::compile_failure(error),
+                }
+            } else {
+                generate_source_map(project, &link)
+            };
+            return ApiProjectCompileResult {
+                ok: true,
+                code: Some(linked_source),
+                map,
+                used_modules: link.used_modules,
+                injected_ambient: link.injected_ambient,
+                diagnostics: link.diagnostics,
+                ..Default::default()
+            };
+        }
+
+        let compiled = finish_compile_result(
+            &linked_source,
+            &core_options,
+            compile_code(&linked_source, &core_options).and_then(|mut result| {
+                if let Some(origins) = result.origins.as_ref() {
+                    result.origins = Some(crate::map_composition::compose(
+                        project,
+                        &link,
+                        &result.code,
+                        origins,
+                    )?);
+                }
+                Ok(result)
+            }),
+        );
+        let mut diagnostics =
+            remap_diagnostics_to_modules(compiled.diagnostics.clone(), project, &link);
+        // 構造/sw_restrict 診断（到達不能モジュールの Error を含む）を合流する。ok:true でも
+        // 到達不能モジュールの Error はここまで捨てずに残っている（タスク2: §7-2、
+        // `analyze` とのパリティ維持のため minify:true でも diagnostics は落とさない）。
+        diagnostics.extend(link.diagnostics);
+        ApiProjectCompileResult::from_minified(
+            compiled,
+            link.used_modules,
+            link.injected_ambient,
+            diagnostics,
+        )
+    }
+
+    fn compare(project: &LuaProject) {
+        for minify in [false, true] {
+            for mapped in [false, true] {
+                let options: ApiProjectCompileOptions =
+                    serde_json::from_value(json!({"minify":minify,"sourceMap":mapped})).unwrap();
+                let before = serde_json::to_vec(project).unwrap();
+                let mut expected = reference_project(project, &options);
+                let mut actual = compile_project(project, &options);
+                // Native PassRecord clocks are observations, not artifact semantics.
+                // Preserve all other fields, including exact encoded map bytes.
+                for result in [&mut expected, &mut actual] {
+                    for pass in &mut result.passes {
+                        pass.elapsed_ms = None;
+                    }
+                }
+                assert_eq!(
+                    serde_json::to_value(&actual).unwrap(),
+                    serde_json::to_value(&expected).unwrap(),
+                    "full project result changed"
+                );
+                assert_eq!(
+                    serde_json::to_vec(project).unwrap(),
+                    before,
+                    "project input mutated"
+                );
+            }
+        }
+    }
+    #[test]
+    fn shared_structural_analysis_keeps_success_errors_reachability_and_ambient_order() {
+        for project in [
+            json!({"entry":"main","modules":{"main":"function onTick()output.setNumber(1,2*3)end"}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f(3))end","helper":"return function(x)return x*2 end","unused":"local ="}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f(3))end","helper":"local ="}}),
+            json!({"entry":"main","modules":{"main":"require('absent')"}}),
+            json!({"entry":"main","modules":{"main":"require('helper')","helper":"require('main')"}}),
+            json!({"entry":"absent","modules":{"main":"return 1"}}),
+            json!({"entry":"main","modules":{"main":"function onTick()pcall(function()end)end"}}),
+            json!({"entry":"main","modules":{"main":"function onTick()output.setNumber(1,lib.double(2))end","unused":"pcall(function()end)"},"ambient":{"lib":{"members":{"double":{"kind":"module","source":"return function(x)return x*2 end"},"unused":{"kind":"environmentOnly"}}}}}),
+            json!({"entry":"main","modules":{"main":"function onTick()lib.hidden()end"},"ambient":{"lib":{"members":{"hidden":{"kind":"environmentOnly"}}}}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f())end","helper":"-- 雪😀\r\nreturn function()return 1 end\r\n"}}),
+        ] {
+            compare(&serde_json::from_value(project).unwrap());
+        }
+    }
+    #[test]
+    fn project_analysis_reuse_does_not_change_many_module_link_maps() {
+        for count in [1, 4, 16] {
+            let mut modules = BTreeMap::new();
+            let mut main = String::new();
+            for n in 0..count {
+                main.push_str(&format!("local v{n}=require('part{n}')\n"));
+                modules.insert(format!("part{n}"), format!("local x={n}+2 return x"));
+            }
+            main.push_str("function onTick()output.setNumber(1,v0)end");
+            modules.insert("main".into(), main);
+            compare(&LuaProject {
+                entry: "main".into(),
+                modules,
+                ambient: BTreeMap::new(),
+            });
+        }
     }
 }

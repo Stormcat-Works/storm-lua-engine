@@ -486,8 +486,16 @@ fn require_stmt_byte_span(source: &str, site: &RequireSite) -> (usize, usize) {
 ///   リンクは継続する（タスク2: §7-2。診断集合は `analyze` とのパリティを維持したまま、
 ///   `ok`/失敗判定だけを到達集合基準にする）。
 pub fn link_project(project: &LuaProject) -> LinkResult {
-    let structural = analyze_structure(project);
+    link_analyzed_project(project, analyze_structure(project))
+}
 
+// The public build driver also needs the parsed modules for its restriction
+// checks. Consume that same analysis after those checks instead of parsing and
+// resolving the whole project a second time. This is not a persistent cache.
+pub(crate) fn link_analyzed_project(
+    project: &LuaProject,
+    structural: StructuralAnalysis,
+) -> LinkResult {
     if structural.has_blocking_error(project) {
         return LinkResult {
             diagnostics: structural.diagnostics,

@@ -202,17 +202,20 @@ fn rename_globals(
 }
 
 /// 各 scope の部分木が参照する全 bid（自分の refs + 子の refs の和）。
-fn get_subtree_refs(resolution: &Resolution) -> Vec<HashSet<u32>> {
-    fn gather(sid: ScopeId, resolution: &Resolution, out: &mut [HashSet<u32>]) {
+fn get_subtree_refs(resolution: &Resolution) -> Vec<Vec<u32>> {
+    fn gather(sid: ScopeId, resolution: &Resolution, out: &mut [Vec<u32>]) {
         let scope = resolution.scope(sid);
-        let mut refs: HashSet<u32> = scope.refs.iter().copied().collect();
+        let mut refs = scope.refs.clone();
         for &child in &scope.children {
             gather(child, resolution, out);
-            refs.extend(out[child as usize].iter().copied());
+            refs.extend_from_slice(&out[child as usize]);
         }
+        // Consumers require membership, not randomized hash iteration order.
+        refs.sort_unstable();
+        refs.dedup();
         out[sid as usize] = refs;
     }
-    let mut out = vec![HashSet::new(); resolution.scopes.len()];
+    let mut out = vec![Vec::new(); resolution.scopes.len()];
     gather(0, resolution, &mut out);
     out
 }
@@ -221,7 +224,7 @@ fn rename_nested_scope(
     sid: ScopeId,
     resolution: &Resolution,
     names: &mut RenameNames,
-    subtree_refs: &[HashSet<u32>],
+    subtree_refs: &[Vec<u32>],
 ) {
     let sc = resolution.scope(sid);
     let mut local_ids: Vec<u32> = sc
@@ -238,9 +241,13 @@ fn rename_nested_scope(
         }
         return;
     }
-    let local_set: HashSet<u32> = local_ids.iter().copied().collect();
-    let mut external: Vec<u32> = subtree_refs[sid as usize].iter().copied().collect();
-    external.retain(|id| !local_set.contains(id) && names[*id as usize].is_some());
+    let mut local_set = local_ids.clone();
+    local_set.sort_unstable();
+    let external = subtree_refs[sid as usize]
+        .iter()
+        .copied()
+        .filter(|id| local_set.binary_search(id).is_err() && names[*id as usize].is_some())
+        .collect::<Vec<_>>();
     // ShortNameIter already filters Lua keywords, API roots, onTick and onDraw.
     // Captured outer-scope names are checked once when each candidate is created.
 
@@ -619,9 +626,13 @@ mod allocation_regression_tests {
         rename_globals(ast, &resolution, &mut names, &mut used);
         rename_top_locals(ast, &resolution, &mut names, &mut used);
         let refs = get_subtree_refs(&resolution);
+        let legacy_refs = refs
+            .iter()
+            .map(|r| r.iter().copied().collect::<HashSet<_>>())
+            .collect::<Vec<_>>();
         for &child in &resolution.scope(0).children {
             if reference {
-                reference_nested_scope(child, &resolution, &mut names, &refs);
+                reference_nested_scope(child, &resolution, &mut names, &legacy_refs);
             } else {
                 rename_nested_scope(child, &resolution, &mut names, &refs);
             }
@@ -724,6 +735,148 @@ mod cost_only_name_tests {
             let (ast,root)=storm_lua_syntax::parse_source_with_origins("names.lua",text).unwrap();
             let materialized=scope_rename_fast(&ast,root);
             assert_eq!(measure_renamed_size(&ast,root),storm_lua_syntax::size::measure_size(&materialized.ast,materialized.root),"{text}");
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod compact_capture_tests {
+    use super::*;
+    fn reference_subtree_refs(resolution: &Resolution) -> Vec<HashSet<u32>> {
+        fn gather(sid: ScopeId, resolution: &Resolution, out: &mut [HashSet<u32>]) {
+            let scope = resolution.scope(sid);
+            let mut refs: HashSet<u32> = scope.refs.iter().copied().collect();
+            for &child in &scope.children {
+                gather(child, resolution, out);
+                refs.extend(out[child as usize].iter().copied());
+            }
+            out[sid as usize] = refs;
+        }
+        let mut out = vec![HashSet::new(); resolution.scopes.len()];
+        gather(0, resolution, &mut out);
+        out
+    }
+
+    fn reference_nested_scope(
+        sid: ScopeId,
+        resolution: &Resolution,
+        names: &mut RenameNames,
+        subtree_refs: &[HashSet<u32>],
+    ) {
+        let sc = resolution.scope(sid);
+        let mut local_ids: Vec<u32> = sc
+            .bindings
+            .iter()
+            .copied()
+            .filter(|id| resolution.binding(*id).kind != BindingKind::Global)
+            .collect();
+        // With no local bindings there is nothing to assign or forbid here.
+        // Descendants still need their own capture-aware assignment.
+        if local_ids.is_empty() {
+            for &child in &sc.children {
+                reference_nested_scope(child, resolution, names, subtree_refs);
+            }
+            return;
+        }
+        let local_set: HashSet<u32> = local_ids.iter().copied().collect();
+        let mut external: Vec<u32> = subtree_refs[sid as usize].iter().copied().collect();
+        external.retain(|id| !local_set.contains(id) && names[*id as usize].is_some());
+        // ShortNameIter already filters Lua keywords, API roots, onTick and onDraw.
+        // Captured outer-scope names are checked once when each candidate is created.
+
+        // TS: localIds.sort(freq desc || decl asc)
+        local_ids.sort_by(|a, b| {
+            let ba = resolution.binding(*a);
+            let bb = resolution.binding(*b);
+            bb.freq.cmp(&ba.freq).then_with(|| ba.decl.cmp(&bb.decl))
+        });
+        // Index the same deterministic short-name sequence. A candidate's
+        // capture restriction is scope-wide; only lifetime conflicts change for
+        // each binding. Reuse a dense buffer instead of hashing names per binding.
+        let mut assigned = Vec::<(u32, usize)>::with_capacity(local_ids.len());
+        let mut generator = ShortNames::new();
+        let mut candidates = ShortNameIter(&mut generator);
+        let mut short_names = Vec::<(String, bool)>::new();
+        let mut blocked = Vec::<bool>::new();
+        for id in &local_ids {
+            let b = resolution.binding(*id);
+            blocked.fill(false);
+            for &(other_id, candidate) in &assigned {
+                if intervals_overlap(b, resolution.binding(other_id)) {
+                    blocked[candidate] = true;
+                }
+            }
+            let mut index = 0;
+            let q = loop {
+                if index == short_names.len() {
+                    let name = candidates.next();
+                    let available = !external
+                        .iter()
+                        .any(|other| names[*other as usize].as_deref() == Some(name.as_str()));
+                    short_names.push((name, available));
+                    blocked.push(false);
+                }
+                let (name, available) = &short_names[index];
+                if *available && !blocked[index] {
+                    break name.clone();
+                }
+                index += 1;
+            };
+            names[*id as usize] = Some(q);
+            assigned.push((*id, index));
+        }
+        for &c in &sc.children {
+            reference_nested_scope(c, resolution, names, subtree_refs);
+        }
+    }
+
+    fn compare(ast: &Ast, root: NodeId) {
+        let (resolution, actual) = rename_plan(ast, root);
+        let expected_refs = reference_subtree_refs(&resolution);
+        let actual_refs = get_subtree_refs(&resolution);
+        for (expected, actual) in expected_refs.iter().zip(&actual_refs) {
+            assert_eq!(actual.iter().copied().collect::<HashSet<_>>(), *expected);
+        }
+        let mut names = vec![None; resolution.bindings.len()];
+        let mut used = HashSet::new();
+        rename_globals(ast, &resolution, &mut names, &mut used);
+        rename_top_locals(ast, &resolution, &mut names, &mut used);
+        for &scope in &resolution.scope(0).children {
+            reference_nested_scope(scope, &resolution, &mut names, &expected_refs);
+        }
+        assert_eq!(
+            actual, names,
+            "capture restrictions or short-name tie order changed"
+        );
+        let (a, r) = apply_renames(ast, &resolution, root, &actual);
+        let (b, s) = apply_renames(ast, &resolution, root, &names);
+        assert_eq!(r, s);
+        assert_eq!(
+            serde_json::to_value(&a).unwrap(),
+            serde_json::to_value(&b).unwrap()
+        );
+    }
+    #[test]
+    fn ordered_capture_membership_matches_legacy_hashes_on_each_pass_fixture_and_rewrite() {
+        for id in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let source = crate::provenance_pass_matrix::fixture(id);
+            let (ast, root) =
+                storm_lua_syntax::parse_source_with_origins("capture.lua", &source).unwrap();
+            compare(&ast, root);
+            let mut after = ast.clone();
+            let root = crate::provenance_pass_matrix::apply(id, &mut after, root);
+            compare(&after, root);
+            compare(
+                &storm_lua_syntax::ast_utils::clone_without_origins(&after),
+                root,
+            );
+        }
+        for n in [1, 16, 64] {
+            let source=format!("local x=1 local y=2 function onTick(){}end",(0..n).map(|i|format!("do local x=x+{i} local function f(y)return x+y end output.setNumber(1,f(y))end ")).collect::<String>());
+            let (ast, root) =
+                storm_lua_syntax::parse_source_with_origins("nested.lua", &source).unwrap();
+            compare(&ast, root);
         }
     }
 }

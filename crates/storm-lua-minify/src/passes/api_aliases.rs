@@ -2,8 +2,8 @@
 //!
 //! Frequently used fixed API roots and members are assigned to short globals.
 //! The analytical selection is refined by the same four-round remove/add
-//! search as the TypeScript oracle. Every candidate is scope-renamed and
-//! measured as a complete program before it can win. Cost-only candidates carry
+//! search as the TypeScript oracle. Every candidate is measured as a complete
+//! scope-renamed program, but only the winner is renamed. Cost-only candidates carry
 //! no provenance; a tracked input materializes only its selected candidate.
 
 use std::cmp::Ordering;
@@ -110,8 +110,7 @@ fn clone_rewriting(
             }
         }
     }
-    let original = source.node(node).clone();
-    let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
+    let (mapped, _) = storm_lua_syntax::ast_utils::map_children(source.node(node), &mut |child| {
         clone_rewriting(target, source, resolution, analyzer, aliases, child)
     });
     let cloned = target.push(mapped);
@@ -235,18 +234,11 @@ fn make_candidate(
     analyzer: &EffectAnalyzer<'_>,
     selected: &[String],
 ) -> Candidate {
-    let (aliased, aliased_root) = apply_alias_set(source, root, resolution, analyzer, selected);
-    let ScopeRenameResult {
-        ast,
-        root: renamed_root,
-        ..
-    } = scope_rename_fast(&aliased, aliased_root);
-    let len = measure_size(&ast, renamed_root);
-    Candidate {
-        ast,
-        root: renamed_root,
-        len,
-    }
+    let (ast, root) = apply_alias_set(source, root, resolution, analyzer, selected);
+    // Trial comparison needs the exact renamed size, not a renamed AST. Keep
+    // the selected unrenamed tree and materialize its winning name plan once.
+    let len = crate::scope_rename::measure_renamed_size(&ast, root);
+    Candidate { ast, root, len }
 }
 
 fn profitable(key: &str, count: usize) -> bool {
@@ -341,21 +333,26 @@ pub fn optimize_api_aliases(ast: &mut Ast, root: NodeId) -> PassResult {
     }
 
     if ast.nodes.tracks_origins() {
-        // Map-bearing inputs replay only the winning alias set, not the search.
-        // The original immutable input remains authoritative for source sites,
-        // inline contexts, reasons and dispositions. The analysis refers to the
-        // identical syntax/IDs and does not depend on whether it carries origins.
-        let tracked = make_candidate(ast, root, &resolution, &analyzer, &selected);
-        debug_assert_eq!(
-            tracked.len, best.len,
-            "provenance changed alias candidate cost"
-        );
-        best = tracked;
+        // Selection used the same immutable syntax/IDs. Apply only the selected
+        // aliases to the tracked input; losing alternatives never need origins.
+        let (tracked, tracked_root) = apply_alias_set(ast, root, &resolution, &analyzer, &selected);
+        best.ast = tracked;
+        best.root = tracked_root;
     }
+    let ScopeRenameResult {
+        ast: renamed,
+        root: renamed_root,
+        ..
+    } = scope_rename_fast(&best.ast, best.root);
+    debug_assert_eq!(
+        measure_size(&renamed, renamed_root),
+        best.len,
+        "cost-only rename changed selected size"
+    );
+    *ast = renamed;
 
-    *ast = best.ast;
     PassResult {
-        root: best.root,
+        root: renamed_root,
         saved: Some(none_len.saturating_sub(best.len) as u64),
         details: Some(selected),
     }
@@ -416,6 +413,27 @@ mod trial_provenance_tests {
 
     // Frozen pre-change search: constructs full tracked candidates at every
     // comparison. Keep this independent of the new selection/replay branch.
+    fn reference_candidate(
+        source: &Ast,
+        root: NodeId,
+        resolution: &Resolution,
+        analyzer: &EffectAnalyzer<'_>,
+        selected: &[String],
+    ) -> Candidate {
+        let (aliased, aliased_root) = apply_alias_set(source, root, resolution, analyzer, selected);
+        let ScopeRenameResult {
+            ast,
+            root: renamed_root,
+            ..
+        } = scope_rename_fast(&aliased, aliased_root);
+        let len = measure_size(&ast, renamed_root);
+        Candidate {
+            ast,
+            root: renamed_root,
+            len,
+        }
+    }
+
     fn reference_aliases(ast: &mut Ast, root: NodeId) -> PassResult {
         let source = {
             let mut cloned = storm_lua_syntax::ast_utils::inherit_ast(ast);
@@ -448,7 +466,7 @@ mod trial_provenance_tests {
             }
         }
 
-        let mut best = make_candidate(&source, root, &resolution, &analyzer, &selected);
+        let mut best = reference_candidate(&source, root, &resolution, &analyzer, &selected);
         let mut changed = true;
         for _ in 0..4 {
             if !changed {
@@ -461,7 +479,7 @@ mod trial_provenance_tests {
                     .filter(|current| **current != key)
                     .cloned()
                     .collect::<Vec<_>>();
-                let candidate = make_candidate(&source, root, &resolution, &analyzer, &trial);
+                let candidate = reference_candidate(&source, root, &resolution, &analyzer, &trial);
                 if candidate.len <= best.len {
                     selected = trial;
                     best = candidate;
@@ -484,7 +502,7 @@ mod trial_provenance_tests {
             for key in excluded {
                 let mut trial = selected.clone();
                 trial.push(key.clone());
-                let candidate = make_candidate(&source, root, &resolution, &analyzer, &trial);
+                let candidate = reference_candidate(&source, root, &resolution, &analyzer, &trial);
                 if candidate.len < best.len {
                     selected.push(key);
                     best = candidate;
@@ -493,7 +511,7 @@ mod trial_provenance_tests {
             }
         }
 
-        let none = make_candidate(&source, root, &resolution, &analyzer, &[]);
+        let none = reference_candidate(&source, root, &resolution, &analyzer, &[]);
         let none_len = none.len;
         if none.len < best.len {
             selected.clear();

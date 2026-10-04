@@ -386,6 +386,17 @@ fn short_num_uncached(v: f64) -> String {
         return if v.is_sign_negative() { "-0" } else { "0" }.into();
     }
     if is_integer(v) {
+        // Every signed 32-bit integer is exactly representable in binary64,
+        // and its historical shortest decimal uses fixed notation. Avoid the
+        // float formatter, digit vector and reconstruction for common literals.
+        // Keep the two existing compact-positive-exponent exceptions verbatim.
+        if (i32::MIN as f64..=i32::MAX as f64).contains(&v) {
+            return match v {
+                100_000.0 => "1e5".into(),
+                1_000_000.0 => "1e6".into(),
+                _ => (v as i32).to_string(),
+            };
+        }
         let d = es_to_string(v);
         // Only these two values use the exponential alternative below.
         // Generating it for every integer discarded the result after formatting.
@@ -1111,5 +1122,61 @@ mod tests {
             checked += 1;
         }
         assert!(checked > 15_000);
+    }
+}
+
+#[cfg(test)]
+mod small_integer_format_tests {
+    use super::*;
+    fn previous(v: f64) -> String {
+        if v == 0.0 {
+            return if v.is_sign_negative() {
+                "-0".into()
+            } else {
+                "0".into()
+            };
+        }
+        let decimal = es_to_string(v);
+        if matches!(v, 100_000.0 | 1_000_000.0) {
+            let exponent = compact_exponent_text(&es_to_exponential(v));
+            if exponent.len() < decimal.len() {
+                return exponent;
+            }
+        }
+        decimal
+    }
+    #[test]
+    fn integer_shortcut_matches_independent_float_digit_formatting() {
+        for value in -8192..=8192 {
+            let v = value as f64;
+            assert_eq!(short_num(v), previous(v));
+        }
+        for center in [
+            i32::MIN as f64,
+            i32::MAX as f64,
+            100_000.0,
+            1_000_000.0,
+            -100_000.0,
+            -1_000_000.0,
+            9_007_199_254_740_992.0,
+        ] {
+            for delta in -4..=4 {
+                let v = center + delta as f64;
+                assert_eq!(short_num(v), previous(v));
+            }
+        }
+        let mut state = 0x243f_6a88u32;
+        for _ in 0..65_536 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let v = (state as i32) as f64;
+            assert_eq!(short_num(v), previous(v), "{v}");
+        }
+        assert_eq!(short_num(-0.0), "-0");
+        assert_eq!(short_num(0.0), "0");
+        assert_eq!(short_num(f64::NAN), "0/0");
+        assert_eq!(short_num(f64::INFINITY), "1/0");
+        assert_eq!(short_num(f64::NEG_INFINITY), "-1/0");
     }
 }

@@ -718,8 +718,37 @@ impl NodeArena {
             return;
         };
         origin.derive_action(transformation, ReasonOperation::Relate);
+        // A single contributor may already represent thousands of original
+        // expressions. Repeated Vec::contains then becomes quadratic even if
+        // the caller adds only this one contributor. Index only large unions;
+        // small relationships keep the allocation-free linear lookup.
+        let lookups = contributor.related.len() + contributor.relations.len();
+        let large = lookups >= 8
+            && (origin.value.related.len() + contributor.related.len() > 32
+                || origin.value.relations.len() + contributor.relations.len() > 32);
+        let mut spans = large.then(|| {
+            origin
+                .value
+                .related
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+        });
+        let mut relations = large.then(|| {
+            origin
+                .value
+                .relations
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
+        });
         for span in contributor.primary.iter().chain(contributor.related.iter()) {
-            if origin.value.primary != Some(*span) && !origin.value.related.contains(span) {
+            if origin.value.primary != Some(*span)
+                && match spans.as_mut() {
+                    Some(seen) => seen.insert(*span),
+                    None => !origin.value.related.contains(span),
+                }
+            {
                 Arc::make_mut(&mut origin.value.related).push(*span);
             }
             let relation = SourceRelation {
@@ -730,12 +759,18 @@ impl NodeArena {
                 },
                 span: *span,
             };
-            if !origin.value.relations.contains(&relation) {
+            if match relations.as_mut() {
+                Some(seen) => seen.insert(relation.clone()),
+                None => !origin.value.relations.contains(&relation),
+            } {
                 Arc::make_mut(&mut origin.value.relations).push(relation);
             }
         }
         for relation in contributor.relations.iter() {
-            if !origin.value.relations.contains(relation) {
+            if match relations.as_mut() {
+                Some(seen) => seen.insert(relation.clone()),
+                None => !origin.value.relations.contains(relation),
+            } {
                 Arc::make_mut(&mut origin.value.relations).push(relation.clone());
             }
         }
@@ -1157,6 +1192,146 @@ mod batch_relation_tests {
                     serde_json::to_vec(&synthetic).unwrap()
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod ordered_relation_union_tests {
+    use super::*;
+    use crate::provenance::GeneratedOrigins;
+    use crate::{parse_source_with_origins, Printer};
+    fn reference(
+        arena: &mut NodeArena,
+        node: NodeId,
+        snapshot: Option<ContributionSnapshot>,
+        transformation: &str,
+        role: RelationRole,
+    ) {
+        let Some(snapshot) = snapshot.filter(|_| arena.tracks_origins()) else {
+            return;
+        };
+
+        let contributor = arena.import_contribution(snapshot);
+        let Some(target) = arena
+            .origins
+            .as_mut()
+            .and_then(|origins| Arc::make_mut(&mut origins.slots)[node as usize].as_mut())
+        else {
+            return;
+        };
+        let target = Arc::make_mut(target);
+        let Some(origin) = target.origin.as_mut() else {
+            return;
+        };
+        origin.derive_action(transformation, ReasonOperation::Relate);
+        for span in contributor.primary.iter().chain(contributor.related.iter()) {
+            if origin.value.primary != Some(*span) && !origin.value.related.contains(span) {
+                Arc::make_mut(&mut origin.value.related).push(*span);
+            }
+            let relation = SourceRelation {
+                role: if contributor.primary == Some(*span) {
+                    role
+                } else {
+                    RelationRole::Contribution
+                },
+                span: *span,
+            };
+            if !origin.value.relations.contains(&relation) {
+                Arc::make_mut(&mut origin.value.relations).push(relation);
+            }
+        }
+        for relation in contributor.relations.iter() {
+            if !origin.value.relations.contains(relation) {
+                Arc::make_mut(&mut origin.value.relations).push(relation.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn transitive_unions_keep_order_roles_duplicates_and_foreign_source_identity() {
+        for count in [0, 1, 8, 31, 32, 33, 128, 1024] {
+            let source = (0..count + 3)
+                .map(|i| format!("output.setNumber(1,{i}) "))
+                .collect::<String>();
+            let (mut input, input_root) = parse_source_with_origins("source.lua", &source).unwrap();
+            let numbers = input
+                .nodes
+                .iter()
+                .enumerate()
+                .filter_map(|(i, n)| matches!(n, Node::Num(_)).then_some(i as NodeId))
+                .collect::<Vec<_>>();
+            let from = numbers[0];
+            let mut rich = input.clone();
+            rich.nodes
+                .relate_many_from(from, &input.nodes, &numbers[1..count + 1], "gather");
+            rich.nodes.relate_from_role(
+                from,
+                &input.nodes,
+                numbers[1],
+                "argument",
+                RelationRole::Argument,
+            );
+            for foreign in [false, true] {
+                for role in [
+                    RelationRole::Contribution,
+                    RelationRole::Definition,
+                    RelationRole::CallSite,
+                    RelationRole::Argument,
+                    RelationRole::ParameterUse,
+                    RelationRole::UseSite,
+                ] {
+                    let (mut actual, root) = if foreign {
+                        parse_source_with_origins("source.lua", "output.setNumber(1,9)").unwrap()
+                    } else {
+                        (input.clone(), input_root)
+                    };
+                    let node = actual
+                        .nodes
+                        .iter()
+                        .position(|n| matches!(n, Node::Num(_)))
+                        .unwrap() as NodeId;
+                    let mut expected = actual.clone();
+                    for iteration in 0..3 {
+                        let source = if iteration == 1 { &input } else { &rich };
+                        reference(
+                            &mut expected.nodes,
+                            node,
+                            source.nodes.capture_contribution(from),
+                            "join",
+                            role,
+                        );
+                        actual
+                            .nodes
+                            .relate_from_role(node, &source.nodes, from, "join", role);
+                        assert_eq!(
+                            serde_json::to_value(&actual).unwrap(),
+                            serde_json::to_value(&expected).unwrap(),
+                            "count={count}, foreign={foreign}, role={role:?}, repeat={iteration}"
+                        );
+                    }
+                    let a = Printer::new(&actual, false).output_with_positions(root);
+                    let b = Printer::new(&expected, false).output_with_positions(root);
+                    assert_eq!(a.code, b.code);
+                    assert_eq!(
+                        GeneratedOrigins::from_print(&actual, &a),
+                        GeneratedOrigins::from_print(&expected, &b)
+                    );
+                }
+            }
+            // Missing attribution is not replaced by a source-number guess.
+            let value = input.node(from).clone();
+            input.nodes[from as usize] = value;
+            let before = serde_json::to_vec(&rich).unwrap();
+            rich.nodes.relate_from_role(
+                from,
+                &input.nodes,
+                from,
+                "missing",
+                RelationRole::Argument,
+            );
+            assert_eq!(serde_json::to_vec(&rich).unwrap(), before);
         }
     }
 }

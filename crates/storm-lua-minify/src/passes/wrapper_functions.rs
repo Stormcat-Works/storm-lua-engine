@@ -610,9 +610,9 @@ fn annotate_wrapper_argument(
             target
                 .nodes
                 .derive_from(id, &source.nodes, inputs[0], reason);
-            for &input in &inputs[1..] {
-                target.nodes.relate_from(id, &source.nodes, input, reason);
-            }
+            target
+                .nodes
+                .relate_many_from(id, &source.nodes, &inputs[1..], reason);
         }
     }
 }

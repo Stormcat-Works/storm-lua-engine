@@ -1,5 +1,15 @@
 # Current status
 
+## v0.3.1 Map追加時間の削減（開発中・2026-10-04）
+
+`feat/minify-performance-v0.3.1`を継続使用。既存の由来共有・サイズ評価高速化を`d3bd35c`へ保存し、実コーパスの調査に基づく計画を`bf5e2d7`、API別名候補の選択と由来の再適用を`153a8c9`でcommitした。**push・公開・main/releaseへの反映は行っていない。**
+
+API別名の試行候補では由来情報を作らず、同じ探索で選んだ別名集合だけを元の由来付きASTへ再適用する。生成Lua、候補順・同点判定、全てのマップ情報を維持する。[計画](docs/design/map-delta-reduction-v031.md)、[実装と実測](docs/verification/map-delta-reduction-20261004.md)。
+
+無計測WASMで実コーパスを比較した全探索の成功4,054本では、Map追加時間（Mapあり−なし）が合計で66.3%減少し、平均時間比は1.387→1.131倍。全コーパスは各variant1回の観測で、別に21入力の3反復を行った。平均比が1.2以下でも、個別の最大1.2倍の目標は未達。原文返却・小入力・字句短縮に残る固定費を隠さない。
+
+実コーパスの8,182成功組、固定240設定、未達target、新旧reader、Worker混成、Native786件、SDK30件、実WASM81件、Playground/CLI38件と3ブラウザーを検証した。既知の全探索WASM trap 7原文は別に新旧確認し、修正済みとしない。追加の性能改善は未完了で、v0.3.1はまだ未公開。
+
 ## v0.3.0 公開完了（2026-10-02）
 
 `feat/minify-source-provenance-v0.3`で全67パスの内部由来対応に加え、最適化理由付きSource Map v3をRust/WASM/TSの開発APIへ接続した。`sourceMap:true`で`map`を返し、`validateSourceMap(code,map)`で内容指紋と詳細/標準mapの整合性を確認する。通常/LifeBoatの複数ファイル合成と、Worker経由の取得も対応。[実装・検証・性能](docs/verification/optimization-explanations-20261001.md)。

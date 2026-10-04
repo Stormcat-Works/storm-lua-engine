@@ -801,7 +801,7 @@ pub fn semantic_key(ast: &Ast, id: NodeId) -> String {
 
 /// `astSame`: 2 ノード（同一 Ast 内）の意味等価性。
 pub fn ast_same(ast: &Ast, a: NodeId, b: NodeId) -> bool {
-    storm_lua_syntax::dump::dump(ast, a) == storm_lua_syntax::dump::dump(ast, b)
+    storm_lua_syntax::dump::same(ast, a, b)
 }
 
 /// `countBindingUses`: サブツリー内の read/write 使用回数を bid ごとに数える。
@@ -815,35 +815,43 @@ pub fn count_binding_uses(
 ) {
     let mut reads: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
     let mut writes: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-    let mut nodes = Vec::new();
-    walk(ast, id, &mut nodes);
-    for &nid in &nodes {
-        if let Node::Name(_) = ast.nodes[nid as usize] {
-            if let Some(bid) = res.node_bid[nid as usize] {
-                let m = if res.node_write[nid as usize] {
-                    &mut writes
+    fn collect(
+        ast: &Ast,
+        res: &Resolution,
+        node: NodeId,
+        reads: &mut std::collections::HashMap<u32, u32>,
+        writes: &mut std::collections::HashMap<u32, u32>,
+    ) {
+        if let Node::Name(_) = ast.node(node) {
+            if let Some(bid) = res.node_bid[node as usize] {
+                let target = if res.node_write[node as usize] {
+                    &mut *writes
                 } else {
-                    &mut reads
+                    &mut *reads
                 };
-                *m.entry(bid).or_insert(0) += 1;
+                *target.entry(bid).or_insert(0) += 1;
             }
         }
+        for_each_child(ast, node, &mut |child| {
+            collect(ast, res, child, reads, writes)
+        });
     }
+    collect(ast, res, id, &mut reads, &mut writes);
     (reads, writes)
 }
 
 /// `containsBinding`: サブツリー内に bid への参照が存在するか。
 pub fn contains_binding(ast: &Ast, res: &Resolution, id: NodeId, bid: u32) -> bool {
-    let mut nodes = Vec::new();
-    walk(ast, id, &mut nodes);
-    for &nid in &nodes {
-        if let Node::Name(_) = ast.nodes[nid as usize] {
-            if res.node_bid[nid as usize] == Some(bid) {
-                return true;
-            }
-        }
+    if matches!(ast.node(id), Node::Name(_)) && res.node_bid[id as usize] == Some(bid) {
+        return true;
     }
-    false
+    let mut found = false;
+    for_each_child(ast, id, &mut |child| {
+        if !found {
+            found = contains_binding(ast, res, child, bid);
+        }
+    });
+    found
 }
 
 #[cfg(test)]
@@ -1342,6 +1350,57 @@ mod summary_dependency_tests {
             }
             source.push_str("function onTick()f0(2)end");
             compare(&source);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod binding_query_tests {
+    use super::*;
+    fn verify(ast: &Ast, root: NodeId) {
+        let res = crate::resolver::resolve(ast, root);
+        for id in 0..ast.nodes.len() as NodeId {
+            let mut sequence = Vec::new();
+            walk(ast, id, &mut sequence);
+            let mut reads = std::collections::HashMap::new();
+            let mut writes = std::collections::HashMap::new();
+            for &node in &sequence {
+                if matches!(ast.node(node), Node::Name(_)) {
+                    if let Some(bid) = res.node_bid[node as usize] {
+                        *if res.node_write[node as usize] {
+                            &mut writes
+                        } else {
+                            &mut reads
+                        }
+                        .entry(bid)
+                        .or_insert(0) += 1;
+                    }
+                }
+            }
+            assert_eq!(count_binding_uses(ast, &res, id), (reads, writes));
+            for bid in 0..res.bindings.len() as u32 + 1 {
+                let expected = sequence.iter().any(|&node| {
+                    matches!(ast.node(node), Node::Name(_))
+                        && res.node_bid[node as usize] == Some(bid)
+                });
+                assert_eq!(contains_binding(ast, &res, id, bid), expected);
+            }
+        }
+    }
+    #[test]
+    fn allocation_free_queries_preserve_occurrences_subroots_and_absent_bindings() {
+        for source in [
+            "local x=1 y=x do local x=2 y=x end output.setNumber(1,y)",
+            "local t={} local function f(x) for i=1,3 do t[x+i]=x end return t end function onTick()output.setNumber(1,f(1)[1])end",
+            "a=1 if input.getBool(1)then a=a+1 else a=0 end ::again:: for k,v in pairs(tab)do tab[k]=v end",
+        ] {
+            let (mut ast,root)=storm_lua_syntax::parse_source(source).unwrap();verify(&ast,root);
+            if let Node::Block(statements)=ast.node(root) {
+                let mut repeated=statements.clone();repeated.extend_from_slice(statements);
+                ast.nodes[root as usize]=Node::Block(repeated);
+            }
+            verify(&ast,root);
         }
     }
 }

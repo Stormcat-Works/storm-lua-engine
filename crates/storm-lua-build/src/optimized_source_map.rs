@@ -199,12 +199,24 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
             })
         })
         .collect();
+    let generated = identity(code);
+    let sources = origins
+        .sources
+        .iter()
+        .map(|s| {
+            if s.text.as_ref() == code {
+                generated.clone()
+            } else {
+                identity(&s.text)
+            }
+        })
+        .collect();
     MapExtension {
         schema_version: SCHEMA_VERSION,
         producer: producer(),
         coordinate_unit: "utf8-bytes".into(),
-        generated: identity(code),
-        sources: origins.sources.iter().map(|s| identity(&s.text)).collect(),
+        generated,
+        sources,
         compilation,
         origins: records,
         reasons,
@@ -261,7 +273,7 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
     let indexes = origins
         .sources
         .iter()
-        .map(|s| LineIndex::new(&s.text))
+        .map(|s| (s.text.as_ref() != code).then(|| LineIndex::new(&s.text)))
         .collect::<Vec<_>>();
     let mut builder = SourceMapBuilder::new(None);
     // Temporary unique labels avoid merging two snapshots with the same display name.
@@ -270,7 +282,9 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
         if actual as usize != id {
             return Err("source map source ordering changed".into());
         }
-        builder.set_source_contents(actual, Some(&source.text));
+        // Only source IDs are needed during VLQ encoding. Actual snapshots are
+        // attached once below, rather than copied through the temporary encoder.
+        let _ = source;
     }
     let mut names = HashMap::new();
     for origin in &origins.origins {
@@ -280,23 +294,25 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
                 .or_insert_with(|| builder.add_name(name));
         }
     }
-    let mut anchors = BTreeSet::from([0, code.len()]);
+    let mut anchors = vec![0, code.len()];
     anchors.extend(
         code.bytes()
             .enumerate()
             .filter_map(|(i, b)| (b == b'\n').then_some(i + 1)),
     );
     for mapping in &origins.mappings {
-        anchors.insert(mapping.start);
-        anchors.insert(mapping.end);
+        anchors.push(mapping.start);
+        anchors.push(mapping.end);
     }
     anchors.extend(
         Lexer::new(code)
-            .all()
+            .all_borrowed()
             .map_err(|e| e.to_string())?
             .into_iter()
             .map(|t| t.p),
     );
+    anchors.sort_unstable();
+    anchors.dedup();
     let mut current = 0;
     for byte in anchors {
         while current < origins.mappings.len() && origins.mappings[current].end <= byte {
@@ -325,6 +341,8 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
             .ok_or("invalid generated anchor")?;
         if let Some((source, offset, name)) = original {
             let (src_line, src_col) = indexes[source as usize]
+                .as_ref()
+                .unwrap_or(&generated)
                 .utf16_position(offset)
                 .ok_or("invalid original anchor")?;
             builder.add_raw(
@@ -498,4 +516,159 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
     sourcemap::SourceMap::from_slice(map.as_bytes())
         .map_err(|e| format!("invalid standard source map: {e}"))?;
     Ok(details)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod contiguous_anchor_tests {
+    use super::*;
+    use storm_lua_syntax::{parse_source_with_origins, Printer};
+    fn reference_standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
+        let generated = LineIndex::new(code);
+        let indexes = origins
+            .sources
+            .iter()
+            .map(|s| LineIndex::new(&s.text))
+            .collect::<Vec<_>>();
+        let mut builder = SourceMapBuilder::new(None);
+        // Temporary unique labels avoid merging two snapshots with the same display name.
+        for (id, source) in origins.sources.iter().enumerate() {
+            let actual = builder.add_source(&format!("source-{id}"));
+            if actual as usize != id {
+                return Err("source map source ordering changed".into());
+            }
+            builder.set_source_contents(actual, Some(&source.text));
+        }
+        let mut names = HashMap::new();
+        for origin in &origins.origins {
+            if let Some(name) = &origin.name {
+                names
+                    .entry(name.as_ref())
+                    .or_insert_with(|| builder.add_name(name));
+            }
+        }
+        let mut anchors = BTreeSet::from([0, code.len()]);
+        anchors.extend(
+            code.bytes()
+                .enumerate()
+                .filter_map(|(i, b)| (b == b'\n').then_some(i + 1)),
+        );
+        for mapping in &origins.mappings {
+            anchors.insert(mapping.start);
+            anchors.insert(mapping.end);
+        }
+        anchors.extend(
+            Lexer::new(code)
+                .all_borrowed()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|t| t.p),
+        );
+        let mut current = 0;
+        for byte in anchors {
+            while current < origins.mappings.len() && origins.mappings[current].end <= byte {
+                current += 1;
+            }
+            let mapping = origins
+                .mappings
+                .get(current)
+                .filter(|m| m.start <= byte && byte < m.end);
+            let original = mapping.and_then(|m| {
+                let origin = m.origin.map(|i| &origins.origins[i as usize])?;
+                if let Some(copy) = m.copied {
+                    Some((
+                        copy.source,
+                        copy.start + byte - m.start,
+                        origin.name.as_deref(),
+                    ))
+                } else {
+                    origin
+                        .primary
+                        .map(|s| (s.source, s.start, origin.name.as_deref()))
+                }
+            });
+            let (line, col) = generated
+                .utf16_position(byte)
+                .ok_or("invalid generated anchor")?;
+            if let Some((source, offset, name)) = original {
+                let (src_line, src_col) = indexes[source as usize]
+                    .utf16_position(offset)
+                    .ok_or("invalid original anchor")?;
+                builder.add_raw(
+                    line,
+                    col,
+                    src_line,
+                    src_col,
+                    Some(source),
+                    name.map(|n| names[n]),
+                    false,
+                );
+            } else {
+                builder.add_raw(line, col, 0, 0, None, None, false);
+            }
+        }
+        let mut bytes = Vec::new();
+        builder
+            .into_sourcemap()
+            .to_writer(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        let mut map: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        map["sources"] = json!(origins
+            .sources
+            .iter()
+            .map(|s| s.name.as_ref())
+            .collect::<Vec<_>>());
+        map["sourcesContent"] = json!(origins
+            .sources
+            .iter()
+            .map(|s| s.text.as_ref())
+            .collect::<Vec<_>>());
+        Ok(map)
+    }
+
+    fn compare(code: &str, origins: &GeneratedOrigins) {
+        origins.validate_for_code(code).unwrap();
+        assert_eq!(
+            standard_map(code, origins).unwrap(),
+            reference_standard_map(code, origins).unwrap()
+        );
+        let map = encode(
+            code,
+            origins,
+            json!({"integrity":"", "text":"\"integrity\":\"\""}),
+        )
+        .unwrap();
+        validate(code, &map).unwrap();
+    }
+    #[test]
+    fn contiguous_anchors_match_the_previous_ordered_set_and_source_contents() {
+        for source in [
+            "",
+            "-- only comment
+",
+            "-- 雪😀\r\nfunction onTick()output.setNumber(1,2*3)end\r\n",
+            "local _ENV=_ENV
+function onDraw()screen.drawText(0,0,'雪😀')end",
+            "function f(x)return x+1 end
+function onTick()output.setNumber(1,f(2))end",
+        ] {
+            let identity = GeneratedOrigins::identity("same.lua", source);
+            compare(source, &identity);
+            let (code, copied) =
+                storm_lua_syntax::print::lexical_minify_with_origins("same.lua", source).unwrap();
+            compare(&code, &copied);
+            let (ast, root) = parse_source_with_origins("same.lua", source).unwrap();
+            for newlines in [false, true] {
+                let printed = Printer::new(&ast, newlines).output_with_positions(root);
+                let mapped = GeneratedOrigins::from_print(&ast, &printed).unwrap();
+                compare(&printed.code, &mapped);
+            }
+            let mut two = identity.clone();
+            Arc::make_mut(&mut two.sources).push(SourceSnapshot {
+                name: "same.lua".into(),
+                text: "different snapshot".into(),
+            });
+            compare(source, &two);
+        }
+    }
 }

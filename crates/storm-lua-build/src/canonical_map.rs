@@ -1,4 +1,4 @@
-//! Stream the existing schema-1 canonical JSON without first expanding every
+//! Write the existing schema-1 canonical JSON once without first expanding every
 //! record into serde_json::Value. Fields are written in lexicographic key order,
 //! exactly as the previous Value/BTreeMap encoder did. This is not a new format.
 use crate::optimized_source_map::{MapDisposition, MapExtension, MapOrigin, MapProducer};
@@ -6,7 +6,8 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Serialize, Serializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::io::{BufWriter, Write};
+use std::cell::Cell;
+use std::io::Write;
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
 use storm_lua_syntax::provenance::{GeneratedConstruct, OriginMapping, SourceSpan};
 
@@ -123,9 +124,41 @@ impl Serialize for Canonical<'_, MapProducer> {
         m.end()
     }
 }
+// Capture the exact JSON string location structurally. Never search text for
+// an integrity-like key: source text and property names can contain that text.
+#[derive(Default)]
+struct IntegrityPosition {
+    bytes_written: Cell<usize>,
+    string_content: Cell<Option<usize>>,
+}
+struct Integrity<'a> {
+    value: &'a str,
+    position: &'a IntegrityPosition,
+}
+impl Serialize for Integrity<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.position
+            .string_content
+            .set(Some(self.position.bytes_written.get() + 1));
+        s.serialize_str(self.value)
+    }
+}
+struct Extension<'a> {
+    value: &'a MapExtension,
+    position: Option<&'a IntegrityPosition>,
+}
 impl Serialize for Canonical<'_, MapExtension> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
+        Extension {
+            value: self.0,
+            position: None,
+        }
+        .serialize(s)
+    }
+}
+impl Serialize for Extension<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let v = self.value;
         let mut m = s.serialize_map(Some(14))?;
         m.serialize_entry("compilation", &v.compilation)?;
         m.serialize_entry("constructs", &Items(&v.constructs))?;
@@ -133,7 +166,17 @@ impl Serialize for Canonical<'_, MapExtension> {
         m.serialize_entry("coordinateUnit", &v.coordinate_unit)?;
         m.serialize_entry("dispositions", &Items(&v.dispositions))?;
         m.serialize_entry("generated", &v.generated)?;
-        m.serialize_entry("integrity", &v.integrity)?;
+        if let Some(position) = self.position {
+            m.serialize_entry(
+                "integrity",
+                &Integrity {
+                    value: &v.integrity,
+                    position,
+                },
+            )?;
+        } else {
+            m.serialize_entry("integrity", &v.integrity)?;
+        }
         m.serialize_entry("mappings", &Items(&v.mappings))?;
         m.serialize_entry("origins", &Items(&v.origins))?;
         m.serialize_entry("producer", &Canonical(&v.producer))?;
@@ -147,6 +190,7 @@ impl Serialize for Canonical<'_, MapExtension> {
 struct Document<'a> {
     standard: &'a serde_json::Map<String, Value>,
     extension: &'a MapExtension,
+    position: &'a IntegrityPosition,
 }
 impl Serialize for Document<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -156,14 +200,24 @@ impl Serialize for Document<'_> {
         for (name, value) in self.standard {
             m.serialize_entry(name, value)?;
         }
-        m.serialize_entry("x_storm", &Canonical(self.extension))?;
+        m.serialize_entry(
+            "x_storm",
+            &Extension {
+                value: self.extension,
+                position: Some(self.position),
+            },
+        )?;
         m.end()
     }
 }
-struct HashWriter<'a>(&'a mut Sha256);
-impl Write for HashWriter<'_> {
+struct MapWriter<'a> {
+    bytes: Vec<u8>,
+    position: &'a IntegrityPosition,
+}
+impl Write for MapWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
+        self.bytes.extend_from_slice(bytes);
+        self.position.bytes_written.set(self.bytes.len());
         Ok(bytes.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -175,25 +229,31 @@ pub(crate) fn encode(standard: &Value, mut extension: MapExtension) -> Result<St
     let standard = standard
         .as_object()
         .ok_or("standard source map is not an object")?;
-    let mut hash = Sha256::new();
-    {
-        let mut writer = BufWriter::with_capacity(16 * 1024, HashWriter(&mut hash));
-        serde_json::to_writer(
-            &mut writer,
-            &Document {
-                standard,
-                extension: &extension,
-            },
-        )
-        .map_err(|e| e.to_string())?;
-        writer.flush().map_err(|e| e.to_string())?;
-    }
-    extension.integrity = format!("{:x}", hash.finalize());
-    serde_json::to_string(&Document {
-        standard,
-        extension: &extension,
-    })
-    .map_err(|e| e.to_string())
+    extension.integrity.clear();
+    let position = IntegrityPosition::default();
+    let mut output = MapWriter {
+        bytes: Vec::new(),
+        position: &position,
+    };
+    // Serialize the canonical map once with the required empty digest field.
+    // Filling that recorded JSON string later does not change hash semantics.
+    serde_json::to_writer(
+        &mut output,
+        &Document {
+            standard,
+            extension: &extension,
+            position: &position,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    let at = position
+        .string_content
+        .get()
+        .ok_or("missing integrity location in encoded map")?;
+    let integrity = format!("{:x}", Sha256::digest(&output.bytes));
+    let mut encoded = String::from_utf8(output.bytes).map_err(|e| e.to_string())?;
+    encoded.insert_str(at, &integrity);
+    Ok(encoded)
 }
 
 #[cfg(test)]
@@ -268,5 +328,27 @@ mod canonical_tests {
             assert!(result.ok, "{:?}", result.diagnostics);
             check(result.code.as_ref().unwrap(), result.map.as_ref().unwrap());
         }
+    }
+
+    #[test]
+    fn structural_integrity_hole_is_not_confused_by_lookalike_keys_or_source_text() {
+        let source = "local text='integrity' function onTick()output.setNumber(1,2)end";
+        let result = compile(
+            source,
+            &serde_json::from_value(serde_json::json!({"sourceMap":true,"targetSize":8192}))
+                .unwrap(),
+        );
+        assert!(result.ok);
+        let code = result.code.unwrap();
+        let mut standard: Value = serde_json::from_str(&result.map.unwrap()).unwrap();
+        let mut extension: MapExtension =
+            serde_json::from_value(standard.as_object_mut().unwrap().remove("x_storm").unwrap())
+                .unwrap();
+        extension.compilation = serde_json::json!({"integrity":"", "inner":{"integrity":""}, "sourceText":"\"integrity\":\"\"雪😀"});
+        extension.integrity.clear();
+        let expected = old_encode(&standard, extension.clone());
+        let actual = encode(&standard, extension).unwrap();
+        assert_eq!(actual, expected);
+        validate(&code, &actual).unwrap();
     }
 }

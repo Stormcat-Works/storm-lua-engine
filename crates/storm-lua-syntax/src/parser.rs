@@ -81,6 +81,7 @@ pub struct Parser {
     i: usize,
     ast: Ast,
     capture_positions: bool,
+    capture_ranges: bool,
     positions: Vec<(u32, u32)>,
     spans: Vec<Option<(usize, usize)>>,
     names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
@@ -120,6 +121,7 @@ impl Parser {
             i: 0,
             ast: Ast::new(),
             capture_positions: false,
+            capture_ranges: false,
             positions: Vec::new(),
             spans: Vec::new(),
             names: std::collections::BTreeMap::new(),
@@ -132,6 +134,7 @@ impl Parser {
     pub fn new_capturing_positions(source: &str) -> Result<Self, LexError> {
         let mut parser = Self::new(source)?;
         parser.capture_positions = true;
+        parser.capture_ranges = true;
         Ok(parser)
     }
 
@@ -169,7 +172,7 @@ impl Parser {
     }
 
     fn span_from(&mut self, id: NodeId, start: usize) {
-        if self.capture_positions {
+        if self.capture_ranges {
             let end = self
                 .i
                 .checked_sub(1)
@@ -180,7 +183,7 @@ impl Parser {
     }
 
     fn mark_name(&mut self, id: NodeId, site: NameSite, token: usize) {
-        if self.capture_positions {
+        if self.capture_ranges {
             let token = &self.ts[token];
             debug_assert_eq!(token.k, TokenKind::Id);
             self.names
@@ -189,7 +192,7 @@ impl Parser {
     }
 
     fn record_name_token(&self, tokens: &mut Vec<usize>) {
-        if self.capture_positions {
+        if self.capture_ranges {
             tokens.push(self.i);
         }
     }
@@ -590,7 +593,7 @@ impl Parser {
             } else if self.cur_k() == TokenKind::Id
                 && self.ts.get(self.i + 1).is_some_and(|t| t.v == "=")
             {
-                if self.capture_positions {
+                if self.capture_ranges {
                     field_tokens.push((fs.len(), self.i));
                 }
                 let k = self.identifier()?;
@@ -720,6 +723,19 @@ pub fn parse_source_with_positions(
     source: &str,
 ) -> Result<(Ast, NodeId, NodePositions), ParserError> {
     let mut parser = Parser::new_capturing_positions(source).map_err(ParserError::Lex)?;
+    let root = parser.parse().map_err(ParserError::Parse)?;
+    let (ast, positions) = parser.into_ast_with_positions();
+    Ok((ast, root, positions))
+}
+
+/// Parse the same AST while recording only diagnostic line/byte-column points.
+/// Name and expression byte spans are intentionally absent; use the full
+/// position/origin parser for source maps or exact-range tooling.
+pub fn parse_source_with_diagnostic_positions(
+    source: &str,
+) -> Result<(Ast, NodeId, NodePositions), ParserError> {
+    let mut parser = Parser::new(source).map_err(ParserError::Lex)?;
+    parser.capture_positions = true;
     let root = parser.parse().map_err(ParserError::Parse)?;
     let (ast, positions) = parser.into_ast_with_positions();
     Ok((ast, root, positions))
@@ -1186,5 +1202,48 @@ mod conditional_origin_tests {
             !called.get(),
             "failed parses must not invoke a selection predicate"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod diagnostic_point_tests {
+    use super::*;
+    #[test]
+    fn line_only_positions_equal_full_positions_without_collecting_unused_ranges() {
+        for source in [
+            "",
+            "-- comment",
+            "local x=1 function f(a,...)if a then return x+a else return ... end end",
+            "local t={x=3,['雪']=4} function t:f(a)return self.x+a end",
+            "-- 😀雪\r\nfunction onTick()debug.traceback()end\r\n",
+            "for i=1,8 do local v=2 end",
+        ] {
+            let (expected, root, full) = parse_source_with_positions(source).unwrap();
+            let (actual, actual_root, points) =
+                parse_source_with_diagnostic_positions(source).unwrap();
+            assert_eq!(actual_root, root);
+            assert_eq!(
+                serde_json::to_value(&actual).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            for id in 0..actual.nodes.len() {
+                assert_eq!(points.get(id as u32), full.get(id as u32));
+            }
+            assert!(points.spans.is_empty());
+            assert!(points.names.is_empty());
+        }
+        for source in ["local =", "function f( end", "'unclosed"] {
+            assert_eq!(
+                parse_source_with_diagnostic_positions(source)
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                parse_source_with_positions(source)
+                    .err()
+                    .unwrap()
+                    .to_string()
+            );
+        }
     }
 }

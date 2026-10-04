@@ -229,6 +229,13 @@ impl PartialEq for SatisficingAttempt {
 const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
 fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, NodeId), String> {
+    // These options select lexical-only compilation independently of the AST.
+    // Keep the normal parse/validation but skip unused source-range collection.
+    if options.environment == storm_lua_spec::environment::EnvironmentProfile::Extended
+        || !options.host_bindings.is_empty()
+    {
+        return parse_source(source).map_err(|error| error.to_string());
+    }
     if let Some(name) = &options.origin_source {
         storm_lua_syntax::parser::parse_source_with_conditional_origins(name, source, |ast| {
             storm_lua_analysis::environment_checks::lexical_reason(

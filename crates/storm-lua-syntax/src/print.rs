@@ -60,6 +60,10 @@ fn needs_sep(a: &str, b: &str) -> bool {
     let (Some(x), Some(y)) = (a.chars().next_back(), b.chars().next()) else {
         return false;
     };
+    needs_sep_chars(x, y)
+}
+
+fn needs_sep_chars(x: char, y: char) -> bool {
     if (x.is_ascii_alphanumeric() || x == '_') && (y.is_ascii_alphanumeric() || y == '_') {
         return true;
     }
@@ -875,25 +879,45 @@ pub(crate) fn plain_name_from_string_literal(raw: &str) -> Option<Cow<'_, str>> 
 /// TS の tokenMinify は lexer エラー時に throw する。Rust は握りつぶさず
 /// `Err(LexError)` で伝播させる（AGENTS §7: エラーの握りつぶし禁止）。
 pub fn token_minify(source: &str) -> Result<String, crate::lexer::LexError> {
-    use crate::lexer::{Lexer, TokenKind};
     let mut out = String::with_capacity(source.len());
-    let mut lexer = Lexer::new(source);
-    let ts = lexer.all_borrowed()?;
-    for t in ts {
-        if t.k == TokenKind::Eof {
-            continue;
-        }
-        let value = match t.k {
-            TokenKind::Str => Cow::Owned(qstr(t.v)),
-            TokenKind::Num => render_num(t.v),
-            _ => Cow::Borrowed(t.v),
-        };
-        if needs_sep(&out, &value) {
-            out.push(' ');
-        }
-        out.push_str(&value);
-    }
+    emit_compact_tokens(source, |piece| out.push_str(piece))?;
     Ok(out)
+}
+
+/// Count the public UTF-16 token-minified baseline without materializing its
+/// source string. Rendering and separator decisions are shared with token_minify.
+pub fn token_minified_utf16_len(source: &str) -> Result<usize, crate::lexer::LexError> {
+    let mut size = 0;
+    emit_compact_tokens(source, |piece| size += piece.encode_utf16().count())?;
+    Ok(size)
+}
+
+fn emit_compact_tokens(
+    source: &str,
+    mut emit: impl FnMut(&str),
+) -> Result<(), crate::lexer::LexError> {
+    use crate::lexer::{Lexer, TokenKind};
+    let mut lexer = Lexer::new(source);
+    let mut last = None;
+    loop {
+        let token = lexer.next_borrowed()?;
+        if token.k == TokenKind::Eof {
+            break;
+        }
+        let value = match token.k {
+            TokenKind::Str => Cow::Owned(qstr(token.v)),
+            TokenKind::Num => render_num(token.v),
+            _ => Cow::Borrowed(token.v),
+        };
+        if let (Some(left), Some(right)) = (last, value.chars().next()) {
+            if needs_sep_chars(left, right) {
+                emit(" ");
+            }
+        }
+        emit(&value);
+        last = value.chars().next_back().or(last);
+    }
+    Ok(())
 }
 
 /// Remove comments and redundant separators without rewriting names, literals, or line endings.
@@ -1129,6 +1153,88 @@ mod emission_tests {
             let result = Printer::new(&ast, false).block(root);
             assert!(result.emissions.is_empty());
             assert_eq!(result.emissions.capacity(), 0);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod token_baseline_size_tests {
+    use super::*;
+    fn reference_token_minify(source: &str) -> Result<String, crate::lexer::LexError> {
+        use crate::lexer::{Lexer, TokenKind};
+        let mut out = String::with_capacity(source.len());
+        let mut lexer = Lexer::new(source);
+        let ts = lexer.all_borrowed()?;
+        for t in ts {
+            if t.k == TokenKind::Eof {
+                continue;
+            }
+            let value = match t.k {
+                TokenKind::Str => Cow::Owned(qstr(t.v)),
+                TokenKind::Num => render_num(t.v),
+                _ => Cow::Borrowed(t.v),
+            };
+            if needs_sep(&out, &value) {
+                out.push(' ');
+            }
+            out.push_str(&value);
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn token_baseline_length_and_bytes_match_previous_materialized_stream() {
+        let atoms = [
+            "x",
+            "if",
+            "-",
+            ".",
+            "..",
+            "...",
+            "1",
+            "0x1p3",
+            ".5",
+            "'雪😀'",
+            "[=[literal]=]",
+            "'a\\nb'",
+            "(",
+            ")",
+            "[",
+            "]",
+            ";",
+            "123e-2",
+        ];
+        for left in atoms {
+            for right in atoms {
+                let source = format!("{left} -- ignored\n {right}");
+                let previous = reference_token_minify(&source).unwrap();
+                assert_eq!(token_minify(&source).unwrap(), previous);
+                assert_eq!(
+                    token_minified_utf16_len(&source).unwrap(),
+                    previous.encode_utf16().count()
+                );
+            }
+        }
+        for source in [
+            "",
+            "-- comment",
+            "a- -1",
+            "return 1 .. '雪😀'",
+            "local _ENV=_ENV\r\nreturn 2*3",
+        ] {
+            let previous = reference_token_minify(source).unwrap();
+            assert_eq!(token_minify(source).unwrap(), previous);
+            assert_eq!(
+                token_minified_utf16_len(source).unwrap(),
+                previous.encode_utf16().count()
+            );
+        }
+        for source in ["'unclosed", "--[=[unclosed", "`"] {
+            assert_eq!(
+                token_minified_utf16_len(source).unwrap_err().to_string(),
+                reference_token_minify(source).unwrap_err().to_string()
+            );
         }
     }
 }

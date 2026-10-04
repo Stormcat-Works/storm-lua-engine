@@ -18,8 +18,8 @@ use storm_lua_minify::config::{
 };
 use storm_lua_minify::pass_ids::{OPTIMIZATION_PASS_IDS, PASS_RECORD_NAMES};
 use storm_lua_minify::search::{compile_code, CandidateSize, CompileCodeResult, SearchStats};
-use storm_lua_syntax::parser::{parse_source, parse_source_with_positions};
-use storm_lua_syntax::print::token_minify;
+use storm_lua_syntax::parser::{parse_source, parse_source_with_diagnostic_positions};
+use storm_lua_syntax::print::token_minified_utf16_len;
 use storm_lua_syntax::source_position::LineIndex;
 
 /// Optimization pipeline selection; numeric precision is configured separately.
@@ -456,7 +456,8 @@ fn failure_diagnostics(source: &str, error: &str) -> Vec<Diagnostic> {
 /// `compile()` の既知ハザード診断。位置サイドテーブル付きで再パースする
 /// （検索側とは別経路。完了時に一度だけ実行し、成功結果にも同じ診断を渡す）。
 fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnostic>, String> {
-    let (ast, root, positions) = parse_source_with_positions(source).map_err(|e| e.to_string())?;
+    let (ast, root, positions) =
+        parse_source_with_diagnostic_positions(source).map_err(|e| e.to_string())?;
     let mut diagnostics = storm_lua_analysis::environment_checks::diagnostics(
         &ast,
         root,
@@ -539,9 +540,7 @@ fn success(
 ) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
     let original = source.encode_utf16().count();
-    let baseline = token_minify(source)
-        .map(|value| value.encode_utf16().count())
-        .unwrap_or(original);
+    let baseline = token_minified_utf16_len(source).unwrap_or(original);
     let size = result.code.encode_utf16().count();
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     let tolerance = options.numeric_tolerance.unwrap_or(NumericTolerance {

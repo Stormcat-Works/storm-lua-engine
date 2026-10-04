@@ -304,13 +304,14 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
         anchors.push(mapping.start);
         anchors.push(mapping.end);
     }
-    anchors.extend(
-        Lexer::new(code)
-            .all_borrowed()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|t| t.p),
-    );
+    let mut lexer = Lexer::new(code);
+    loop {
+        let token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+        anchors.push(token.p);
+        if token.k == storm_lua_syntax::lexer::TokenKind::Eof {
+            break;
+        }
+    }
     anchors.sort_unstable();
     anchors.dedup();
     let mut current = 0;

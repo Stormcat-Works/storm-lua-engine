@@ -164,6 +164,50 @@ impl FunctionSummary {
     }
 }
 
+// A proven builtin reference keeps its root/alias and last member separate.
+// Calls usually use a single quoted member, so effect classification need not
+// allocate either a decoded key or a concatenated qualified name.
+struct BuiltinReference<'a> {
+    base: std::borrow::Cow<'a, str>,
+    member: Option<std::borrow::Cow<'a, str>>,
+}
+impl<'a> BuiltinReference<'a> {
+    fn is(&self, name: &str) -> bool {
+        match &self.member {
+            None => self.base == name,
+            Some(member) => name
+                .strip_prefix(self.base.as_ref())
+                .and_then(|suffix| suffix.strip_prefix('.'))
+                .is_some_and(|suffix| suffix == member.as_ref()),
+        }
+    }
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.base.starts_with(prefix)
+            || self.member.as_ref().is_some_and(|member| {
+                prefix
+                    .strip_prefix(self.base.as_ref())
+                    .and_then(|tail| tail.strip_prefix('.'))
+                    .is_some_and(|tail| member.starts_with(tail))
+            })
+    }
+    fn into_text(self) -> std::borrow::Cow<'a, str> {
+        match self.member {
+            None => self.base,
+            Some(member) => std::borrow::Cow::Owned(format!("{}.{}", self.base, member)),
+        }
+    }
+}
+fn borrowed_member(raw: &str) -> std::borrow::Cow<'_, str> {
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2 && matches!(bytes[0], b'\'' | b'"') && bytes.last() == Some(&bytes[0]) {
+        let inner = &raw[1..raw.len() - 1];
+        if !inner.as_bytes().contains(&b'\\') {
+            return std::borrow::Cow::Borrowed(inner);
+        }
+    }
+    std::borrow::Cow::Owned(decode_lua_string(raw))
+}
+
 pub struct EffectAnalyzer<'a> {
     ast: &'a Ast,
     res: &'a Resolution,
@@ -356,18 +400,26 @@ impl<'a> EffectAnalyzer<'a> {
 
     /// 証明済み single-write エイリアスのみを通してビルトイン root/member を解決する。
     pub fn resolve_builtin_reference(&self, x: NodeId) -> Option<String> {
+        self.builtin_reference(x)
+            .map(|value| value.into_text().into_owned())
+    }
+    fn builtin_reference(&self, x: NodeId) -> Option<BuiltinReference<'_>> {
         match &self.ast.nodes[x as usize] {
-            Node::Name(_) => {
-                let bid = self.res.node_bid[x as usize]?;
-                self.api_alias_get(bid).cloned()
-            }
+            Node::Name(_) => Some(BuiltinReference {
+                base: std::borrow::Cow::Borrowed(
+                    self.api_alias_get(self.res.node_bid[x as usize]?)?,
+                ),
+                member: None,
+            }),
             Node::Index(obj, key, _) => {
-                if let Node::Str(s) = &self.ast.nodes[*key as usize] {
-                    let base = self.resolve_builtin_reference(*obj)?;
-                    Some(format!("{}.{}", base, decode_lua_string(s)))
-                } else {
-                    None
-                }
+                let Node::Str(raw) = &self.ast.nodes[*key as usize] else {
+                    return None;
+                };
+                let base = self.builtin_reference(*obj)?.into_text();
+                Some(BuiltinReference {
+                    base,
+                    member: Some(borrowed_member(raw)),
+                })
             }
             _ => None,
         }
@@ -421,7 +473,7 @@ impl<'a> EffectAnalyzer<'a> {
                 e.may_throw |= !matches!(op.as_str(), "and" | "or" | "==" | "~=");
             }
             Node::Call(function, args, _) => {
-                let full = self.resolve_builtin_reference(*function);
+                let full = self.builtin_reference(*function);
                 // A proven builtin's callee lookup is total. Only suppress the
                 // callee's throw bit, never a previous sibling's or argument's.
                 let preceding_throw = e.may_throw;
@@ -431,6 +483,109 @@ impl<'a> EffectAnalyzer<'a> {
                 }
                 for &arg in args {
                     self.expr_into::<READS>(arg, e);
+                }
+                if let Some(full) = &full {
+                    if full.starts_with("screen.")
+                        && !full.is("screen.getWidth")
+                        && !full.is("screen.getHeight")
+                    {
+                        e.calls = true;
+                        e.ordered = true;
+                        e.stable = false;
+                        return;
+                    }
+                    if PURE_API.iter().any(|name| full.is(name)) {
+                        e.may_throw |= !TOTAL_API.iter().any(|name| full.is(name));
+                        e.stable &= self.stable_reads
+                            || (!full.starts_with("input.") && !full.starts_with("property."));
+                        return;
+                    }
+                    if EFFECT_API.iter().any(|name| full.is(name)) {
+                        e.calls = true;
+                        e.stable = false;
+                        return;
+                    }
+                }
+                if let (Node::Name(_), Some(bid)) = (
+                    &self.ast.nodes[*function as usize],
+                    self.res.node_bid[*function as usize],
+                ) {
+                    if let Some(s) = &self.summaries[bid as usize] {
+                        if READS {
+                            e.reads.extend_from_slice(&s.reads);
+                        }
+                        e.writes.extend_from_slice(&s.writes);
+                        e.calls |= s.calls;
+                        e.ordered |= s.ordered;
+                        e.may_throw |= s.may_throw;
+                        e.stable &= s.stable;
+                        return;
+                    }
+                }
+                e.calls = true;
+                e.may_throw = true;
+                e.stable = false;
+            }
+            _ => for_each_child(self.ast, x, &mut |q| self.expr_into::<READS>(q, e)),
+        }
+    }
+
+    #[cfg(test)]
+    fn allocating_expr_into<const READS: bool>(&self, x: NodeId, e: &mut Effects) {
+        match &self.ast.nodes[x as usize] {
+            Node::Name(_) => {
+                if let Some(bid) = self.res.node_bid[x as usize] {
+                    if READS {
+                        e.reads.push(bid);
+                    }
+                }
+            }
+            Node::Num(_)
+            | Node::Str(_)
+            | Node::Nil
+            | Node::Bool(_)
+            | Node::Vararg
+            | Node::Function(..) => {}
+            Node::Paren(x) => self.allocating_expr_into::<READS>(*x, e),
+            Node::Table(fs) => {
+                for f in fs {
+                    match f {
+                        storm_lua_syntax::ast::TableField::Arr(v)
+                        | storm_lua_syntax::ast::TableField::Name(_, v) => {
+                            self.allocating_expr_into::<READS>(*v, e);
+                        }
+                        storm_lua_syntax::ast::TableField::KVar(k, v) => {
+                            self.allocating_expr_into::<READS>(*k, e);
+                            self.allocating_expr_into::<READS>(*v, e);
+                        }
+                    }
+                }
+            }
+            Node::Index(obj, key, _) => {
+                self.allocating_expr_into::<READS>(*obj, e);
+                self.allocating_expr_into::<READS>(*key, e);
+                e.may_throw = true;
+            }
+            Node::Un(op, x) => {
+                self.allocating_expr_into::<READS>(*x, e);
+                e.may_throw |= matches!(op.as_str(), "-" | "#" | "~");
+            }
+            Node::Bin(op, l, r) => {
+                self.allocating_expr_into::<READS>(*l, e);
+                self.allocating_expr_into::<READS>(*r, e);
+                e.may_throw |= !matches!(op.as_str(), "and" | "or" | "==" | "~=");
+            }
+            Node::Call(function, args, _) => {
+                let full = self.resolve_builtin_reference(*function);
+                // A proven builtin's callee lookup is total. Only suppress the
+                // callee's throw bit, never a previous sibling's or argument's.
+                let preceding_throw = e.may_throw;
+                self.allocating_expr_into::<READS>(*function, e);
+                if full.is_some() {
+                    e.may_throw = preceding_throw;
+                }
+                for &arg in args {
+                    self.allocating_expr_into::<READS>(arg, e);
                 }
                 if let Some(full) = full.as_deref() {
                     if full.starts_with("screen.")
@@ -474,7 +629,9 @@ impl<'a> EffectAnalyzer<'a> {
                 e.may_throw = true;
                 e.stable = false;
             }
-            _ => for_each_child(self.ast, x, &mut |q| self.expr_into::<READS>(q, e)),
+            _ => for_each_child(self.ast, x, &mut |q| {
+                self.allocating_expr_into::<READS>(q, e)
+            }),
         }
     }
 
@@ -929,5 +1086,142 @@ mod construction_reuse_tests {
             .unwrap() as BindingId;
         res.node_bid[unreachable as usize] = Some(input_bid);
         compare_parsed(&ast, &res, root);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_builtin_tests {
+    use super::*;
+    use std::borrow::Cow;
+    #[test]
+    fn split_path_comparisons_preserve_exact_and_prefix_string_semantics() {
+        let names = PURE_API
+            .iter()
+            .chain(TOTAL_API)
+            .chain(EFFECT_API)
+            .copied()
+            .chain([
+                "screen.getWidth",
+                "screen.getHeight",
+                "screen.drawText",
+                "screen.",
+                "screen..",
+                "screen.a.b",
+                "screen.雪😀",
+                "input.",
+                "property.",
+                "",
+                ".",
+            ])
+            .collect::<Vec<_>>();
+        for &base in &names {
+            for member in [
+                None,
+                Some(""),
+                Some("getNumber"),
+                Some("sin"),
+                Some("getWidth"),
+                Some("getHeight"),
+                Some("drawText"),
+                Some("a.b"),
+                Some("雪😀"),
+                Some("\0"),
+            ] {
+                let r = BuiltinReference {
+                    base: Cow::Borrowed(base),
+                    member: member.map(Cow::Borrowed),
+                };
+                let text = member.map_or_else(|| base.to_owned(), |key| format!("{base}.{key}"));
+                for &name in &names {
+                    assert_eq!(r.is(name), text == name, "{text:?} vs {name:?}");
+                }
+                for prefix in ["screen.", "input.", "property.", "screen", "s", "", "."] {
+                    assert_eq!(r.starts_with(prefix), text.starts_with(prefix));
+                }
+                assert_eq!(r.into_text(), text);
+            }
+        }
+        for raw in [
+            "'sin'",
+            "\"drawText\"",
+            "'雪😀'",
+            "'a.b'",
+            "'s\\105n'",
+            "'\\0'",
+            "[=[getWidth]=]",
+            "[[\nvalue]]",
+            "'a\\z \n b'",
+            "'a\\\nb'",
+            "unquoted",
+        ] {
+            assert_eq!(borrowed_member(raw).as_ref(), decode_lua_string(raw));
+        }
+        assert!(matches!(borrowed_member("'sin'"), Cow::Borrowed(_)));
+    }
+    #[test]
+    fn borrowed_classification_matches_allocating_effects_with_aliases_shadowing_and_summaries() {
+        let mut sources=vec![
+            "i=input get=i.getNumber function f(v)return math.sin(v)end function onTick()output.setNumber(1,f(get(1)))end".to_owned(),
+            "i=input i={} function f()return i.getNumber(1)end".to_owned(),
+            "local input={} function f()return input.getNumber(1)end".to_owned(),
+            "m=math s=m['s\\105n'] function f(x)return s(x)end".to_owned(),
+            "s=screen function f()return s.getWidth()+s.getHeight()end function onDraw()s.drawText(0,0,'a')end".to_owned(),
+            "function f()local x=unknown()return table.unpack({1}),string['format']('%s',x)end".to_owned(),
+            "function a()return b()end function b()return a()end x=a()".to_owned(),
+            "math.foo.bar(1) screen['a.b'](2) screen['getWidth.more'](3) input['']()".to_owned(),
+        ];
+        for name in PURE_API.iter().chain(TOTAL_API).chain(EFFECT_API).chain(
+            [
+                "screen.drawText",
+                "screen.getWidth",
+                "screen.getHeight",
+                "math.notBuiltin",
+                "input.getNumber.extra",
+            ]
+            .iter(),
+        ) {
+            sources.push(format!(
+                "function f(x)return {name}(x,1)end function onTick()f(input.getNumber(1))end"
+            ));
+        }
+        for source in sources {
+            let (ast, root) = storm_lua_syntax::parse_source(&source).unwrap();
+            let res = crate::resolver::resolve(&ast, root);
+            let mut analyzer = EffectAnalyzer::new(&ast, &res, root, true);
+            for stable in [true, false] {
+                analyzer.stable_reads = stable;
+                for round in 0..2 {
+                    if round == 1 {
+                        for summary in analyzer.summaries.iter_mut().flatten() {
+                            summary.calls = !summary.calls;
+                            summary.may_throw = !summary.may_throw;
+                            summary.writes.push(1);
+                        }
+                    }
+                    for (id, _) in ast.nodes.iter().enumerate() {
+                        let mut expected = empty_effects();
+                        analyzer.allocating_expr_into::<true>(id as NodeId, &mut expected);
+                        assert_eq!(
+                            analyzer.effects_for_expr(id as NodeId),
+                            normalize_effects(expected.clone()),
+                            "source={source}, node={id}"
+                        );
+                        assert_eq!(
+                            analyzer.is_pure(id as NodeId),
+                            !expected.calls && !expected.ordered && expected.writes.is_empty()
+                        );
+                        assert_eq!(
+                            analyzer.is_movable(id as NodeId),
+                            !expected.calls
+                                && !expected.ordered
+                                && expected.writes.is_empty()
+                                && !expected.may_throw
+                                && expected.stable
+                        );
+                    }
+                }
+            }
+        }
     }
 }

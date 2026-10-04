@@ -878,15 +878,15 @@ pub fn token_minify(source: &str) -> Result<String, crate::lexer::LexError> {
     use crate::lexer::{Lexer, TokenKind};
     let mut out = String::with_capacity(source.len());
     let mut lexer = Lexer::new(source);
-    let ts = lexer.all()?;
+    let ts = lexer.all_borrowed()?;
     for t in ts {
         if t.k == TokenKind::Eof {
             continue;
         }
         let value = match t.k {
-            TokenKind::Str => Cow::Owned(qstr(&t.v)),
-            TokenKind::Num => render_num(&t.v),
-            _ => Cow::Borrowed(t.v.as_str()),
+            TokenKind::Str => Cow::Owned(qstr(t.v)),
+            TokenKind::Num => render_num(t.v),
+            _ => Cow::Borrowed(t.v),
         };
         if needs_sep(&out, &value) {
             out.push(' ');
@@ -920,7 +920,7 @@ fn lexical_minify_impl(
     track: bool,
 ) -> Result<(String, Vec<crate::provenance::CopiedToken>), crate::lexer::LexError> {
     use crate::lexer::{Lexer, TokenKind};
-    let tokens = Lexer::new(source).all()?;
+    let tokens = Lexer::new(source).all_borrowed()?;
     let compact_with = |spaced: bool| {
         let mut output = String::with_capacity(source.len());
         let mut end = 0;
@@ -931,12 +931,12 @@ fn lexical_minify_impl(
             output.extend(gap.chars().filter(|c| matches!(c, '\n' | '\r')));
             if before == output.len()
                 && !output.is_empty()
-                && (spaced || needs_sep(&output, &token.v))
+                && (spaced || needs_sep(&output, token.v))
             {
                 output.push(' ');
             }
             let generated_start = output.len();
-            output.push_str(&token.v);
+            output.push_str(token.v);
             end = token.p + token.v.len();
             if track {
                 copies.push(crate::provenance::CopiedToken {
@@ -955,13 +955,13 @@ fn lexical_minify_impl(
     let expected: Vec<_> = tokens
         .iter()
         .filter(|t| t.k != TokenKind::Eof)
-        .map(|t| (&t.k, t.v.as_str(), t.line))
+        .map(|t| (&t.k, t.v, t.line))
         .collect();
-    let matches = Lexer::new(&compact).all().is_ok_and(|actual| {
+    let matches = Lexer::new(&compact).all_borrowed().is_ok_and(|actual| {
         actual
             .iter()
             .filter(|t| t.k != TokenKind::Eof)
-            .map(|t| (&t.k, t.v.as_str(), t.line))
+            .map(|t| (&t.k, t.v, t.line))
             .eq(expected.iter().copied())
     });
     // Multi-character delimiters can require an explicit boundary. This branch

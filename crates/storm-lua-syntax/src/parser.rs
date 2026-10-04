@@ -47,7 +47,7 @@ pub enum NameSite {
 pub struct NodePositions {
     /// index = NodeId。
     positions: Vec<(u32, u32)>,
-    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    spans: Vec<Option<(usize, usize)>>,
     names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
@@ -62,7 +62,7 @@ impl NodePositions {
     /// A declaration's Function child starts at `(`; a function expression also
     /// includes its `function` keyword. Empty blocks have an empty span.
     pub fn span(&self, id: NodeId) -> Option<(usize, usize)> {
-        self.spans.get(&id).copied()
+        self.spans.get(id as usize).copied().flatten()
     }
     /// Exact source span of one identifier occurrence inside this parsed node.
     /// Implicit names (such as a method's self argument) have no source occurrence.
@@ -82,7 +82,7 @@ pub struct Parser {
     ast: Ast,
     capture_positions: bool,
     positions: Vec<(u32, u32)>,
-    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    spans: Vec<Option<(usize, usize)>>,
     names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
@@ -121,7 +121,7 @@ impl Parser {
             ast: Ast::new(),
             capture_positions: false,
             positions: Vec::new(),
-            spans: std::collections::BTreeMap::new(),
+            spans: Vec::new(),
             names: std::collections::BTreeMap::new(),
         })
     }
@@ -174,7 +174,8 @@ impl Parser {
                 .i
                 .checked_sub(1)
                 .map_or(start, |i| self.ts[i].p + self.ts[i].v.len());
-            self.spans.insert(id, (start, end.max(start)));
+            self.spans.resize(self.ast.nodes.len(), None);
+            self.spans[id as usize] = Some((start, end.max(start)));
         }
     }
 

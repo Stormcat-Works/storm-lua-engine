@@ -39,6 +39,33 @@ pub struct Token {
     pub col: u32,
 }
 
+/// A token borrowing its unchanged spelling from the original source.
+/// Intended for lexical tooling that does not need an owned token array.
+#[derive(Clone, Copy, Debug)]
+pub struct BorrowedToken<'a> {
+    /// Lexical category, identical to the owned token API.
+    pub k: TokenKind,
+    /// Exact source spelling; literals are not decoded or normalized.
+    pub v: &'a str,
+    /// Zero-based UTF-8 source offset.
+    pub p: usize,
+    /// One-based source line.
+    pub line: u32,
+    /// One-based source byte-column with the lexer's existing whitespace rules.
+    pub col: u32,
+}
+impl BorrowedToken<'_> {
+    fn into_owned(self) -> Token {
+        Token {
+            k: self.k,
+            v: self.v.to_owned(),
+            p: self.p,
+            line: self.line,
+            col: self.col,
+        }
+    }
+}
+
 /// `--@storm` プレフィックスの行コメント1件（位置つき生テキスト）。
 /// 本文（`ignore(...)` 等）の解析は P2 の仕事。ここでは捕捉のみ行う。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,6 +166,7 @@ fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// Stateful UTF-8 lexer. It borrows source and does not read files.
 pub struct Lexer<'a> {
+    source: &'a str,
     s: &'a [u8],
     i: usize,
     line: u32,
@@ -152,6 +180,7 @@ impl<'a> Lexer<'a> {
     /// Create a lexer over UTF-8 source without capturing comments.
     pub fn new(source: &'a str) -> Self {
         Self {
+            source,
             s: source.as_bytes(),
             i: 0,
             line: 1,
@@ -269,11 +298,9 @@ impl<'a> Lexer<'a> {
                         long: false,
                     });
                 }
-                if self.capture_storm_comments {
-                    let text = String::from_utf8_lossy(&self.s[start..self.i]).into_owned();
-                    if text.starts_with("--@storm") {
-                        self.storm_comments.push(StormComment { line, col, text });
-                    }
+                if self.capture_storm_comments && self.s[start..self.i].starts_with(b"--@storm") {
+                    let text = self.source[start..self.i].to_owned();
+                    self.storm_comments.push(StormComment { line, col, text });
                 }
                 continue;
             }
@@ -282,7 +309,7 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    fn read_long(&mut self, level: usize) -> Result<String, LexError> {
+    fn read_long(&mut self, level: usize) -> Result<(), LexError> {
         let start = self.i;
         self.adv(2 + level);
         let close = format!("]{}]", "=".repeat(level));
@@ -293,17 +320,22 @@ impl<'a> Lexer<'a> {
             None => return Err(LexError(format!("unclosed long bracket at {}", start))),
         };
         self.adv(j - self.i + close_bytes.len());
-        Ok(String::from_utf8_lossy(&self.s[start..self.i]).into_owned())
+        Ok(())
+    }
+
+    /// Read one owned token, preserving the existing public lexer contract.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Result<Token, LexError> {
+        self.next_borrowed().map(BorrowedToken::into_owned)
     }
 
     /// Read the next token, or report a lexical error with its location.
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Token, LexError> {
+    pub fn next_borrowed(&mut self) -> Result<BorrowedToken<'a>, LexError> {
         self.skip()?;
         if self.i >= self.s.len() {
-            return Ok(Token {
+            return Ok(BorrowedToken {
                 k: TokenKind::Eof,
-                v: String::new(),
+                v: "",
                 p: self.i,
                 line: self.line,
                 col: self.col,
@@ -315,8 +347,9 @@ impl<'a> Lexer<'a> {
         let ch = self.s[self.i];
 
         if let Some(level) = self.long_bracket(self.i) {
-            let v = self.read_long(level)?;
-            return Ok(Token {
+            self.read_long(level)?;
+            let v = &self.source[p..self.i];
+            return Ok(BorrowedToken {
                 k: TokenKind::Str,
                 v,
                 p,
@@ -344,8 +377,8 @@ impl<'a> Lexer<'a> {
             if !closed {
                 return Err(LexError(format!("unclosed string at {}:{}", line, col)));
             }
-            let v = String::from_utf8_lossy(&self.s[p..self.i]).into_owned();
-            return Ok(Token {
+            let v = &self.source[p..self.i];
+            return Ok(BorrowedToken {
                 k: TokenKind::Str,
                 v,
                 p,
@@ -358,21 +391,21 @@ impl<'a> Lexer<'a> {
             while self.i < self.s.len() && is_id_char(self.s[self.i]) {
                 self.adv(1);
             }
-            let v = String::from_utf8_lossy(&self.s[p..self.i]).into_owned();
-            let k = if KEYWORDS.contains(&v.as_str()) {
+            let v = &self.source[p..self.i];
+            let k = if KEYWORDS.contains(&v) {
                 TokenKind::Kw
             } else {
                 TokenKind::Id
             };
-            return Ok(Token { k, v, p, line, col });
+            return Ok(BorrowedToken { k, v, p, line, col });
         }
         if is_digit(ch) || (ch == b'.' && self.i + 1 < self.s.len() && is_digit(self.s[self.i + 1]))
         {
             let m = number_len(&self.s[self.i..])
                 .ok_or_else(|| LexError(format!("bad number at {}:{}", line, col)))?;
             self.adv(m);
-            let v = String::from_utf8_lossy(&self.s[p..self.i]).into_owned();
-            return Ok(Token {
+            let v = &self.source[p..self.i];
+            return Ok(BorrowedToken {
                 k: TokenKind::Num,
                 v,
                 p,
@@ -383,8 +416,8 @@ impl<'a> Lexer<'a> {
         for op in MULTI {
             if self.s[self.i..].starts_with(op) {
                 self.adv(op.len());
-                let v = String::from_utf8_lossy(op).into_owned();
-                return Ok(Token {
+                let v = &self.source[p..self.i];
+                return Ok(BorrowedToken {
                     k: TokenKind::Op,
                     v,
                     p,
@@ -395,8 +428,8 @@ impl<'a> Lexer<'a> {
         }
         if is_single_op(ch) {
             self.adv(1);
-            let v = (ch as char).to_string();
-            return Ok(Token {
+            let v = &self.source[p..self.i];
+            return Ok(BorrowedToken {
                 k: TokenKind::Op,
                 v,
                 p,
@@ -410,6 +443,20 @@ impl<'a> Lexer<'a> {
             line,
             col
         )))
+    }
+
+    /// Read a borrowed token stream, including EOF, without copying spellings.
+    /// Tokens remain valid for the source lifetime, independently of this lexer.
+    pub fn all_borrowed(&mut self) -> Result<Vec<BorrowedToken<'a>>, LexError> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_borrowed()?;
+            let eof = token.k == TokenKind::Eof;
+            tokens.push(token);
+            if eof {
+                return Ok(tokens);
+            }
+        }
     }
 
     /// Read the complete token stream, including the end-of-file token.
@@ -631,5 +678,76 @@ mod tests {
             Lexer::new("--[[ --@storm ignore(foo) ]]\nx=1").with_storm_comment_capture();
         lexer.all().expect("lex ok");
         assert!(lexer.storm_comments().is_empty());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_token_tests {
+    use super::*;
+    #[test]
+    fn borrowed_tokens_reference_source_and_match_owned_positions() {
+        let examples = [
+            "local a=1\noutput.setNumber(1,a)",
+            "--[==[ignored 雪😀\r\n[=[nested]=]]==]\r\nlocal t={x='雪😀',[[raw]]};return t.x",
+            "--@storm ignore(test)\r\nlocal _ENV=_ENV return 0x10,0x1p2,.5,1..2",
+            "\u{feff}\u{3000}local a=1 -- source\r\n return a//2<<1~=3",
+            "",
+            "-- only a comment",
+            "[=[long\r\nstring]=]",
+            "x='a\\\\b\\\"c' ::loop:: goto loop",
+        ];
+        for source in examples {
+            let mut owned = Lexer::new(source)
+                .with_comment_capture()
+                .with_storm_comment_capture();
+            let expected = owned.all().unwrap();
+            let mut borrowed = Lexer::new(source)
+                .with_comment_capture()
+                .with_storm_comment_capture();
+            let actual = borrowed.all_borrowed().unwrap();
+            assert_eq!(expected.len(), actual.len());
+            for (a, b) in actual.iter().zip(&expected) {
+                assert_eq!(
+                    (a.k, a.v, a.p, a.line, a.col),
+                    (b.k, b.v.as_str(), b.p, b.line, b.col)
+                );
+                assert_eq!(a.v, &source[a.p..a.p + a.v.len()]);
+                if !a.v.is_empty() {
+                    assert_eq!(a.v.as_ptr(), source[a.p..].as_ptr());
+                }
+            }
+            assert_eq!(owned.pos(), borrowed.pos());
+            assert_eq!(owned.storm_comments(), borrowed.storm_comments());
+            assert_eq!(
+                serde_json::to_value(owned.comments()).unwrap(),
+                serde_json::to_value(borrowed.comments()).unwrap()
+            );
+        }
+    }
+    #[test]
+    fn lexical_failures_and_long_comment_delimiters_remain_explicit() {
+        for (source, message) in [
+            ("'unfinished", "unclosed string at 1:1"),
+            ("[=[ unfinished", "unclosed long bracket at 0"),
+            ("--[==[ unfinished", "unclosed long bracket at 2"),
+            ("local x=`", "unexpected \"`\" at 1:9"),
+        ] {
+            assert_eq!(
+                Lexer::new(source).all_borrowed().unwrap_err().to_string(),
+                message
+            );
+            assert_eq!(Lexer::new(source).all().unwrap_err().to_string(), message);
+        }
+        for width in [0, 1, 2, 7, 33] {
+            let eq = "=".repeat(width);
+            let source = format!("--[{eq}[ comment\n雪😀 ]{eq}]\nreturn [={eq}[ payload ]={eq}]");
+            let tokens = Lexer::new(&source).all_borrowed().unwrap();
+            assert_eq!(tokens.len(), 3);
+            assert_eq!(tokens[0].v, "return");
+            assert_eq!(tokens[0].line, 3);
+            assert_eq!(tokens[1].k, TokenKind::Str);
+            assert!(tokens[1].v.contains("payload"));
+        }
     }
 }

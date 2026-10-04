@@ -264,7 +264,7 @@ impl ArenaOrigins {
             text: text.into(),
         }]);
         let tokens = crate::lexer::Lexer::new(text)
-            .all()
+            .all_borrowed()
             .map_err(|e| e.to_string())?;
         let mut slots = Vec::with_capacity(ast.nodes.len());
         for (id, node) in ast.nodes.iter().enumerate() {
@@ -796,11 +796,20 @@ impl GeneratedOrigins {
             constructs: Vec::new(),
             dispositions: empty_dispositions(),
         };
-        let mut interned = HashMap::new();
+        // Each lexical token has a distinct source span. Its origin is unique,
+        // so interning/cloning every descriptor cannot merge any of these rows.
+        output.origins.reserve(tokens.len());
+        output.mappings.reserve(tokens.len());
         let mut cursor = 0;
         for token in tokens {
             if cursor < token.start {
-                output.append(cursor, token.start, None, &mut interned);
+                output.mappings.push(OriginMapping {
+                    start: cursor,
+                    end: token.start,
+                    origin: None,
+                    copied: None,
+                    inline_contexts: Vec::new(),
+                });
             }
             let origin = Origin::source(
                 SourceSpan {
@@ -817,22 +826,29 @@ impl GeneratedOrigins {
                     .is_name
                     .then(|| source[token.source_start..token.source_end].into()),
             );
-            output.append_detail(
-                token.start,
-                token.end,
-                Some(&origin),
-                Some(SourceSpan {
+            let id = output.origins.len() as u32;
+            output.origins.push(origin);
+            output.mappings.push(OriginMapping {
+                start: token.start,
+                end: token.end,
+                origin: Some(id),
+                copied: Some(SourceSpan {
                     source: 0,
                     start: token.source_start,
                     end: token.source_end,
                 }),
-                Vec::new(),
-                &mut interned,
-            );
+                inline_contexts: Vec::new(),
+            });
             cursor = token.end;
         }
         if cursor < generated_len {
-            output.append(cursor, generated_len, None, &mut interned);
+            output.mappings.push(OriginMapping {
+                start: cursor,
+                end: generated_len,
+                origin: None,
+                copied: None,
+                inline_contexts: Vec::new(),
+            });
         }
         output
     }
@@ -1353,6 +1369,101 @@ mod deferred_final_tests {
                 expected,
                 "removed roots survive even empty output"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+impl GeneratedOrigins {
+    fn reference_copied_tokens(
+        name: &str,
+        source: &str,
+        generated_len: usize,
+        tokens: &[CopiedToken],
+    ) -> Self {
+        let mut output = Self {
+            sources: Arc::new(vec![SourceSnapshot {
+                name: name.into(),
+                text: source.into(),
+            }]),
+            origins: Vec::new(),
+            mappings: Vec::new(),
+            contexts: Vec::new(),
+            constructs: Vec::new(),
+            dispositions: empty_dispositions(),
+        };
+        let mut interned = HashMap::new();
+        let mut cursor = 0;
+        for token in tokens {
+            if cursor < token.start {
+                output.append(cursor, token.start, None, &mut interned);
+            }
+            let origin = Origin::source(
+                SourceSpan {
+                    source: 0,
+                    start: token.source_start,
+                    end: token.source_end,
+                },
+                if token.is_name {
+                    OriginPrecision::Name
+                } else {
+                    OriginPrecision::Token
+                },
+                token
+                    .is_name
+                    .then(|| source[token.source_start..token.source_end].into()),
+            );
+            output.append_detail(
+                token.start,
+                token.end,
+                Some(&origin),
+                Some(SourceSpan {
+                    source: 0,
+                    start: token.source_start,
+                    end: token.source_end,
+                }),
+                Vec::new(),
+                &mut interned,
+            );
+            cursor = token.end;
+        }
+        if cursor < generated_len {
+            output.append(cursor, generated_len, None, &mut interned);
+        }
+        output
+    }
+}
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod unique_lexical_origin_tests {
+    use super::*;
+    #[test]
+    fn unique_copy_ranges_match_the_generic_interner_including_gaps() {
+        for text in [
+            "",
+            "-- nothing
+",
+            "-- 雪😀\r\nlocal x='雪😀' return x,x,x",
+            "local _ENV=_ENV return [=[text]=]..'x'",
+            "if a then b(1)else b(2)end",
+        ] {
+            let tokens = crate::lexer::Lexer::new(text).all_borrowed().unwrap();
+            let copies = tokens
+                .iter()
+                .filter(|t| t.k != crate::lexer::TokenKind::Eof)
+                .map(|t| CopiedToken {
+                    start: t.p,
+                    end: t.p + t.v.len(),
+                    source_start: t.p,
+                    source_end: t.p + t.v.len(),
+                    is_name: t.k == crate::lexer::TokenKind::Id,
+                })
+                .collect::<Vec<_>>();
+            let previous =
+                GeneratedOrigins::reference_copied_tokens("lexical.lua", text, text.len(), &copies);
+            let actual = GeneratedOrigins::copied_tokens("lexical.lua", text, text.len(), &copies);
+            assert_eq!(actual, previous);
+            actual.validate_for_code(text).unwrap();
         }
     }
 }

@@ -458,10 +458,18 @@ fn failure_diagnostics(source: &str, error: &str) -> Vec<Diagnostic> {
 fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnostic>, String> {
     let (ast, root, positions) =
         parse_source_with_diagnostic_positions(source).map_err(|e| e.to_string())?;
+    Ok(hazards_from_parsed(&ast, root, &positions, options))
+}
+fn hazards_from_parsed(
+    ast: &storm_lua_syntax::Ast,
+    root: storm_lua_syntax::NodeId,
+    positions: &storm_lua_syntax::parser::NodePositions,
+    options: &CompileOptions,
+) -> Vec<Diagnostic> {
     let mut diagnostics = storm_lua_analysis::environment_checks::diagnostics(
-        &ast,
+        ast,
         root,
-        Some(&positions),
+        Some(positions),
         options.environment,
         &options.host_bindings,
         &Default::default(),
@@ -469,7 +477,7 @@ fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnost
         None,
     );
     if let Some(reason) = storm_lua_analysis::environment_checks::lexical_reason(
-        &ast,
+        ast,
         options.environment,
         &options.host_bindings,
     ) {
@@ -481,7 +489,7 @@ fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnost
         diagnostics.push(Diagnostic::warning(codes::CONSERVATIVE_MINIFICATION,
             format!("Token-preserving minification only: {reason}. Names, literals, globals, token line positions and evaluation order are unchanged; property specialization and AST passes are not applied.")).with_range(range));
     }
-    Ok(diagnostics)
+    diagnostics
 }
 
 fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats {
@@ -635,14 +643,20 @@ pub fn finish_compile_result(
     result: Result<CompileCodeResult, String>,
 ) -> ApiCompileResult {
     let diagnostics = match detect_hazards(source, options) {
-        Ok(diagnostics) => {
-            if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
-                return ApiCompileResult::with_error(error.message.clone(), diagnostics);
-            }
-            diagnostics
-        }
+        Ok(diagnostics) => diagnostics,
         Err(error) => return ApiCompileResult::failure(source, error),
     };
+    finish_with_diagnostics(source, options, result, diagnostics)
+}
+fn finish_with_diagnostics(
+    source: &str,
+    options: &CompileOptions,
+    result: Result<CompileCodeResult, String>,
+    diagnostics: Vec<Diagnostic>,
+) -> ApiCompileResult {
+    if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
+        return ApiCompileResult::with_error(error.message.clone(), diagnostics);
+    }
     match result {
         Ok(result) => success(source, options, result, diagnostics),
         Err(error) => ApiCompileResult::failure(source, error),
@@ -655,7 +669,18 @@ pub fn compile(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
         Ok(options) => options,
         Err(error) => return ApiCompileResult::invalid_options(error),
     };
-    finish_compile_result(source, &core_options, compile_code(source, &core_options))
+    let mut diagnostics = None;
+    let result = storm_lua_minify::search::compile_code_with_source_inspection(
+        source,
+        &core_options,
+        |ast, root, positions| {
+            diagnostics = Some(hazards_from_parsed(ast, root, positions, &core_options));
+        },
+    );
+    match diagnostics {
+        Some(diagnostics) => finish_with_diagnostics(source, &core_options, result, diagnostics),
+        None => finish_compile_result(source, &core_options, result),
+    }
 }
 
 /// `compileProject()` のオプション（設計 §6）。既存 `ApiCompileOptions` を全部そのまま内包する
@@ -1689,6 +1714,63 @@ mod shared_project_analysis_tests {
                 modules,
                 ambient: BTreeMap::new(),
             });
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_public_source_tests {
+    use super::*;
+    fn normalized(mut value: ApiCompileResult) -> serde_json::Value {
+        for pass in &mut value.passes {
+            pass.elapsed_ms = None;
+        }
+        value.elapsed_ms = None;
+        serde_json::to_value(value).unwrap()
+    }
+    fn previous(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
+        let core = match options.to_core() {
+            Ok(core) => core,
+            Err(error) => return ApiCompileResult::invalid_options(error),
+        };
+        finish_compile_result(source, &core, compile_code(source, &core))
+    }
+    #[test]
+    fn single_parse_public_results_preserve_error_precedence_positions_and_all_map_fields() {
+        for source in [
+            "",
+            "local =",
+            "local _ENV=_ENV return '雪😀'",
+            "function onTick()pcall(function()end)end",
+            "function onDraw()local a=input.getNumber(1)end",
+            "-- 雪😀\r\nfunction onDraw()screen.drawText(1,2,'雪')end\r\n",
+            "local function f(x)return x*2 end function onTick()output.setNumber(1,f(3))end",
+            "function onTick()output.setNumber(1,property.getNumber('value'))end",
+        ] {
+            for source_map in [false, true] {
+                for target_size in [None, Some(0), Some(8192)] {
+                    for environment in ["game", "extended"] {
+                        let options:ApiCompileOptions=serde_json::from_value(serde_json::json!({"sourceMap":source_map,"sourceName":"controller.lua","targetSize":target_size,"environment":environment})).unwrap();
+                        let expected = normalized(previous(source, &options));
+                        let actual = normalized(compile(source, &options));
+                        assert_eq!(actual,expected,"source={source:?} map={source_map} target={target_size:?} env={environment}");
+                    }
+                }
+            }
+        }
+        for settings in [
+            serde_json::json!({"sourceMap":true,"targetSize":8192,"property":{"mode":"hardcode","numbers":{"value":9}}}),
+            serde_json::json!({"sourceMap":true,"numericMode":"exact"}),
+            serde_json::json!({"sourceMap":true,"passToggles":{"constant-folding":false}}),
+            serde_json::json!({"sourceMap":true,"passToggles":{"not-a-pass":true}}),
+        ] {
+            let source = "function onTick()output.setNumber(1,property.getNumber('value')+2*3)end";
+            let options: ApiCompileOptions = serde_json::from_value(settings).unwrap();
+            assert_eq!(
+                normalized(compile(source, &options)),
+                normalized(previous(source, &options))
+            );
         }
     }
 }

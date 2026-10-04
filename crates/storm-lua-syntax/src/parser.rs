@@ -756,13 +756,25 @@ pub fn parse_source_with_conditional_origins(
     source: &str,
     track: impl FnOnce(&Ast) -> bool,
 ) -> Result<(Ast, NodeId), String> {
+    parse_source_with_origin_positions(name, source, track).map(|(ast, root, _)| (ast, root))
+}
+
+/// Parse once, retaining diagnostic points as well as optional source origins.
+/// The returned positions refer only to this original immutable parsed arena,
+/// not to later transformed nodes. This serves consumers inspecting the input
+/// before transferring the same arena to the compiler.
+pub fn parse_source_with_origin_positions(
+    name: &str,
+    source: &str,
+    track: impl FnOnce(&Ast) -> bool,
+) -> Result<(Ast, NodeId, NodePositions), String> {
     let (mut ast, root, positions) =
         parse_source_with_positions(source).map_err(|error| error.to_string())?;
     if track(&ast) {
         let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
         ast.nodes.set_provenance(origins);
     }
-    Ok((ast, root))
+    Ok((ast, root, positions))
 }
 
 /// Distinguishes lexical and syntactic source failures.

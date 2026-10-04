@@ -364,6 +364,16 @@ fn prepare_search_with_dedup(
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     options.validate_pass_toggles()?;
     let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
+    prepare_search_from_parsed(source, options, deduplicate, parsed_ast, parsed_root)
+}
+
+fn prepare_search_from_parsed(
+    source: &str,
+    options: &CompileOptions,
+    deduplicate: bool,
+    parsed_ast: Ast,
+    parsed_root: NodeId,
+) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -1285,7 +1295,6 @@ pub fn try_satisficing(
     let target_size = options
         .target_size
         .ok_or("try_satisficing requires target_size")?;
-    let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     // Source-sized targets with runtime properties stop at the identity
     // checkpoint. Parse and validate them normally, but do not construct a
     // per-node origin table that the exact-copy result will immediately discard.
@@ -1301,6 +1310,19 @@ pub fn try_satisficing(
     } else {
         parse_for_search(source, options)?
     };
+    try_satisficing_from_parsed(source, options, max_checkpoints, parsed_ast, parsed_root)
+}
+fn try_satisficing_from_parsed(
+    source: &str,
+    options: &CompileOptions,
+    max_checkpoints: Option<usize>,
+    parsed_ast: Ast,
+    parsed_root: NodeId,
+) -> Result<SatisficingAttempt, String> {
+    let target_size = options
+        .target_size
+        .ok_or("try_satisficing requires target_size")?;
+    let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -1601,7 +1623,12 @@ pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCod
     let Some(target_size) = options.target_size else {
         return compile_code_obj1(source, options);
     };
-    let mut attempt = try_satisficing(source, options, None)?;
+    finish_target_attempt(try_satisficing(source, options, None)?, target_size)
+}
+fn finish_target_attempt(
+    mut attempt: SatisficingAttempt,
+    target_size: usize,
+) -> Result<CompileCodeResult, String> {
     match attempt.status {
         SatisficingStatus::Satisfied | SatisficingStatus::Stopped => Ok(attempt.result),
         SatisficingStatus::NeedsFullSearch => {
@@ -1619,6 +1646,60 @@ pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCod
                 prior_checkpoints,
             ))
         }
+    }
+}
+
+/// Compile while allowing the host to inspect the original parsed source once.
+/// Inspection is read-only and happens before any transformation; its positions
+/// are diagnostic points on this arena. The compiler retains the same validation,
+/// candidate order and final result as `compile_code`. If parsing fails, the
+/// callback is not invoked. No state is cached between compilations.
+pub fn compile_code_with_source_inspection(
+    source: &str,
+    options: &CompileOptions,
+    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions),
+) -> Result<CompileCodeResult, String> {
+    options.validate_pass_toggles()?;
+    let lexical_options = options.environment
+        == storm_lua_spec::environment::EnvironmentProfile::Extended
+        || !options.host_bindings.is_empty();
+    let identity_checkpoint = options
+        .target_size
+        .is_some_and(|target| target_char_size(source) <= target)
+        && options
+            .property
+            .as_ref()
+            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
+    let (ast, root, positions) = if let Some(name) = options
+        .origin_source
+        .as_deref()
+        .filter(|_| !lexical_options && !identity_checkpoint)
+    {
+        storm_lua_syntax::parser::parse_source_with_origin_positions(name, source, |ast| {
+            storm_lua_analysis::environment_checks::lexical_reason(
+                ast,
+                options.environment,
+                &options.host_bindings,
+            )
+            .is_none()
+        })?
+    } else {
+        storm_lua_syntax::parser::parse_source_with_diagnostic_positions(source)
+            .map_err(|e| e.to_string())?
+    };
+    inspect(&ast, root, &positions);
+    if let Some(target) = options.target_size {
+        finish_target_attempt(
+            try_satisficing_from_parsed(source, options, None, ast, root)?,
+            target,
+        )
+    } else {
+        let (context, jobs) = prepare_search_from_parsed(source, options, true, ast, root)?;
+        let batches = jobs
+            .into_iter()
+            .map(evaluate_candidate)
+            .collect::<Result<Vec<_>, _>>()?;
+        select_best(context, batches)
     }
 }
 
@@ -2038,5 +2119,91 @@ mod identity_origin_tests {
             storm_lua_syntax::print::lexical_minify_with_origins("input.lua", source).unwrap();
         assert_eq!(result.code, expected_code);
         assert_eq!(result.origins.unwrap(), expected_origins);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_single_source_tests {
+    use super::*;
+    use std::cell::Cell;
+    fn without_timings(mut value: CompileCodeResult) -> CompileCodeResult {
+        // Compare all result fields except elapsed times of distinct executions.
+        for pass in &mut value.passes {
+            pass.elapsed_ms = None;
+        }
+        value
+    }
+    #[test]
+    fn inspected_compilation_matches_the_original_entry_for_each_registered_pass_input() {
+        for id in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let text = crate::provenance_pass_matrix::fixture(id);
+            for target_size in [None, Some(0), Some(8192)] {
+                for origin_source in [None, Some("controller.lua".into())] {
+                    let options = CompileOptions {
+                        target_size,
+                        origin_source,
+                        ..Default::default()
+                    };
+                    let expected = compile_code(&text, &options).unwrap();
+                    let calls = Cell::new(0);
+                    let actual = compile_code_with_source_inspection(
+                        &text,
+                        &options,
+                        |ast, root, positions| {
+                            calls.set(calls.get() + 1);
+                            assert!(positions.get(root).is_some());
+                            let (plain, plain_root) = parse_source(&text).unwrap();
+                            assert_eq!(plain_root, root);
+                            assert!(&plain == ast);
+                        },
+                    )
+                    .unwrap();
+                    assert_eq!(calls.get(), 1);
+                    assert_eq!(
+                        without_timings(actual),
+                        without_timings(expected),
+                        "pass={id},target={target_size:?}"
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn inspected_error_and_conservative_paths_preserve_results_and_original_points() {
+        for source in [
+            "",
+            "local =",
+            "function onTick()pcall(function()end)end",
+            "local _ENV=_ENV\r\nfunction onTick()output.setNumber(1,2)end",
+            "-- 雪😀\r\nfunction onDraw()screen.drawText(1,1,'雪')end",
+        ] {
+            for target_size in [None, Some(8192)] {
+                let options = CompileOptions {
+                    target_size,
+                    origin_source: Some("source.lua".into()),
+                    ..Default::default()
+                };
+                let expected = compile_code(source, &options);
+                let actual = compile_code_with_source_inspection(
+                    source,
+                    &options,
+                    |ast, root, positions| {
+                        let (plain, plain_root, plain_points) =
+                            storm_lua_syntax::parser::parse_source_with_positions(source).unwrap();
+                        assert_eq!(root, plain_root);
+                        assert!(&plain == ast);
+                        for node in 0..ast.nodes.len() {
+                            assert_eq!(positions.get(node as u32), plain_points.get(node as u32));
+                        }
+                    },
+                );
+                match (actual, expected) {
+                    (Ok(a), Ok(b)) => assert_eq!(without_timings(a), without_timings(b)),
+                    (Err(a), Err(b)) => assert_eq!(a, b),
+                    pair => panic!("result mismatch: {pair:?}"),
+                }
+            }
+        }
     }
 }

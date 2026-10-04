@@ -690,6 +690,12 @@ pub fn quote_lua(s: &str) -> String {
 /// `\n`/`\r`/制御文字）は全て ASCII 1 文字のため、候補間の長さ差は byte/UTF-16
 /// どちらでも同値になる。
 pub fn qstr(raw: &str) -> String {
+    render_quoted(raw).into_owned()
+}
+
+/// Borrow a canonical, unescaped double-quoted literal until the caller actually
+/// needs an owned output buffer. Other quoting rules use the same implementation.
+pub(crate) fn render_quoted(raw: &str) -> Cow<'_, str> {
     qstr_with_long_overhead(raw, 0)
 }
 
@@ -697,11 +703,23 @@ pub fn qstr(raw: &str) -> String {
 /// lexed as a call argument (`t[[...]]`) rather than an indexed expression.
 /// The printer inserts one disambiguating space there, so account for that byte
 /// before deciding whether the long-bracket spelling is actually shorter.
-pub(crate) fn qstr_bracket_key(raw: &str) -> String {
+pub(crate) fn qstr_bracket_key(raw: &str) -> Cow<'_, str> {
     qstr_with_long_overhead(raw, 1)
 }
 
-fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
+fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> Cow<'_, str> {
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2
+        && bytes[0] == b'"'
+        && bytes[bytes.len() - 1] == b'"'
+        && bytes[1..bytes.len() - 1]
+            .iter()
+            .all(|&b| b >= 32 && b != b'"' && b != b'\\')
+    {
+        // No escape, embedded quote or control byte can make this double-quote
+        // tie winner shorter in the single/long-bracket forms. UTF-8 is unchanged.
+        return Cow::Borrowed(raw);
+    }
     let value = decoded_quote_value(raw);
     let (quoted_len, quote) = quote_shape(&value);
     if let Some((long_len, level)) = shorter_long_bracket_shape(&value, quoted_len, long_overhead) {
@@ -713,10 +731,10 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
         out.push(']');
         out.extend(std::iter::repeat_n('=', level));
         out.push(']');
-        return out;
+        return Cow::Owned(out);
     }
     if quote == '"' {
-        return json_stringify(&value);
+        return Cow::Owned(json_stringify(&value));
     }
     let mut out = String::with_capacity(quoted_len);
     out.push('\'');
@@ -730,7 +748,7 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
         }
     }
     out.push('\'');
-    out
+    Cow::Owned(out)
 }
 
 /// Common API keys and generated payloads are already unescaped strings. Borrow
@@ -1178,5 +1196,99 @@ mod small_integer_format_tests {
         assert_eq!(short_num(f64::NAN), "0/0");
         assert_eq!(short_num(f64::INFINITY), "1/0");
         assert_eq!(short_num(f64::NEG_INFINITY), "-1/0");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_quote_tests {
+    use super::*;
+    fn reference(raw: &str, long_overhead: usize) -> String {
+        let value = decoded_quote_value(raw);
+        let (quoted_len, quote) = quote_shape(&value);
+        if let Some((long_len, level)) =
+            shorter_long_bracket_shape(&value, quoted_len, long_overhead)
+        {
+            let mut out = String::with_capacity(long_len);
+            out.push('[');
+            out.extend(std::iter::repeat_n('=', level));
+            out.push('[');
+            out.push_str(&value);
+            out.push(']');
+            out.extend(std::iter::repeat_n('=', level));
+            out.push(']');
+            return out;
+        }
+        if quote == '"' {
+            return json_stringify(&value);
+        }
+        let mut out = String::with_capacity(quoted_len);
+        out.push('\'');
+        for c in value.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '\'' => out.push_str("\\'"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                _ => out.push(c),
+            }
+        }
+        out.push('\'');
+        out
+    }
+
+    #[test]
+    fn borrowed_quotes_match_the_original_owned_encoder_for_controls_and_unicode() {
+        for value in (0..=256)
+            .filter_map(char::from_u32)
+            .map(|c| format!("a{c}雪😀b"))
+        {
+            for raw in [
+                format!("\"{value}\""),
+                format!("'{value}'"),
+                format!("[==[{value}]==]"),
+                quote_lua(&value),
+            ] {
+                for overhead in [0, 1] {
+                    assert_eq!(
+                        qstr_with_long_overhead(&raw, overhead).as_ref(),
+                        reference(&raw, overhead)
+                    );
+                }
+            }
+        }
+        for raw in [
+            "",
+            "'",
+            "\"",
+            "\"a\\x41b\"",
+            "'it\\\'s'",
+            "[=[\nx]=]",
+            "[broken",
+            "\"\\ud800\"",
+            "\"a\"b\"",
+        ] {
+            for overhead in [0, 1] {
+                assert_eq!(
+                    qstr_with_long_overhead(raw, overhead).as_ref(),
+                    reference(raw, overhead)
+                );
+            }
+        }
+        for raw in [
+            "\"\"",
+            "\"already\"",
+            "\"雪😀\"",
+            "\"it's\"",
+            "\"x]===]\"",
+            "\"\u{2028}\u{2029}\"",
+        ] {
+            for overhead in [0, 1] {
+                let value = qstr_with_long_overhead(raw, overhead);
+                assert!(matches!(value, Cow::Borrowed(_)));
+                assert_eq!(value.as_ptr(), raw.as_ptr());
+                assert_eq!(value.as_ref(), reference(raw, overhead));
+            }
+        }
     }
 }

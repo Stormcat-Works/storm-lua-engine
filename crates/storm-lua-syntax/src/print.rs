@@ -7,8 +7,10 @@ use std::borrow::Cow;
 
 use crate::ast::{Ast, Node, NodeId, TableField};
 use crate::lexer::KEYWORDS;
+#[cfg(test)]
+use crate::numeric::qstr;
 use crate::numeric::{
-    decode_lua_string, integer_literal_value, normalize_num_literal, qstr, qstr_bracket_key,
+    decode_lua_string, integer_literal_value, normalize_num_literal, qstr_bracket_key,
 };
 
 /// 演算子の結合優先度 [lhs_assoc_prec, rhs_assoc_prec]（lexer.ts の BIN_PREC 相当）。
@@ -84,7 +86,7 @@ fn needs_sep_chars(x: char, y: char) -> bool {
 
 // Operators use a space, not a zero-cost separator newline. Compose the actual
 // bytes and relative emission ranges together so spacing cannot shift origins.
-fn join_lex(parts: Vec<Fragment>) -> Fragment {
+fn join_lex<'a>(parts: impl IntoIterator<Item = Fragment<'a>>) -> Fragment<'a> {
     let mut out = Fragment::default();
     for part in parts {
         if part.text.is_empty() {
@@ -177,11 +179,11 @@ pub struct PrintedSource {
 // range vector empty (no mapping allocation). Composition shifts ranges when it
 // appends actual bytes; formatting cannot accidentally discard the side table.
 #[derive(Default)]
-struct Fragment {
-    text: Cow<'static, str>,
+struct Fragment<'a> {
+    text: Cow<'a, str>,
     emissions: Vec<NodeEmission>,
 }
-impl From<String> for Fragment {
+impl<'a> From<String> for Fragment<'a> {
     fn from(text: String) -> Self {
         Self {
             text: Cow::Owned(text),
@@ -189,12 +191,23 @@ impl From<String> for Fragment {
         }
     }
 }
-impl From<&str> for Fragment {
-    fn from(text: &str) -> Self {
-        text.to_string().into()
+impl<'a> From<&'a str> for Fragment<'a> {
+    fn from(text: &'a str) -> Self {
+        Self {
+            text: Cow::Borrowed(text),
+            emissions: Vec::new(),
+        }
     }
 }
-impl Fragment {
+impl<'a> From<Cow<'a, str>> for Fragment<'a> {
+    fn from(text: Cow<'a, str>) -> Self {
+        Self {
+            text,
+            emissions: Vec::new(),
+        }
+    }
+}
+impl<'a> Fragment<'a> {
     fn literal(text: &'static str) -> Self {
         Self {
             text: Cow::Borrowed(text),
@@ -263,10 +276,10 @@ impl<'a> Printer<'a> {
 
     fn record(
         &self,
-        mut fragment: Fragment,
+        mut fragment: Fragment<'a>,
         node: NodeId,
         site: Option<crate::parser::NameSite>,
-    ) -> Fragment {
+    ) -> Fragment<'a> {
         if self.capture_emissions && !fragment.text.is_empty() {
             fragment.emissions.push(NodeEmission {
                 node,
@@ -316,7 +329,12 @@ impl<'a> Printer<'a> {
             facts: std::sync::Arc::default(),
         })
     }
-    fn syntax(&self, text: &str, node: NodeId, site: crate::explanation::SyntaxSite) -> Fragment {
+    fn syntax(
+        &self,
+        text: &'a str,
+        node: NodeId,
+        site: crate::explanation::SyntaxSite,
+    ) -> Fragment<'a> {
         self.record_syntax(Fragment::from(text), node, site)
     }
     fn keyword(
@@ -324,15 +342,15 @@ impl<'a> Printer<'a> {
         text: &'static str,
         node: NodeId,
         site: crate::explanation::SyntaxSite,
-    ) -> Fragment {
+    ) -> Fragment<'a> {
         self.record_syntax(Fragment::literal(text), node, site)
     }
     fn record_syntax(
         &self,
-        mut fragment: Fragment,
+        mut fragment: Fragment<'a>,
         node: NodeId,
         site: crate::explanation::SyntaxSite,
-    ) -> Fragment {
+    ) -> Fragment<'a> {
         if self.capture_emissions {
             if crate::explanation::syntax_text(self.ast.node(node), site)
                 != Some(fragment.text.as_ref())
@@ -355,13 +373,17 @@ impl<'a> Printer<'a> {
         symbol: crate::ast::SymbolId,
         node: NodeId,
         site: crate::parser::NameSite,
-    ) -> Fragment {
+    ) -> Fragment<'a> {
         self.record(self.ast.strings.get(symbol).into(), node, Some(site))
     }
-    fn member(&self, text: &str, node: NodeId) -> Fragment {
-        self.record(text.into(), node, Some(crate::parser::NameSite::Member))
+    fn member(&self, text: impl Into<Cow<'a, str>>, node: NodeId) -> Fragment<'a> {
+        self.record(
+            Fragment::from(text.into()),
+            node,
+            Some(crate::parser::NameSite::Member),
+        )
     }
-    fn bracket_key_expr(&mut self, id: NodeId) -> Fragment {
+    fn bracket_key_expr(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Str(raw) = self.ast.node(id) {
             let key = qstr_bracket_key(raw);
             let space = key.starts_with('[');
@@ -374,7 +396,7 @@ impl<'a> Printer<'a> {
         }
         self.expr(id, 0)
     }
-    fn cat(&mut self, mut a: Fragment, b: Fragment) -> Fragment {
+    fn cat(&mut self, mut a: Fragment<'a>, b: Fragment<'a>) -> Fragment<'a> {
         if b.text.is_empty() {
             return a;
         }
@@ -389,7 +411,7 @@ impl<'a> Printer<'a> {
         a.append(b);
         a
     }
-    fn expr(&mut self, id: NodeId, parent: u8) -> Fragment {
+    fn expr(&mut self, id: NodeId, parent: u8) -> Fragment<'a> {
         let result = self.expr_inner(id, parent);
         self.record(result, id, None)
     }
@@ -397,15 +419,15 @@ impl<'a> Printer<'a> {
         clippy::panic,
         reason = "Invalid low-level AST expression shapes fail loudly; source is parsed before printing"
     )]
-    fn expr_inner(&mut self, id: NodeId, parent: u8) -> Fragment {
+    fn expr_inner(&mut self, id: NodeId, parent: u8) -> Fragment<'a> {
         use crate::parser::NameSite;
         let node = &self.ast.nodes[id as usize];
-        let s: Fragment;
+        let s: Fragment<'a>;
         let prec: u8;
         match node {
             Node::Name(sym) => return self.name(*sym, id, NameSite::Reference),
-            Node::Num(v) => return render_num(v).into_owned().into(),
-            Node::Str(v) => return qstr(v).into(),
+            Node::Num(v) => return render_num(v).into(),
+            Node::Str(v) => return crate::numeric::render_quoted(v).into(),
             Node::Nil => return Fragment::literal("nil"),
             Node::Bool(b) => {
                 if parent <= 3 {
@@ -422,36 +444,28 @@ impl<'a> Printer<'a> {
                 )
             }
             Node::Table(fs) => {
-                let parts: Vec<_> = fs
-                    .iter()
-                    .enumerate()
-                    .map(|(index, field)| match field {
-                        TableField::Arr(v) => self.expr(*v, 0),
-                        TableField::Name(k, v) => fragments!(
-                            self.name(*k, id, NameSite::Field(index as u32)),
-                            Fragment::literal("="),
-                            self.expr(*v, 0)
-                        ),
-                        TableField::KVar(k, v) => {
-                            if let Node::Str(raw) = &self.ast.nodes[*k as usize] {
-                                if let Some(key) = plain_name_from_string_literal(raw) {
-                                    let key = self.record(Fragment::from(key.as_ref()), *k, None);
-                                    return fragments!(
-                                        key,
-                                        Fragment::literal("="),
-                                        self.expr(*v, 0)
-                                    );
-                                }
+                let parts = fs.iter().enumerate().map(|(index, field)| match field {
+                    TableField::Arr(v) => self.expr(*v, 0),
+                    TableField::Name(k, v) => fragments!(
+                        self.name(*k, id, NameSite::Field(index as u32)),
+                        Fragment::literal("="),
+                        self.expr(*v, 0)
+                    ),
+                    TableField::KVar(k, v) => {
+                        if let Node::Str(raw) = &self.ast.nodes[*k as usize] {
+                            if let Some(key) = plain_name_from_string_literal(raw) {
+                                let key = self.record(Fragment::from(key), *k, None);
+                                return fragments!(key, Fragment::literal("="), self.expr(*v, 0));
                             }
-                            fragments!(
-                                Fragment::literal("["),
-                                self.bracket_key_expr(*k),
-                                Fragment::literal("]="),
-                                self.expr(*v, 0)
-                            )
                         }
-                    })
-                    .collect();
+                        fragments!(
+                            Fragment::literal("["),
+                            self.bracket_key_expr(*k),
+                            Fragment::literal("]="),
+                            self.expr(*v, 0)
+                        )
+                    }
+                });
                 return fragments!(
                     Fragment::literal("{"),
                     Fragment::join(parts, ","),
@@ -462,7 +476,7 @@ impl<'a> Printer<'a> {
                 let obj_s = self.expr(*obj, 15);
                 if let Node::Str(kv) = &self.ast.nodes[*key as usize] {
                     if let Some(k) = plain_name_from_string_literal(kv) {
-                        let member = self.record(self.member(k.as_ref(), *key), *key, None);
+                        let member = self.record(self.member(k, *key), *key, None);
                         return fragments!(obj_s, Fragment::literal("."), member);
                     }
                 }
@@ -476,7 +490,7 @@ impl<'a> Printer<'a> {
             Node::Function(..) => return self.function(id, true),
             Node::Un(op, e) => {
                 prec = 12;
-                s = join_lex(vec![
+                s = join_lex([
                     self.syntax(op, id, crate::explanation::SyntaxSite::Operator),
                     self.expr(*e, 12),
                 ]);
@@ -484,7 +498,7 @@ impl<'a> Printer<'a> {
             Node::Bin(op, l, r) => {
                 let (lp, rp) = bin_prec(op);
                 prec = lp;
-                s = join_lex(vec![
+                s = join_lex([
                     self.expr(*l, lp),
                     self.syntax(op, id, crate::explanation::SyntaxSite::Operator),
                     self.expr(*r, rp),
@@ -492,21 +506,23 @@ impl<'a> Printer<'a> {
             }
             Node::Call(fn_, args, method) => {
                 let fn_s = self.expr(*fn_, 15);
-                let args_s = Fragment::join(
-                    args.iter().map(|a| self.expr(*a, 0)).collect::<Vec<_>>(),
-                    ",",
-                );
+                let args_s = Fragment::join(args.iter().map(|a| self.expr(*a, 0)), ",");
                 let sugar = args.len() == 1
                     && matches!(self.ast.node(args[0]), Node::Str(_) | Node::Table(_));
                 return match (method, sugar) {
                     (Some(m), true) => {
-                        fragments!(fn_s, Fragment::literal(":"), self.member(m, id), args_s)
+                        fragments!(
+                            fn_s,
+                            Fragment::literal(":"),
+                            self.member(m.as_str(), id),
+                            args_s
+                        )
                     }
                     (None, true) => fragments!(fn_s, args_s),
                     (Some(m), false) => fragments!(
                         fn_s,
                         Fragment::literal(":"),
-                        self.member(m, id),
+                        self.member(m.as_str(), id),
                         Fragment::literal("("),
                         args_s,
                         Fragment::literal(")")
@@ -524,14 +540,13 @@ impl<'a> Printer<'a> {
             s
         }
     }
-    fn function(&mut self, id: NodeId, keyword: bool) -> Fragment {
+    fn function(&mut self, id: NodeId, keyword: bool) -> Fragment<'a> {
         use crate::parser::NameSite;
         if let Node::Function(ps, variadic, b) = &self.ast.nodes[id as usize] {
             let params = ps
                 .iter()
                 .enumerate()
-                .map(|(i, p)| self.name(*p, id, NameSite::Parameter(i as u32)))
-                .collect::<Vec<_>>();
+                .map(|(i, p)| self.name(*p, id, NameSite::Parameter(i as u32)));
             let header = fragments!(
                 if keyword {
                     fragments!(
@@ -554,11 +569,11 @@ impl<'a> Printer<'a> {
         }
         unreachable!()
     }
-    fn function_tail(&mut self, id: NodeId) -> Fragment {
+    fn function_tail(&mut self, id: NodeId) -> Fragment<'a> {
         let result = self.function(id, false);
         self.record(result, id, None)
     }
-    fn target(&mut self, id: NodeId) -> Fragment {
+    fn target(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Methodname(obj, name) = &self.ast.nodes[id as usize] {
             let result = fragments!(
                 self.expr(*obj, 0),
@@ -569,7 +584,7 @@ impl<'a> Printer<'a> {
         }
         self.expr(id, 0)
     }
-    fn stat(&mut self, id: NodeId) -> Fragment {
+    fn stat(&mut self, id: NodeId) -> Fragment<'a> {
         let result = self.stat_inner(id);
         self.record(result, id, None)
     }
@@ -577,7 +592,7 @@ impl<'a> Printer<'a> {
         clippy::panic,
         reason = "A statement block only contains statement nodes; invalid low-level ASTs fail loudly"
     )]
-    fn stat_inner(&mut self, id: NodeId) -> Fragment {
+    fn stat_inner(&mut self, id: NodeId) -> Fragment<'a> {
         use crate::parser::NameSite;
         match &self.ast.nodes[id as usize] {
             Node::Break => self.keyword("break", id, crate::explanation::SyntaxSite::Begin),
@@ -692,12 +707,10 @@ impl<'a> Printer<'a> {
                     names
                         .iter()
                         .enumerate()
-                        .map(|(i, n)| self.name(*n, id, NameSite::Binding(i as u32)))
-                        .collect::<Vec<_>>(),
+                        .map(|(i, n)| self.name(*n, id, NameSite::Binding(i as u32))),
                     ",",
                 );
-                let values =
-                    Fragment::join(es.iter().map(|e| self.expr(*e, 0)).collect::<Vec<_>>(), ",");
+                let values = Fragment::join(es.iter().map(|e| self.expr(*e, 0)), ",");
                 let head = fragments!(
                     self.keyword("for", id, crate::explanation::SyntaxSite::Begin),
                     Fragment::literal(" "),
@@ -731,21 +744,14 @@ impl<'a> Printer<'a> {
                     names
                         .iter()
                         .enumerate()
-                        .map(|(i, n)| self.name(*n, id, NameSite::Binding(i as u32)))
-                        .collect::<Vec<_>>(),
+                        .map(|(i, n)| self.name(*n, id, NameSite::Binding(i as u32))),
                     ",",
                 );
                 let keep = trimmed_nil_rhs_len(self.ast, names.len(), es, true);
                 if keep == 0 {
                     fragments!(Fragment::literal("local "), ns)
                 } else {
-                    let values = Fragment::join(
-                        es[..keep]
-                            .iter()
-                            .map(|e| self.expr(*e, 0))
-                            .collect::<Vec<_>>(),
-                        ",",
-                    );
+                    let values = Fragment::join(es[..keep].iter().map(|e| self.expr(*e, 0)), ",");
                     fragments!(
                         Fragment::literal("local "),
                         ns,
@@ -758,10 +764,7 @@ impl<'a> Printer<'a> {
                 if es.is_empty() {
                     self.keyword("return", id, crate::explanation::SyntaxSite::Begin)
                 } else {
-                    let values = Fragment::join(
-                        es.iter().map(|e| self.expr(*e, 0)).collect::<Vec<_>>(),
-                        ",",
-                    );
+                    let values = Fragment::join(es.iter().map(|e| self.expr(*e, 0)), ",");
                     self.cat(
                         self.keyword("return", id, crate::explanation::SyntaxSite::Begin),
                         values,
@@ -770,22 +773,15 @@ impl<'a> Printer<'a> {
             }
             Node::Callstat(e) => self.expr(*e, 0),
             Node::Assign(vs, es) => {
-                let targets =
-                    Fragment::join(vs.iter().map(|e| self.expr(*e, 0)).collect::<Vec<_>>(), ",");
+                let targets = Fragment::join(vs.iter().map(|e| self.expr(*e, 0)), ",");
                 let keep = trimmed_nil_rhs_len(self.ast, vs.len(), es, false);
-                let values = Fragment::join(
-                    es[..keep]
-                        .iter()
-                        .map(|e| self.expr(*e, 0))
-                        .collect::<Vec<_>>(),
-                    ",",
-                );
+                let values = Fragment::join(es[..keep].iter().map(|e| self.expr(*e, 0)), ",");
                 fragments!(targets, Fragment::literal("="), values)
             }
             _ => panic!("unknown statement node"),
         }
     }
-    fn block(&mut self, id: NodeId) -> Fragment {
+    fn block(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Block(statements) = &self.ast.nodes[id as usize] {
             let parts = statements
                 .iter()
@@ -907,7 +903,7 @@ fn emit_compact_tokens(
             break;
         }
         let value = match token.k {
-            TokenKind::Str => Cow::Owned(qstr(token.v)),
+            TokenKind::Str => crate::numeric::render_quoted(token.v),
             TokenKind::Num => render_num(token.v),
             _ => Cow::Borrowed(token.v),
         };
@@ -1376,6 +1372,69 @@ mod streamed_lexical_tests {
                     .err()
                     .map(|e| e.to_string())
             );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_emission_tests {
+    use super::*;
+    use crate::{parse_source_with_origins, provenance::GeneratedOrigins};
+
+    #[test]
+    fn unchanged_identifier_number_and_string_fragments_borrow_the_immutable_ast() {
+        let source = "local long_name=42 local text=\"雪😀\" output.setNumber(1,long_name)";
+        let (ast, root) = parse_source_with_origins("borrow.lua", source).unwrap();
+        let before = serde_json::to_vec(&ast).unwrap();
+        let mut printer = Printer::new(&ast, false);
+        let mut checked = 0;
+        for (id, node) in ast.nodes.iter().enumerate() {
+            let expected = match node {
+                Node::Name(symbol) => Some(ast.strings.get(*symbol)),
+                Node::Num(raw) if raw.as_ref() == "42" => Some(raw.as_ref()),
+                Node::Str(raw) if raw.as_ref() == "\"雪😀\"" => Some(raw.as_ref()),
+                _ => None,
+            };
+            if let Some(expected) = expected {
+                let fragment = printer.expr(id as NodeId, 0);
+                assert!(matches!(fragment.text, Cow::Borrowed(_)));
+                assert_eq!(fragment.text.as_ref(), expected);
+                assert_eq!(fragment.text.as_ptr(), expected.as_ptr());
+                checked += 1;
+            }
+        }
+        assert!(checked >= 4);
+        let output = printer.output_with_positions(root);
+        GeneratedOrigins::from_print(&ast, &output)
+            .unwrap()
+            .validate_for_code(&output.code)
+            .unwrap();
+        assert_eq!(serde_json::to_vec(&ast).unwrap(), before);
+        drop(ast);
+        assert!(
+            output.code.contains("雪😀"),
+            "returned source owns its bytes"
+        );
+    }
+
+    #[test]
+    fn decoded_members_and_quotes_outlive_temporary_spelling_choices() {
+        for source in [
+            "local t={['\\x61']=1,[\"not a name\"]=2} output.setNumber(1,t['\\97'])",
+            "local x={['escaped\\\\name']=\"a\\n\\\"b\",[ [=[long]=] ]=3} return x",
+            "function object:method(x,...)return x,... end return object:method'it\\\'s'",
+            "function f(x)if x then return 1 elseif x==2 then return 3 elseif x==4 then return 5 else return 6 end end",
+        ] {
+            let (ast,root)=parse_source_with_origins("temporary.lua",source).unwrap();
+            for zero in [false,true] {
+                let mut plain=Printer::new(&ast,zero);
+                let code=plain.output(root);
+                let printed=Printer::new(&ast,zero).output_with_positions(root);
+                assert_eq!(code,printed.code);
+                crate::parse_source(&code).unwrap();
+                let origins=GeneratedOrigins::from_print(&ast,&printed).unwrap();origins.validate_for_code(&code).unwrap();
+            }
         }
     }
 }

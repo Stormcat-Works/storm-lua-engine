@@ -1,5 +1,9 @@
 # Current status
 
+## v0.3.1 追加高速化の検証記録（2026-10-04）
+
+前回報告後の実装 `f463b72`〜`a400c55` とその比較を[追加ラウンド](docs/verification/compile-next-round-20261004.md)へ保存した。819 Native、83実WASM、実コーパス8,182成功組と全マップの一致を確認。全探索の平均時間は直前版よりMapなし3.0%、Mapあり2.2%短縮したが、最大1.2倍は未達のまま。失敗した試案と負の観測を除外せず記録する。公開・pushは行っていない。
+
 ## v0.3.1 全コンパイル経路の高速化（開発中・2026-10-04）
 
 `feat/minify-performance-v0.3.1`を維持し、Mapなし/ありの両方を速くする改善を`2741357`〜`1f9d58e`へcommitした。[計画](docs/design/compile-all-scenes-v031.md)、[全条件の実装・測定・検証](docs/verification/compile-all-scenes-20261004.md)。**push・公開・main/releaseへの反映はしていない。**

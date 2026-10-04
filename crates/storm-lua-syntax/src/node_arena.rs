@@ -717,6 +717,69 @@ impl NodeArena {
         let Some(origin) = target.origin.as_mut() else {
             return;
         };
+        // A copied origin often already shares the entire contributor tail.
+        // Containment established before append-only updates stays true below.
+        // Large exact prefixes get one linear comparison instead of searching
+        // the growing target once per item; no per-call hash table is allocated.
+        let related_present = Arc::ptr_eq(&origin.value.related, &contributor.related)
+            || (contributor.related.len() >= 8
+                && origin.value.related.starts_with(&contributor.related));
+        let relations_present = Arc::ptr_eq(&origin.value.relations, &contributor.relations)
+            || (contributor.relations.len() >= 8
+                && origin.value.relations.starts_with(&contributor.relations));
+        origin.derive_action(transformation, ReasonOperation::Relate);
+        for span in contributor.primary.iter().chain(contributor.related.iter()) {
+            let known_related = related_present && contributor.primary != Some(*span);
+            if origin.value.primary != Some(*span)
+                && !known_related
+                && !origin.value.related.contains(span)
+            {
+                Arc::make_mut(&mut origin.value.related).push(*span);
+            }
+            let relation = SourceRelation {
+                role: if contributor.primary == Some(*span) {
+                    role
+                } else {
+                    RelationRole::Contribution
+                },
+                span: *span,
+            };
+            if !origin.value.relations.contains(&relation) {
+                Arc::make_mut(&mut origin.value.relations).push(relation);
+            }
+        }
+        if !relations_present {
+            for relation in contributor.relations.iter() {
+                if !origin.value.relations.contains(relation) {
+                    Arc::make_mut(&mut origin.value.relations).push(relation.clone());
+                }
+            }
+        }
+    }
+    #[cfg(test)]
+    fn reference_relate_snapshot(
+        &mut self,
+        node: NodeId,
+        snapshot: Option<ContributionSnapshot>,
+        transformation: &str,
+        role: RelationRole,
+    ) {
+        let Some(snapshot) = snapshot.filter(|_| self.tracks_origins()) else {
+            return;
+        };
+
+        let contributor = self.import_contribution(snapshot);
+        let Some(target) = self
+            .origins
+            .as_mut()
+            .and_then(|origins| Arc::make_mut(&mut origins.slots)[node as usize].as_mut())
+        else {
+            return;
+        };
+        let target = Arc::make_mut(target);
+        let Some(origin) = target.origin.as_mut() else {
+            return;
+        };
         origin.derive_action(transformation, ReasonOperation::Relate);
         for span in contributor.primary.iter().chain(contributor.related.iter()) {
             if origin.value.primary != Some(*span) && !origin.value.related.contains(span) {
@@ -1297,6 +1360,86 @@ mod ordered_relation_union_tests {
                 RelationRole::Argument,
             );
             assert_eq!(serde_json::to_vec(&rich).unwrap(), before);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod relation_prefix_tests {
+    use super::*;
+    use crate::parse_source_with_origins;
+    #[test]
+    fn shared_and_equal_prefixes_keep_the_exact_order_roles_and_reason_counts() {
+        let text = (0..260)
+            .map(|i| format!("output.setNumber(1,{i}) "))
+            .collect::<String>();
+        let (mut source, _) = parse_source_with_origins("relations.lua", &text).unwrap();
+        let ids = source
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| matches!(n, Node::Num(_)).then_some(i as NodeId))
+            .collect::<Vec<_>>();
+        for width in [0, 1, 7, 8, 64, 256] {
+            let base = source.clone();
+            for &input in &ids[1..=width] {
+                source
+                    .nodes
+                    .relate_from(ids[0], &base.nodes, input, "build-source");
+            }
+            for detached in [false, true] {
+                let mut input = source.clone();
+                if detached {
+                    input = serde_json::from_slice(&serde_json::to_vec(&input).unwrap()).unwrap();
+                }
+                for role in [
+                    RelationRole::Contribution,
+                    RelationRole::Definition,
+                    RelationRole::Argument,
+                    RelationRole::CallSite,
+                ] {
+                    let mut expected = source.clone();
+                    let mut actual = source.clone();
+                    for n in 0..4 {
+                        expected.nodes.reference_relate_snapshot(
+                            ids[0],
+                            input.nodes.capture_contribution(ids[0]),
+                            "combine",
+                            role,
+                        );
+                        actual.nodes.relate_snapshot(
+                            ids[0],
+                            input.nodes.capture_contribution(ids[0]),
+                            "combine",
+                            role,
+                        );
+                        assert_eq!(
+                            serde_json::to_value(&actual).unwrap(),
+                            serde_json::to_value(&expected).unwrap(),
+                            "width={width} detached={detached} n={n}"
+                        );
+                        // Appending unrelated contributors leaves a prefix, not
+                        // equal vectors. A different primary still gets its role.
+                        expected.nodes.reference_relate_snapshot(
+                            ids[0],
+                            input.nodes.capture_contribution(ids[259 + n]),
+                            "append",
+                            role,
+                        );
+                        actual.nodes.relate_snapshot(
+                            ids[0],
+                            input.nodes.capture_contribution(ids[259 + n]),
+                            "append",
+                            role,
+                        );
+                    }
+                    assert_eq!(
+                        serde_json::to_value(&actual).unwrap(),
+                        serde_json::to_value(&expected).unwrap()
+                    );
+                }
+            }
         }
     }
 }

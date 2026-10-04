@@ -270,24 +270,26 @@ impl<'a> EffectAnalyzer<'a> {
                         if writes[tbid as usize] != 1 {
                             continue;
                         }
-                        let alias: Option<String> = match &ast.nodes[*expression as usize] {
-                            Node::Name(_) => {
-                                if let Some(bid) = res.node_bid[*expression as usize] {
-                                    analyzer.api_alias_get(bid).cloned()
-                                } else {
-                                    None
-                                }
-                            }
+                        // Borrow already-proven names while testing this fixed
+                        // point. An unchanged target needs no cloned/assembled
+                        // qualified name; allocate only for an actual update.
+                        let alias = match &ast.nodes[*expression as usize] {
+                            Node::Name(_) => res.node_bid[*expression as usize]
+                                .and_then(|bid| analyzer.api_alias_get(bid))
+                                .map(|name| BuiltinReference {
+                                    base: std::borrow::Cow::Borrowed(name),
+                                    member: None,
+                                }),
                             Node::Index(obj, key, _) => {
-                                if let (Node::Name(_), Node::Str(ksid)) =
-                                    (&ast.nodes[*obj as usize], &ast.nodes[*key as usize])
+                                if let (Node::Name(_), Node::Str(raw)) =
+                                    (ast.node(*obj), ast.node(*key))
                                 {
-                                    let base = if let Some(bid) = res.node_bid[*obj as usize] {
-                                        analyzer.api_alias_get(bid)
-                                    } else {
-                                        None
-                                    };
-                                    base.map(|base| format!("{}.{}", base, decode_lua_string(ksid)))
+                                    res.node_bid[*obj as usize]
+                                        .and_then(|bid| analyzer.api_alias_get(bid))
+                                        .map(|base| BuiltinReference {
+                                            base: std::borrow::Cow::Borrowed(base),
+                                            member: Some(borrowed_member(raw)),
+                                        })
                                 } else {
                                     None
                                 }
@@ -295,8 +297,12 @@ impl<'a> EffectAnalyzer<'a> {
                             _ => None,
                         };
                         if let Some(alias) = alias {
-                            if analyzer.api_alias_get(tbid) != Some(&alias) {
-                                analyzer.api_alias_set(tbid, alias);
+                            if analyzer
+                                .api_alias_get(tbid)
+                                .is_none_or(|current| !alias.is(current))
+                            {
+                                let owned = alias.into_text().into_owned();
+                                analyzer.api_alias_set(tbid, owned);
                                 changed = true;
                             }
                         }
@@ -1401,6 +1407,48 @@ mod binding_query_tests {
                 ast.nodes[root as usize]=Node::Block(repeated);
             }
             verify(&ast,root);
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_alias_propagation_tests {
+    use super::*;
+    #[test]
+    fn unchanged_aliases_preserve_eight_round_limit_order_and_decoded_members() {
+        for depth in [1, 2, 7, 8, 9, 16] {
+            for reversed in [false, true] {
+                for member in [
+                    "getNumber",
+                    "get\\x4eumber",
+                    "get\\078umber",
+                    "雪😀",
+                    "a.b",
+                    "",
+                ] {
+                    let mut parts = (0..depth)
+                        .map(|i| format!("a{i}=a{} ", i + 1))
+                        .collect::<Vec<_>>();
+                    parts.push(format!("a{depth}=input "));
+                    if reversed {
+                        parts.reverse();
+                    }
+                    let source=format!("{} g=a0['{member}'] h=g function f()return h(1)end function onTick()output.setNumber(1,f())end",parts.concat());
+                    let (ast, root) = storm_lua_syntax::parse_source(&source).unwrap();
+                    let res = crate::resolver::resolve(&ast, root);
+                    for stable in [false, true] {
+                        let a = EffectAnalyzer::reference_new(&ast, &res, root, stable);
+                        let b = EffectAnalyzer::new(&ast, &res, root, stable);
+                        assert_eq!(a.api_alias_order, b.api_alias_order);
+                        assert_eq!(a.api_alias_map, b.api_alias_map);
+                        assert_eq!(a.summaries, b.summaries);
+                        for id in 0..ast.nodes.len() as u32 {
+                            assert_eq!(a.effects_for_expr(id), b.effects_for_expr(id));
+                        }
+                    }
+                }
+            }
         }
     }
 }

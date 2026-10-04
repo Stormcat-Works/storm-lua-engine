@@ -976,18 +976,21 @@ fn lexical_minify_impl(
         (output, copies)
     };
     let (mut compact, mut copies) = compact_with(false);
-    let expected: Vec<_> = tokens
-        .iter()
-        .filter(|t| t.k != TokenKind::Eof)
-        .map(|t| (&t.k, t.v, t.line))
-        .collect();
-    let matches = Lexer::new(&compact).all_borrowed().is_ok_and(|actual| {
-        actual
-            .iter()
-            .filter(|t| t.k != TokenKind::Eof)
-            .map(|t| (&t.k, t.v, t.line))
-            .eq(expected.iter().copied())
-    });
+    // Validate the same token spelling/kind/line contract without allocating
+    // another complete token vector and a parallel expected-token vector.
+    let matches = 'tokens: {
+        let mut actual = Lexer::new(&compact);
+        for expected in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+            match actual.next_borrowed() {
+                Ok(token)
+                    if token.k == expected.k
+                        && token.v == expected.v
+                        && token.line == expected.line => {}
+                _ => break 'tokens false,
+            }
+        }
+        matches!(actual.next_borrowed(),Ok(token) if token.k==TokenKind::Eof)
+    };
     // Multi-character delimiters can require an explicit boundary. This branch
     // uses the same exact tokens and original line breaks, not a second parser.
     if !matches {
@@ -1234,6 +1237,142 @@ mod token_baseline_size_tests {
             assert_eq!(
                 token_minified_utf16_len(source).unwrap_err().to_string(),
                 reference_token_minify(source).unwrap_err().to_string()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod streamed_lexical_tests {
+    use super::*;
+    fn reference_lexical_minify_impl(
+        source: &str,
+        track: bool,
+    ) -> Result<(String, Vec<crate::provenance::CopiedToken>), crate::lexer::LexError> {
+        use crate::lexer::{Lexer, TokenKind};
+        let tokens = Lexer::new(source).all_borrowed()?;
+        let compact_with = |spaced: bool| {
+            let mut output = String::with_capacity(source.len());
+            let mut end = 0;
+            let mut copies = Vec::new();
+            for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+                let gap = &source[end..token.p];
+                let before = output.len();
+                output.extend(gap.chars().filter(|c| matches!(c, '\n' | '\r')));
+                if before == output.len()
+                    && !output.is_empty()
+                    && (spaced || needs_sep(&output, token.v))
+                {
+                    output.push(' ');
+                }
+                let generated_start = output.len();
+                output.push_str(token.v);
+                end = token.p + token.v.len();
+                if track {
+                    copies.push(crate::provenance::CopiedToken {
+                        start: generated_start,
+                        end: output.len(),
+                        source_start: token.p,
+                        source_end: end,
+                        is_name: token.k == TokenKind::Id,
+                    });
+                }
+            }
+            output.extend(source[end..].chars().filter(|c| matches!(c, '\n' | '\r')));
+            (output, copies)
+        };
+        let (mut compact, mut copies) = compact_with(false);
+        let expected: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.k != TokenKind::Eof)
+            .map(|t| (&t.k, t.v, t.line))
+            .collect();
+        let matches = Lexer::new(&compact).all_borrowed().is_ok_and(|actual| {
+            actual
+                .iter()
+                .filter(|t| t.k != TokenKind::Eof)
+                .map(|t| (&t.k, t.v, t.line))
+                .eq(expected.iter().copied())
+        });
+        // Multi-character delimiters can require an explicit boundary. This branch
+        // uses the same exact tokens and original line breaks, not a second parser.
+        if !matches {
+            (compact, copies) = compact_with(true);
+        }
+        if compact.encode_utf16().count() > source.encode_utf16().count() {
+            let copies = if track {
+                tokens
+                    .iter()
+                    .filter(|token| token.k != TokenKind::Eof)
+                    .map(|token| crate::provenance::CopiedToken {
+                        start: token.p,
+                        end: token.p + token.v.len(),
+                        source_start: token.p,
+                        source_end: token.p + token.v.len(),
+                        is_name: token.k == TokenKind::Id,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            return Ok((source.to_owned(), copies));
+        }
+        Ok((compact, copies))
+    }
+
+    #[test]
+    fn streamed_token_verification_preserves_fallbacks_lines_and_copy_origins() {
+        let mut cases = vec![
+            "".to_owned(),
+            "-- comment\r\n".into(),
+            "local x=1 - -2;return x .. '雪😀'".into(),
+            "::again:: a=a+1 goto again".into(),
+            "local x=[==[one\r\ntwo]==]; -- skip\nreturn x".into(),
+            "local _ENV=_ENV\r\nfunction onTick()return 1,2 end".into(),
+            "a=1 < <2 a=1 / /2 a=1 . .2 a=1 - -2".into(),
+        ];
+        for count in [1, 8, 64] {
+            cases.push(format!(
+                "-- 😀\r\nfunction f(x){}return x end",
+                (0..count)
+                    .map(|i| format!("x=x+{i} -- comment\r\n"))
+                    .collect::<String>()
+            ));
+        }
+        for source in cases {
+            for track in [false, true] {
+                let (expected, tokens) = reference_lexical_minify_impl(&source, track).unwrap();
+                let (actual, copies) = lexical_minify_impl(&source, track).unwrap();
+                assert_eq!(actual, expected);
+                if track {
+                    let old = crate::provenance::GeneratedOrigins::copied_tokens(
+                        "lexical.lua",
+                        &source,
+                        expected.len(),
+                        &tokens,
+                    );
+                    let new = crate::provenance::GeneratedOrigins::copied_tokens(
+                        "lexical.lua",
+                        &source,
+                        actual.len(),
+                        &copies,
+                    );
+                    assert_eq!(new, old);
+                    new.validate_for_code(&actual).unwrap();
+                } else {
+                    assert!(tokens.is_empty() && copies.is_empty());
+                }
+            }
+        }
+        for invalid in ["'unfinished", "[=[unfinished", "--[=[unfinished"] {
+            assert_eq!(
+                lexical_minify_impl(invalid, false)
+                    .err()
+                    .map(|e| e.to_string()),
+                reference_lexical_minify_impl(invalid, false)
+                    .err()
+                    .map(|e| e.to_string())
             );
         }
     }

@@ -1205,7 +1205,7 @@ pub fn select_best(
 }
 
 fn target_char_size(code: &str) -> usize {
-    code.encode_utf16().count()
+    storm_lua_syntax::source_position::utf16_len(code)
 }
 
 fn render_variant_candidate(

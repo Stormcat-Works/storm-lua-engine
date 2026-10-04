@@ -547,9 +547,9 @@ fn success(
     diagnostics: Vec<Diagnostic>,
 ) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
-    let original = source.encode_utf16().count();
+    let original = storm_lua_syntax::source_position::utf16_len(source);
     let baseline = token_minified_utf16_len(source).unwrap_or(original);
-    let size = result.code.encode_utf16().count();
+    let size = storm_lua_syntax::source_position::utf16_len(&result.code);
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     let tolerance = options.numeric_tolerance.unwrap_or(NumericTolerance {
         abs: if options.numeric_mode == NumericMode::Exact {

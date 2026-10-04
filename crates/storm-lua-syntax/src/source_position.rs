@@ -2,6 +2,17 @@
 //! Lua diagnostics use one-based byte columns; Source Map consumers use
 //! zero-based UTF-16 columns. Both share the same LF/CRLF line index.
 
+/// Count UTF-16 code units without decoding the common all-ASCII case.
+/// This preserves source/target accounting, including supplementary characters;
+/// byte length is not used for non-ASCII input.
+pub fn utf16_len(text: &str) -> usize {
+    if text.is_ascii() {
+        text.len()
+    } else {
+        text.encode_utf16().count()
+    }
+}
+
 /// A borrowed source snapshot and its line starts. No filesystem access.
 pub struct LineIndex<'a> {
     text: &'a str,
@@ -225,6 +236,27 @@ mod cursor_tests {
             .flat_map(|i| [i, source.len() - i, 0, i])
         {
             assert_eq!(cursor.position(offset), index.utf16_position(offset));
+        }
+    }
+}
+
+#[cfg(test)]
+mod utf16_length_tests {
+    use super::utf16_len;
+    #[test]
+    fn ascii_fast_path_and_unicode_fallback_match_code_units_exactly() {
+        for count in [0, 1, 7, 8, 15, 16, 31, 32, 127, 128, 1024, 8192] {
+            let ascii = "x".repeat(count);
+            assert_eq!(utf16_len(&ascii), ascii.encode_utf16().count());
+            for part in ["\0\t\r\n", "é", "雪", "😀", "e\u{301}", "\u{10ffff}"] {
+                for text in [
+                    format!("{part}{ascii}"),
+                    format!("{ascii}{part}"),
+                    format!("{ascii}{part}{ascii}"),
+                ] {
+                    assert_eq!(utf16_len(&text), text.encode_utf16().count());
+                }
+            }
         }
     }
 }

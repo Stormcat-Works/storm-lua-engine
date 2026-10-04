@@ -888,7 +888,9 @@ pub fn token_minify(source: &str) -> Result<String, crate::lexer::LexError> {
 /// source string. Rendering and separator decisions are shared with token_minify.
 pub fn token_minified_utf16_len(source: &str) -> Result<usize, crate::lexer::LexError> {
     let mut size = 0;
-    emit_compact_tokens(source, |piece| size += piece.encode_utf16().count())?;
+    emit_compact_tokens(source, |piece| {
+        size += crate::source_position::utf16_len(piece)
+    })?;
     Ok(size)
 }
 
@@ -996,7 +998,7 @@ fn lexical_minify_impl(
     if !matches {
         (compact, copies) = compact_with(true);
     }
-    if compact.encode_utf16().count() > source.encode_utf16().count() {
+    if crate::source_position::utf16_len(&compact) > crate::source_position::utf16_len(source) {
         let copies = if track {
             tokens
                 .iter()

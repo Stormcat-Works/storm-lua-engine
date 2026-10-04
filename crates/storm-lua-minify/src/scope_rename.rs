@@ -159,20 +159,20 @@ fn scope0_bindings(resolution: &Resolution) -> &[u32] {
 }
 
 /// renameGlobals: fixed の名前を used に加え、scope0 のグローバルに短名を割り当てる。
-type RenameNames = Vec<Option<Cow<'static, str>>>;
+type RenameNames<'source> = Vec<Option<Cow<'source, str>>>;
 
-fn rename_globals(
-    ast: &Ast,
+fn rename_globals<'source>(
+    ast: &'source Ast,
     resolution: &Resolution,
-    names: &mut RenameNames,
-    used: &mut HashSet<String>,
+    names: &mut RenameNames<'source>,
+    used: &mut HashSet<Cow<'source, str>>,
 ) {
     for (i, b) in resolution.bindings.iter().enumerate() {
         if i == 0 {
             continue;
         }
         if b.fixed || (b.kind == BindingKind::Global && resolution.binding_write_counts[i] == 0) {
-            used.insert(ast.strings.get(b.name).to_string());
+            used.insert(Cow::Borrowed(ast.strings.get(b.name)));
         }
     }
     let mut globals: Vec<u32> = scope0_bindings(resolution)
@@ -193,7 +193,7 @@ fn rename_globals(
     for id in globals {
         let b = resolution.binding(id);
         if b.fixed || resolution.binding_write_counts[id as usize] == 0 {
-            names[id as usize] = Some(Cow::Owned(ast.strings.get(b.name).to_string()));
+            names[id as usize] = Some(Cow::Borrowed(ast.strings.get(b.name)));
             continue;
         }
         let q = loop {
@@ -203,7 +203,7 @@ fn rename_globals(
             }
         };
         names[id as usize] = Some(q.clone());
-        used.insert(q.into_owned());
+        used.insert(q);
     }
 }
 
@@ -229,7 +229,7 @@ fn get_subtree_refs(resolution: &Resolution) -> Vec<Vec<u32>> {
 fn rename_nested_scope(
     sid: ScopeId,
     resolution: &Resolution,
-    names: &mut RenameNames,
+    names: &mut RenameNames<'_>,
     subtree_refs: &[Vec<u32>],
 ) {
     let sc = resolution.scope(sid);
@@ -306,8 +306,8 @@ fn rename_nested_scope(
 fn rename_top_locals(
     _ast: &Ast,
     resolution: &Resolution,
-    names: &mut RenameNames,
-    used: &mut HashSet<String>,
+    names: &mut RenameNames<'_>,
+    used: &mut HashSet<Cow<'_, str>>,
 ) {
     let mut top_locals: Vec<u32> = scope0_bindings(resolution)
         .iter()
@@ -324,16 +324,17 @@ fn rename_top_locals(
     });
     let mut gg = ShortNames::new();
     let mut git = ShortNameIter(&mut gg);
-    let mut own: HashSet<String> = HashSet::new();
+    // This generator yields each spelling once. Earlier local assignments
+    // cannot reappear, so another hash set of the same unique sequence is not
+    // needed; globally reserved spellings still use the shared used set.
     for id in top_locals {
         let q = loop {
             let q = git.next();
-            if !used.contains(q.as_ref()) && !own.contains(q.as_ref()) {
+            if !used.contains(q.as_ref()) {
                 break q;
             }
         };
-        names[id as usize] = Some(q.clone());
-        own.insert(q.into_owned());
+        names[id as usize] = Some(q);
     }
 }
 
@@ -344,7 +345,7 @@ fn apply_renames(
     source: &Ast,
     resolution: &Resolution,
     root: NodeId,
-    names: &RenameNames,
+    names: &RenameNames<'_>,
 ) -> (Ast, NodeId) {
     let mut ast = source.clone();
     let mut stack = vec![root];
@@ -416,10 +417,10 @@ fn apply_renames(
 }
 
 /// scope_rename パスの公開エントリ（TS scopeRename）。
-fn rename_plan(ast: &Ast, root: NodeId) -> (Resolution, RenameNames) {
+fn rename_plan(ast: &Ast, root: NodeId) -> (Resolution, RenameNames<'_>) {
     let resolution = resolve(ast, root);
-    let mut names: RenameNames = vec![None; resolution.bindings.len()];
-    let mut used: HashSet<String> = HashSet::new();
+    let mut names: RenameNames<'_> = vec![None; resolution.bindings.len()];
+    let mut used: HashSet<Cow<'_, str>> = HashSet::new();
 
     rename_globals(ast, &resolution, &mut names, &mut used);
     let subtree_refs = get_subtree_refs(&resolution);
@@ -503,7 +504,7 @@ impl Iterator for ShortNameIterStatic {
 /// cost-model AST. The actual selected scope rename still receives the tracked AST.
 struct RenameSizeResolver<'a> {
     resolution: &'a Resolution,
-    names: &'a RenameNames,
+    names: &'a RenameNames<'a>,
 }
 
 impl storm_lua_syntax::size::SizeNameResolver for RenameSizeResolver<'_> {
@@ -563,7 +564,7 @@ mod allocation_regression_tests {
     fn reference_nested_scope(
         sid: ScopeId,
         resolution: &Resolution,
-        names: &mut RenameNames,
+        names: &mut RenameNames<'_>,
         subtree_refs: &[HashSet<u32>],
     ) {
         let sc = resolution.scope(sid);
@@ -628,7 +629,7 @@ mod allocation_regression_tests {
         }
     }
 
-    fn assigned_names(ast: &Ast, root: NodeId, reference: bool) -> RenameNames {
+    fn assigned_names(ast: &Ast, root: NodeId, reference: bool) -> RenameNames<'_> {
         let resolution = resolve(ast, root);
         let mut names = vec![None; resolution.bindings.len()];
         let mut used = HashSet::new();
@@ -770,7 +771,7 @@ mod compact_capture_tests {
     fn reference_nested_scope(
         sid: ScopeId,
         resolution: &Resolution,
-        names: &mut RenameNames,
+        names: &mut RenameNames<'_>,
         subtree_refs: &[HashSet<u32>],
     ) {
         let sc = resolution.scope(sid);
@@ -955,5 +956,136 @@ mod borrowed_short_names_tests {
                 .unwrap();
         origins.validate_for_code(&printed.code).unwrap();
         assert_eq!(origins.unknown_bytes(), 0);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_global_names_tests {
+    use super::*;
+    fn reference_globals(
+        ast: &Ast,
+        resolution: &Resolution,
+        names: &mut RenameNames<'_>,
+        used: &mut HashSet<String>,
+    ) {
+        for (i, b) in resolution.bindings.iter().enumerate() {
+            if i == 0 {
+                continue;
+            }
+            if b.fixed || (b.kind == BindingKind::Global && resolution.binding_write_counts[i] == 0)
+            {
+                used.insert(ast.strings.get(b.name).to_string());
+            }
+        }
+        let mut globals: Vec<u32> = scope0_bindings(resolution)
+            .iter()
+            .copied()
+            .filter(|id| resolution.binding(*id).kind == BindingKind::Global)
+            .collect();
+        // freq 降順 → name asc（TS localeCompare。case-insensitive primary で diff<I<P を再現）
+        globals.sort_by(|a, b| {
+            let ba = resolution.binding(*a);
+            let bb = resolution.binding(*b);
+            bb.freq
+                .cmp(&ba.freq)
+                .then_with(|| locale_compare(ast.strings.get(ba.name), ast.strings.get(bb.name)))
+        });
+        let mut gg = ShortNames::new();
+        let mut git = ShortNameIter(&mut gg);
+        for id in globals {
+            let b = resolution.binding(id);
+            if b.fixed || resolution.binding_write_counts[id as usize] == 0 {
+                names[id as usize] = Some(Cow::Owned(ast.strings.get(b.name).to_string()));
+                continue;
+            }
+            let q = loop {
+                let q = git.next();
+                if !used.contains(q.as_ref()) {
+                    break q;
+                }
+            };
+            names[id as usize] = Some(q.clone());
+            used.insert(q.into_owned());
+        }
+    }
+
+    fn reference_top_locals(
+        _ast: &Ast,
+        resolution: &Resolution,
+        names: &mut RenameNames<'_>,
+        used: &mut HashSet<String>,
+    ) {
+        let mut top_locals: Vec<u32> = scope0_bindings(resolution)
+            .iter()
+            .copied()
+            .filter(|id| resolution.binding(*id).kind != BindingKind::Global)
+            .collect();
+        if top_locals.is_empty() {
+            return;
+        }
+        top_locals.sort_by(|a, b| {
+            let ba = resolution.binding(*a);
+            let bb = resolution.binding(*b);
+            bb.freq.cmp(&ba.freq)
+        });
+        let mut gg = ShortNames::new();
+        let mut git = ShortNameIter(&mut gg);
+        let mut own: HashSet<String> = HashSet::new();
+        for id in top_locals {
+            let q = loop {
+                let q = git.next();
+                if !used.contains(q.as_ref()) && !own.contains(q.as_ref()) {
+                    break q;
+                }
+            };
+            names[id as usize] = Some(q.clone());
+            own.insert(q.into_owned());
+        }
+    }
+
+    fn compare(ast: &Ast, root: NodeId) {
+        let resolution = resolve(ast, root);
+        let mut expected = vec![None; resolution.bindings.len()];
+        let mut used = HashSet::new();
+        reference_globals(ast, &resolution, &mut expected, &mut used);
+        reference_top_locals(ast, &resolution, &mut expected, &mut used);
+        let captures = get_subtree_refs(&resolution);
+        for &child in &resolution.scope(0).children {
+            rename_nested_scope(child, &resolution, &mut expected, &captures);
+        }
+        let (_, actual) = rename_plan(ast, root);
+        assert_eq!(actual, expected);
+        let (a, ar) = apply_renames(ast, &resolution, root, &actual);
+        let (b, br) = apply_renames(ast, &resolution, root, &expected);
+        assert_eq!(ar, br);
+        assert_eq!(
+            serde_json::to_value(a).unwrap(),
+            serde_json::to_value(b).unwrap()
+        );
+    }
+    #[test]
+    fn borrowed_fixed_names_and_unique_local_sequence_match_the_owned_reference() {
+        for pass in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let text = crate::provenance_pass_matrix::fixture(pass);
+            let (mut ast, root) =
+                storm_lua_syntax::parse_source_with_origins("rename.lua", &text).unwrap();
+            compare(&ast, root);
+            let root = crate::provenance_pass_matrix::apply(pass, &mut ast, root);
+            compare(&ast, root);
+        }
+        for count in [1, 10, 54, 128, 512] {
+            let mut source = (0..count)
+                .map(|i| format!("local variable{i}={i} "))
+                .collect::<String>();
+            source.push_str("function onTick() ");
+            for i in 0..count {
+                source.push_str(&format!("output.setNumber(1,variable{i}+unassigned{i}) "));
+            }
+            source.push_str("end");
+            let (ast, root) =
+                storm_lua_syntax::parse_source_with_origins("many.lua", &source).unwrap();
+            compare(&ast, root);
+        }
     }
 }

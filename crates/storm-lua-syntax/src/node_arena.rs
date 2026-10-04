@@ -718,37 +718,8 @@ impl NodeArena {
             return;
         };
         origin.derive_action(transformation, ReasonOperation::Relate);
-        // A single contributor may already represent thousands of original
-        // expressions. Repeated Vec::contains then becomes quadratic even if
-        // the caller adds only this one contributor. Index only large unions;
-        // small relationships keep the allocation-free linear lookup.
-        let lookups = contributor.related.len() + contributor.relations.len();
-        let large = lookups >= 8
-            && (origin.value.related.len() + contributor.related.len() > 32
-                || origin.value.relations.len() + contributor.relations.len() > 32);
-        let mut spans = large.then(|| {
-            origin
-                .value
-                .related
-                .iter()
-                .copied()
-                .collect::<std::collections::HashSet<_>>()
-        });
-        let mut relations = large.then(|| {
-            origin
-                .value
-                .relations
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-        });
         for span in contributor.primary.iter().chain(contributor.related.iter()) {
-            if origin.value.primary != Some(*span)
-                && match spans.as_mut() {
-                    Some(seen) => seen.insert(*span),
-                    None => !origin.value.related.contains(span),
-                }
-            {
+            if origin.value.primary != Some(*span) && !origin.value.related.contains(span) {
                 Arc::make_mut(&mut origin.value.related).push(*span);
             }
             let relation = SourceRelation {
@@ -759,18 +730,12 @@ impl NodeArena {
                 },
                 span: *span,
             };
-            if match relations.as_mut() {
-                Some(seen) => seen.insert(relation.clone()),
-                None => !origin.value.relations.contains(&relation),
-            } {
+            if !origin.value.relations.contains(&relation) {
                 Arc::make_mut(&mut origin.value.relations).push(relation);
             }
         }
         for relation in contributor.relations.iter() {
-            if match relations.as_mut() {
-                Some(seen) => seen.insert(relation.clone()),
-                None => !origin.value.relations.contains(relation),
-            } {
+            if !origin.value.relations.contains(relation) {
                 Arc::make_mut(&mut origin.value.relations).push(relation.clone());
             }
         }

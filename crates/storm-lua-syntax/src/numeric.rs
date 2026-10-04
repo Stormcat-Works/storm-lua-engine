@@ -39,14 +39,19 @@ pub fn integer_literal_value(s: &str) -> Option<i64> {
         .strip_prefix("0x")
         .or_else(|| unsigned.strip_prefix("0X"))
     {
-        if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+        // from_str_radix validates every remaining digit and overflow. Checking
+        // the first byte separately rejects its optional '+' spelling, which
+        // this Lua-literal API has never accepted after the 0x prefix.
+        if !hex.as_bytes().first().is_some_and(u8::is_ascii_hexdigit) {
             return None;
         }
         let value = u64::from_str_radix(hex, 16).ok()?;
         let value = value as i64;
         return negative.then_some(value.wrapping_neg()).or(Some(value));
     }
-    if unsigned.is_empty() || !unsigned.bytes().all(|c| c.is_ascii_digit()) {
+    // The standard integer parser checks the tail; do not scan it twice.
+    // A second sign after strip_prefix is not a decimal digit and stays invalid.
+    if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return None;
     }
     let value = unsigned.parse::<i64>().ok()?;
@@ -1288,6 +1293,98 @@ mod borrowed_quote_tests {
                 assert!(matches!(value, Cow::Borrowed(_)));
                 assert_eq!(value.as_ptr(), raw.as_ptr());
                 assert_eq!(value.as_ref(), reference(raw, overhead));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod integer_single_scan_tests {
+    use super::*;
+    fn reference(s: &str) -> Option<i64> {
+        let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+        let negative = s.starts_with('-');
+        if let Some(hex) = unsigned
+            .strip_prefix("0x")
+            .or_else(|| unsigned.strip_prefix("0X"))
+        {
+            if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            let value = u64::from_str_radix(hex, 16).ok()?;
+            let value = value as i64;
+            return negative.then_some(value.wrapping_neg()).or(Some(value));
+        }
+        if unsigned.is_empty() || !unsigned.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let value = unsigned.parse::<i64>().ok()?;
+        if negative {
+            value.checked_neg()
+        } else {
+            Some(value)
+        }
+    }
+
+    #[test]
+    fn one_pass_integer_validation_keeps_signs_overflow_hex_and_invalid_input_exact() {
+        let mut samples = vec!["".into(), "0".into(), "-0".into(), "+0".into()];
+        for body in [
+            "0",
+            "00",
+            "1",
+            "2147483647",
+            "4294967295",
+            "9007199254740993",
+            "9223372036854775807",
+            "9223372036854775808",
+            "18446744073709551615",
+            "18446744073709551616",
+            "0x0",
+            "0x7fffffffffffffff",
+            "0xffffffffffffffff",
+            "0x10000000000000000",
+            "0x+1",
+            "0x-1",
+            "0x",
+            "0x1p2",
+            "0x1.0",
+            "1.0",
+            "1e2",
+            "NaN",
+            "inf",
+            "０",
+        ] {
+            for prefix in ["", "+", "-", "++", "--", "+-", "-+", " "] {
+                for tail in ["", " ", "_", "x", "\0", "\n"] {
+                    samples.push(format!("{prefix}{body}{tail}"));
+                }
+            }
+        }
+        let mut state = 0x74eb31cu64;
+        for _ in 0..32768 {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            samples.extend([
+                state.to_string(),
+                format!("-{}", state),
+                format!("0x{state:x}"),
+                format!("-0X{state:X}"),
+            ]);
+        }
+        for text in samples {
+            assert_eq!(integer_literal_value(&text), reference(&text), "{text:?}");
+        }
+        for digit in [
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'f', 'g', '+', '-', '.', '\0',
+            '雪',
+        ] {
+            for length in [1, 2, 15, 19, 20, 64, 256] {
+                let text = std::iter::repeat_n(digit, length).collect::<String>();
+                for value in [text.clone(), format!("0x{text}"), format!("-{text}")] {
+                    assert_eq!(integer_literal_value(&value), reference(&value));
+                }
             }
         }
     }

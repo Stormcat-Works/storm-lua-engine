@@ -3,76 +3,86 @@
 //! 順序は決定性契約の一部。Phase 8 以降はこの Rust 配列が正本で、
 //! 最終 TypeScript 配列は migration snapshot test でのみ参照する。
 
-/// Canonical `OPTIMIZATION_PASS_IDS` 全 67 個。順序も公開動作の一部。
-pub const OPTIMIZATION_PASS_IDS: &[&str] = &[
-    "constant-folding",
-    "numeric-literal-approximation",
-    "binding-unit-rescaling",
-    "interval-origin-shifting",
-    "integer-loop-call-folding",
-    "color-unpack-specialization",
-    "constant-argument-specialization",
-    "literal-call-folding",
-    "split-sign-recomposition-elimination",
-    "equivalent-trailing-argument-omission",
-    "table-parameter-scalarization",
-    "sparse-boolean-decode-scalarization",
-    "numeric-boolean-bit-specialization",
-    "quotient-remainder-fusion",
-    "destructive-radix-helper-synthesis",
-    "destructive-radix-terminal-reuse",
-    "quotient-chain-fusion",
-    "captured-single-use-hoisting",
-    "immutable-global-expression-reuse",
-    "multiplicative-carrier-reassociation",
-    "coefficient-carrier-synthesis",
-    "destructive-result-globalization",
-    "immutable-carrier-synthesis",
-    "callback-exclusive-function-slotting",
-    "screen-button-outlining",
-    "else-default-hoisting",
-    "conditional-call-lowering",
-    "conditional-assignment-lowering",
-    "write-only-table-field-cleanup",
-    "immutable-table-flattening",
-    "closed-namespace-scalarization",
-    "uniform-table-fill-scalarization",
-    "one-use-function-fusion",
-    "expression-helper-inlining",
-    "tiny-literal-inlining",
-    "single-use-local-sinking",
-    "dead-local-elimination",
-    "terminal-scope-flattening",
-    "ordered-screen-call-factoring",
-    "constant-wrapper-merging",
-    "affine-wrapper-merging",
-    "root-local-globalization",
-    "function-local-globalization",
-    "hybrid-function-local-globalization",
-    "global-store-cleanup",
-    "single-use-global-forwarding",
-    "equal-scratch-value-coalescing",
-    "unwritten-global-nil-propagation",
-    "temporary-global-packing",
-    "output-sequence-loop-synthesis",
-    "common-offset-absorption",
-    "ordered-screen-loop-synthesis",
-    "periodic-screen-loop-synthesis",
-    "available-expression-reuse",
-    "signed-expression-factoring",
-    "one-use-expression-helper-reversal",
-    "final-dead-store-elimination",
-    "redundant-parentheses-elimination",
-    "scope-renaming",
-    "api-alias-optimization",
-    "closed-table-field-renaming",
-    "closed-namespace-devirtualization",
-    "exact-numeric-literal-pooling",
-    "ordered-draw-record-packing",
-    "repeated-draw-sequence-outlining",
-    "adjacent-local-declaration-packing",
-    "conditional-return-lowering",
-];
+// Emit the public ordered registry and the constant-string membership match
+// from the same literals. This avoids scanning all 67 IDs for every runtime
+// pass-enable check or metadata field, without maintaining another registry.
+macro_rules! optimization_pass_ids {
+    ($($id:literal),+ $(,)?) => {
+        /// All registered optimization IDs, in their unchanged public order.
+        pub const OPTIMIZATION_PASS_IDS:&[&str]=&[$($id),+];
+        /// True only for an exact member of the canonical optimization registry.
+        pub fn is_valid_pass_id(id:&str)->bool {matches!(id,$($id)|+)}
+    };
+}
+optimization_pass_ids! {
+   "constant-folding",
+   "numeric-literal-approximation",
+   "binding-unit-rescaling",
+   "interval-origin-shifting",
+   "integer-loop-call-folding",
+   "color-unpack-specialization",
+   "constant-argument-specialization",
+   "literal-call-folding",
+   "split-sign-recomposition-elimination",
+   "equivalent-trailing-argument-omission",
+   "table-parameter-scalarization",
+   "sparse-boolean-decode-scalarization",
+   "numeric-boolean-bit-specialization",
+   "quotient-remainder-fusion",
+   "destructive-radix-helper-synthesis",
+   "destructive-radix-terminal-reuse",
+   "quotient-chain-fusion",
+   "captured-single-use-hoisting",
+   "immutable-global-expression-reuse",
+   "multiplicative-carrier-reassociation",
+   "coefficient-carrier-synthesis",
+   "destructive-result-globalization",
+   "immutable-carrier-synthesis",
+   "callback-exclusive-function-slotting",
+   "screen-button-outlining",
+   "else-default-hoisting",
+   "conditional-call-lowering",
+   "conditional-assignment-lowering",
+   "write-only-table-field-cleanup",
+   "immutable-table-flattening",
+   "closed-namespace-scalarization",
+   "uniform-table-fill-scalarization",
+   "one-use-function-fusion",
+   "expression-helper-inlining",
+   "tiny-literal-inlining",
+   "single-use-local-sinking",
+   "dead-local-elimination",
+   "terminal-scope-flattening",
+   "ordered-screen-call-factoring",
+   "constant-wrapper-merging",
+   "affine-wrapper-merging",
+   "root-local-globalization",
+   "function-local-globalization",
+   "hybrid-function-local-globalization",
+   "global-store-cleanup",
+   "single-use-global-forwarding",
+   "equal-scratch-value-coalescing",
+   "unwritten-global-nil-propagation",
+   "temporary-global-packing",
+   "output-sequence-loop-synthesis",
+   "common-offset-absorption",
+   "ordered-screen-loop-synthesis",
+   "periodic-screen-loop-synthesis",
+   "available-expression-reuse",
+   "signed-expression-factoring",
+   "one-use-expression-helper-reversal",
+   "final-dead-store-elimination",
+   "redundant-parentheses-elimination",
+   "scope-renaming",
+   "api-alias-optimization",
+   "closed-table-field-renaming",
+   "closed-namespace-devirtualization",
+   "exact-numeric-literal-pooling",
+   "ordered-draw-record-packing",
+   "repeated-draw-sequence-outlining",
+   "adjacent-local-declaration-packing",
+   "conditional-return-lowering",
+}
 
 /// パス ID の型。文字列リテラルを直接使う。
 pub type PassId = &'static str;
@@ -82,11 +92,6 @@ pub type PassId = &'static str;
 /// 未指定の ID は `pass_enabled` により有効になる。未登録IDは無効。
 /// exact モードの `EXACT_UNSAFE_PASSES` 無効化は `false` として明示的に含まれる。
 pub type PassToggles = std::collections::BTreeMap<&'static str, bool>;
-
-/// パス ID が有効な識別子か（`OPTIMIZATION_PASS_IDS` に含まれるか）。
-pub fn is_valid_pass_id(id: &str) -> bool {
-    OPTIMIZATION_PASS_IDS.contains(&id)
-}
 
 /// `PassRecord.name`（人間可読な表示名）→ 生成元のパス ID の正本対応表。
 ///
@@ -275,6 +280,50 @@ mod tests {
                 names.insert(*name),
                 "duplicate record display name across different ids: {name}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod direct_membership_tests {
+    use super::*;
+    #[test]
+    fn membership_matches_ordered_registry_for_exact_names_and_invalid_variants() {
+        assert_eq!(OPTIMIZATION_PASS_IDS.len(), 67);
+        for &id in OPTIMIZATION_PASS_IDS {
+            assert!(is_valid_pass_id(id));
+            for v in [
+                String::new(),
+                format!("{id}-"),
+                format!(" {id}"),
+                format!("{id}\0"),
+                id.to_uppercase(),
+                format!("雪{id}"),
+                id[..id.len() - 1].to_owned(),
+            ] {
+                assert_eq!(
+                    is_valid_pass_id(&v),
+                    OPTIMIZATION_PASS_IDS.contains(&v.as_str())
+                );
+            }
+            for i in 0..id.len() {
+                let mut bytes = id.as_bytes().to_vec();
+                bytes[i] = b'_';
+                let text = String::from_utf8(bytes).expect("registered IDs are ASCII");
+                assert_eq!(
+                    is_valid_pass_id(&text),
+                    OPTIMIZATION_PASS_IDS.contains(&text.as_str())
+                );
+            }
+        }
+        for removed in [
+            "general-expression-factoring",
+            "repeated-expression-factoring",
+            "scalar-vector-loop-synthesis",
+            "redundant-nil-fallback-elimination",
+        ] {
+            assert!(!is_valid_pass_id(removed));
         }
     }
 }

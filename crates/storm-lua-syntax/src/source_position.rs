@@ -121,3 +121,110 @@ mod tests {
         assert_eq!(LineIndex::new("").byte_position(0), Some((1, 1)));
     }
 }
+
+/// Repeated UTF-16 lookups in an immutable source snapshot. Nearby offsets reuse
+/// their line and UTF-8/UTF-16 interval; arbitrary jumps still use binary search.
+/// Rejected offsets do not alter the cursor or silently snap to a character.
+pub struct Utf16Cursor<'index, 'source> {
+    index: &'index LineIndex<'source>,
+    line: usize,
+    excess_end: usize,
+    line_excess: usize,
+}
+impl<'source> LineIndex<'source> {
+    /// Create a non-owning cursor for sequential or repeated coordinate lookups.
+    pub fn utf16_cursor(&self) -> Utf16Cursor<'_, 'source> {
+        Utf16Cursor {
+            index: self,
+            line: 0,
+            excess_end: 0,
+            line_excess: 0,
+        }
+    }
+}
+impl Utf16Cursor<'_, '_> {
+    /// Return the same zero-based line/UTF-16 column as LineIndex::utf16_position.
+    pub fn position(&mut self, offset: usize) -> Option<(u32, u32)> {
+        let index = self.index;
+        if offset > index.text.len() || !index.text.is_char_boundary(offset) {
+            return None;
+        }
+        if offset < index.starts[self.line]
+            || index
+                .starts
+                .get(self.line + 1)
+                .is_some_and(|&next| next <= offset)
+        {
+            self.line = index.starts.partition_point(|&start| start <= offset) - 1;
+            self.line_excess = index.excess_at(index.starts[self.line]);
+        }
+        let old_end = self.excess_end;
+        if old_end
+            .checked_sub(1)
+            .is_some_and(|i| index.utf8_excess[i].0 > offset)
+            || index
+                .utf8_excess
+                .get(old_end)
+                .is_some_and(|&(end, _)| end <= offset)
+        {
+            self.excess_end = index.utf8_excess.partition_point(|&(end, _)| end <= offset);
+        }
+        let excess = self
+            .excess_end
+            .checked_sub(1)
+            .map_or(0, |i| index.utf8_excess[i].1);
+        Some((
+            self.line.try_into().ok()?,
+            (offset - index.starts[self.line] - (excess - self.line_excess))
+                .try_into()
+                .ok()?,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+    #[test]
+    fn cursor_matches_random_access_for_forward_reverse_repeated_and_rejected_offsets() {
+        for source in [
+            "",
+            "a",
+            "\r\n",
+            "a😀あ\r\nb\n",
+            "雪😀\0x\rmore",
+            "\n\n\n",
+            "ascii only no newlines",
+        ] {
+            let index = LineIndex::new(source);
+            let mut cursor = index.utf16_cursor();
+            let offsets = (0..=source.len() + 2)
+                .chain((0..=source.len()).rev())
+                .chain((0..=source.len()).flat_map(|i| [0, i, source.len(), i, usize::MAX]));
+            for offset in offsets {
+                assert_eq!(
+                    cursor.position(offset),
+                    index.utf16_position(offset),
+                    "{source:?}/{offset}"
+                );
+            }
+        }
+        let source = (0..3000)
+            .map(|i| {
+                if i % 3 == 0 {
+                    format!("line{i} 雪😀\r\n")
+                } else {
+                    format!("line{i}\n")
+                }
+            })
+            .collect::<String>();
+        let index = LineIndex::new(&source);
+        let mut cursor = index.utf16_cursor();
+        for offset in (0..source.len())
+            .step_by(31)
+            .flat_map(|i| [i, source.len() - i, 0, i])
+        {
+            assert_eq!(cursor.position(offset), index.utf16_position(offset));
+        }
+    }
+}

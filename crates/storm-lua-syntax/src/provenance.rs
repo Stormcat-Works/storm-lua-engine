@@ -806,6 +806,10 @@ impl GeneratedOrigins {
         output.origins.reserve(tokens.len());
         output.mappings.reserve(tokens.len());
         let mut cursor = 0;
+        // Large lexical-only outputs repeat identifier spellings many times.
+        // Share only equal text within this one result; origin IDs and exact
+        // source occurrences stay distinct. Tiny outputs avoid a hash table.
+        let mut identifiers = HashMap::<&str, Arc<str>>::new();
         for token in tokens {
             if cursor < token.start {
                 output.mappings.push(OriginMapping {
@@ -827,9 +831,18 @@ impl GeneratedOrigins {
                 } else {
                     OriginPrecision::Token
                 },
-                token
-                    .is_name
-                    .then(|| source[token.source_start..token.source_end].into()),
+                token.is_name.then(|| {
+                    let text = &source[token.source_start..token.source_end];
+                    if tokens.len() < 64 {
+                        return Arc::from(text);
+                    }
+                    if let Some(existing) = identifiers.get(text) {
+                        return Arc::clone(existing);
+                    }
+                    let name: Arc<str> = text.into();
+                    identifiers.insert(text, Arc::clone(&name));
+                    name
+                }),
             );
             let id = output.origins.len() as u32;
             output.origins.push(origin);
@@ -1470,5 +1483,56 @@ mod unique_lexical_origin_tests {
             assert_eq!(actual, previous);
             actual.validate_for_code(text).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod repeated_lexical_name_tests {
+    use super::*;
+    #[test]
+    fn repeated_spelling_shares_storage_but_not_origin_identity_or_source_range() {
+        let unit = "output.setNumber(1,value) ";
+        let text = unit.repeat(128);
+        let (code, map) = crate::print::lexical_minify_with_origins("names.lua", &text).unwrap();
+        map.validate_for_code(&code).unwrap();
+        let names = map
+            .origins
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.name.as_deref() == Some("output"))
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 128);
+        for (n, (id, origin)) in names.iter().enumerate() {
+            assert_eq!(
+                origin.primary.unwrap(),
+                SourceSpan {
+                    source: 0,
+                    start: n * unit.len(),
+                    end: n * unit.len() + 6
+                }
+            );
+            assert_eq!(origin.precision, OriginPrecision::Name);
+            assert!(map.mappings.iter().any(|m| m.origin == Some(*id as u32)));
+            assert!(Arc::ptr_eq(
+                origin.name.as_ref().unwrap(),
+                names[0].1.name.as_ref().unwrap()
+            ));
+        }
+        let (_, independent) =
+            crate::print::lexical_minify_with_origins("names.lua", &text).unwrap();
+        let second = independent
+            .origins
+            .iter()
+            .find(|o| o.name.as_deref() == Some("output"))
+            .unwrap();
+        assert!(
+            !Arc::ptr_eq(
+                second.name.as_ref().unwrap(),
+                names[0].1.name.as_ref().unwrap()
+            ),
+            "interning does not retain user text across compilations"
+        );
+        assert_eq!(map, independent);
     }
 }

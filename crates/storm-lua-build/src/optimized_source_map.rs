@@ -387,6 +387,12 @@ fn standard_fields<'a>(
         .iter()
         .map(|s| (s.text.as_ref() != code).then(|| LineIndex::new(&s.text)))
         .collect::<Vec<_>>();
+    let mut generated_cursor = generated.utf16_cursor();
+    let mut copied_cursor = generated.utf16_cursor();
+    let mut source_cursors = indexes
+        .iter()
+        .map(|index| index.as_ref().map(LineIndex::utf16_cursor))
+        .collect::<Vec<_>>();
     let mut names = HashMap::new();
     let mut name_values = Vec::new();
     for origin in &origins.origins {
@@ -435,17 +441,17 @@ fn standard_fields<'a>(
                     .map(|s| (s.source, s.start, origin.name.as_deref()))
             }
         });
-        let (line, col) = generated
-            .utf16_position(byte)
+        let (line, col) = generated_cursor
+            .position(byte)
             .ok_or("invalid generated anchor")?;
         if let Some((source, offset, name)) = original {
             let (src_line, src_col) = if indexes[source as usize].is_none() && offset == byte {
                 (line, col)
             } else {
-                indexes[source as usize]
-                    .as_ref()
-                    .unwrap_or(&generated)
-                    .utf16_position(offset)
+                source_cursors[source as usize]
+                    .as_mut()
+                    .unwrap_or(&mut copied_cursor)
+                    .position(offset)
                     .ok_or("invalid original anchor")?
             };
             mappings.push(

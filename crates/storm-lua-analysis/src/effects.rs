@@ -214,7 +214,12 @@ impl<'a> EffectAnalyzer<'a> {
                     continue;
                 }
                 let b = &res.bindings[bid as usize];
-                if b.kind == BindingKind::Global && ast.strings.get(b.name) == name {
+                if b.kind == BindingKind::Global
+                    && ast.strings.get(b.name) == name
+                    && analyzer.api_alias_get(bid).is_none()
+                {
+                    // The first occurrence establishes this immutable root.
+                    // Repeated reads previously allocated the identical String.
                     analyzer.api_alias_set(bid, name.to_string());
                 }
             }
@@ -281,13 +286,15 @@ impl<'a> EffectAnalyzer<'a> {
         }
 
         // functions / summaries（bid 昇順。TS は bindings Map の挿入順＝bid 順）
-        for bid in 1..res.bindings.len() as BindingId {
-            if let Some(fn_) = res.bindings[bid as usize].function_node {
-                analyzer.functions[bid as usize] = Some(fn_);
+        let mut function_bindings = Vec::new();
+        for (bid, binding) in res.bindings.iter().enumerate().skip(1) {
+            if let Some(fn_) = binding.function_node {
+                analyzer.functions[bid] = Some(fn_);
+                function_bindings.push((bid as BindingId, fn_));
             }
         }
-        for bid in 1..res.bindings.len() as BindingId {
-            if analyzer.functions[bid as usize].is_some() {
+        for &(bid, _) in &function_bindings {
+            {
                 analyzer.summaries[bid as usize] = Some(FunctionSummary {
                     pure: false,
                     total: false,
@@ -302,10 +309,9 @@ impl<'a> EffectAnalyzer<'a> {
         }
         for _ in 0..20 {
             let mut changed = false;
-            for bid in 1..res.bindings.len() as BindingId {
-                let Some(fn_) = analyzer.functions[bid as usize] else {
-                    continue;
-                };
+            // The worklist retains binding order, round count and immediate
+            // summary updates. Non-function bindings cannot enter this fixpoint.
+            for &(bid, fn_) in &function_bindings {
                 // functions は「関数ノード」を保持（TS の b.functionNode）。本体 block を開く。
                 let body = match &ast.nodes[fn_ as usize] {
                     Node::Function(_, _, b) => *b,
@@ -633,4 +639,224 @@ pub fn contains_binding(ast: &Ast, res: &Resolution, id: NodeId, bid: u32) -> bo
         }
     }
     false
+}
+
+#[cfg(test)]
+impl<'a> EffectAnalyzer<'a> {
+    fn reference_new(ast: &'a Ast, res: &'a Resolution, root: NodeId, stable_reads: bool) -> Self {
+        // writes カウント: name.write の件数
+        let mut writes = vec![0u32; res.bindings.len()];
+        let mut nodes: Vec<NodeId> = Vec::new();
+        walk(ast, root, &mut nodes);
+        for &nid in &nodes {
+            if let Node::Name(_) = ast.nodes[nid as usize] {
+                if let Some(bid) = res.node_bid[nid as usize] {
+                    if res.node_write[nid as usize] {
+                        writes[bid as usize] += 1;
+                    }
+                }
+            }
+        }
+
+        let mut analyzer = Self {
+            ast,
+            res,
+            stable_reads,
+            functions: vec![None; res.bindings.len()],
+            summaries: vec![None; res.bindings.len()],
+            api_alias_order: Vec::new(),
+            api_alias_map: vec![None; res.bindings.len()],
+        };
+
+        // 未解決・未 write の global API root だけがビルトイン。
+        for &nid in &nodes {
+            if let Node::Name(sid) = ast.nodes[nid as usize] {
+                let name = ast.strings.get(sid);
+                let Some(bid) = res.node_bid[nid as usize] else {
+                    continue;
+                };
+                if !api_roots(name) || writes[bid as usize] != 0 {
+                    continue;
+                }
+                let b = &res.bindings[bid as usize];
+                if b.kind == BindingKind::Global && ast.strings.get(b.name) == name {
+                    analyzer.api_alias_set(bid, name.to_string());
+                }
+            }
+        }
+
+        // apiAliases fixpoint（8 周）
+        if let Node::Block(ss) = &ast.nodes[root as usize] {
+            for _ in 0..8 {
+                let mut changed = false;
+                for &s in ss {
+                    let Node::Assign(vs, es) = &ast.nodes[s as usize] else {
+                        continue;
+                    };
+                    for (index, &target) in vs.iter().enumerate() {
+                        let expression = es.get(index);
+                        let Some(expression) = expression else {
+                            continue;
+                        };
+                        let Node::Name(_) = ast.nodes[target as usize] else {
+                            continue;
+                        };
+                        let Some(tbid) = res.node_bid[target as usize] else {
+                            continue;
+                        };
+                        if writes[tbid as usize] != 1 {
+                            continue;
+                        }
+                        let alias: Option<String> = match &ast.nodes[*expression as usize] {
+                            Node::Name(_) => {
+                                if let Some(bid) = res.node_bid[*expression as usize] {
+                                    analyzer.api_alias_get(bid).cloned()
+                                } else {
+                                    None
+                                }
+                            }
+                            Node::Index(obj, key, _) => {
+                                if let (Node::Name(_), Node::Str(ksid)) =
+                                    (&ast.nodes[*obj as usize], &ast.nodes[*key as usize])
+                                {
+                                    let base = if let Some(bid) = res.node_bid[*obj as usize] {
+                                        analyzer.api_alias_get(bid)
+                                    } else {
+                                        None
+                                    };
+                                    base.map(|base| format!("{}.{}", base, decode_lua_string(ksid)))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        if let Some(alias) = alias {
+                            if analyzer.api_alias_get(tbid) != Some(&alias) {
+                                analyzer.api_alias_set(tbid, alias);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+        }
+
+        // functions / summaries（bid 昇順。TS は bindings Map の挿入順＝bid 順）
+        for bid in 1..res.bindings.len() as BindingId {
+            if let Some(fn_) = res.bindings[bid as usize].function_node {
+                analyzer.functions[bid as usize] = Some(fn_);
+            }
+        }
+        for bid in 1..res.bindings.len() as BindingId {
+            if analyzer.functions[bid as usize].is_some() {
+                analyzer.summaries[bid as usize] = Some(FunctionSummary {
+                    pure: false,
+                    total: false,
+                    reads: Vec::new(),
+                    writes: Vec::new(),
+                    calls: false,
+                    ordered: false,
+                    may_throw: false,
+                    stable: true,
+                });
+            }
+        }
+        for _ in 0..20 {
+            let mut changed = false;
+            for bid in 1..res.bindings.len() as BindingId {
+                let Some(fn_) = analyzer.functions[bid as usize] else {
+                    continue;
+                };
+                // functions は「関数ノード」を保持（TS の b.functionNode）。本体 block を開く。
+                let body = match &ast.nodes[fn_ as usize] {
+                    Node::Function(_, _, b) => *b,
+                    _ => unreachable!(),
+                };
+                let e = analyzer.block_effects(body, Some(bid));
+                // TS は effectKey のみで変化判定する（pure/total は effectKey の比較対象外）。
+                // 初期値と同一の効果なら更新されず、pure=false total=false が残る。
+                // summaries は fixpoint 開始前に全関数 bid へ Some を注入済みのため None はない。
+                #[expect(
+                    clippy::expect_used,
+                    reason = "Every function-body binding is initialized before the fixed-point loop; no user callback runs during analysis"
+                )]
+                let old = analyzer.summaries[bid as usize]
+                    .as_ref()
+                    .expect("summaries は初期化済み");
+                if !old.same_effect_key(&e) {
+                    analyzer.summaries[bid as usize] = Some(FunctionSummary::from_effects(e));
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        analyzer
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod construction_reuse_tests {
+    use super::*;
+    fn compare(source: &str) {
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        for stable in [false, true] {
+            let mut a = EffectAnalyzer::reference_new(&ast, &res, root, stable);
+            let mut b = EffectAnalyzer::new(&ast, &res, root, stable);
+            assert_eq!(a.functions, b.functions);
+            assert_eq!(a.summaries, b.summaries);
+            assert_eq!(a.api_alias_order, b.api_alias_order);
+            assert_eq!(a.api_alias_map, b.api_alias_map);
+            for setting in [stable, !stable] {
+                a.stable_reads = setting;
+                b.stable_reads = setting;
+                for id in 0..ast.nodes.len() as u32 {
+                    assert_eq!(a.effects_for_expr(id), b.effects_for_expr(id));
+                    assert_eq!(a.effects_for_statement(id), b.effects_for_statement(id));
+                    assert_eq!(
+                        a.resolve_builtin_reference(id),
+                        b.resolve_builtin_reference(id)
+                    );
+                }
+            }
+            // Public summaries remain mutable, so no expression result may be
+            // cached across user-visible changes of the analysis state.
+            if let Some(i) = a.summaries.iter().position(Option::is_some) {
+                a.summaries[i] = None;
+                b.summaries[i] = None;
+                assert_eq!(a.effects_for_expr(root), b.effects_for_expr(root));
+            }
+        }
+    }
+    #[test]
+    fn alias_order_and_function_fixpoints_match_original_construction() {
+        for source in [
+            "",
+            "function onTick() output.setNumber(1,input.getNumber(1)) output.setNumber(2,input.getNumber(2))end",
+            "i=input g=i.getNumber function read()return g(1)end function onTick()output.setNumber(1,read())end",
+            "a=b b=c c=d d=e e=f f=g g=h h=input x=a.getNumber function onTick()output.setNumber(1,x(2))end",
+            "function a(x)if x then return b(x-1)end end function b(x)return a(x)end function onTick()a(3)end",
+            "local function a()return 1 end local function b()return a()end local v=b() function onTick()output.setNumber(1,v)end",
+            "input={} local screen={} function f()screen.drawText(0,0,'shadow')end function onTick() f()end",
+            "screen=screen function onDraw()screen.drawLine(0,0,1,1)end",
+        ] {compare(source);}
+        for n in [1, 16, 128] {
+            compare(&format!(
+                "function onDraw(){}end",
+                "screen.drawLine(0,0,1,1) ".repeat(n)
+            ));
+            compare(&format!(
+                "{}function f(x)return x end function onTick()output.setNumber(1,f(2))end",
+                (0..n).map(|i| format!("v{i}={i} ")).collect::<String>()
+            ));
+        }
+    }
 }

@@ -316,6 +316,9 @@ impl<'a> EffectAnalyzer<'a> {
                 function_bindings.push((bid as BindingId, fn_));
             }
         }
+        if function_bindings.is_empty() {
+            return analyzer;
+        }
         for &(bid, _) in &function_bindings {
             {
                 analyzer.summaries[bid as usize] = Some(FunctionSummary {
@@ -330,17 +333,48 @@ impl<'a> EffectAnalyzer<'a> {
                 });
             }
         }
+        // A summary depends only on this immutable body, the fixed alias table
+        // and summaries read through direct calls. Every such call records its
+        // callee binding in Effects.reads, even before its summary has stabilized.
+        // Keep a conservative read-dependency set from the first evaluation;
+        // repeated rounds may skip a body only while those versions are unchanged.
+        let mut versions = vec![0u32; res.bindings.len()];
+        let mut dependencies: Vec<Option<Vec<(BindingId, u32)>>> =
+            (0..function_bindings.len()).map(|_| None).collect();
         for _ in 0..20 {
             let mut changed = false;
             // The worklist retains binding order, round count and immediate
             // summary updates. Non-function bindings cannot enter this fixpoint.
-            for &(bid, fn_) in &function_bindings {
+            for (function_index, &(bid, fn_)) in function_bindings.iter().enumerate() {
+                if dependencies[function_index].as_ref().is_some_and(|deps| {
+                    deps.iter()
+                        .all(|&(callee, version)| versions[callee as usize] == version)
+                }) {
+                    continue;
+                }
                 // functions は「関数ノード」を保持（TS の b.functionNode）。本体 block を開く。
                 let body = match &ast.nodes[fn_ as usize] {
                     Node::Function(_, _, b) => *b,
                     _ => unreachable!(),
                 };
                 let e = analyzer.block_effects(body, Some(bid));
+                match &mut dependencies[function_index] {
+                    Some(deps) => {
+                        for (callee, version) in deps {
+                            *version = versions[*callee as usize];
+                        }
+                    }
+                    slot @ None => {
+                        *slot = Some(
+                            e.reads
+                                .iter()
+                                .copied()
+                                .filter(|&callee| analyzer.functions[callee as usize].is_some())
+                                .map(|callee| (callee, versions[callee as usize]))
+                                .collect(),
+                        );
+                    }
+                }
                 // TS は effectKey のみで変化判定する（pure/total は effectKey の比較対象外）。
                 // 初期値と同一の効果なら更新されず、pure=false total=false が残る。
                 // summaries は fixpoint 開始前に全関数 bid へ Some を注入済みのため None はない。
@@ -353,6 +387,7 @@ impl<'a> EffectAnalyzer<'a> {
                     .expect("summaries は初期化済み");
                 if !old.same_effect_key(&e) {
                     analyzer.summaries[bid as usize] = Some(FunctionSummary::from_effects(e));
+                    versions[bid as usize] += 1;
                     changed = true;
                 }
             }
@@ -1222,6 +1257,91 @@ mod borrowed_builtin_tests {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod summary_dependency_tests {
+    use super::*;
+    fn compare(source: &str) {
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        for stable in [false, true] {
+            let a = EffectAnalyzer::reference_new(&ast, &res, root, stable);
+            let mut b = EffectAnalyzer::new(&ast, &res, root, stable);
+            assert_eq!(a.functions, b.functions);
+            assert_eq!(
+                a.summaries, b.summaries,
+                "summary iteration result differs for {source}"
+            );
+            assert_eq!(a.api_alias_order, b.api_alias_order);
+            assert_eq!(a.api_alias_map, b.api_alias_map);
+            for id in 0..ast.nodes.len() as NodeId {
+                assert_eq!(a.effects_for_expr(id), b.effects_for_expr(id));
+                assert_eq!(a.effects_for_statement(id), b.effects_for_statement(id));
+            }
+            b.stable_reads = !stable;
+            // The constructor's dependency state must not survive into mutable
+            // public queries, including edits to summaries made by callers.
+            for summary in &mut b.summaries {
+                *summary = None;
+            }
+            let mut expected = EffectAnalyzer::reference_new(&ast, &res, root, !stable);
+            for summary in &mut expected.summaries {
+                *summary = None;
+            }
+            for id in 0..ast.nodes.len() as NodeId {
+                assert_eq!(expected.effects_for_expr(id), b.effects_for_expr(id));
+            }
+        }
+    }
+    #[test]
+    fn dependent_summaries_keep_order_round_limit_cycles_and_initial_values() {
+        for count in [1, 2, 7, 19, 20, 21, 32] {
+            for reversed in [false, true] {
+                for cycle in [false, true] {
+                    let mut declarations = (0..count)
+                        .map(|i| {
+                            let body = if i + 1 < count {
+                                format!("return f{}(x)", i + 1)
+                            } else if cycle {
+                                "if x>0 then return f0(x-1)end output.setNumber(1,x)".to_string()
+                            } else {
+                                "output.setNumber(1,input.getNumber(1)) return x".to_string()
+                            };
+                            format!("function f{i}(x) {body} end ")
+                        })
+                        .collect::<Vec<_>>();
+                    if reversed {
+                        declarations.reverse();
+                    }
+                    compare(&(declarations.concat() + "function onTick()f0(2)end"));
+                }
+            }
+        }
+        for source in [
+            "function empty()end function a()return empty end function b()return a()end",
+            "function a()return b()end function b()return c()end function c()return a()end",
+            "function f()local function hidden()return g()end return hidden end function g()return f()end",
+            "function f()return 1 end function g()tab[f()]=2 end function h()g()end",
+            "g=math.sin function g(x)return h(x)end function h(x)return input.getNumber(x)end function onTick()g(1)end",
+            "function a()return 1 end function b(a)return a()end function onTick()b(a)end",
+            "function a()return b()end function b()return math.sin(1)end b=input.getNumber function onTick()a()end",
+        ] {compare(source);}
+    }
+    #[test]
+    fn summaries_of_multiple_independent_bodies_and_nested_blocks_stay_exact() {
+        for n in [1, 8, 48] {
+            let mut source = String::new();
+            for i in 0..n {
+                source.push_str(&format!(
+                    "function f{i}(x)do local v=x+{i} if v then output.setNumber(1,v)end end end "
+                ));
+            }
+            source.push_str("function onTick()f0(2)end");
+            compare(&source);
         }
     }
 }

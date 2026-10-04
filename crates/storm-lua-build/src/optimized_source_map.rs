@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[cfg(test)]
 use sourcemap::SourceMapBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -133,6 +134,9 @@ fn reason_id(
     table: &mut Vec<OptimizationReason>,
     ids: &mut HashMap<OptimizationReason, u32>,
 ) -> u32 {
+    if let Some(&id) = ids.get(reason) {
+        return id;
+    }
     *ids.entry(reason.clone()).or_insert_with(|| {
         let id = table.len() as u32;
         table.push(reason.clone());
@@ -239,20 +243,27 @@ pub fn compilation_settings(options: &CompileOptions, stats: Option<&SearchStats
         storm_lua_minify::config::resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     let effective_passes = storm_lua_minify::pass_ids::OPTIMIZATION_PASS_IDS
         .iter()
-        .map(|&id| (id, storm_lua_minify::config::pass_enabled(&resolved, id)))
-        .collect::<BTreeMap<_, _>>();
+        .map(|&id| {
+            (
+                id.to_owned(),
+                Value::Bool(storm_lua_minify::config::pass_enabled(&resolved, id)),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
     let property=options.property.as_ref().map(|p|json!({"mode":match p.mode {storm_lua_minify::config::PropertyMode::Runtime=>"runtime",storm_lua_minify::config::PropertyMode::Hardcode=>"hardcode"},
         "numbers":p.numbers.as_ref().map(|m|m.iter().map(|(k,v)|(k,numeric(*v))).collect::<BTreeMap<_,_>>()),"bools":p.bools,"texts":p.texts}));
     let selection=stats.map(|s|json!({"criterion":if s.winner_structural=="lexical" {"conservative-token-only"} else if s.stopped_early {"valid-candidate-meeting-target"} else {"smallest-valid-evaluated-candidate"},
         "structural":s.winner_structural,"layout":s.winner_layout,"targetMet":s.target_met,"stoppedEarly":s.stopped_early}));
-    json!({"environment":options.environment,"hostBindings":options.host_bindings,
+    let mut settings = json!({"environment":options.environment,"hostBindings":options.host_bindings,
         "mode":if options.mode==CompileMode::Safe {"safe"} else {"smallest"},
         "numericMode":if options.numeric_mode==NumericMode::Exact {"exact"}else{"tolerant"},
         "numericEncoding":"ieee754-binary64-hex","numericTolerance":options.numeric_tolerance.map(|t|json!({"abs":numeric(t.abs),"rel":numeric(t.rel)})),
         "effectiveNumericTolerances":{"constantFolding":{"abs":numeric(folding.abs),"rel":numeric(folding.rel)},"literalApproximationBeforeCaps":{"abs":numeric(literal.abs),"rel":numeric(literal.rel)}},
-        "property":property,"passToggles":options.pass_toggles,"effectivePassToggles":effective_passes,
+        "property":property,"passToggles":options.pass_toggles,
         "searchMode":if options.search_mode==SearchMode::Fast {"fast"}else{"exhaustive"},"searchBeamWidth":options.search_beam_width,
-        "targetSize":options.target_size,"zeroCostNewlines":options.zero_cost_newlines,"selection":selection})
+        "targetSize":options.target_size,"zeroCostNewlines":options.zero_cost_newlines,"selection":selection});
+    settings["effectivePassToggles"] = Value::Object(effective_passes);
+    settings
 }
 
 /// Encode final positions and optimization explanations as one standard-compatible map.
@@ -268,6 +279,59 @@ pub fn encode(
 }
 // One producer for the standard view. Validation compares that view with the
 // detailed ranges, rather than trusting a checksum recomputed over mismatches.
+// Standard-map anchors are already unique and sorted by generated position.
+// Encode their deltas directly instead of collecting/sorting another token
+// arena, serializing a temporary JSON object, and immediately parsing it back.
+// The independent SourceMapBuilder reference below checks exact v3 output.
+#[derive(Default)]
+struct MappingEncoder {
+    output: String,
+    previous: [u32; 5],
+    line: u32,
+    emitted: bool,
+}
+impl MappingEncoder {
+    fn push(&mut self, line: u32, column: u32, source: Option<(u32, u32, u32, Option<u32>)>) {
+        if line != self.line {
+            for _ in self.line..line {
+                self.output.push(';');
+            }
+            self.line = line;
+            self.previous[0] = 0;
+        } else if self.emitted {
+            self.output.push(',');
+        }
+        self.delta(0, column);
+        if let Some((source, line, column, name)) = source {
+            self.delta(1, source);
+            self.delta(2, line);
+            self.delta(3, column);
+            if let Some(name) = name {
+                self.delta(4, name);
+            }
+        }
+        self.emitted = true;
+    }
+    fn delta(&mut self, index: usize, value: u32) {
+        let signed = i64::from(value) - i64::from(self.previous[index]);
+        self.previous[index] = value;
+        write_vlq(&mut self.output, signed);
+    }
+}
+fn write_vlq(output: &mut String, value: i64) {
+    const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // Deltas are between u32 coordinates/IDs, so this shift cannot overflow.
+    let mut bits = (value.unsigned_abs() << 1) | u64::from(value < 0);
+    loop {
+        let part = (bits & 31) as usize;
+        bits >>= 5;
+        output.push(DIGITS[part | if bits == 0 { 0 } else { 32 }] as char);
+        if bits == 0 {
+            break;
+        }
+    }
+}
+
 fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
     let generated = LineIndex::new(code);
     let indexes = origins
@@ -275,25 +339,18 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
         .iter()
         .map(|s| (s.text.as_ref() != code).then(|| LineIndex::new(&s.text)))
         .collect::<Vec<_>>();
-    let mut builder = SourceMapBuilder::new(None);
-    // Temporary unique labels avoid merging two snapshots with the same display name.
-    for (id, source) in origins.sources.iter().enumerate() {
-        let actual = builder.add_source(&format!("source-{id}"));
-        if actual as usize != id {
-            return Err("source map source ordering changed".into());
-        }
-        // Only source IDs are needed during VLQ encoding. Actual snapshots are
-        // attached once below, rather than copied through the temporary encoder.
-        let _ = source;
-    }
     let mut names = HashMap::new();
+    let mut name_values = Vec::new();
     for origin in &origins.origins {
         if let Some(name) = &origin.name {
-            names
-                .entry(name.as_ref())
-                .or_insert_with(|| builder.add_name(name));
+            names.entry(name.as_ref()).or_insert_with(|| {
+                let id = name_values.len() as u32;
+                name_values.push(name.as_ref());
+                id
+            });
         }
     }
+    let mut mappings = MappingEncoder::default();
     let mut anchors = vec![0, code.len()];
     anchors.extend(
         code.bytes()
@@ -346,36 +403,20 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
                 .unwrap_or(&generated)
                 .utf16_position(offset)
                 .ok_or("invalid original anchor")?;
-            builder.add_raw(
+            mappings.push(
                 line,
                 col,
-                src_line,
-                src_col,
-                Some(source),
-                name.map(|n| names[n]),
-                false,
+                Some((source, src_line, src_col, name.map(|n| names[n]))),
             );
         } else {
-            builder.add_raw(line, col, 0, 0, None, None, false);
+            mappings.push(line, col, None);
         }
     }
-    let mut bytes = Vec::new();
-    builder
-        .into_sourcemap()
-        .to_writer(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    let mut map: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    map["sources"] = json!(origins
-        .sources
-        .iter()
-        .map(|s| s.name.as_ref())
-        .collect::<Vec<_>>());
-    map["sourcesContent"] = json!(origins
-        .sources
-        .iter()
-        .map(|s| s.text.as_ref())
-        .collect::<Vec<_>>());
-    Ok(map)
+    Ok(
+        json!({"version":3,"mappings":mappings.output,"names":name_values,
+        "sources":origins.sources.iter().map(|s|s.name.as_ref()).collect::<Vec<_>>(),
+        "sourcesContent":origins.sources.iter().map(|s|s.text.as_ref()).collect::<Vec<_>>() }),
+    )
 }
 
 /// Reject mismatched code, corrupted extension data or an unsupported schema.
@@ -671,5 +712,88 @@ function onTick()output.setNumber(1,f(2))end",
             });
             compare(source, &two);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod direct_mapping_tests {
+    use super::*;
+    #[test]
+    fn vlq_matches_independent_library_at_coordinate_and_continuation_boundaries() {
+        for value in [
+            -(u32::MAX as i64),
+            -65536,
+            -4096,
+            -1024,
+            -512,
+            -32,
+            -31,
+            -16,
+            -15,
+            -1,
+            0,
+            1,
+            15,
+            16,
+            31,
+            32,
+            511,
+            512,
+            1024,
+            4096,
+            65535,
+            u32::MAX as i64,
+        ] {
+            let mut actual = String::new();
+            write_vlq(&mut actual, value);
+            assert_eq!(
+                actual,
+                sourcemap::vlq::generate_vlq_segment(&[value]).unwrap()
+            );
+        }
+    }
+    #[test]
+    fn direct_delta_stream_matches_library_for_unknowns_names_and_sparse_lines() {
+        let mut builder = SourceMapBuilder::new(None);
+        let mut direct = MappingEncoder::default();
+        for name in ["one", "two", "three"] {
+            builder.add_source(name);
+            builder.add_name(name);
+        }
+        let mut line = 0;
+        let mut column = 0;
+        for i in 0u32..2000 {
+            if i % 11 == 0 {
+                // The production caller provides sorted unique anchors. A
+                // reset column must move to a later generated line as well.
+                line += 1 + i % 4;
+                column = 0;
+            }
+            column += 1 + i % 37;
+            let original = if i % 5 == 0 {
+                None
+            } else {
+                Some((
+                    i % 3,
+                    (i * 19) % 127,
+                    (i * 31) % 8192,
+                    (i % 7 != 0).then_some(i % 3),
+                ))
+            };
+            direct.push(line, column, original);
+            match original {
+                Some((src, sl, sc, n)) => {
+                    builder.add_raw(line, column, sl, sc, Some(src), n, false);
+                }
+                None => {
+                    builder.add_raw(line, column, 0, 0, None, None, false);
+                }
+            }
+        }
+        let mut bytes = Vec::new();
+        builder.into_sourcemap().to_writer(&mut bytes).unwrap();
+        let expected: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(direct.output, expected["mappings"].as_str().unwrap());
     }
 }

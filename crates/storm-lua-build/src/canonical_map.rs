@@ -1,259 +1,219 @@
-//! Write the existing schema-1 canonical JSON once without first expanding every
-//! record into serde_json::Value. Fields are written in lexicographic key order,
-//! exactly as the previous Value/BTreeMap encoder did. This is not a new format.
-use crate::optimized_source_map::{MapDisposition, MapExtension, MapOrigin, MapProducer};
-use serde::ser::{SerializeMap, SerializeSeq};
-use serde::{Serialize, Serializer};
+//! Write the schema-1 canonical map without allocating a JSON object per record.
+//! Trusted key/delimiter bytes are emitted in canonical order. All caller text,
+//! numbers and dynamic values still pass through serde_json's normal encoder.
+use crate::optimized_source_map::{MapDisposition, MapExtension, MapOrigin};
+use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::cell::Cell;
-use std::io::Write;
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
 use storm_lua_syntax::provenance::{GeneratedConstruct, OriginMapping, SourceSpan};
 
-struct Canonical<'a, T>(&'a T);
-struct Items<'a, T>(&'a [T]);
-impl<T> Serialize for Items<'_, T>
-where
-    for<'a> Canonical<'a, T>: Serialize,
-{
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for item in self.0 {
-            seq.serialize_element(&Canonical(item))?;
-        }
-        seq.end()
-    }
-}
-
-impl Serialize for Canonical<'_, SourceSpan> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(3))?;
-        m.serialize_entry("end", &v.end)?;
-        m.serialize_entry("source", &v.source)?;
-        m.serialize_entry("start", &v.start)?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, SourceRelation> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(2))?;
-        m.serialize_entry("role", &v.role)?;
-        m.serialize_entry("span", &Canonical(&v.span))?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, InlineContext> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(2))?;
-        m.serialize_entry("callSite", &Canonical(&v.call_site))?;
-        m.serialize_entry("definition", &Canonical(&v.definition))?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, OptimizationReason> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(6))?;
-        m.serialize_entry("after", &v.after)?;
-        m.serialize_entry("basis", &v.basis)?;
-        m.serialize_entry("before", &v.before)?;
-        m.serialize_entry("code", &v.code)?;
-        m.serialize_entry("facts", &v.facts)?;
-        m.serialize_entry("operation", &v.operation)?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, MapOrigin> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(7))?;
-        m.serialize_entry("kind", &v.kind)?;
-        m.serialize_entry("name", &v.name)?;
-        m.serialize_entry("precision", &v.precision)?;
-        m.serialize_entry("primary", &v.primary.as_ref().map(Canonical))?;
-        m.serialize_entry("reasons", &v.reasons)?;
-        m.serialize_entry("related", &v.related)?;
-        m.serialize_entry("transformation", &v.transformation)?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, OriginMapping> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(5))?;
-        m.serialize_entry("copied", &v.copied.as_ref().map(Canonical))?;
-        m.serialize_entry("end", &v.end)?;
-        m.serialize_entry("inlineContexts", &v.inline_contexts)?;
-        m.serialize_entry("origin", &v.origin)?;
-        m.serialize_entry("start", &v.start)?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, GeneratedConstruct> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(3))?;
-        m.serialize_entry("end", &v.end)?;
-        m.serialize_entry("origin", &v.origin)?;
-        m.serialize_entry("start", &v.start)?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, MapDisposition> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(3))?;
-        m.serialize_entry("original", &Canonical(&v.original))?;
-        m.serialize_entry("reason", &v.reason)?;
-        m.serialize_entry("replacementSources", &Items(&v.replacement_sources))?;
-        m.end()
-    }
-}
-impl Serialize for Canonical<'_, MapProducer> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.0;
-        let mut m = s.serialize_map(Some(4))?;
-        m.serialize_entry("dirty", &v.dirty)?;
-        m.serialize_entry("name", &v.name)?;
-        m.serialize_entry("revision", &v.revision)?;
-        m.serialize_entry("version", &v.version)?;
-        m.end()
-    }
-}
-// Capture the exact JSON string location structurally. Never search text for
-// an integrity-like key: source text and property names can contain that text.
+type JsonResult = Result<(), serde_json::Error>;
 #[derive(Default)]
-struct IntegrityPosition {
-    bytes_written: Cell<usize>,
-    string_content: Cell<Option<usize>>,
-}
-struct Integrity<'a> {
-    value: &'a str,
-    position: &'a IntegrityPosition,
-}
-impl Serialize for Integrity<'_> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        self.position
-            .string_content
-            .set(Some(self.position.bytes_written.get() + 1));
-        s.serialize_str(self.value)
-    }
-}
-struct Extension<'a> {
-    value: &'a MapExtension,
-    position: Option<&'a IntegrityPosition>,
-}
-impl Serialize for Canonical<'_, MapExtension> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Extension {
-            value: self.0,
-            position: None,
-        }
-        .serialize(s)
-    }
-}
-impl Serialize for Extension<'_> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let v = self.value;
-        let mut m = s.serialize_map(Some(14))?;
-        m.serialize_entry("compilation", &v.compilation)?;
-        m.serialize_entry("constructs", &Items(&v.constructs))?;
-        m.serialize_entry("contexts", &Items(&v.contexts))?;
-        m.serialize_entry("coordinateUnit", &v.coordinate_unit)?;
-        m.serialize_entry("dispositions", &Items(&v.dispositions))?;
-        m.serialize_entry("generated", &v.generated)?;
-        if let Some(position) = self.position {
-            m.serialize_entry(
-                "integrity",
-                &Integrity {
-                    value: &v.integrity,
-                    position,
-                },
-            )?;
-        } else {
-            m.serialize_entry("integrity", &v.integrity)?;
-        }
-        m.serialize_entry("mappings", &Items(&v.mappings))?;
-        m.serialize_entry("origins", &Items(&v.origins))?;
-        m.serialize_entry("producer", &Canonical(&v.producer))?;
-        m.serialize_entry("reasons", &Items(&v.reasons))?;
-        m.serialize_entry("relations", &Items(&v.relations))?;
-        m.serialize_entry("schemaVersion", &v.schema_version)?;
-        m.serialize_entry("sources", &v.sources)?;
-        m.end()
-    }
-}
-struct Document<'a> {
-    standard: &'a serde_json::Map<String, Value>,
-    extension: &'a MapExtension,
-    position: &'a IntegrityPosition,
-}
-impl Serialize for Document<'_> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut m = s.serialize_map(Some(self.standard.len() + 1))?;
-        // The standard producer emits fields preceding x_storm. Sorting all keys
-        // through a Value was the old encoder's definition of the fingerprint.
-        for (name, value) in self.standard {
-            m.serialize_entry(name, value)?;
-        }
-        m.serialize_entry(
-            "x_storm",
-            &Extension {
-                value: self.extension,
-                position: Some(self.position),
-            },
-        )?;
-        m.end()
-    }
-}
-struct MapWriter<'a> {
+struct Writer {
     bytes: Vec<u8>,
-    position: &'a IntegrityPosition,
 }
-impl Write for MapWriter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.bytes.extend_from_slice(bytes);
-        self.position.bytes_written.set(self.bytes.len());
-        Ok(bytes.len())
+impl Writer {
+    fn literal(&mut self, text: &'static [u8]) {
+        self.bytes.extend_from_slice(text);
     }
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn value<T: Serialize + ?Sized>(&mut self, value: &T) -> JsonResult {
+        serde_json::to_writer(&mut self.bytes, value)
+    }
+    fn span(&mut self, value: &SourceSpan) -> JsonResult {
+        self.literal(b"{\"end\":");
+        self.value(&value.end)?;
+        self.literal(b",\"source\":");
+        self.value(&value.source)?;
+        self.literal(b",\"start\":");
+        self.value(&value.start)?;
+        self.literal(b"}");
         Ok(())
     }
+    fn optional_span(&mut self, value: Option<&SourceSpan>) -> JsonResult {
+        match value {
+            Some(value) => self.span(value),
+            None => {
+                self.literal(b"null");
+                Ok(())
+            }
+        }
+    }
+    fn array<T>(&mut self, items: &[T], write: impl Fn(&mut Self, &T) -> JsonResult) -> JsonResult {
+        self.literal(b"[");
+        for (index, item) in items.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            write(self, item)?;
+        }
+        self.literal(b"]");
+        Ok(())
+    }
+    fn origin(&mut self, value: &MapOrigin) -> JsonResult {
+        self.literal(b"{\"kind\":");
+        self.value(&value.kind)?;
+        self.literal(b",\"name\":");
+        self.value(&value.name)?;
+        self.literal(b",\"precision\":");
+        self.value(&value.precision)?;
+        self.literal(b",\"primary\":");
+        self.optional_span(value.primary.as_ref())?;
+        self.literal(b",\"reasons\":");
+        self.value(&value.reasons)?;
+        self.literal(b",\"related\":");
+        self.value(&value.related)?;
+        self.literal(b",\"transformation\":");
+        self.value(&value.transformation)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn mapping(&mut self, value: &OriginMapping) -> JsonResult {
+        self.literal(b"{\"copied\":");
+        self.optional_span(value.copied.as_ref())?;
+        self.literal(b",\"end\":");
+        self.value(&value.end)?;
+        self.literal(b",\"inlineContexts\":");
+        self.value(&value.inline_contexts)?;
+        self.literal(b",\"origin\":");
+        self.value(&value.origin)?;
+        self.literal(b",\"start\":");
+        self.value(&value.start)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn construct(&mut self, value: &GeneratedConstruct) -> JsonResult {
+        self.literal(b"{\"end\":");
+        self.value(&value.end)?;
+        self.literal(b",\"origin\":");
+        self.value(&value.origin)?;
+        self.literal(b",\"start\":");
+        self.value(&value.start)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn relation(&mut self, value: &SourceRelation) -> JsonResult {
+        self.literal(b"{\"role\":");
+        self.value(&value.role)?;
+        self.literal(b",\"span\":");
+        self.span(&value.span)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn context(&mut self, value: &InlineContext) -> JsonResult {
+        self.literal(b"{\"callSite\":");
+        self.span(&value.call_site)?;
+        self.literal(b",\"definition\":");
+        self.span(&value.definition)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn reason(&mut self, value: &OptimizationReason) -> JsonResult {
+        self.literal(b"{\"after\":");
+        self.value(&value.after)?;
+        self.literal(b",\"basis\":");
+        self.value(&value.basis)?;
+        self.literal(b",\"before\":");
+        self.value(&value.before)?;
+        self.literal(b",\"code\":");
+        self.value(&value.code)?;
+        self.literal(b",\"facts\":");
+        self.value(&value.facts)?;
+        self.literal(b",\"operation\":");
+        self.value(&value.operation)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn disposition(&mut self, value: &MapDisposition) -> JsonResult {
+        self.literal(b"{\"original\":");
+        self.span(&value.original)?;
+        self.literal(b",\"reason\":");
+        self.value(&value.reason)?;
+        self.literal(b",\"replacementSources\":");
+        self.array(&value.replacement_sources, Self::span)?;
+        self.literal(b"}");
+        Ok(())
+    }
+    fn extension(&mut self, value: &MapExtension) -> Result<usize, serde_json::Error> {
+        self.literal(b"{\"compilation\":");
+        self.value(&value.compilation)?;
+        self.literal(b",\"constructs\":");
+        self.array(&value.constructs, Self::construct)?;
+        self.literal(b",\"contexts\":");
+        self.array(&value.contexts, Self::context)?;
+        self.literal(b",\"coordinateUnit\":");
+        self.value(&value.coordinate_unit)?;
+        self.literal(b",\"dispositions\":");
+        self.array(&value.dispositions, Self::disposition)?;
+        self.literal(b",\"generated\":");
+        self.value(&value.generated)?;
+        self.literal(b",\"integrity\":\"");
+        // Record the structural string position, never search source text for a
+        // key. Reserve digest bytes now to avoid shifting the large suffix later.
+        let digest_at = self.bytes.len();
+        self.bytes.extend_from_slice(&[b'0'; 64]);
+        self.literal(b"\",\"mappings\":");
+        self.array(&value.mappings, Self::mapping)?;
+        self.literal(b",\"origins\":");
+        self.array(&value.origins, Self::origin)?;
+        self.literal(b",\"producer\":{\"dirty\":");
+        self.value(&value.producer.dirty)?;
+        self.literal(b",\"name\":");
+        self.value(&value.producer.name)?;
+        self.literal(b",\"revision\":");
+        self.value(&value.producer.revision)?;
+        self.literal(b",\"version\":");
+        self.value(&value.producer.version)?;
+        self.literal(b"}");
+        self.literal(b",\"reasons\":");
+        self.array(&value.reasons, Self::reason)?;
+        self.literal(b",\"relations\":");
+        self.array(&value.relations, Self::relation)?;
+        self.literal(b",\"schemaVersion\":");
+        self.value(&value.schema_version)?;
+        self.literal(b",\"sources\":");
+        self.value(&value.sources)?;
+        self.literal(b"}");
+        Ok(digest_at)
+    }
 }
 
-pub(crate) fn encode(standard: &Value, mut extension: MapExtension) -> Result<String, String> {
+pub(crate) fn encode(standard: &Value, extension: MapExtension) -> Result<String, String> {
     let standard = standard
         .as_object()
         .ok_or("standard source map is not an object")?;
-    extension.integrity.clear();
-    let position = IntegrityPosition::default();
-    let mut output = MapWriter {
-        bytes: Vec::new(),
-        position: &position,
+    // Reserve a conservative size based only on records already in memory.
+    // Actual dynamic strings can still grow the buffer normally; this is not
+    // an output limit and does not allocate or retain a second JSON copy.
+    let capacity = 1024usize
+        .saturating_add(extension.origins.len().saturating_mul(120))
+        .saturating_add(extension.mappings.len().saturating_mul(64))
+        .saturating_add(extension.constructs.len().saturating_mul(32));
+    let mut writer = Writer {
+        bytes: Vec::with_capacity(capacity),
     };
-    // Serialize the canonical map once with the required empty digest field.
-    // Filling that recorded JSON string later does not change hash semantics.
-    serde_json::to_writer(
-        &mut output,
-        &Document {
-            standard,
-            extension: &extension,
-            position: &position,
-        },
-    )
-    .map_err(|e| e.to_string())?;
-    let at = position
-        .string_content
-        .get()
-        .ok_or("missing integrity location in encoded map")?;
-    let integrity = format!("{:x}", Sha256::digest(&output.bytes));
-    let mut encoded = String::from_utf8(output.bytes).map_err(|e| e.to_string())?;
-    encoded.insert_str(at, &integrity);
-    Ok(encoded)
+    writer.literal(b"{");
+    for (name, value) in standard {
+        writer.value(name).map_err(|e| e.to_string())?;
+        writer.literal(b":");
+        writer.value(value).map_err(|e| e.to_string())?;
+        writer.literal(b",");
+    }
+    writer.literal(b"\"x_storm\":");
+    let at = writer.extension(&extension).map_err(|e| e.to_string())?;
+    writer.literal(b"}");
+    // The canonical fingerprint is still computed with an EMPTY integrity
+    // string. The reserved 64 characters are excluded from the hash input.
+    let mut digest = Sha256::new();
+    digest.update(&writer.bytes[..at]);
+    digest.update(&writer.bytes[at + 64..]);
+    let digest = digest.finalize();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for (i, byte) in digest.iter().copied().enumerate() {
+        writer.bytes[at + 2 * i] = HEX[(byte >> 4) as usize];
+        writer.bytes[at + 2 * i + 1] = HEX[(byte & 15) as usize];
+    }
+    String::from_utf8(writer.bytes).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -286,11 +246,8 @@ mod canonical_tests {
             .unwrap()
             .keys()
             .all(|k| k.as_str() < "x_storm"));
-        // Also detects new Rust fields accidentally omitted by the private writer.
-        assert_eq!(
-            serde_json::to_value(Canonical(&extension)).unwrap(),
-            serde_json::to_value(&extension).unwrap()
-        );
+        // The independent Value serializer below includes every public struct
+        // field, so omissions in the direct writer fail exact-byte equality.
         let expected = old_encode(&original, extension.clone());
         let actual = encode(&original, extension).unwrap();
         assert_eq!(

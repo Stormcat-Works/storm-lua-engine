@@ -117,6 +117,20 @@ fn empty_tokens() -> Arc<Vec<(SyntaxSite, StoredOrigin)>> {
     Arc::clone(EMPTY.get_or_init(Arc::default))
 }
 
+fn validate_source_span(span: SourceSpan, sources: &[SourceSnapshot]) -> Result<(), String> {
+    let source = sources
+        .get(span.source as usize)
+        .ok_or("origin source index is out of bounds")?;
+    if span.start > span.end
+        || span.end > source.text.len()
+        || !source.text.is_char_boundary(span.start)
+        || !source.text.is_char_boundary(span.end)
+    {
+        return Err("origin range is not a valid UTF-8 source slice".into());
+    }
+    Ok(())
+}
+
 impl Origin {
     /// Attribute a construct to one original source range.
     pub fn source(span: SourceSpan, precision: OriginPrecision, name: Option<Arc<str>>) -> Self {
@@ -200,16 +214,7 @@ impl Origin {
             .chain(self.related.iter())
             .chain(self.relations.iter().map(|r| &r.span))
         {
-            let source = sources
-                .get(span.source as usize)
-                .ok_or("origin source index is out of bounds")?;
-            if span.start > span.end
-                || span.end > source.text.len()
-                || !source.text.is_char_boundary(span.start)
-                || !source.text.is_char_boundary(span.end)
-            {
-                return Err("origin range is not a valid UTF-8 source slice".into());
-            }
+            validate_source_span(*span, sources)?;
         }
         if let (Some(span), Some(name)) = (self.primary, self.name.as_ref()) {
             if &sources[span.source as usize].text[span.start..span.end] != name.as_ref() {
@@ -876,14 +881,14 @@ impl GeneratedOrigins {
         }
         for context in &self.contexts {
             for span in [context.definition, context.call_site] {
-                Origin::source(span, OriginPrecision::Expression, None).validate(&self.sources)?;
+                validate_source_span(span, &self.sources)?;
             }
         }
         for disposition in self.dispositions.iter() {
             for span in
                 std::iter::once(&disposition.original).chain(disposition.replacement_sources.iter())
             {
-                Origin::source(*span, OriginPrecision::Statement, None).validate(&self.sources)?;
+                validate_source_span(*span, &self.sources)?;
             }
             disposition.reason.validate()?;
         }
@@ -908,7 +913,7 @@ impl GeneratedOrigins {
                 return Err("inline context index is out of bounds".into());
             }
             if let Some(copied) = mapping.copied {
-                Origin::source(copied, OriginPrecision::Token, None).validate(&self.sources)?;
+                validate_source_span(copied, &self.sources)?;
                 if mapping.origin.is_none()
                     || self.origins[mapping.origin.unwrap_or(0) as usize].kind
                         == OriginKind::Synthetic

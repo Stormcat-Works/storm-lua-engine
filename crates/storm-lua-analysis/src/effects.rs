@@ -179,20 +179,7 @@ pub struct EffectAnalyzer<'a> {
 
 impl<'a> EffectAnalyzer<'a> {
     pub fn new(ast: &'a Ast, res: &'a Resolution, root: NodeId, stable_reads: bool) -> Self {
-        // writes カウント: name.write の件数
         let mut writes = vec![0u32; res.bindings.len()];
-        let mut nodes: Vec<NodeId> = Vec::new();
-        walk(ast, root, &mut nodes);
-        for &nid in &nodes {
-            if let Node::Name(_) = ast.nodes[nid as usize] {
-                if let Some(bid) = res.node_bid[nid as usize] {
-                    if res.node_write[nid as usize] {
-                        writes[bid as usize] += 1;
-                    }
-                }
-            }
-        }
-
         let mut analyzer = Self {
             ast,
             res,
@@ -203,27 +190,19 @@ impl<'a> EffectAnalyzer<'a> {
             api_alias_map: vec![None; res.bindings.len()],
         };
 
-        // 未解決・未 write の global API root だけがビルトイン。
-        for &nid in &nodes {
-            if let Node::Name(sid) = ast.nodes[nid as usize] {
-                let name = ast.strings.get(sid);
-                let Some(bid) = res.node_bid[nid as usize] else {
-                    continue;
-                };
-                if !api_roots(name) || writes[bid as usize] != 0 {
-                    continue;
-                }
-                let b = &res.bindings[bid as usize];
-                if b.kind == BindingKind::Global
-                    && ast.strings.get(b.name) == name
-                    && analyzer.api_alias_get(bid).is_none()
-                {
-                    // The first occurrence establishes this immutable root.
-                    // Repeated reads previously allocated the identical String.
-                    analyzer.api_alias_set(bid, name.to_string());
-                }
+        // Count actual root-reachable occurrences and collect builtin roots in
+        // the same traversal. Do not materialize a complete preorder node list.
+        // A later write may invalidate a root first seen as a read; remove those
+        // candidates before any alias propagation or effect query can use them.
+        analyzer.seed_root_occurrences(root, &mut writes);
+        analyzer.api_alias_order.retain(|(bid, _)| {
+            if writes[*bid as usize] == 0 {
+                true
+            } else {
+                analyzer.api_alias_map[*bid as usize] = None;
+                false
             }
-        }
+        });
 
         // apiAliases fixpoint（8 周）
         if let Node::Block(ss) = &ast.nodes[root as usize] {
@@ -344,6 +323,30 @@ impl<'a> EffectAnalyzer<'a> {
     fn api_alias_get(&self, bid: BindingId) -> Option<&String> {
         self.api_alias_map[bid as usize].as_ref()
     }
+    fn seed_root_occurrences(&mut self, node: NodeId, writes: &mut [u32]) {
+        if let Node::Name(symbol) = self.ast.nodes[node as usize] {
+            if let Some(bid) = self.res.node_bid[node as usize] {
+                if self.res.node_write[node as usize] {
+                    writes[bid as usize] += 1;
+                }
+                let name = self.ast.strings.get(symbol);
+                let binding = &self.res.bindings[bid as usize];
+                if writes[bid as usize] == 0
+                    && api_roots(name)
+                    && binding.kind == BindingKind::Global
+                    && self.ast.strings.get(binding.name) == name
+                    && self.api_alias_get(bid).is_none()
+                {
+                    self.api_alias_set(bid, name.to_owned());
+                }
+            }
+        }
+        let ast = self.ast;
+        for_each_child(ast, node, &mut |child| {
+            self.seed_root_occurrences(child, writes)
+        });
+    }
+
     fn api_alias_set(&mut self, bid: BindingId, alias: String) {
         if self.api_alias_map[bid as usize].is_none() {
             self.api_alias_order.push((bid, alias.clone()));
@@ -818,9 +821,12 @@ mod construction_reuse_tests {
     fn compare(source: &str) {
         let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
         let res = crate::resolver::resolve(&ast, root);
+        compare_parsed(&ast, &res, root);
+    }
+    fn compare_parsed(ast: &Ast, res: &Resolution, root: NodeId) {
         for stable in [false, true] {
-            let mut a = EffectAnalyzer::reference_new(&ast, &res, root, stable);
-            let mut b = EffectAnalyzer::new(&ast, &res, root, stable);
+            let mut a = EffectAnalyzer::reference_new(ast, res, root, stable);
+            let mut b = EffectAnalyzer::new(ast, res, root, stable);
             assert_eq!(a.functions, b.functions);
             assert_eq!(a.summaries, b.summaries);
             assert_eq!(a.api_alias_order, b.api_alias_order);
@@ -876,5 +882,52 @@ mod construction_reuse_tests {
                 (0..n).map(|i| format!("v{i}={i} ")).collect::<String>()
             ));
         }
+    }
+    #[test]
+    fn fused_seeding_preserves_late_writes_shadowing_and_subroot_scope() {
+        for source in [
+            "i=input o=output input={} function onTick()o.setNumber(1,i.getNumber(1))end",
+            "i=input input=input output=output local math={} function f()return i.getNumber(2)end",
+            "input={} do local before=input.getNumber(1) output.setNumber(1,before)end",
+            "local input={} do i=input end function f()return input.value end",
+            "function f()return math.sin(1)end math={} local x=f()",
+        ] {
+            let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+            let res = crate::resolver::resolve(&ast, root);
+            compare_parsed(&ast, &res, root);
+            for (id, node) in ast.nodes.iter().enumerate() {
+                if matches!(node, Node::Block(_)) {
+                    compare_parsed(&ast, &res, id as NodeId);
+                }
+            }
+        }
+    }
+    #[test]
+    fn shared_child_occurrences_are_counted_without_including_unreachable_nodes() {
+        let (mut ast, root) =
+            storm_lua_syntax::parse_source("i=input x=i.getNumber(1) output.setNumber(1,x)")
+                .unwrap();
+        let statements = match ast.node(root) {
+            Node::Block(values) => values.clone(),
+            _ => panic!("fixture root"),
+        };
+        let mut repeated = statements.clone();
+        repeated.extend_from_slice(&statements);
+        ast.nodes[root as usize] = Node::Block(repeated);
+        let symbol = ast.strings.intern("input");
+        let unreachable = ast.push(Node::Name(symbol));
+        let mut res = crate::resolver::resolve(&ast, root);
+        // An unrelated arena slot must not become a reachable builtin, even if
+        // a low-level caller supplies a resolved binding for it.
+        res.node_write[unreachable as usize] = true;
+        let input_bid = res
+            .bindings
+            .iter()
+            .position(|binding| {
+                binding.kind == BindingKind::Global && ast.strings.get(binding.name) == "input"
+            })
+            .unwrap() as BindingId;
+        res.node_bid[unreachable as usize] = Some(input_bid);
+        compare_parsed(&ast, &res, root);
     }
 }

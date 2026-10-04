@@ -373,11 +373,13 @@ impl<'a> EffectAnalyzer<'a> {
     // A single accumulator avoids a Vec<Effects> and two binding-vector
     // allocations per expression. No results are cached across mutable summary
     // fixpoint iterations or changes to the public stable_reads setting.
-    fn expr_into(&self, x: NodeId, e: &mut Effects) {
+    fn expr_into<const READS: bool>(&self, x: NodeId, e: &mut Effects) {
         match &self.ast.nodes[x as usize] {
             Node::Name(_) => {
                 if let Some(bid) = self.res.node_bid[x as usize] {
-                    e.reads.push(bid);
+                    if READS {
+                        e.reads.push(bid);
+                    }
                 }
             }
             Node::Num(_)
@@ -386,33 +388,33 @@ impl<'a> EffectAnalyzer<'a> {
             | Node::Bool(_)
             | Node::Vararg
             | Node::Function(..) => {}
-            Node::Paren(x) => self.expr_into(*x, e),
+            Node::Paren(x) => self.expr_into::<READS>(*x, e),
             Node::Table(fs) => {
                 for f in fs {
                     match f {
                         storm_lua_syntax::ast::TableField::Arr(v)
                         | storm_lua_syntax::ast::TableField::Name(_, v) => {
-                            self.expr_into(*v, e);
+                            self.expr_into::<READS>(*v, e);
                         }
                         storm_lua_syntax::ast::TableField::KVar(k, v) => {
-                            self.expr_into(*k, e);
-                            self.expr_into(*v, e);
+                            self.expr_into::<READS>(*k, e);
+                            self.expr_into::<READS>(*v, e);
                         }
                     }
                 }
             }
             Node::Index(obj, key, _) => {
-                self.expr_into(*obj, e);
-                self.expr_into(*key, e);
+                self.expr_into::<READS>(*obj, e);
+                self.expr_into::<READS>(*key, e);
                 e.may_throw = true;
             }
             Node::Un(op, x) => {
-                self.expr_into(*x, e);
+                self.expr_into::<READS>(*x, e);
                 e.may_throw |= matches!(op.as_str(), "-" | "#" | "~");
             }
             Node::Bin(op, l, r) => {
-                self.expr_into(*l, e);
-                self.expr_into(*r, e);
+                self.expr_into::<READS>(*l, e);
+                self.expr_into::<READS>(*r, e);
                 e.may_throw |= !matches!(op.as_str(), "and" | "or" | "==" | "~=");
             }
             Node::Call(function, args, _) => {
@@ -420,12 +422,12 @@ impl<'a> EffectAnalyzer<'a> {
                 // A proven builtin's callee lookup is total. Only suppress the
                 // callee's throw bit, never a previous sibling's or argument's.
                 let preceding_throw = e.may_throw;
-                self.expr_into(*function, e);
+                self.expr_into::<READS>(*function, e);
                 if full.is_some() {
                     e.may_throw = preceding_throw;
                 }
                 for &arg in args {
-                    self.expr_into(arg, e);
+                    self.expr_into::<READS>(arg, e);
                 }
                 if let Some(full) = full.as_deref() {
                     if full.starts_with("screen.")
@@ -454,7 +456,9 @@ impl<'a> EffectAnalyzer<'a> {
                     self.res.node_bid[*function as usize],
                 ) {
                     if let Some(s) = &self.summaries[bid as usize] {
-                        e.reads.extend_from_slice(&s.reads);
+                        if READS {
+                            e.reads.extend_from_slice(&s.reads);
+                        }
                         e.writes.extend_from_slice(&s.writes);
                         e.calls |= s.calls;
                         e.ordered |= s.ordered;
@@ -467,20 +471,20 @@ impl<'a> EffectAnalyzer<'a> {
                 e.may_throw = true;
                 e.stable = false;
             }
-            _ => for_each_child(self.ast, x, &mut |q| self.expr_into(q, e)),
+            _ => for_each_child(self.ast, x, &mut |q| self.expr_into::<READS>(q, e)),
         }
     }
 
-    fn statement_into(&self, statement: NodeId, e: &mut Effects) {
+    fn statement_into<const READS: bool>(&self, statement: NodeId, e: &mut Effects) {
         match &self.ast.nodes[statement as usize] {
             Node::Local(_, es) | Node::Return(es) => {
                 for &x in es {
-                    self.expr_into(x, e);
+                    self.expr_into::<READS>(x, e);
                 }
             }
             Node::Assign(vs, es) => {
                 for &x in es {
-                    self.expr_into(x, e);
+                    self.expr_into::<READS>(x, e);
                 }
                 for &v in vs {
                     if let Node::Name(_) = self.ast.nodes[v as usize] {
@@ -491,74 +495,76 @@ impl<'a> EffectAnalyzer<'a> {
                         // Preserve the existing lvalue analysis contract: only
                         // reads/calls are merged and an indexed store may throw.
                         let mut target = empty_effects();
-                        self.expr_into(v, &mut target);
-                        e.reads.extend(target.reads);
+                        self.expr_into::<READS>(v, &mut target);
+                        if READS {
+                            e.reads.extend(target.reads);
+                        }
                         e.calls |= target.calls;
                         e.may_throw = true;
                     }
                 }
             }
-            Node::Callstat(x) => self.expr_into(*x, e),
+            Node::Callstat(x) => self.expr_into::<READS>(*x, e),
             Node::If(arms, otherwise) => {
                 for arm in arms {
-                    self.expr_into(arm.cond, e);
-                    self.block_into(arm.body, e);
+                    self.expr_into::<READS>(arm.cond, e);
+                    self.block_into::<READS>(arm.body, e);
                 }
                 if let Some(body) = otherwise {
-                    self.block_into(*body, e);
+                    self.block_into::<READS>(*body, e);
                 }
             }
             Node::While(condition, body) => {
-                self.expr_into(*condition, e);
-                self.block_into(*body, e);
+                self.expr_into::<READS>(*condition, e);
+                self.block_into::<READS>(*body, e);
             }
             Node::Repeat(body, condition) => {
-                self.block_into(*body, e);
-                self.expr_into(*condition, e);
+                self.block_into::<READS>(*body, e);
+                self.expr_into::<READS>(*condition, e);
             }
-            Node::Do(body) => self.block_into(*body, e),
+            Node::Do(body) => self.block_into::<READS>(*body, e),
             Node::Fornum(_, a, b, c, body) => {
-                self.expr_into(*a, e);
-                self.expr_into(*b, e);
+                self.expr_into::<READS>(*a, e);
+                self.expr_into::<READS>(*b, e);
                 if let Some(c) = c {
-                    self.expr_into(*c, e);
+                    self.expr_into::<READS>(*c, e);
                 }
-                self.block_into(*body, e);
+                self.block_into::<READS>(*body, e);
             }
             Node::Forin(_, es, body) => {
                 for &x in es {
-                    self.expr_into(x, e);
+                    self.expr_into::<READS>(x, e);
                 }
-                self.block_into(*body, e);
+                self.block_into::<READS>(*body, e);
             }
             _ => {}
         }
     }
 
-    fn block_into(&self, block: NodeId, e: &mut Effects) {
+    fn block_into<const READS: bool>(&self, block: NodeId, e: &mut Effects) {
         let Node::Block(statements) = &self.ast.nodes[block as usize] else {
             unreachable!()
         };
         for &statement in statements {
-            self.statement_into(statement, e);
+            self.statement_into::<READS>(statement, e);
         }
     }
 
     fn expr_effects(&self, x: NodeId, _current_fn: Option<BindingId>) -> Effects {
         let mut e = empty_effects();
-        self.expr_into(x, &mut e);
+        self.expr_into::<true>(x, &mut e);
         normalize_effects(e)
     }
 
     fn statement_effects(&self, statement: NodeId, _current_fn: Option<BindingId>) -> Effects {
         let mut e = empty_effects();
-        self.statement_into(statement, &mut e);
+        self.statement_into::<true>(statement, &mut e);
         normalize_effects(e)
     }
 
     fn block_effects(&self, block: NodeId, _current_fn: Option<BindingId>) -> Effects {
         let mut e = empty_effects();
-        self.block_into(block, &mut e);
+        self.block_into::<true>(block, &mut e);
         normalize_effects(e)
     }
 
@@ -573,12 +579,16 @@ impl<'a> EffectAnalyzer<'a> {
     }
 
     pub fn is_pure(&self, x: NodeId) -> bool {
-        let e = self.expr_effects(x, None);
+        // Queries use the same effect rules without collecting/sorting binding
+        // reads that their boolean answer cannot observe. Writes are retained.
+        let mut e = empty_effects();
+        self.expr_into::<false>(x, &mut e);
         !e.calls && !e.ordered && e.writes.is_empty()
     }
 
     pub fn is_movable(&self, x: NodeId) -> bool {
-        let e = self.expr_effects(x, None);
+        let mut e = empty_effects();
+        self.expr_into::<false>(x, &mut e);
         !e.calls && !e.ordered && e.writes.is_empty() && !e.may_throw && e.stable
     }
 }
@@ -820,6 +830,10 @@ mod construction_reuse_tests {
                 b.stable_reads = setting;
                 for id in 0..ast.nodes.len() as u32 {
                     assert_eq!(a.effects_for_expr(id), b.effects_for_expr(id));
+                    let full = b.effects_for_expr(id);
+                    let pure = !full.calls && !full.ordered && full.writes.is_empty();
+                    assert_eq!(b.is_pure(id), pure);
+                    assert_eq!(b.is_movable(id), pure && !full.may_throw && full.stable);
                     assert_eq!(a.effects_for_statement(id), b.effects_for_statement(id));
                     assert_eq!(
                         a.resolve_builtin_reference(id),
@@ -833,6 +847,10 @@ mod construction_reuse_tests {
                 a.summaries[i] = None;
                 b.summaries[i] = None;
                 assert_eq!(a.effects_for_expr(root), b.effects_for_expr(root));
+                let full = b.effects_for_expr(root);
+                let pure = !full.calls && !full.ordered && full.writes.is_empty();
+                assert_eq!(b.is_pure(root), pure);
+                assert_eq!(b.is_movable(root), pure && !full.may_throw && full.stable);
             }
         }
     }

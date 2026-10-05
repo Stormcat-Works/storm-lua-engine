@@ -569,15 +569,27 @@ fn standard_fields_with_copy_hint(
         .iter()
         .map(|index| index.as_ref().map(LineIndex::utf16_cursor))
         .collect::<Vec<_>>();
+    let pointer_names = simple_copies && origins.origins.len() >= 64;
     let mut names = HashMap::new();
+    let mut name_pointers = HashMap::new();
     let mut name_values = Vec::new();
     for origin in &origins.origins {
         if let Some(name) = &origin.name {
-            names.entry(name.as_ref()).or_insert_with(|| {
-                let id = name_values.len() as u32;
-                name_values.push(Arc::clone(name));
-                id
-            });
+            if pointer_names {
+                name_pointers
+                    .entry(name.as_ptr() as usize)
+                    .or_insert_with(|| {
+                        let id = name_values.len() as u32;
+                        name_values.push(Arc::clone(name));
+                        id
+                    });
+            } else {
+                names.entry(name.as_ref()).or_insert_with(|| {
+                    let id = name_values.len() as u32;
+                    name_values.push(Arc::clone(name));
+                    id
+                });
+            }
         }
     }
     let mut mappings = MappingEncoder::default();
@@ -637,11 +649,14 @@ fn standard_fields_with_copy_hint(
                     .position(offset)
                     .ok_or("invalid original anchor")?
             };
-            mappings.push(
-                line,
-                col,
-                Some((source, src_line, src_col, name.map(|n| names[n]))),
-            );
+            let name_id = name.map(|name| {
+                if pointer_names {
+                    name_pointers[&(name.as_ptr() as usize)]
+                } else {
+                    names[name]
+                }
+            });
+            mappings.push(line, col, Some((source, src_line, src_col, name_id)));
         } else {
             mappings.push(line, col, None);
         }

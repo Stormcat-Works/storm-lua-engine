@@ -86,48 +86,24 @@ pub fn walk(ast: &Ast, id: NodeId, out: &mut Vec<NodeId>) {
     for_each_child(ast, id, &mut |c| walk(ast, c, out));
 }
 
-pub const PURE_API: &[&str] = &[
-    "math.pi",
-    "math.sin",
-    "math.cos",
-    "math.tan",
-    "math.atan",
-    "math.sqrt",
-    "math.abs",
-    "math.max",
-    "math.min",
-    "math.floor",
-    "input.getNumber",
-    "input.getBool",
-    "property.getNumber",
-    "property.getBool",
-    "string.pack",
-    "string.unpack",
-    "string.format",
-    "table.unpack",
-    "type",
-    "tonumber",
-    "tostring",
-];
-
-pub const TOTAL_API: &[&str] = &[
-    "input.getNumber",
-    "input.getBool",
-    "property.getNumber",
-    "property.getBool",
-    "math.abs",
-    "math.max",
-    "math.min",
-    "math.floor",
-    "math.sin",
-    "math.cos",
-    "math.tan",
-    "math.atan",
-    "type",
-    "tostring",
-];
-
-pub const EFFECT_API: &[&str] = &["output.setNumber", "output.setBool"];
+// Public compatibility lists and the private lookup share one declaration.
+// Classification uses the proven builtin's two borrowed name components rather
+// than testing each full vocabulary entry with repeated prefix comparisons.
+macro_rules! builtin_set {
+    ($list:ident,$lookup:ident;[$(($root:literal,$member:literal)),* $(,)?];[$($global:literal),* $(,)?])=>{
+        pub const $list:&[&str]=&[$(concat!($root,".",$member),)*$($global),*];
+        fn $lookup(reference:&BuiltinReference<'_>)->bool {
+            match reference.parts() {
+                $(($root,Some($member))=>true,)*
+                $(($global,None)=>true,)*
+                _=>false,
+            }
+        }
+    };
+}
+builtin_set!(PURE_API,is_pure_api;[("math","pi"),("math","sin"),("math","cos"),("math","tan"),("math","atan"),("math","sqrt"),("math","abs"),("math","max"),("math","min"),("math","floor"),("input","getNumber"),("input","getBool"),("property","getNumber"),("property","getBool"),("string","pack"),("string","unpack"),("string","format"),("table","unpack")];["type","tonumber","tostring"]);
+builtin_set!(TOTAL_API,is_total_api;[("input","getNumber"),("input","getBool"),("property","getNumber"),("property","getBool"),("math","abs"),("math","max"),("math","min"),("math","floor"),("math","sin"),("math","cos"),("math","tan"),("math","atan")];["type","tostring"]);
+builtin_set!(EFFECT_API,is_effect_api;[("output","setNumber"),("output","setBool")];[]);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunctionSummary {
@@ -172,6 +148,18 @@ struct BuiltinReference<'a> {
     member: Option<std::borrow::Cow<'a, str>>,
 }
 impl<'a> BuiltinReference<'a> {
+    fn parts(&self) -> (&str, Option<&str>) {
+        match self.member.as_deref() {
+            Some(member) => (self.base.as_ref(), Some(member)),
+            None => self
+                .base
+                .split_once('.')
+                .map_or((self.base.as_ref(), None), |(root, member)| {
+                    (root, Some(member))
+                }),
+        }
+    }
+
     fn is(&self, name: &str) -> bool {
         match &self.member {
             None => self.base == name,
@@ -535,13 +523,13 @@ impl<'a> EffectAnalyzer<'a> {
                         e.stable = false;
                         return;
                     }
-                    if PURE_API.iter().any(|name| full.is(name)) {
-                        e.may_throw |= !TOTAL_API.iter().any(|name| full.is(name));
+                    if is_pure_api(full) {
+                        e.may_throw |= !is_total_api(full);
                         e.stable &= self.stable_reads
                             || (!full.starts_with("input.") && !full.starts_with("property."));
                         return;
                     }
-                    if EFFECT_API.iter().any(|name| full.is(name)) {
+                    if is_effect_api(full) {
                         e.calls = true;
                         e.stable = false;
                         return;
@@ -1450,5 +1438,152 @@ mod borrowed_alias_propagation_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod builtin_membership_tests {
+    use super::*;
+    use std::borrow::Cow;
+    fn check(reference: &BuiltinReference<'_>) {
+        assert_eq!(
+            is_pure_api(reference),
+            PURE_API.iter().any(|n| reference.is(n))
+        );
+        assert_eq!(
+            is_total_api(reference),
+            TOTAL_API.iter().any(|n| reference.is(n))
+        );
+        assert_eq!(
+            is_effect_api(reference),
+            EFFECT_API.iter().any(|n| reference.is(n))
+        );
+    }
+    #[test]
+    fn exact_component_matches_cover_aliases_nested_paths_and_lookalikes() {
+        let mut values = PURE_API
+            .iter()
+            .chain(TOTAL_API)
+            .chain(EFFECT_API)
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        for v in [
+            "",
+            "screen.getWidth",
+            "screen.getHeight",
+            "screen.drawText",
+            "custom.input.getNumber",
+            "math.sin.extra",
+            "math.",
+            ".sin",
+            "雪",
+            "math.雪",
+            "math..sin",
+            "input.getNumber\0",
+            "Type",
+            "type.",
+        ] {
+            values.push(v.into());
+        }
+        for value in &values {
+            for text in [
+                value.clone(),
+                format!("x{value}"),
+                format!("{value}x"),
+                value.to_uppercase(),
+            ] {
+                check(&BuiltinReference {
+                    base: Cow::Borrowed(&text),
+                    member: None,
+                });
+                for (offset, ch) in text.char_indices().filter(|(_, c)| *c == '.') {
+                    assert_eq!(ch, '.');
+                    check(&BuiltinReference {
+                        base: Cow::Borrowed(&text[..offset]),
+                        member: Some(Cow::Borrowed(&text[offset + 1..])),
+                    });
+                }
+            }
+        }
+        for root in [
+            "input",
+            "math",
+            "property",
+            "screen",
+            "table",
+            "string",
+            "",
+            "custom",
+            "input.getNumber",
+        ] {
+            for member in values.iter().map(String::as_str).chain([
+                "getNumber",
+                "getBool",
+                "sin",
+                "sqrt",
+                "floor",
+                "abs",
+                "getText",
+                "getWidth",
+                "setNumber",
+                "pack",
+                "unpack",
+                "format",
+            ]) {
+                check(&BuiltinReference {
+                    base: Cow::Borrowed(root),
+                    member: Some(Cow::Borrowed(member)),
+                });
+            }
+        }
+    }
+    #[test]
+    fn public_lists_remain_in_the_existing_order() {
+        assert_eq!(
+            PURE_API,
+            [
+                "math.pi",
+                "math.sin",
+                "math.cos",
+                "math.tan",
+                "math.atan",
+                "math.sqrt",
+                "math.abs",
+                "math.max",
+                "math.min",
+                "math.floor",
+                "input.getNumber",
+                "input.getBool",
+                "property.getNumber",
+                "property.getBool",
+                "string.pack",
+                "string.unpack",
+                "string.format",
+                "table.unpack",
+                "type",
+                "tonumber",
+                "tostring"
+            ]
+        );
+        assert_eq!(
+            TOTAL_API,
+            [
+                "input.getNumber",
+                "input.getBool",
+                "property.getNumber",
+                "property.getBool",
+                "math.abs",
+                "math.max",
+                "math.min",
+                "math.floor",
+                "math.sin",
+                "math.cos",
+                "math.tan",
+                "math.atan",
+                "type",
+                "tostring"
+            ]
+        );
+        assert_eq!(EFFECT_API, ["output.setNumber", "output.setBool"]);
     }
 }

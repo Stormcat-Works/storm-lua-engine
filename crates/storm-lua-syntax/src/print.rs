@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 
 use crate::ast::{Ast, Node, NodeId, TableField};
-use crate::lexer::KEYWORDS;
+use crate::lexer::is_keyword;
 #[cfg(test)]
 use crate::numeric::qstr;
 use crate::numeric::{
@@ -851,12 +851,12 @@ fn var_suffix(params: usize, variadic: bool) -> &'static str {
 }
 
 fn is_plain_name(s: &str) -> bool {
-    let mut it = s.chars();
-    match it.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    it.all(|c| c.is_ascii_alphanumeric() || c == '_') && !KEYWORDS.contains(&s)
+    let Some((&first, rest)) = s.as_bytes().split_first() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == b'_')
+        && rest.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        && !is_keyword(s)
 }
 
 pub(crate) fn plain_name_from_string_literal(raw: &str) -> Option<Cow<'_, str>> {
@@ -1434,6 +1434,34 @@ mod borrowed_emission_tests {
                 assert_eq!(code,printed.code);
                 crate::parse_source(&code).unwrap();
                 let origins=GeneratedOrigins::from_print(&ast,&printed).unwrap();origins.validate_for_code(&code).unwrap();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod plain_name_dispatch_tests {
+    use super::*;
+    fn reference(s: &str) -> bool {
+        let mut chars = s.chars();
+        match chars.next() {
+            Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+            _ => return false,
+        }
+        chars.all(|c| c.is_ascii_alphanumeric() || c == '_') && !crate::lexer::KEYWORDS.contains(&s)
+    }
+    #[test]
+    fn byte_validation_keeps_unicode_rejection_and_exact_keyword_rules() {
+        let pieces = [
+            "", "_", "a", "A", "Z", "0", "9", "-", ".", " ", "雪", "😀", "é", "and", "function",
+            "break",
+        ];
+        for a in pieces {
+            for b in pieces {
+                for c in pieces {
+                    let s = format!("{a}{b}{c}");
+                    assert_eq!(is_plain_name(&s), reference(&s), "{s:?}");
+                }
             }
         }
     }

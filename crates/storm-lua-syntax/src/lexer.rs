@@ -104,11 +104,21 @@ impl fmt::Display for LexError {
 }
 impl std::error::Error for LexError {}
 
-/// Lua keywords that cannot be emitted as ordinary identifier names.
-pub const KEYWORDS: &[&str] = &[
+// The public ordered vocabulary and membership code have one literal source.
+// This lets the compiler dispatch by length/bytes instead of scanning every
+// keyword for each identifier. Matching remains exact and case-sensitive.
+macro_rules! lua_keywords {
+    ($($word:literal),+ $(,)?)=>{
+        /// Lua keywords that cannot be emitted as ordinary identifier names.
+        pub const KEYWORDS:&[&str]=&[$($word),+];
+        pub(crate) fn is_keyword(word:&str)->bool {matches!(word,$($word)|+)}
+    };
+}
+lua_keywords! {
+
     "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in",
     "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
-];
+}
 
 /// TS の MULTI（`...` が先）と同じ順序。`starts_with` はこの順で試す。
 const MULTI: &[&[u8]] = &[
@@ -392,7 +402,7 @@ impl<'a> Lexer<'a> {
                 self.adv(1);
             }
             let v = &self.source[p..self.i];
-            let k = if KEYWORDS.contains(&v) {
+            let k = if is_keyword(v) {
                 TokenKind::Kw
             } else {
                 TokenKind::Id
@@ -748,6 +758,61 @@ mod borrowed_token_tests {
             assert_eq!(tokens[0].line, 3);
             assert_eq!(tokens[1].k, TokenKind::Str);
             assert!(tokens[1].v.contains("payload"));
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod keyword_dispatch_tests {
+    use super::*;
+    #[test]
+    fn generated_dispatch_matches_the_ordered_registry_and_token_boundaries() {
+        let expected = [
+            "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
+            "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until",
+            "while",
+        ];
+        assert_eq!(KEYWORDS, expected);
+        for word in KEYWORDS {
+            for value in [
+                word.to_string(),
+                word.to_ascii_uppercase(),
+                format!("_{word}"),
+                format!("{word}0"),
+                format!("{word}_"),
+                format!("x{word}"),
+                format!("{word}x"),
+            ] {
+                assert_eq!(is_keyword(&value), KEYWORDS.contains(&value.as_str()));
+                let token = Lexer::new(&value).next_borrowed().unwrap();
+                assert_eq!(
+                    token.k,
+                    if KEYWORDS.contains(&value.as_str()) {
+                        TokenKind::Kw
+                    } else {
+                        TokenKind::Id
+                    }
+                );
+                assert_eq!(token.v, value);
+                assert_eq!(token.p, 0);
+            }
+            for cut in 0..word.len() {
+                assert_eq!(is_keyword(&word[..cut]), KEYWORDS.contains(&&word[..cut]));
+            }
+        }
+        let mut seed = 91u64;
+        for n in 0..32768 {
+            let mut bytes = Vec::new();
+            for _ in 0..n % 16 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                bytes.push(b'a' + ((seed >> 32) % 26) as u8);
+            }
+            let text = String::from_utf8(bytes).unwrap();
+            assert_eq!(is_keyword(&text), KEYWORDS.contains(&text.as_str()));
+        }
+        for text in ["雪", "😀", "İF", "lοcal", "if\0", "return\n", ""] {
+            assert_eq!(is_keyword(text), KEYWORDS.contains(&text));
         }
     }
 }

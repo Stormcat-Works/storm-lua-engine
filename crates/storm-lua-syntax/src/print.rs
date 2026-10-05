@@ -84,6 +84,24 @@ fn needs_sep_chars(x: char, y: char) -> bool {
     false
 }
 
+#[inline]
+fn lexical_boundary_may_retokenize(left: u8, right: u8) -> bool {
+    matches!(
+        (left, right),
+        (b'/', b'/')
+            | (b'<', b'<')
+            | (b'>', b'>')
+            | (b'=', b'=')
+            | (b'~', b'=')
+            | (b'<', b'=')
+            | (b'>', b'=')
+            | (b':', b':')
+            // A separated '[' followed by '[' or '=' can become a long
+            // bracket opener once later '='/'[' tokens are concatenated.
+            | (b'[', b'[' | b'=')
+    ) || (left == b'.' && right.is_ascii_digit())
+}
+
 // Operators use a space, not a zero-cost separator newline. Compose the actual
 // bytes and relative emission ranges together so spacing cannot shift origins.
 fn join_lex<'a>(parts: impl IntoIterator<Item = Fragment<'a>>) -> Fragment<'a> {
@@ -947,6 +965,7 @@ fn lexical_minify_impl(
         let mut output = String::with_capacity(source.len());
         let mut end = 0;
         let mut previous = None::<u8>;
+        let mut needs_validation = false;
         let mut copies = Vec::new();
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
             let gap = &source.as_bytes()[end..token.p];
@@ -964,8 +983,15 @@ fn lexical_minify_impl(
                     || (x == b'.' && y == b'.')
                     || (x.is_ascii_digit() && y == b'.')
             });
-            if before == output.len() && !output.is_empty() && (spaced || needs_boundary) {
-                output.push(' ');
+            if before == output.len() && !output.is_empty() {
+                if spaced || needs_boundary {
+                    output.push(' ');
+                } else if previous
+                    .zip(first)
+                    .is_some_and(|(left, right)| lexical_boundary_may_retokenize(left, right))
+                {
+                    needs_validation = true;
+                }
             }
             let generated_start = output.len();
             output.push_str(token.v);
@@ -985,28 +1011,32 @@ fn lexical_minify_impl(
                 output.push(byte as char);
             }
         }
-        (output, copies)
+        (output, copies, needs_validation)
     };
-    let (mut compact, mut copies) = compact_with(false);
-    // Validate the same token spelling/kind/line contract without allocating
-    // another complete token vector and a parallel expected-token vector.
-    let matches = 'tokens: {
-        let mut actual = Lexer::new(&compact);
-        for expected in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
-            match actual.next_borrowed() {
-                Ok(token)
-                    if token.k == expected.k
-                        && token.v == expected.v
-                        && token.line == expected.line => {}
-                _ => break 'tokens false,
+    let (mut compact, mut copies, needs_validation) = compact_with(false);
+    // Most token boundaries cannot possibly retokenize. Only run the second
+    // lexer when a boundary can form a compound operator, long bracket, or
+    // leading-dot number; ambiguous inputs retain the exact historical check.
+    let matches = !needs_validation
+        || 'tokens: {
+            let mut actual = Lexer::new(&compact);
+            for expected in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+                match actual.next_borrowed() {
+                    Ok(token)
+                        if token.k == expected.k
+                            && token.v == expected.v
+                            && token.line == expected.line => {}
+                    _ => break 'tokens false,
+                }
             }
-        }
-        matches!(actual.next_borrowed(),Ok(token) if token.k==TokenKind::Eof)
-    };
+            matches!(actual.next_borrowed(),Ok(token) if token.k==TokenKind::Eof)
+        };
     // Multi-character delimiters can require an explicit boundary. This branch
     // uses the same exact tokens and original line breaks, not a second parser.
     if !matches {
-        (compact, copies) = compact_with(true);
+        let (spaced, spaced_copies, _) = compact_with(true);
+        compact = spaced;
+        copies = spaced_copies;
     }
     if crate::source_position::utf16_len(&compact) > crate::source_position::utf16_len(source) {
         let copies = if track {
@@ -1331,6 +1361,45 @@ mod streamed_lexical_tests {
     }
 
     #[test]
+    fn lexical_fast_guard_covers_operator_and_literal_pair_retokenization() {
+        use crate::lexer::{Lexer, TokenKind};
+        let atoms = [
+            "a", "if", "1", "1.", "0x10", "'s'", "[=[s]=]", "+", "-", "*", "/", "%", "^", "#", "&",
+            "~", "|", "<", ">", "=", "(", ")", "{", "}", "[", "]", ";", ":", ",", ".", "...", "//",
+            "<<", ">>", "==", "~=", "<=", ">=", "::", "..",
+        ];
+        let signature = |text: &str| {
+            let mut lexer = Lexer::new(text);
+            let mut out = Vec::new();
+            loop {
+                match lexer.next_borrowed() {
+                    Ok(token) if token.k != TokenKind::Eof => {
+                        out.push((token.k, token.v.to_owned()));
+                    }
+                    Ok(_) => return Some(out),
+                    Err(_) => return None,
+                }
+            }
+        };
+        for left in atoms {
+            for right in atoms {
+                let expected = signature(&format!("{left} {right}"));
+                let left_byte = left.as_bytes().last().copied().unwrap();
+                let right_byte = right.as_bytes().first().copied().unwrap();
+                let separated = needs_sep_chars(left_byte as char, right_byte as char);
+                if separated || lexical_boundary_may_retokenize(left_byte, right_byte) {
+                    continue;
+                }
+                assert_eq!(
+                    signature(&format!("{left}{right}")),
+                    expected,
+                    "unguarded lexical boundary {left:?}/{right:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn streamed_token_verification_preserves_fallbacks_lines_and_copy_origins() {
         let mut cases = vec![
             "".to_owned(),
@@ -1340,6 +1409,8 @@ mod streamed_lexical_tests {
             "local x=[==[one\r\ntwo]==]; -- skip\nreturn x".into(),
             "local _ENV=_ENV\r\nfunction onTick()return 1,2 end".into(),
             "a=1 < <2 a=1 / /2 a=1 . .2 a=1 - -2".into(),
+            "a = = b; a ~ = b; a > = b; a : : b; a . 5".into(),
+            "[ [x] ] [ = [x] = ] [ = = [x] = = ]".into(),
         ];
         for count in [1, 8, 64] {
             cases.push(format!(

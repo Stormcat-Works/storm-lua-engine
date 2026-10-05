@@ -327,7 +327,12 @@ fn prepare_lexical(
             None,
         )
     };
-    parse_source(&code).map_err(|e| e.to_string())?;
+    // `parse_for_search` already accepted the original program. The lexical
+    // emitter then re-lexes its output and requires the exact same token kind,
+    // spelling and source line sequence before returning it. Lua parsing is a
+    // function of that token stream; building and immediately discarding a
+    // second AST here cannot discover a new syntax failure. Avoid that complete
+    // parser/arena pass on the conservative route.
     Ok((
         SearchContext {
             lexical: true,

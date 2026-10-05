@@ -7,8 +7,7 @@ use crate::config::{
     PassRecord, SearchMode,
 };
 use crate::orchestration::core_optimize;
-use crate::pass_ids::PassToggles;
-use crate::pass_ids::OPTIMIZATION_PASS_IDS;
+use crate::pass_ids::{pass_index, PassToggles, OPTIMIZATION_PASS_IDS};
 use crate::passes;
 use crate::scope_rename::scope_rename_fast;
 use serde::{Deserialize, Serialize};
@@ -142,10 +141,7 @@ impl PassMask {
 
     #[inline]
     fn enabled(&self, id: &str) -> bool {
-        let Some(index) = OPTIMIZATION_PASS_IDS
-            .iter()
-            .position(|candidate| *candidate == id)
-        else {
+        let Some(index) = pass_index(id) else {
             return false;
         };
         if index < 64 {

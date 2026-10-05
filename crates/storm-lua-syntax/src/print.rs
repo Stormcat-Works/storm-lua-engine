@@ -946,31 +946,45 @@ fn lexical_minify_impl(
     let compact_with = |spaced: bool| {
         let mut output = String::with_capacity(source.len());
         let mut end = 0;
+        let mut previous = None::<u8>;
         let mut copies = Vec::new();
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
-            let gap = &source[end..token.p];
+            let gap = &source.as_bytes()[end..token.p];
             let before = output.len();
-            output.extend(gap.chars().filter(|c| matches!(c, '\n' | '\r')));
-            if before == output.len()
-                && !output.is_empty()
-                && (spaced || needs_sep(&output, token.v))
-            {
+            for &byte in gap {
+                if matches!(byte, b'\n' | b'\r') {
+                    output.push(byte as char);
+                }
+            }
+            let first = token.v.as_bytes().first().copied();
+            let needs_boundary = previous.zip(first).is_some_and(|(x, y)| {
+                ((x.is_ascii_alphanumeric() || x == b'_')
+                    && (y.is_ascii_alphanumeric() || y == b'_'))
+                    || (x == b'-' && y == b'-')
+                    || (x == b'.' && y == b'.')
+                    || (x.is_ascii_digit() && y == b'.')
+            });
+            if before == output.len() && !output.is_empty() && (spaced || needs_boundary) {
                 output.push(' ');
             }
             let generated_start = output.len();
             output.push_str(token.v);
+            previous = token.v.as_bytes().last().copied().or(previous);
             end = token.p + token.v.len();
             if track {
                 copies.push(crate::provenance::CopiedToken {
                     start: generated_start,
-                    end: output.len(),
                     source_start: token.p,
                     source_end: end,
                     is_name: token.k == TokenKind::Id,
                 });
             }
         }
-        output.extend(source[end..].chars().filter(|c| matches!(c, '\n' | '\r')));
+        for &byte in &source.as_bytes()[end..] {
+            if matches!(byte, b'\n' | b'\r') {
+                output.push(byte as char);
+            }
+        }
         (output, copies)
     };
     let (mut compact, mut copies) = compact_with(false);
@@ -1001,7 +1015,6 @@ fn lexical_minify_impl(
                 .filter(|token| token.k != TokenKind::Eof)
                 .map(|token| crate::provenance::CopiedToken {
                     start: token.p,
-                    end: token.p + token.v.len(),
                     source_start: token.p,
                     source_end: token.p + token.v.len(),
                     is_name: token.k == TokenKind::Id,
@@ -1270,7 +1283,6 @@ mod streamed_lexical_tests {
                 if track {
                     copies.push(crate::provenance::CopiedToken {
                         start: generated_start,
-                        end: output.len(),
                         source_start: token.p,
                         source_end: end,
                         is_name: token.k == TokenKind::Id,
@@ -1305,7 +1317,6 @@ mod streamed_lexical_tests {
                     .filter(|token| token.k != TokenKind::Eof)
                     .map(|token| crate::provenance::CopiedToken {
                         start: token.p,
-                        end: token.p + token.v.len(),
                         source_start: token.p,
                         source_end: token.p + token.v.len(),
                         is_name: token.k == TokenKind::Id,

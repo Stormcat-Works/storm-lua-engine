@@ -202,7 +202,7 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
         .filter_map(|d| {
             let reason = reason_id(&d.reason, &mut reasons, &mut ids);
             let key = (d.original.source, d.original.start, d.original.end, reason);
-            seen.insert(key).then(|| MapDisposition {
+            seen.insert(key).then_some(MapDisposition {
                 original: d.original,
                 reason,
                 replacement_sources: d.replacement_sources.clone(),
@@ -297,7 +297,7 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
         .filter_map(|d| {
             let reason = reason_id(&d.reason, &mut reasons, &mut ids);
             let key = (d.original.source, d.original.start, d.original.end, reason);
-            seen.insert(key).then(|| MapDisposition {
+            seen.insert(key).then_some(MapDisposition {
                 original: d.original,
                 reason,
                 replacement_sources: d.replacement_sources,
@@ -413,8 +413,37 @@ pub(crate) fn encode_owned_for_options(
     options: &CompileOptions,
     stats: Option<&SearchStats>,
 ) -> Result<String, String> {
-    origins.validate_for_code(code)?;
-    let standard = standard_fields(code, &origins)?;
+    let simple_copies = lexical_copy_only(&origins);
+    if simple_copies {
+        debug_assert!(origins.validate_for_code(code).is_ok());
+    } else {
+        origins.validate_for_code(code)?;
+    }
+    let standard = standard_fields_with_copy_hint(code, &origins, simple_copies)?;
+    if simple_copies {
+        let generated = identity(code);
+        let sources = origins
+            .sources
+            .iter()
+            .map(|source| {
+                if source.text.as_ref() == code {
+                    generated.clone()
+                } else {
+                    identity(&source.text)
+                }
+            })
+            .collect::<Vec<_>>();
+        let producer = producer();
+        return crate::canonical_map::encode_simple_copy_with_settings(
+            &standard,
+            &producer,
+            &generated,
+            &sources,
+            &origins.origins,
+            &origins.mappings,
+            &crate::map_settings::Settings { options, stats },
+        );
+    }
     crate::canonical_map::encode_with_settings(
         &standard,
         extension_owned(code, origins, Value::Null),
@@ -488,7 +517,46 @@ struct StandardFields {
     sources_content: Vec<Arc<str>>,
     version: u32,
 }
+fn lexical_copy_only(origins: &GeneratedOrigins) -> bool {
+    origins.contexts.is_empty()
+        && origins.constructs.is_empty()
+        && origins.dispositions.is_empty()
+        && origins.origins.iter().all(|origin| {
+            origin.kind == OriginKind::Source
+                && origin.primary.is_some()
+                && matches!(
+                    origin.precision,
+                    OriginPrecision::Name | OriginPrecision::Token
+                )
+                && origin.transformation.is_none()
+                && origin.related.is_empty()
+                && origin.relations.is_empty()
+                && origin.reasons.is_empty()
+        })
+        && origins.mappings.iter().all(|mapping| match mapping.origin {
+            None => mapping.copied.is_none(),
+            Some(id) => {
+                mapping.inline_contexts.is_empty()
+                    && mapping.copied.is_some_and(|copied| {
+                        origins
+                            .origins
+                            .get(id as usize)
+                            .and_then(|origin| origin.primary)
+                            == Some(copied)
+                    })
+            }
+        })
+}
+
 fn standard_fields(code: &str, origins: &GeneratedOrigins) -> Result<StandardFields, String> {
+    standard_fields_with_copy_hint(code, origins, lexical_copy_only(origins))
+}
+
+fn standard_fields_with_copy_hint(
+    code: &str,
+    origins: &GeneratedOrigins,
+    simple_copies: bool,
+) -> Result<StandardFields, String> {
     let generated = LineIndex::new(code);
     let indexes = origins
         .sources
@@ -523,8 +591,15 @@ fn standard_fields(code: &str, origins: &GeneratedOrigins) -> Result<StandardFie
         .enumerate()
         .filter_map(|(i, b)| (b == b'\n').then_some(i + 1))
         .peekable();
-    let mut lexer = Lexer::new(code);
-    let mut token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+    // Pure lexical-copy maps already contain every token boundary as a mapping
+    // boundary. Re-lexing the generated source only rediscovers anchors we have.
+    let mut lexer = (!simple_copies).then(|| Lexer::new(code));
+    let mut token = if let Some(lexer) = lexer.as_mut() {
+        let token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+        (token.k, token.p)
+    } else {
+        (storm_lua_syntax::lexer::TokenKind::Eof, code.len())
+    };
     let mut byte = 0;
     let mut current = 0;
     loop {
@@ -579,13 +654,17 @@ fn standard_fields(code: &str, origins: &GeneratedOrigins) -> Result<StandardFie
         while lines.peek().is_some_and(|&p| p <= byte) {
             lines.next();
         }
-        while token.k != storm_lua_syntax::lexer::TokenKind::Eof && token.p <= byte {
-            token = lexer.next_borrowed().map_err(|e| e.to_string())?;
+        while token.0 != storm_lua_syntax::lexer::TokenKind::Eof && token.1 <= byte {
+            let Some(lexer) = lexer.as_mut() else {
+                return Err("source-map lexer state is unavailable".into());
+            };
+            let next = lexer.next_borrowed().map_err(|e| e.to_string())?;
+            token = (next.k, next.p);
         }
-        // All three streams are sorted by construction; repeated boundaries
-        // are removed as they are consumed, with no sort or anchor allocation.
+        // All streams are sorted by construction; repeated boundaries are
+        // removed as they are consumed, with no sort or anchor allocation.
         byte = token
-            .p
+            .1
             .min(boundaries.peek().copied().unwrap_or(code.len()))
             .min(lines.peek().copied().unwrap_or(code.len()));
     }

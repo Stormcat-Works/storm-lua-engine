@@ -777,10 +777,15 @@ impl GeneratedOrigins {
 
 pub(crate) struct CopiedToken {
     pub start: usize,
-    pub end: usize,
     pub source_start: usize,
     pub source_end: usize,
     pub is_name: bool,
+}
+impl CopiedToken {
+    #[inline]
+    pub fn end(&self) -> usize {
+        self.start + (self.source_end - self.source_start)
+    }
 }
 
 impl GeneratedOrigins {
@@ -848,7 +853,7 @@ impl GeneratedOrigins {
             output.origins.push(origin);
             output.mappings.push(OriginMapping {
                 start: token.start,
-                end: token.end,
+                end: token.end(),
                 origin: Some(id),
                 copied: Some(SourceSpan {
                     source: 0,
@@ -857,7 +862,7 @@ impl GeneratedOrigins {
                 }),
                 inline_contexts: Vec::new(),
             });
-            cursor = token.end;
+            cursor = token.end();
         }
         if cursor < generated_len {
             output.mappings.push(OriginMapping {
@@ -1433,7 +1438,7 @@ impl GeneratedOrigins {
             );
             output.append_detail(
                 token.start,
-                token.end,
+                token.end(),
                 Some(&origin),
                 Some(SourceSpan {
                     source: 0,
@@ -1443,7 +1448,7 @@ impl GeneratedOrigins {
                 Vec::new(),
                 &mut interned,
             );
-            cursor = token.end;
+            cursor = token.end();
         }
         if cursor < generated_len {
             output.append(cursor, generated_len, None, &mut interned);
@@ -1471,7 +1476,6 @@ mod unique_lexical_origin_tests {
                 .filter(|t| t.k != crate::lexer::TokenKind::Eof)
                 .map(|t| CopiedToken {
                     start: t.p,
-                    end: t.p + t.v.len(),
                     source_start: t.p,
                     source_end: t.p + t.v.len(),
                     is_name: t.k == crate::lexer::TokenKind::Id,

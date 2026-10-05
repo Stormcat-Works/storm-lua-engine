@@ -1,13 +1,15 @@
 //! Write the schema-1 canonical map without allocating a JSON object per record.
 //! Trusted key/delimiter bytes are emitted in canonical order. All caller text,
 //! numbers and dynamic values still pass through serde_json's normal encoder.
-use crate::optimized_source_map::{MapDisposition, MapExtension, MapOrigin};
+use crate::optimized_source_map::{
+    BufferIdentity, MapDisposition, MapExtension, MapOrigin, MapProducer,
+};
 use serde::Serialize;
 #[cfg(test)]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
-use storm_lua_syntax::provenance::{GeneratedConstruct, OriginMapping, SourceSpan};
+use storm_lua_syntax::provenance::{GeneratedConstruct, Origin, OriginMapping, SourceSpan};
 
 type JsonResult = Result<(), serde_json::Error>;
 #[derive(Default)]
@@ -20,6 +22,31 @@ impl Writer {
     }
     fn value<T: Serialize + ?Sized>(&mut self, value: &T) -> JsonResult {
         serde_json::to_writer(&mut self.bytes, value)
+    }
+    fn usize_value(&mut self, mut value: usize) {
+        let mut digits = [0u8; 20];
+        let mut cursor = digits.len();
+        loop {
+            cursor -= 1;
+            digits[cursor] = b'0' + (value % 10) as u8;
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        self.bytes.extend_from_slice(&digits[cursor..]);
+    }
+    fn u32_value(&mut self, value: u32) {
+        self.usize_value(value as usize);
+    }
+    fn simple_span(&mut self, value: &SourceSpan) {
+        self.literal(b"{\"end\":");
+        self.usize_value(value.end);
+        self.literal(b",\"source\":");
+        self.u32_value(value.source);
+        self.literal(b",\"start\":");
+        self.usize_value(value.start);
+        self.literal(b"}");
     }
     fn span(&mut self, value: &SourceSpan) -> JsonResult {
         self.literal(b"{\"end\":");
@@ -49,6 +76,50 @@ impl Writer {
             write(self, item)?;
         }
         self.literal(b"]");
+        Ok(())
+    }
+    fn simple_copy_origin(&mut self, value: &Origin) -> JsonResult {
+        debug_assert!(value.primary.is_some());
+        debug_assert!(value.related.is_empty());
+        debug_assert!(value.relations.is_empty());
+        debug_assert!(value.reasons.is_empty());
+        debug_assert!(value.transformation.is_none());
+        self.literal(b"{\"kind\":\"source\",\"name\":");
+        self.value(&value.name)?;
+        self.literal(b",\"precision\":");
+        match value.precision {
+            storm_lua_syntax::provenance::OriginPrecision::Name => self.literal(b"\"name\""),
+            storm_lua_syntax::provenance::OriginPrecision::Token => self.literal(b"\"token\""),
+            _ => debug_assert!(false, "simple copy has non-lexical precision"),
+        }
+        self.literal(b",\"primary\":");
+        if let Some(primary) = value.primary.as_ref() {
+            self.simple_span(primary);
+        } else {
+            debug_assert!(false, "simple copy has no primary span");
+            self.literal(b"null");
+        }
+        self.literal(b",\"reasons\":[],\"related\":[],\"transformation\":null}");
+        Ok(())
+    }
+    fn simple_copy_mapping(&mut self, value: &OriginMapping) -> JsonResult {
+        self.literal(b"{\"copied\":");
+        if let Some(span) = value.copied.as_ref() {
+            self.simple_span(span);
+        } else {
+            self.literal(b"null");
+        }
+        self.literal(b",\"end\":");
+        self.usize_value(value.end);
+        self.literal(b",\"inlineContexts\":[],\"origin\":");
+        if let Some(origin) = value.origin {
+            self.u32_value(origin);
+        } else {
+            self.literal(b"null");
+        }
+        self.literal(b",\"start\":");
+        self.usize_value(value.start);
+        self.literal(b"}");
         Ok(())
     }
     fn origin(&mut self, value: &MapOrigin) -> JsonResult {
@@ -181,6 +252,88 @@ impl Writer {
         self.literal(b"}");
         Ok(digest_at)
     }
+    fn simple_copy_extension(
+        &mut self,
+        producer: &MapProducer,
+        generated: &BufferIdentity,
+        sources: &[BufferIdentity],
+        origins: &[Origin],
+        mappings: &[OriginMapping],
+        compilation: &(impl Serialize + ?Sized),
+    ) -> Result<usize, serde_json::Error> {
+        self.literal(b"{\"compilation\":");
+        self.value(compilation)?;
+        self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
+        self.value(generated)?;
+        self.literal(b",\"integrity\":\"");
+        let digest_at = self.bytes.len();
+        self.bytes.extend_from_slice(&[b'0'; 64]);
+        self.literal(b"\",\"mappings\":");
+        self.array(mappings, Self::simple_copy_mapping)?;
+        self.literal(b",\"origins\":");
+        self.array(origins, Self::simple_copy_origin)?;
+        self.literal(b",\"producer\":{\"dirty\":");
+        self.value(&producer.dirty)?;
+        self.literal(b",\"name\":");
+        self.value(&producer.name)?;
+        self.literal(b",\"revision\":");
+        self.value(&producer.revision)?;
+        self.literal(b",\"version\":");
+        self.value(&producer.version)?;
+        self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":1,\"sources\":");
+        self.value(sources)?;
+        self.literal(b"}");
+        Ok(digest_at)
+    }
+}
+
+fn finish(mut writer: Writer, digest_at: usize) -> Result<String, String> {
+    writer.literal(b"}");
+    let mut digest = Sha256::new();
+    digest.update(&writer.bytes[..digest_at]);
+    digest.update(&writer.bytes[digest_at + 64..]);
+    let digest = digest.finalize();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for (i, byte) in digest.iter().copied().enumerate() {
+        writer.bytes[digest_at + 2 * i] = HEX[(byte >> 4) as usize];
+        writer.bytes[digest_at + 2 * i + 1] = HEX[(byte & 15) as usize];
+    }
+    String::from_utf8(writer.bytes).map_err(|e| e.to_string())
+}
+
+fn begin_standard(standard: &(impl Serialize + ?Sized), capacity: usize) -> Result<Writer, String> {
+    let mut writer = Writer {
+        bytes: Vec::with_capacity(capacity),
+    };
+    writer.value(standard).map_err(|e| e.to_string())?;
+    if writer.bytes.first() != Some(&b'{') || writer.bytes.last() != Some(&b'}') {
+        return Err("standard source map is not an object".into());
+    }
+    writer.bytes.pop();
+    if writer.bytes.len() > 1 {
+        writer.literal(b",");
+    }
+    writer.literal(b"\"x_storm\":");
+    Ok(writer)
+}
+
+pub(crate) fn encode_simple_copy_with_settings(
+    standard: &(impl Serialize + ?Sized),
+    producer: &MapProducer,
+    generated: &BufferIdentity,
+    sources: &[BufferIdentity],
+    origins: &[Origin],
+    mappings: &[OriginMapping],
+    compilation: &(impl Serialize + ?Sized),
+) -> Result<String, String> {
+    let capacity = 1024usize
+        .saturating_add(origins.len().saturating_mul(160))
+        .saturating_add(mappings.len().saturating_mul(112));
+    let mut writer = begin_standard(standard, capacity)?;
+    let at = writer
+        .simple_copy_extension(producer, generated, sources, origins, mappings, compilation)
+        .map_err(|e| e.to_string())?;
+    finish(writer, at)
 }
 
 pub(crate) fn encode(
@@ -202,34 +355,11 @@ pub(crate) fn encode_with_settings(
         .saturating_add(extension.origins.len().saturating_mul(120))
         .saturating_add(extension.mappings.len().saturating_mul(64))
         .saturating_add(extension.constructs.len().saturating_mul(32));
-    let mut writer = Writer {
-        bytes: Vec::with_capacity(capacity),
-    };
-    writer.value(standard).map_err(|e| e.to_string())?;
-    if writer.bytes.first() != Some(&b'{') || writer.bytes.last() != Some(&b'}') {
-        return Err("standard source map is not an object".into());
-    }
-    writer.bytes.pop();
-    if writer.bytes.len() > 1 {
-        writer.literal(b",");
-    }
-    writer.literal(b"\"x_storm\":");
+    let mut writer = begin_standard(standard, capacity)?;
     let at = writer
         .extension(&extension, compilation)
         .map_err(|e| e.to_string())?;
-    writer.literal(b"}");
-    // The canonical fingerprint is still computed with an EMPTY integrity
-    // string. The reserved 64 characters are excluded from the hash input.
-    let mut digest = Sha256::new();
-    digest.update(&writer.bytes[..at]);
-    digest.update(&writer.bytes[at + 64..]);
-    let digest = digest.finalize();
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    for (i, byte) in digest.iter().copied().enumerate() {
-        writer.bytes[at + 2 * i] = HEX[(byte >> 4) as usize];
-        writer.bytes[at + 2 * i + 1] = HEX[(byte & 15) as usize];
-    }
-    String::from_utf8(writer.bytes).map_err(|e| e.to_string())
+    finish(writer, at)
 }
 
 #[cfg(test)]

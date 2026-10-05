@@ -238,6 +238,100 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
         integrity: String::new(),
     }
 }
+fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) -> MapExtension {
+    let GeneratedOrigins {
+        sources,
+        origins,
+        mappings,
+        contexts,
+        constructs,
+        dispositions,
+    } = origins;
+    let mut reasons = Vec::new();
+    let mut ids = HashMap::new();
+    let mut relation_table = Vec::new();
+    let mut relation_ids = HashMap::new();
+    let records = origins
+        .into_iter()
+        .map(|origin| {
+            let mut related = Arc::unwrap_or_clone(origin.relations);
+            let mut present = related
+                .iter()
+                .map(|r| r.span)
+                .collect::<std::collections::HashSet<_>>();
+            for span in origin.related.iter().copied() {
+                if present.insert(span) {
+                    related.push(SourceRelation {
+                        role: RelationRole::Contribution,
+                        span,
+                    });
+                }
+            }
+            MapOrigin {
+                kind: origin.kind,
+                primary: origin.primary,
+                related: related
+                    .into_iter()
+                    .map(|relation| {
+                        *relation_ids.entry(relation.clone()).or_insert_with(|| {
+                            let id = relation_table.len() as u32;
+                            relation_table.push(relation);
+                            id
+                        })
+                    })
+                    .collect(),
+                precision: origin.precision,
+                name: origin.name,
+                transformation: origin.transformation,
+                reasons: origin
+                    .reasons
+                    .iter()
+                    .map(|r| reason_id(r, &mut reasons, &mut ids))
+                    .collect(),
+            }
+        })
+        .collect();
+    let mut seen = BTreeSet::new();
+    let dispositions = Arc::unwrap_or_clone(dispositions)
+        .into_iter()
+        .filter_map(|d| {
+            let reason = reason_id(&d.reason, &mut reasons, &mut ids);
+            let key = (d.original.source, d.original.start, d.original.end, reason);
+            seen.insert(key).then(|| MapDisposition {
+                original: d.original,
+                reason,
+                replacement_sources: d.replacement_sources,
+            })
+        })
+        .collect();
+    let generated = identity(code);
+    let source_identities = sources
+        .iter()
+        .map(|s| {
+            if s.text.as_ref() == code {
+                generated.clone()
+            } else {
+                identity(&s.text)
+            }
+        })
+        .collect();
+    MapExtension {
+        schema_version: SCHEMA_VERSION,
+        producer: producer(),
+        coordinate_unit: "utf8-bytes".into(),
+        generated,
+        sources: source_identities,
+        compilation,
+        origins: records,
+        reasons,
+        relations: relation_table,
+        contexts,
+        mappings,
+        constructs,
+        dispositions,
+        integrity: String::new(),
+    }
+}
 #[cfg(test)]
 fn numeric(value: f64) -> String {
     format!("{:016x}", value.to_bits())
@@ -310,6 +404,23 @@ pub(crate) fn encode_for_options(
         &crate::map_settings::Settings { options, stats },
     )
 }
+/// Compiler-owned path consumes provenance discarded after final map encoding.
+/// Moving final arrays avoids cloning every mapping/context/construct immediately
+/// before serializing exactly the same schema-1 JSON.
+pub(crate) fn encode_owned_for_options(
+    code: &str,
+    origins: GeneratedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+) -> Result<String, String> {
+    origins.validate_for_code(code)?;
+    let standard = standard_fields(code, &origins)?;
+    crate::canonical_map::encode_with_settings(
+        &standard,
+        extension_owned(code, origins, Value::Null),
+        &crate::map_settings::Settings { options, stats },
+    )
+}
 // One producer for the standard view. Validation compares that view with the
 // detailed ranges, rather than trusting a checksum recomputed over mismatches.
 // Standard-map anchors are already unique and sorted by generated position.
@@ -370,17 +481,14 @@ fn write_vlq(output: &mut String, value: i64) {
 // into a temporary Value tree first.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct StandardFields<'a> {
+struct StandardFields {
     mappings: String,
-    names: Vec<&'a str>,
-    sources: Vec<&'a str>,
-    sources_content: Vec<&'a str>,
+    names: Vec<Arc<str>>,
+    sources: Vec<Arc<str>>,
+    sources_content: Vec<Arc<str>>,
     version: u32,
 }
-fn standard_fields<'a>(
-    code: &str,
-    origins: &'a GeneratedOrigins,
-) -> Result<StandardFields<'a>, String> {
+fn standard_fields(code: &str, origins: &GeneratedOrigins) -> Result<StandardFields, String> {
     let generated = LineIndex::new(code);
     let indexes = origins
         .sources
@@ -399,7 +507,7 @@ fn standard_fields<'a>(
         if let Some(name) = &origin.name {
             names.entry(name.as_ref()).or_insert_with(|| {
                 let id = name_values.len() as u32;
-                name_values.push(name.as_ref());
+                name_values.push(Arc::clone(name));
                 id
             });
         }
@@ -484,8 +592,16 @@ fn standard_fields<'a>(
     Ok(StandardFields {
         mappings: mappings.output,
         names: name_values,
-        sources: origins.sources.iter().map(|s| s.name.as_ref()).collect(),
-        sources_content: origins.sources.iter().map(|s| s.text.as_ref()).collect(),
+        sources: origins
+            .sources
+            .iter()
+            .map(|s| Arc::clone(&s.name))
+            .collect(),
+        sources_content: origins
+            .sources
+            .iter()
+            .map(|s| Arc::clone(&s.text))
+            .collect(),
         version: 3,
     })
 }
@@ -633,7 +749,7 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
                 && names
                     .iter()
                     .zip(&expected.names)
-                    .all(|(a, &b)| a.as_str() == Some(b))
+                    .all(|(a, b)| a.as_str() == Some(b.as_ref()))
         })
     {
         return Err("standard names do not agree with the detailed origins".into());

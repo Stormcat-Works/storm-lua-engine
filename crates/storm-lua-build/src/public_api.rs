@@ -543,7 +543,7 @@ fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats 
 fn success(
     source: &str,
     options: &CompileOptions,
-    result: CompileCodeResult,
+    mut result: CompileCodeResult,
     diagnostics: Vec<Diagnostic>,
 ) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
@@ -563,8 +563,8 @@ fn success(
             1e-6
         },
     });
-    let map = match result.origins.as_ref() {
-        Some(origins) => match crate::optimized_source_map::encode_for_options(
+    let map = match result.origins.take() {
+        Some(origins) => match crate::optimized_source_map::encode_owned_for_options(
             &result.code,
             origins,
             options,

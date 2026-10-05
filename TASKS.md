@@ -113,3 +113,8 @@ v0.3.0公開前の最小限ラウンドは完了。今後は追加profileの結�
 ## v0.2.1 公開工程（2026-09-30完了）
 
 npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの再取得・独立導入と公開状態文書の更新が完了した。GitHubとPlaygroundも公開・検証済み。詳細は[公開記録](docs/verification/release-0.2.1.md)。
+
+
+## 2026-10-05 印字ラウンドの検証引継ぎ
+
+`f3e5c87`までの実装の検証・計測・失敗ケース再確認を完了し、docs/verification/compile-emission-20261005.mdに保存した。最大Map比1.2（理想1.1）と、Map無効時も速くする要件は継続する。最適化の全入力・毎回の改善が完了したとは扱わない。

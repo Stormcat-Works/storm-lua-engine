@@ -135,9 +135,7 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
             }
             symbols.push(symbol);
             let value = trial.push(Node::Num(group.token.clone()));
-            if ast.nodes.tracks_origins()
-                && group.nodes.iter().all(|&n| ast.nodes.origin(n).is_some())
-            {
+            if ast.nodes.tracks_origins() && group.nodes.iter().all(|&n| ast.nodes.has_origin(n)) {
                 trial.nodes.derive_from(
                     value,
                     &ast.nodes,

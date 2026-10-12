@@ -5,7 +5,9 @@ use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId, TableField};
 use storm_lua_syntax::numeric::{num_val, short_num};
-use storm_lua_syntax::size::{measure_expr, measure_stmt};
+use storm_lua_syntax::size::measure_expr;
+#[cfg(test)]
+use storm_lua_syntax::size::measure_stmt;
 
 fn clone_ast(source: &Ast) -> Ast {
     let mut ast = storm_lua_syntax::ast_utils::inherit_ast(source);
@@ -438,7 +440,86 @@ fn translated_template(
     })
 }
 
+// The cost model changes only callee/name spellings. Borrow the existing
+// tree instead of cloning every node and origin just to measure two small roots.
+struct LoopCostNames<'a> {
+    ast: &'a Ast,
+    callee: Option<NodeId>,
+    symbols: Option<(SymbolId, SymbolId)>,
+    assignment: Option<NodeId>,
+}
+impl storm_lua_syntax::size::SizeNameResolver for LoopCostNames<'_> {
+    fn replacement(&self, node: NodeId, site: storm_lua_syntax::NameSite) -> Option<&str> {
+        let (table, index) = self.symbols?;
+        match (self.ast.node(node),site) {
+            (Node::Name(symbol),storm_lua_syntax::NameSite::Reference)=>{
+                if self.assignment.is_some_and(|assignment|matches!(self.ast.node(assignment),Node::Assign(targets,_) if targets.contains(&node))) || *symbol==table {Some("a")}
+                else if *symbol==index {Some("b")} else {None}
+            }
+            (Node::Fornum(symbol,..),storm_lua_syntax::NameSite::Binding(0)) if *symbol==index=>Some("b"),
+            _=>None,
+        }
+    }
+    fn call_target(&self, call: NodeId) -> Option<&str> {
+        (self.callee == Some(call)).then_some("f")
+    }
+}
 fn normalize_cost(
+    target: &Ast,
+    calls: &[NodeId],
+    assignment: Option<NodeId>,
+    loop_node: NodeId,
+    table_symbol: SymbolId,
+    index_symbol: SymbolId,
+) -> (usize, usize) {
+    use storm_lua_syntax::size::{measure_expr_with_names, measure_stmt_with_names};
+    let old = calls
+        .iter()
+        .filter(|&&call| matches!(target.node(call), Node::Call(..)))
+        .map(|&call| {
+            measure_expr_with_names(
+                target,
+                call,
+                &LoopCostNames {
+                    ast: target,
+                    callee: Some(call),
+                    symbols: None,
+                    assignment: None,
+                },
+            )
+        })
+        .sum();
+    let callee = match target.node(loop_node) {
+        Node::Fornum(_, _, _, _, body) => {
+            let Node::Block(statements) = target.node(*body) else {
+                unreachable!()
+            };
+            statements
+                .first()
+                .and_then(|&statement| match target.node(statement) {
+                    Node::Callstat(call) if matches!(target.node(*call), Node::Call(..)) => {
+                        Some(*call)
+                    }
+                    _ => None,
+                })
+        }
+        _ => None,
+    };
+    let names = LoopCostNames {
+        ast: target,
+        callee,
+        symbols: Some((table_symbol, index_symbol)),
+        assignment,
+    };
+    let new = assignment
+        .map(|node| measure_stmt_with_names(target, node, &names))
+        .unwrap_or(0)
+        + measure_stmt_with_names(target, loop_node, &names);
+    (old, new)
+}
+
+#[cfg(test)]
+fn reference_normalize_cost(
     target: &Ast,
     calls: &[NodeId],
     assignment: Option<NodeId>,
@@ -903,7 +984,7 @@ fn derive_samples(target: &mut Ast, node: NodeId, source: &Ast, values: &[NodeId
     if !target.nodes.tracks_origins() {
         return;
     }
-    if values.is_empty() || values.iter().any(|&id| source.nodes.origin(id).is_none()) {
+    if values.is_empty() || values.iter().any(|&id| !source.nodes.has_origin(id)) {
         let syntax = target.node(node).clone();
         target.nodes[node as usize] = syntax;
         return;
@@ -911,11 +992,9 @@ fn derive_samples(target: &mut Ast, node: NodeId, source: &Ast, values: &[NodeId
     target
         .nodes
         .derive_from(node, &source.nodes, values[0], reason);
-    for &original in &values[1..] {
-        target
-            .nodes
-            .relate_from(node, &source.nodes, original, reason);
-    }
+    target
+        .nodes
+        .relate_many_from(node, &source.nodes, &values[1..], reason);
 }
 
 fn affine(source: &Ast, target: &mut Ast, values: &[NodeId], index: NodeId) -> Option<NodeId> {
@@ -966,4 +1045,54 @@ fn periodic_affine(
         }
     }
     Some(result)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod normalized_cost_tests {
+    use super::*;
+    #[test]
+    fn borrowed_loop_cost_matches_the_full_clone_normalizer() {
+        for source in [
+            "screen.drawLine(x+1,0,x+1,10)screen.drawLine(x+2,0,x+2,10)",
+            "f('雪😀')f({key=1})f(true,false,nil)",
+            "object:method(veryLongParameter)other.field(nested(x),{key=2})",
+            "screen.drawText(__index,0,__table[__index+1])screen.drawText(0,1,'x')",
+        ] {
+            for assign in [false, true] {
+                let (mut ast, root) =
+                    storm_lua_syntax::parse_source_with_origins("loop-cost.lua", source).unwrap();
+                let Node::Block(original) = ast.node(root).clone() else {
+                    panic!()
+                };
+                let calls = original
+                    .iter()
+                    .map(|&id| match ast.node(id) {
+                        Node::Callstat(call) => *call,
+                        _ => panic!(),
+                    })
+                    .collect::<Vec<_>>();
+                let table = ast.strings.intern("__table");
+                let index = ast.strings.intern("__index");
+                let target = ast.push(Node::Name(table));
+                let value = ast.push(Node::Table(vec![TableField::Arr(calls[0])]));
+                let assignment = assign.then(|| ast.push(Node::Assign(vec![target], vec![value])));
+                let f = ast.push(Node::Name(table));
+                let i = ast.push(Node::Name(index));
+                let new_call = ast.push(Node::Call(f, vec![i], Some("method".into())));
+                let callstat = ast.push(Node::Callstat(new_call));
+                let body = ast.push(Node::Block(vec![callstat]));
+                let start = ast.push(Node::Num("0".into()));
+                let end = ast.push(Node::Num("7".into()));
+                let loop_ = ast.push(Node::Fornum(index, start, end, None, body));
+                let before = serde_json::to_vec(&ast).unwrap();
+                assert_eq!(
+                    normalize_cost(&ast, &calls, assignment, loop_, table, index),
+                    reference_normalize_cost(&ast, &calls, assignment, loop_, table, index),
+                    "{source}, assignment={assign}"
+                );
+                assert_eq!(serde_json::to_vec(&ast).unwrap(), before);
+            }
+        }
+    }
 }

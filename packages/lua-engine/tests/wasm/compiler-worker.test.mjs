@@ -13,6 +13,8 @@ test('explicit compiler endpoint supports calls, diagnostics, concurrent IDs and
    client.minify('function onTick()output.setNumber(1,1+2)end'),client.passIds(),client.analyze({entry:'main',modules:{main:'pcall(function()end)'}}),
   ]);
   assert.equal(compiled.ok,true);assert.ok(ids.length>=67);assert.ok(diagnostics.diagnostics.some(d=>d.code==='sw-unavailable-global'));
+  const addon=await client.buildAddon({entry:'main',modules:{main:'function onCreate()g_savedata.n=1 end'}},{environment:'game'});assert.equal(addon.ok,true);assert.equal(addon.search,undefined);
+  await assert.rejects(client.buildAddon({entry:'main',modules:{main:'function onCreate()end'}},{targetSize:8192}),/unknown field/);
   const extended=await client.minify('pcall(function()return 7 end)',{environment:'extended'});assert.equal(extended.search.mode,'lexical');
   await assert.rejects(client.minify('return 1',{target:'addon'}),/addon/);
   client.dispose();await assert.rejects(client.passIds(),/disposed/);

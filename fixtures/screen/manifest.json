@@ -1,9 +1,9 @@
 {
   "format": 1,
   "contract": "storm-lua-screen-rgba-v1",
-  "cases": 731,
+  "cases": 743,
   "files": {
-    "fixtures/screen/cases-v1.json": "f7cebb0d0c530ef0b39a65d2e0b1028d2f921482c7a367a8642d8220055c645a",
+    "fixtures/screen/cases-v1.json": "1cc7432f16e16594a57b4ffdd98d6ca82b0aaac405010e0aa12738d1e565b29f",
     "data/fonts/tiny-4x5.json": "5a33d126e3415e9d9f33d3390f32f907897cb159d74bca1ab7a40eb1e109b7bb"
   }
 }

@@ -7,15 +7,17 @@ use crate::config::{
     PassRecord, SearchMode,
 };
 use crate::orchestration::core_optimize;
-use crate::pass_ids::PassToggles;
-use crate::pass_ids::OPTIMIZATION_PASS_IDS;
+use crate::pass_ids::{pass_index, PassToggles, OPTIMIZATION_PASS_IDS};
 use crate::passes;
 use crate::scope_rename::scope_rename_fast;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use storm_lua_syntax::ast::{Ast, NodeId};
 use storm_lua_syntax::parser::parse_source;
-use storm_lua_syntax::print::Printer;
-use storm_lua_syntax::provenance::GeneratedOrigins;
+use storm_lua_syntax::print::{PrintedSource, Printer};
+use storm_lua_syntax::provenance::{
+    DeferredGeneratedOrigins, GeneratedOrigins, LexicalCopiedOrigins,
+};
 use storm_lua_syntax::size::measure_size;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -28,7 +30,8 @@ struct Variant {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Candidate {
-    origins: Option<GeneratedOrigins>,
+    origins: Option<Arc<DeferredGeneratedOrigins>>,
+    lexical_origins: Option<Arc<LexicalCopiedOrigins>>,
     structural: String,
     layout: String,
     code: String,
@@ -75,12 +78,31 @@ pub struct CompileCodeResult {
     /// Final-code provenance when requested. Unknown ranges remain explicit;
     /// not every transformation has been annotated yet, so this is not a full map.
     pub origins: Option<GeneratedOrigins>,
+    #[doc(hidden)]
+    pub lexical_origins: Option<Arc<LexicalCopiedOrigins>>,
     pub code: String,
     pub stats: SearchStats,
     pub passes: Vec<PassRecord>,
     pub api_aliases: Vec<String>,
     pub property_reads_hardcoded: usize,
     pub zero_cost_newlines: u32,
+}
+
+impl CompileCodeResult {
+    fn materialize_lexical_origins(mut self) -> Self {
+        if self.origins.is_none() {
+            if let Some(lexical) = self.lexical_origins.take() {
+                let lexical = match Arc::try_unwrap(lexical) {
+                    Ok(value) => value,
+                    Err(shared) => shared.as_ref().clone(),
+                };
+                self.origins = Some(lexical.into_generated());
+            }
+        } else {
+            self.lexical_origins = None;
+        }
+        self
+    }
 }
 
 fn folding_tolerance(t: Option<NumericTolerance>) -> passes::literal_folding::NumericTolerance {
@@ -141,10 +163,7 @@ impl PassMask {
 
     #[inline]
     fn enabled(&self, id: &str) -> bool {
-        let Some(index) = OPTIMIZATION_PASS_IDS
-            .iter()
-            .position(|candidate| *candidate == id)
-        else {
+        let Some(index) = pass_index(id) else {
             return false;
         };
         if index < 64 {
@@ -157,7 +176,7 @@ impl PassMask {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CandidateJob {
-    lexical_origins: Option<GeneratedOrigins>,
+    lexical_origins: Option<LexicalCopiedOrigins>,
     lexical_source: Option<String>,
     variant: Variant,
     aggressive: bool,
@@ -228,22 +247,78 @@ impl PartialEq for SatisficingAttempt {
 const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
 fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, NodeId), String> {
+    // These options select lexical-only compilation independently of the AST.
+    // Keep the normal parse/validation but skip unused source-range collection.
+    if options.environment == storm_lua_spec::environment::EnvironmentProfile::Extended
+        || !options.host_bindings.is_empty()
+    {
+        return parse_source(source).map_err(|error| error.to_string());
+    }
     if let Some(name) = &options.origin_source {
-        storm_lua_syntax::parse_source_with_origins(name, source)
+        storm_lua_syntax::parser::parse_source_with_conditional_origins(name, source, |ast| {
+            storm_lua_analysis::environment_checks::lexical_reason(
+                ast,
+                options.environment,
+                &options.host_bindings,
+            )
+            .is_none()
+        })
     } else {
         parse_source(source).map_err(|error| error.to_string())
     }
 }
 
-fn final_output(ast: &Ast, root: NodeId, zero: bool) -> (String, u32, Option<GeneratedOrigins>) {
+enum FinalPrint {
+    Plain {
+        code: String,
+        newline_count: u32,
+    },
+    Tracked {
+        printed: PrintedSource,
+        newline_count: u32,
+    },
+}
+
+impl FinalPrint {
+    fn code(&self) -> &str {
+        match self {
+            Self::Plain { code, .. } => code,
+            Self::Tracked { printed, .. } => &printed.code,
+        }
+    }
+
+    fn finish(self, ast: &Ast) -> (String, u32, Option<DeferredGeneratedOrigins>) {
+        match self {
+            Self::Plain {
+                code,
+                newline_count,
+            } => (code, newline_count, None),
+            Self::Tracked {
+                printed,
+                newline_count,
+            } => {
+                let code = printed.code.clone();
+                let origins = DeferredGeneratedOrigins::from_print(ast, printed);
+                (code, newline_count, origins)
+            }
+        }
+    }
+}
+
+fn print_final(ast: &Ast, root: NodeId, zero: bool) -> FinalPrint {
     let mut printer = Printer::new(ast, zero);
     if ast.nodes.tracks_origins() {
         let printed = printer.output_with_positions(root);
-        let origins = GeneratedOrigins::from_print(ast, &printed);
-        (printed.code, printer.newline_count(), origins)
+        FinalPrint::Tracked {
+            printed,
+            newline_count: printer.newline_count(),
+        }
     } else {
         let code = printer.output(root);
-        (code, printer.newline_count(), None)
+        FinalPrint::Plain {
+            code,
+            newline_count: printer.newline_count(),
+        }
     }
 }
 
@@ -261,8 +336,9 @@ fn prepare_lexical(
     options: &CompileOptions,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     let (code, lexical_origins) = if let Some(name) = &options.origin_source {
-        let (code, origins) = storm_lua_syntax::print::lexical_minify_with_origins(name, source)
-            .map_err(|error| error.to_string())?;
+        let (code, origins) =
+            storm_lua_syntax::print::lexical_minify_with_compact_origins(name, source)
+                .map_err(|error| error.to_string())?;
         (code, Some(origins))
     } else {
         (
@@ -270,7 +346,12 @@ fn prepare_lexical(
             None,
         )
     };
-    parse_source(&code).map_err(|e| e.to_string())?;
+    // `parse_for_search` already accepted the original program. The lexical
+    // emitter then re-lexes its output and requires the exact same token kind,
+    // spelling and source line sequence before returning it. Lua parsing is a
+    // function of that token stream; building and immediately discarding a
+    // second AST here cannot discover a new syntax failure. Avoid that complete
+    // parser/arena pass on the conservative route.
     Ok((
         SearchContext {
             lexical: true,
@@ -307,6 +388,16 @@ fn prepare_search_with_dedup(
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     options.validate_pass_toggles()?;
     let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
+    prepare_search_from_parsed(source, options, deduplicate, parsed_ast, parsed_root)
+}
+
+fn prepare_search_from_parsed(
+    source: &str,
+    options: &CompileOptions,
+    deduplicate: bool,
+    parsed_ast: Ast,
+    parsed_root: NodeId,
+) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -543,12 +634,12 @@ fn prepare_search_from_base(
 }
 
 fn evaluate_candidate_with_verifier(
-    job: CandidateJob,
+    mut job: CandidateJob,
     verify_candidate: &mut Option<&mut dyn FnMut(&str) -> bool>,
 ) -> Result<CandidateBatch, String> {
-    if let Some(code) = job.lexical_source.as_ref() {
+    if let Some(code) = job.lexical_source.take() {
         if let Some(verify) = verify_candidate.as_deref_mut() {
-            if !verify(code) {
+            if !verify(&code) {
                 return Ok(CandidateBatch {
                     candidates: Vec::new(),
                     attempted: 1,
@@ -557,13 +648,17 @@ fn evaluate_candidate_with_verifier(
                 });
             }
         }
+        // This job is consumed, not shared. Retain the already completed
+        // lexical code and mapping vectors rather than cloning both payloads.
+        let size = target_char_size(&code);
         return Ok(CandidateBatch {
             candidates: vec![Candidate {
-                origins: job.lexical_origins.clone(),
+                origins: None,
+                lexical_origins: job.lexical_origins.map(Arc::new),
                 structural: "lexical".into(),
                 layout: "tokens".into(),
-                code: code.clone(),
-                size: target_char_size(code),
+                code,
+                size,
                 order: 0,
                 passes: Vec::new(),
                 aliases: Vec::new(),
@@ -1006,25 +1101,29 @@ fn evaluate_candidate_with_verifier(
         )]
         let (candidate_ast, candidate_root, candidate_passes) =
             final_variant.expect("at least one final variant");
-        let compact = Printer::new(&candidate_ast, false).output(candidate_root);
-        if parse_source(&compact).is_err() {
+        let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
+        if parse_source(output.code()).is_err() {
             parse_rejected += 1;
             continue;
         }
         if let Some(verify) = verify_candidate.as_deref_mut() {
-            if !verify(&compact) {
+            // The external verifier contract uses compact Lua even when the
+            // selected output requests zero-cost newlines.
+            let compact = zero_cost_newlines
+                .then(|| Printer::new(&candidate_ast, false).output(candidate_root));
+            if !verify(compact.as_deref().unwrap_or_else(|| output.code())) {
                 semantic_rejected += 1;
                 continue;
             }
         }
-        let size = target_char_size(&compact);
-        let (code, newline_count, origins) =
-            final_output(&candidate_ast, candidate_root, zero_cost_newlines);
-        if target_char_size(&code) != size {
+        let size = target_char_size(output.code());
+        if size != final_size {
             return Err("zero-cost newline printer changed size".into());
         }
+        let (code, newline_count, origins) = output.finish(&candidate_ast);
         candidates.push(Candidate {
-            origins,
+            origins: origins.map(Arc::new),
+            lexical_origins: None,
             structural: structural_name.clone(),
             layout: layout.to_string(),
             code,
@@ -1070,14 +1169,23 @@ fn select_best_candidates(
         })
         .collect::<Vec<_>>();
     let best = candidates.remove(0);
-    if let Some(origins) = &best.origins {
+    let origins = best.origins.map(|value| match Arc::try_unwrap(value) {
+        Ok(value) => value.into_owned(),
+        Err(shared) => shared.get().clone(),
+    });
+    let lexical_origins = best.lexical_origins;
+    if let Some(origins) = &origins {
+        origins.validate_for_code(&best.code)?;
+    }
+    if let Some(origins) = &lexical_origins {
         origins.validate_for_code(&best.code)?;
     }
     let lexical_target_met = context
         .lexical_target
         .is_some_and(|target| best.size <= target);
     Ok(CompileCodeResult {
-        origins: best.origins,
+        origins,
+        lexical_origins,
         code: best.code,
         passes: best.passes,
         api_aliases: best.aliases,
@@ -1104,7 +1212,7 @@ fn select_best_candidates(
     })
 }
 
-pub fn select_best(
+fn select_best_compact(
     mut context: SearchContext,
     mut batches: Vec<CandidateBatch>,
 ) -> Result<CompileCodeResult, String> {
@@ -1125,8 +1233,15 @@ pub fn select_best(
     )
 }
 
+pub fn select_best(
+    context: SearchContext,
+    batches: Vec<CandidateBatch>,
+) -> Result<CompileCodeResult, String> {
+    select_best_compact(context, batches).map(CompileCodeResult::materialize_lexical_origins)
+}
+
 fn target_char_size(code: &str) -> usize {
-    code.encode_utf16().count()
+    storm_lua_syntax::source_position::utf16_len(code)
 }
 
 fn render_variant_candidate(
@@ -1141,18 +1256,15 @@ fn render_variant_candidate(
     } else {
         (variant.ast.clone(), variant.root)
     };
-    let compact = Printer::new(&candidate_ast, false).output(candidate_root);
-    if parse_source(&compact).is_err() {
+    let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
+    if parse_source(output.code()).is_err() {
         return Err("satisficing checkpoint failed reparse validation".into());
     }
-    let size = target_char_size(&compact);
-    let (code, newline_count, origins) =
-        final_output(&candidate_ast, candidate_root, zero_cost_newlines);
-    if target_char_size(&code) != size {
-        return Err("zero-cost newline printer changed size".into());
-    }
+    let size = target_char_size(output.code());
+    let (code, newline_count, origins) = output.finish(&candidate_ast);
     Ok(Candidate {
-        origins,
+        origins: origins.map(Arc::new),
+        lexical_origins: None,
         structural: variant.name.clone(),
         layout: "none".into(),
         code,
@@ -1213,7 +1325,7 @@ fn target_is_met(candidates: &[Candidate], target_size: usize) -> bool {
 /// all later work uses the same core and candidates as target-free search.
 /// The optional checkpoint budget returns the best valid code seen so far.
 /// No wall-clock measurements affect scheduling or candidate selection.
-pub fn try_satisficing(
+fn try_satisficing_compact(
     source: &str,
     options: &CompileOptions,
     max_checkpoints: Option<usize>,
@@ -1222,8 +1334,44 @@ pub fn try_satisficing(
     let target_size = options
         .target_size
         .ok_or("try_satisficing requires target_size")?;
+    // Source-sized targets with runtime properties stop at the identity
+    // checkpoint. Parse and validate them normally, but do not construct a
+    // per-node origin table that the exact-copy result will immediately discard.
+    // Hardcoded properties can alter the input, so they retain full tracking.
+    let identity_checkpoint = options.origin_source.is_some()
+        && target_char_size(source) <= target_size
+        && options
+            .property
+            .as_ref()
+            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
+    let (parsed_ast, parsed_root) = if identity_checkpoint {
+        parse_source(source).map_err(|error| error.to_string())?
+    } else {
+        parse_for_search(source, options)?
+    };
+    try_satisficing_from_parsed(source, options, max_checkpoints, parsed_ast, parsed_root)
+}
+pub fn try_satisficing(
+    source: &str,
+    options: &CompileOptions,
+    max_checkpoints: Option<usize>,
+) -> Result<SatisficingAttempt, String> {
+    let mut attempt = try_satisficing_compact(source, options, max_checkpoints)?;
+    attempt.result = attempt.result.materialize_lexical_origins();
+    Ok(attempt)
+}
+
+fn try_satisficing_from_parsed(
+    source: &str,
+    options: &CompileOptions,
+    max_checkpoints: Option<usize>,
+    parsed_ast: Ast,
+    parsed_root: NodeId,
+) -> Result<SatisficingAttempt, String> {
+    let target_size = options
+        .target_size
+        .ok_or("try_satisficing requires target_size")?;
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
-    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
     storm_lua_analysis::environment_checks::validate(
         &parsed_ast,
         parsed_root,
@@ -1242,7 +1390,7 @@ pub fn try_satisficing(
             .into_iter()
             .map(evaluate_candidate)
             .collect::<Result<Vec<_>, _>>()?;
-        let result = select_best(context, batches)?;
+        let result = select_best_compact(context, batches)?;
         return Ok(SatisficingAttempt {
             status: if result.stats.target_met {
                 SatisficingStatus::Satisfied
@@ -1333,10 +1481,12 @@ pub fn try_satisficing(
     // AST first so the requested option is still honored.
     if property_reads_hardcoded == 0 {
         explored.push(Candidate {
-            origins: options
-                .origin_source
-                .as_ref()
-                .map(|name| GeneratedOrigins::identity(name, source)),
+            origins: options.origin_source.as_ref().map(|name| {
+                Arc::new(DeferredGeneratedOrigins::ready(GeneratedOrigins::identity(
+                    name, source,
+                )))
+            }),
+            lexical_origins: None,
             structural: "target:source".into(),
             layout: "source".into(),
             code: source.to_string(),
@@ -1433,7 +1583,7 @@ pub fn try_satisficing(
     let remaining_jobs = ranked.map(|(_, job)| job).collect::<Vec<_>>();
     if remaining_jobs.is_empty() {
         let result = finalize_satisficing_fallback(
-            select_best(context, Vec::new())?,
+            select_best_compact(context, Vec::new())?,
             target_size,
             checkpoints,
         );
@@ -1514,16 +1664,29 @@ fn compile_code_obj1(source: &str, options: &CompileOptions) -> Result<CompileCo
         .into_iter()
         .map(evaluate_candidate)
         .collect::<Result<Vec<_>, _>>()?;
-    select_best(context, batches)
+    select_best_compact(context, batches)
 }
 
 /// Compile without an external semantic verifier. `target_size` activates the
 /// OBJ-2 checkpoints within canonical search; absence of a target preserves OBJ-1.
-pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCodeResult, String> {
+#[doc(hidden)]
+pub fn compile_code_compact(
+    source: &str,
+    options: &CompileOptions,
+) -> Result<CompileCodeResult, String> {
     let Some(target_size) = options.target_size else {
         return compile_code_obj1(source, options);
     };
-    let mut attempt = try_satisficing(source, options, None)?;
+    finish_target_attempt(try_satisficing_compact(source, options, None)?, target_size)
+}
+
+pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCodeResult, String> {
+    compile_code_compact(source, options).map(CompileCodeResult::materialize_lexical_origins)
+}
+fn finish_target_attempt(
+    mut attempt: SatisficingAttempt,
+    target_size: usize,
+) -> Result<CompileCodeResult, String> {
     match attempt.status {
         SatisficingStatus::Satisfied | SatisficingStatus::Stopped => Ok(attempt.result),
         SatisficingStatus::NeedsFullSearch => {
@@ -1534,7 +1697,7 @@ pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCod
                 .into_iter()
                 .map(evaluate_candidate)
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = select_best(context, batches)?;
+            let result = select_best_compact(context, batches)?;
             Ok(finalize_satisficing_fallback(
                 result,
                 target_size,
@@ -1542,6 +1705,73 @@ pub fn compile_code(source: &str, options: &CompileOptions) -> Result<CompileCod
             ))
         }
     }
+}
+
+/// Compile while allowing the host to inspect the original parsed source once.
+/// Inspection is read-only and happens before any transformation; its positions
+/// are diagnostic points on this arena. The compiler retains the same validation,
+/// candidate order and final result as `compile_code`. If parsing fails, the
+/// callback is not invoked. No state is cached between compilations.
+#[doc(hidden)]
+pub fn compile_code_with_source_inspection_compact(
+    source: &str,
+    options: &CompileOptions,
+    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions),
+) -> Result<CompileCodeResult, String> {
+    options.validate_pass_toggles()?;
+    let lexical_options = options.environment
+        == storm_lua_spec::environment::EnvironmentProfile::Extended
+        || !options.host_bindings.is_empty();
+    let identity_checkpoint = options
+        .target_size
+        .is_some_and(|target| target_char_size(source) <= target)
+        && options
+            .property
+            .as_ref()
+            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
+    let (ast, root, positions) = if let Some(name) = options
+        .origin_source
+        .as_deref()
+        .filter(|_| !lexical_options && !identity_checkpoint)
+    {
+        storm_lua_syntax::parser::parse_source_with_origin_positions(name, source, |ast| {
+            storm_lua_analysis::environment_checks::lexical_reason(
+                ast,
+                options.environment,
+                &options.host_bindings,
+            )
+            .is_none()
+        })?
+    } else {
+        storm_lua_syntax::parser::parse_source_with_diagnostic_positions(source)
+            .map_err(|e| e.to_string())?
+    };
+    inspect(&ast, root, &positions);
+    // The origins own their ranges. Do not retain the original diagnostic/name
+    // indexes throughout every candidate search after the host has inspected them.
+    drop(positions);
+    if let Some(target) = options.target_size {
+        finish_target_attempt(
+            try_satisficing_from_parsed(source, options, None, ast, root)?,
+            target,
+        )
+    } else {
+        let (context, jobs) = prepare_search_from_parsed(source, options, true, ast, root)?;
+        let batches = jobs
+            .into_iter()
+            .map(evaluate_candidate)
+            .collect::<Result<Vec<_>, _>>()?;
+        select_best_compact(context, batches)
+    }
+}
+
+pub fn compile_code_with_source_inspection(
+    source: &str,
+    options: &CompileOptions,
+    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions),
+) -> Result<CompileCodeResult, String> {
+    compile_code_with_source_inspection_compact(source, options, inspect)
+        .map(CompileCodeResult::materialize_lexical_origins)
 }
 
 /// Native/Node candidate verification hook. Verification remains sequential so
@@ -1561,12 +1791,13 @@ pub fn compile_code_with_verifier(
             &mut verify_candidate,
         )?);
     }
-    let result = select_best(context, batches)?;
-    Ok(if let Some(target_size) = options.target_size {
+    let result = select_best_compact(context, batches)?;
+    let result = if let Some(target_size) = options.target_size {
         finalize_satisficing_fallback(result, target_size, 0)
     } else {
         result
-    })
+    };
+    Ok(result.materialize_lexical_origins())
 }
 
 #[cfg(test)]
@@ -1880,5 +2111,237 @@ mod phase7_serialization_tests {
         let context_bytes = encode_search_context(&context).expect("encode context");
         let decoded = decode_search_context(&context_bytes).expect("decode context");
         assert_eq!(decoded.structural_names, context.structural_names);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod identity_origin_tests {
+    use super::*;
+    use crate::config::{PropertyConfig, PropertyMode};
+
+    #[test]
+    fn source_sized_target_keeps_the_exact_identity_contract_and_validation() {
+        for source in [
+            "function onTick()output.setNumber(1,2*3)end",
+            "-- 😀雪\r\nfunction onTick()\r\n output.setNumber(1,2)\r\nend\r\n",
+            "-- comment-only source",
+            "",
+        ] {
+            for zero in [false, true] {
+                let config = CompileOptions {
+                    target_size: Some(8192),
+                    origin_source: Some("input.lua".into()),
+                    zero_cost_newlines: zero,
+                    ..Default::default()
+                };
+                let result = try_satisficing(source, &config, None).unwrap().result;
+                assert_eq!(result.code, source);
+                assert!(result.stats.target_met);
+                assert_eq!(result.stats.winner_structural, "target:source");
+                let origins = result.origins.unwrap();
+                origins.validate_for_code(source).unwrap();
+                assert_eq!(origins, GeneratedOrigins::identity("input.lua", source));
+            }
+        }
+        let config = CompileOptions {
+            target_size: Some(8192),
+            origin_source: Some("input.lua".into()),
+            ..Default::default()
+        };
+        assert!(try_satisficing("local =", &config, None).is_err());
+        assert!(
+            try_satisficing("function onTick()pcall(function()end)end", &config, None).is_err()
+        );
+    }
+
+    #[test]
+    fn property_and_lexical_paths_are_not_mistaken_for_identity_copies() {
+        let source = "function onTick()output.setNumber(1,property.getNumber('value'))end";
+        let mut config = CompileOptions {
+            target_size: Some(8192),
+            origin_source: Some("input.lua".into()),
+            property: Some(PropertyConfig {
+                mode: PropertyMode::Hardcode,
+                numbers: Some(std::collections::BTreeMap::from([("value".into(), 7.0)])),
+                bools: None,
+                texts: None,
+            }),
+            ..Default::default()
+        };
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_ne!(result.code, source);
+        assert!(!result.code.contains("getNumber"));
+        assert_eq!(result.stats.winner_structural, "target:property");
+        let origins = result.origins.unwrap();
+        origins.validate_for_code(&result.code).unwrap();
+        assert_eq!(origins.unknown_bytes(), 0);
+        config.property.as_mut().unwrap().mode = PropertyMode::Runtime;
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_eq!(result.code, source);
+        assert_eq!(
+            result.origins.unwrap(),
+            GeneratedOrigins::identity("input.lua", source)
+        );
+        config.property = None;
+        let source = "local _ENV=_ENV -- not identity\nfunction onTick()output.setNumber(1,2)end";
+        let result = try_satisficing(source, &config, None).unwrap().result;
+        assert_eq!(result.stats.winner_structural, "lexical");
+        let (expected_code, expected_origins) =
+            storm_lua_syntax::print::lexical_minify_with_origins("input.lua", source).unwrap();
+        assert_eq!(result.code, expected_code);
+        assert_eq!(result.origins.unwrap(), expected_origins);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_single_source_tests {
+    use super::*;
+    use std::cell::Cell;
+    fn without_timings(mut value: CompileCodeResult) -> CompileCodeResult {
+        // Compare all result fields except elapsed times of distinct executions.
+        for pass in &mut value.passes {
+            pass.elapsed_ms = None;
+        }
+        value
+    }
+    #[test]
+    fn inspected_compilation_matches_the_original_entry_for_each_registered_pass_input() {
+        for id in crate::pass_ids::OPTIMIZATION_PASS_IDS {
+            let text = crate::provenance_pass_matrix::fixture(id);
+            for target_size in [None, Some(0), Some(8192)] {
+                for origin_source in [None, Some("controller.lua".into())] {
+                    let options = CompileOptions {
+                        target_size,
+                        origin_source,
+                        ..Default::default()
+                    };
+                    let expected = compile_code(&text, &options).unwrap();
+                    let calls = Cell::new(0);
+                    let actual = compile_code_with_source_inspection(
+                        &text,
+                        &options,
+                        |ast, root, positions| {
+                            calls.set(calls.get() + 1);
+                            assert!(positions.get(root).is_some());
+                            let (plain, plain_root) = parse_source(&text).unwrap();
+                            assert_eq!(plain_root, root);
+                            assert!(&plain == ast);
+                        },
+                    )
+                    .unwrap();
+                    assert_eq!(calls.get(), 1);
+                    assert_eq!(
+                        without_timings(actual),
+                        without_timings(expected),
+                        "pass={id},target={target_size:?}"
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn inspected_error_and_conservative_paths_preserve_results_and_original_points() {
+        for source in [
+            "",
+            "local =",
+            "function onTick()pcall(function()end)end",
+            "local _ENV=_ENV\r\nfunction onTick()output.setNumber(1,2)end",
+            "-- 雪😀\r\nfunction onDraw()screen.drawText(1,1,'雪')end",
+        ] {
+            for target_size in [None, Some(8192)] {
+                let options = CompileOptions {
+                    target_size,
+                    origin_source: Some("source.lua".into()),
+                    ..Default::default()
+                };
+                let expected = compile_code(source, &options);
+                let actual = compile_code_with_source_inspection(
+                    source,
+                    &options,
+                    |ast, root, positions| {
+                        let (plain, plain_root, plain_points) =
+                            storm_lua_syntax::parser::parse_source_with_positions(source).unwrap();
+                        assert_eq!(root, plain_root);
+                        assert!(&plain == ast);
+                        for node in 0..ast.nodes.len() {
+                            assert_eq!(positions.get(node as u32), plain_points.get(node as u32));
+                        }
+                    },
+                );
+                match (actual, expected) {
+                    (Ok(a), Ok(b)) => assert_eq!(without_timings(a), without_timings(b)),
+                    (Err(a), Err(b)) => assert_eq!(a, b),
+                    pair => panic!("result mismatch: {pair:?}"),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod owned_lexical_candidate_tests {
+    use super::*;
+    #[test]
+    fn lexical_job_transfers_its_exact_buffers_and_preserves_verifier_decisions() {
+        let source = "local _ENV=_ENV -- 雪😀\r\nfunction onTick()output.setNumber(1,2)end\r\n";
+        for mapped in [false, true] {
+            let config = CompileOptions {
+                origin_source: mapped.then(|| "lexical.lua".into()),
+                ..Default::default()
+            };
+            let (_, mut jobs) = prepare_search(source, &config).unwrap();
+            assert_eq!(jobs.len(), 1);
+            let job = jobs.pop().unwrap();
+            let code_pointer = job.lexical_source.as_ref().unwrap().as_ptr();
+            let map_pointer = job.lexical_origins.as_ref().map(|o| o.tokens.as_ptr());
+            let expected_code = job.lexical_source.as_ref().unwrap().clone();
+            let expected_origins = job.lexical_origins.clone();
+            let mut calls = Vec::new();
+            let mut verify = |text: &str| {
+                calls.push(text.to_string());
+                true
+            };
+            let batch = evaluate_candidate_with_verifier(job, &mut Some(&mut verify)).unwrap();
+            assert_eq!(calls, vec![expected_code.clone()]);
+            assert_eq!(batch.attempted, 1);
+            assert_eq!(batch.parse_rejected, 0);
+            assert_eq!(batch.semantic_rejected, 0);
+            let candidate = &batch.candidates[0];
+            assert_eq!(candidate.code, expected_code);
+            assert_eq!(
+                candidate.code.as_ptr(),
+                code_pointer,
+                "consuming a job must not duplicate its completed source"
+            );
+            assert_eq!(
+                candidate
+                    .lexical_origins
+                    .as_ref()
+                    .map(|o| o.tokens.as_ptr()),
+                map_pointer,
+                "completed compact token vectors must move unchanged"
+            );
+            assert_eq!(
+                candidate.lexical_origins.as_deref(),
+                expected_origins.as_ref()
+            );
+            assert!(candidate.origins.is_none());
+            let (_, mut jobs) = prepare_search(source, &config).unwrap();
+            let mut rejected = 0;
+            let mut reject = |text: &str| {
+                assert_eq!(text, expected_code);
+                rejected += 1;
+                false
+            };
+            let batch =
+                evaluate_candidate_with_verifier(jobs.pop().unwrap(), &mut Some(&mut reject))
+                    .unwrap();
+            assert_eq!(rejected, 1);
+            assert!(batch.candidates.is_empty());
+            assert_eq!(batch.semantic_rejected, 1);
+        }
     }
 }

@@ -8,6 +8,7 @@
 
 use crate::ast::{Ast, Node, NodeId, TableField};
 use crate::numeric::{qstr_bracket_key_shape, qstr_shape};
+use crate::parser::NameSite;
 use crate::print::{bin_prec, plain_name_from_string_literal, render_num, trimmed_nil_rhs_len};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,11 +47,25 @@ fn needs_len_sep(a: Option<char>, b: Option<char>) -> bool {
     false
 }
 
-struct SizeCtx<'a> {
-    ast: &'a Ast,
+/// Supplies alternate identifier spellings for exact cost-only size measurement.
+/// Unmentioned sites retain the spelling stored in the AST.
+pub trait SizeNameResolver {
+    /// Replacement spelling for one syntactic identifier occurrence.
+    /// Returning None keeps the symbol spelling stored in the AST.
+    fn replacement(&self, node: NodeId, site: NameSite) -> Option<&str>;
+    /// Cost models may replace this call's callee with an identifier. Its
+    /// arguments, method name, parentheses and shorthand retain printer rules.
+    fn call_target(&self, _call: NodeId) -> Option<&str> {
+        None
+    }
 }
 
-impl<'a> SizeCtx<'a> {
+struct SizeCtx<'a, 'n> {
+    ast: &'a Ast,
+    names: Option<&'n dyn SizeNameResolver>,
+}
+
+impl<'a, 'n> SizeCtx<'a, 'n> {
     fn seg_of(&self, s: &str) -> Seg {
         let len = s.len();
         if len == 0 {
@@ -63,8 +78,16 @@ impl<'a> SizeCtx<'a> {
         }
     }
 
-    fn name(&self, id: crate::ast::SymbolId) -> &str {
+    fn raw_name(&self, id: crate::ast::SymbolId) -> &str {
         self.ast.strings.get(id)
+    }
+
+    fn name_seg(&self, node: NodeId, site: NameSite, id: crate::ast::SymbolId) -> Seg {
+        self.seg_of(
+            self.names
+                .and_then(|resolver| resolver.replacement(node, site))
+                .unwrap_or_else(|| self.raw_name(id)),
+        )
     }
 
     fn qstr_seg(&self, raw: &str) -> Seg {
@@ -195,7 +218,7 @@ impl<'a> SizeCtx<'a> {
             return self.concat_segs(&[
                 self.expr_seg(*obj, 0),
                 self.seg_of(":"),
-                self.seg_of(self.name(*name)),
+                self.seg_of(self.raw_name(*name)),
             ]);
         }
         self.expr_seg(id, 0)
@@ -205,7 +228,10 @@ impl<'a> SizeCtx<'a> {
         let Node::Function(ps, var, _) = &self.ast.nodes[fn_id as usize] else {
             unreachable!()
         };
-        let params = ps.iter().map(|p| self.seg_of(self.name(*p)));
+        let params = ps
+            .iter()
+            .enumerate()
+            .map(|(index, p)| self.name_seg(fn_id, NameSite::Parameter(index as u32), *p));
         let var_extra = if *var {
             if ps.is_empty() {
                 "..."
@@ -242,7 +268,7 @@ impl<'a> SizeCtx<'a> {
     fn expr_seg(&self, id: NodeId, parent: u8) -> Seg {
         let node = &self.ast.nodes[id as usize];
         match node {
-            Node::Name(sym) => self.seg_of(self.name(*sym)),
+            Node::Name(sym) => self.name_seg(id, NameSite::Reference, *sym),
             Node::Num(v) => self.seg_of(&render_num(v)),
             Node::Str(v) => self.qstr_seg(v),
             Node::Nil => self.seg_of("nil"),
@@ -265,7 +291,7 @@ impl<'a> SizeCtx<'a> {
                 let f_segs = fs.iter().map(|f| match f {
                     TableField::Arr(v) => self.expr_seg(*v, 0),
                     TableField::Name(k, v) => self.concat_segs(&[
-                        self.seg_of(self.name(*k)),
+                        self.seg_of(self.raw_name(*k)),
                         self.seg_of("="),
                         self.expr_seg(*v, 0),
                     ]),
@@ -307,7 +333,11 @@ impl<'a> SizeCtx<'a> {
             }
             Node::Function { .. } => self.function_expr_seg(id),
             Node::Call(fn_, args, method) => {
-                let fn_s = self.expr_seg(*fn_, 15);
+                let fn_s = self
+                    .names
+                    .and_then(|names| names.call_target(id))
+                    .map(|name| self.seg_of(name))
+                    .unwrap_or_else(|| self.expr_seg(*fn_, 15));
                 let j = self.expr_list_seg(args);
                 if args.len() == 1
                     && matches!(self.ast.node(args[0]), Node::Str(_) | Node::Table(_))
@@ -365,11 +395,11 @@ impl<'a> SizeCtx<'a> {
         match node {
             Node::Break => self.seg_of("break"),
             Node::Goto(name) => {
-                self.concat_segs(&[self.seg_of("goto "), self.seg_of(self.name(*name))])
+                self.concat_segs(&[self.seg_of("goto "), self.seg_of(self.raw_name(*name))])
             }
             Node::Label(name) => self.concat_segs(&[
                 self.seg_of("::"),
-                self.seg_of(self.name(*name)),
+                self.seg_of(self.raw_name(*name)),
                 self.seg_of("::"),
             ]),
             Node::Do(b) => self.cat_seg(
@@ -410,7 +440,7 @@ impl<'a> SizeCtx<'a> {
                 });
                 let header = self.concat_segs(&[
                     self.seg_of("for "),
-                    self.seg_of(self.name(*name)),
+                    self.name_seg(id, NameSite::Binding(0), *name),
                     self.seg_of("="),
                     self.expr_seg(*a, 0),
                     self.seg_of(","),
@@ -424,7 +454,10 @@ impl<'a> SizeCtx<'a> {
                 )
             }
             Node::Forin(names, es, body) => {
-                let n_segs = names.iter().map(|n| self.seg_of(self.name(*n)));
+                let n_segs = names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, n)| self.name_seg(id, NameSite::Binding(index as u32), *n));
                 let e_segs = es.iter().map(|e| self.expr_seg(*e, 0));
                 let header = self.concat_segs(&[
                     self.seg_of("for "),
@@ -445,11 +478,14 @@ impl<'a> SizeCtx<'a> {
             ]),
             Node::Localfunc(name, fn_) => self.concat_segs(&[
                 self.seg_of("local function "),
-                self.seg_of(self.name(*name)),
+                self.name_seg(id, NameSite::Binding(0), *name),
                 self.function_tail_seg(*fn_),
             ]),
             Node::Local(names, es) => {
-                let n_segs = names.iter().map(|n| self.seg_of(self.name(*n)));
+                let n_segs = names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, n)| self.name_seg(id, NameSite::Binding(index as u32), *n));
                 let keep = trimmed_nil_rhs_len(self.ast, names.len(), es, true);
                 self.concat_segs(&[
                     self.seg_of("local "),
@@ -484,15 +520,44 @@ impl<'a> SizeCtx<'a> {
 
 /// measureSize 相当。root は block ノードであること。
 pub fn measure_size(ast: &Ast, root: NodeId) -> usize {
-    SizeCtx { ast }.measure_size(root)
+    SizeCtx { ast, names: None }.measure_size(root)
 }
 
 /// measureExpr 相当。単一式のサイズを返す。
 pub fn measure_expr(ast: &Ast, id: NodeId) -> usize {
-    SizeCtx { ast }.expr_seg(id, 0).len
+    SizeCtx { ast, names: None }.expr_seg(id, 0).len
 }
 
 /// 文単位のサイズ（デバッグ・テスト用）。
 pub fn measure_stmt(ast: &Ast, id: NodeId) -> usize {
-    SizeCtx { ast }.stat_seg(id).len
+    SizeCtx { ast, names: None }.stat_seg(id).len
+}
+
+/// Exact size using alternate spellings for selected identifier occurrences.
+/// This avoids constructing a renamed AST for cost-only measurements.
+pub fn measure_size_with_names(ast: &Ast, root: NodeId, names: &dyn SizeNameResolver) -> usize {
+    SizeCtx {
+        ast,
+        names: Some(names),
+    }
+    .measure_size(root)
+}
+
+/// Statement size with explicit identifier/callee substitutions, without AST mutation.
+pub fn measure_stmt_with_names(ast: &Ast, node: NodeId, names: &dyn SizeNameResolver) -> usize {
+    SizeCtx {
+        ast,
+        names: Some(names),
+    }
+    .stat_seg(node)
+    .len
+}
+/// Expression size with explicit identifier/callee substitutions, without AST mutation.
+pub fn measure_expr_with_names(ast: &Ast, node: NodeId, names: &dyn SizeNameResolver) -> usize {
+    SizeCtx {
+        ast,
+        names: Some(names),
+    }
+    .expr_seg(node, 0)
+    .len
 }

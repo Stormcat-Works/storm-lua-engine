@@ -12,10 +12,10 @@ const decoder=new TextDecoder();
 import {convert,luaSource} from '../../../../tools/fixture-commands.mjs';
 const rectangle={kind:'rect',x:1,y:1,width:4,height:3,fill:true};
 
-test('all 731 accepted RGBA cases survive binary JS/WASM roundtrip',async()=>{
+test('all 743 accepted RGBA cases survive binary JS/WASM roundtrip',async()=>{
   const fixture=JSON.parse(await readFile(new URL('fixtures/screen/cases-v1.json',root),'utf8'));
   assert.equal(fixture.contract,'storm-lua-screen-rgba-v1');
-  assert.equal(fixture.cases.length,731);
+  assert.equal(fixture.cases.length,743);
   for(const c of fixture.cases){
     const instance=raster.createRaster(c.width,c.height);
     try {
@@ -136,9 +136,9 @@ test('memory growth refreshes input views and frame leases; disposal is checked'
 });
 
 
-test('all 731 accepted RGBA cases also pass through actual Lua WASM bindings',async()=>{
+test('all 743 accepted RGBA cases also pass through actual Lua WASM bindings',async()=>{
   const fixture=JSON.parse(await readFile(new URL('fixtures/screen/cases-v1.json',root),'utf8'));
-  assert.equal(fixture.contract,'storm-lua-screen-rgba-v1');assert.equal(fixture.cases.length,731);
+  assert.equal(fixture.contract,'storm-lua-screen-rgba-v1');assert.equal(fixture.cases.length,743);
   for(const c of fixture.cases) {
     const vm=runtime.createVehicle();
     try {

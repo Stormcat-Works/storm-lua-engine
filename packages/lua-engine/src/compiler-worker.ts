@@ -1,11 +1,11 @@
 /** ホストが作成したWorker/MessagePortでcompiler専用RPCを使う薄い接続層。 */
 import {loadCompiler, type Compiler, type CompilerInitOptions} from './compiler.js';
-import type {AnalyzeOptions, CompileOptions, LuaProject, ProjectCompileOptions} from './compiler-types.js';
+import type {AddonBuildOptions, AnalyzeOptions, CompileOptions, LuaProject, ProjectCompileOptions} from './compiler-types.js';
 
 /** Worker生成・終了はホストが所有します。接続時にもLua VMは作成しません。 */
 export interface CompilerEndpoint extends EventTarget { postMessage(message: unknown): void }
 const protocol = 'storm-lua-compiler-v1';
-type Operation = 'validateSourceMap' | 'inspectSource' | 'stripDevelopment' | 'buildLifeboat' | 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
+type Operation = 'buildAddon' | 'validateSourceMap' | 'inspectSource' | 'stripDevelopment' | 'buildLifeboat' | 'minify' | 'build' | 'analyze' | 'scanProperties' | 'passIds' | 'passMetadata';
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -45,6 +45,7 @@ export class CompilerWorkerClient {
       catch (error) { this.#pending.delete(id); reject(error); }
     });
   }
+  buildAddon(project: LuaProject, options: AddonBuildOptions = {}): Promise<ReturnType<Compiler['buildAddon']>> { return this.request('buildAddon', [project, options]); }
   validateSourceMap(code: string, map: string): Promise<ReturnType<Compiler['validateSourceMap']>> { return this.request('validateSourceMap', [code, map]); }
   inspectSource(source: string): Promise<ReturnType<Compiler['inspectSource']>> { return this.request('inspectSource',[source]); }
   stripDevelopment(source: string): Promise<string> { return this.request('stripDevelopment',[source]); }
@@ -94,6 +95,7 @@ export function serveCompiler(endpoint: CompilerEndpoint, options: CompilerInitO
           case 'stripDevelopment':
             if(typeof args[0] !== 'string') throw new TypeError('stripDevelopment requires text');
             result=api.stripDevelopment(args[0]); break;
+          case 'buildAddon': result=api.buildAddon(args[0] as LuaProject,args[1] as AddonBuildOptions); break;
           case 'buildLifeboat': result=api.buildLifeboat(args[0] as LuaProject,args[1] as ProjectCompileOptions); break;
           case 'minify':
             if (typeof args[0] !== 'string') throw new TypeError('minify source must be text');

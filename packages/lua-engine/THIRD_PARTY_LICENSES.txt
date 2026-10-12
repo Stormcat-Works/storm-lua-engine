@@ -1283,21 +1283,21 @@ SOFTWARE.
 ------------------------------------------------------------------------
 License: MIT License
 Used by:
-  storm-lua-conformance 0.3.0
-  storm-lua-addon 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-analysis 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-bridge 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-build 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-compiler-wasm 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-microcontroller 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-minify 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-spec 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-syntax 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-vm 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-lua-wasm 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-screen-raster 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  storm-screen-wasm 0.3.0 (https://github.com/Stormcat-Works/storm-lua-engine)
-  xtask 0.3.0
+  storm-lua-conformance 0.3.1
+  storm-lua-addon 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-analysis 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-bridge 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-build 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-compiler-wasm 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-microcontroller 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-minify 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-spec 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-syntax 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-vm 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-lua-wasm 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-screen-raster 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  storm-screen-wasm 0.3.1 (https://github.com/Stormcat-Works/storm-lua-engine)
+  xtask 0.3.1
   base64-simd 0.8.0 (https://github.com/Nugine/simd)
   lua-src 547.0.0 (https://github.com/khvzak/lua-src-rs)
   mlua-sys 0.6.8 (https://github.com/mlua-rs/mlua)

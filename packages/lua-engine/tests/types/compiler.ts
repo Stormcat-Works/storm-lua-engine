@@ -11,6 +11,10 @@ function consumer(compiler: Compiler): void {
     void schema; void role;
   }
   compiler.build(project, { target: 'vehicle', minify: false, sourceMap: true });
+  compiler.buildAddon(project, {metadataTag: 'studio', environment: 'game'});
+  compiler.buildLifeboat(project, {metadataTag: 'studio', sourceMap: true});
+  // @ts-expect-error Addon builds do not accept Vehicle optimization settings.
+  compiler.buildAddon(project, {minify: true});
   compiler.analyze(project, { target: 'vehicle' });
   const ids: string[] = compiler.passIds();
   void ids;

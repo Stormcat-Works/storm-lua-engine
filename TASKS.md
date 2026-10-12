@@ -1,6 +1,45 @@
 # Implementation tasks
 
-現在地は[STATUS](STATUS.md)。**v0.3.0はnpm・GitHub・Playgroundへ公開し、registry再導入と本番検証まで完了しました。** 利用ガイド本文はdocs.makkii.jp、実装契約・設計・検証は本リポで管理します。
+## v0.3.1のローカル公開候補（2026-10-12、完了）
+
+最新性能・Addon・metadata・743件の描画契約を統合し、Native/WASM/SDK/3ブラウザ/Playground/梱包consumerと固定240設定・実コーパス・反復性能を再検証した。[候補記録](docs/verification/release-candidate-0.3.1.md)。既知7入力のtrapと、部分/反復名mapの不具合も解消した。source manifestと検査済みtarball/ZIP、hash、release notes、ガイドpatchを保存した。
+
+残る公開工程は、最終commitの3 OS CI、producer/revisionを確定した配布物の再検査、タグ・GitHub Release・npm・本番配備・registry再導入。現在の候補を公開済みにはしない。
+
+## v0.3.2以降へ送る改善
+
+- 全入力でMap/plain比1.2以内にする目標（今回の最大反復中央値比7.019）。通常側を遅くせず、情報・精度を削らず追加研究する。
+- 大きなmapの容量・ピークメモリ、追加candidate/snapshot/poolの改善。
+- Addon最適化、完全なserver API analyzer、元変数/storage/lifetime/bytecode PCの動的復元はそれぞれ独立の後続機能。
+
+以下の開発ラウンドは過去の実測・未達記録として保持し、その研究目標をv0.3.1の追加公開ゲートにしない。
+
+## v0.3.1 全経路の性能要件（開発中）
+
+2026-10-05の[追加実装と比較](docs/verification/compile-continuation-20261005.md)を完了。API参照の文字列確保、走査snapshot、短縮名、位置変換の重複を削減した。両モードの絶対時間・差分・倍率を別々に記録し、全条件の1.2倍目標と負の観測の確認は継続する。
+
+[全コンパイル経路の計画](docs/design/compile-all-scenes-v031.md)と[実装・検証](docs/verification/compile-all-scenes-20261004.md)を正本にする。API別名選択の先行改善に加え、block解析共有・借用token・parse/位置再利用・字句短縮・map一回出力は実装済み。
+
+未完了条件は、同じ新実装のMapなしを基準とした**最大1.2倍以内、可能なら1.1倍**。全体平均を最大条件の代わりにしない。通常処理を遅くして分母を大きくする対応は禁止する。
+
+次に確認するのは、小さい原文返却と保守的字句短縮に残るmap固定費、大きな描画の追加由来費用、通常経路で見られた小さな負の性能差の再現性。生成Lua・全map・候補/診断・既知の失敗境界を比較し、測定が悪化した条件を除外しない。7原文の全探索WASM trapは独立の未修正課題として保持する。
+
+作業は`feat/minify-performance-v0.3.1`へ検証単位でcommit。push・版番号変更・公開は別の明示工程。元変数値/フレーム等の別デバッグ機能や、schema非互換変更を性能改善へ混ぜない。
+
+## v0.3.1 Mapあり/なしの差分削減（進行中）
+
+目標は同じ新実装・入力・設定でMapありをMapなしの最大1.2倍以内にすること。全体平均の達成を、個別の最大の達成と取り違えない。[実測と検証](docs/verification/map-delta-reduction-20261004.md)。
+
+| 工程 | 現在の状態 |
+| --- | --- |
+| 既存の高速化基盤と実コーパス調査の保存 | 検証して別commitへ保存済み |
+| API別名候補のMap固有処理 | 不採用候補の由来構築を省き、採用した集合だけを追跡付きで再適用。実装・回帰・実コーパス比較済み |
+| 1.2倍の目標 | 全件達成は未確認ではなく、反復部分集合に未達例が存在する。開発中のまま維持 |
+| 小入力・原文返却・字句短縮のMap固定費 | 次の対象。今回のAPI別名変更を通らない経路であることを区別する |
+| 最後に必要な由来付き改名・印字 | 次の調査対象。位置・理由・関連元を削らず、候補に同じ計算を繰り返していないか調べる |
+| 全般的なblock解析の再利用 | 通常経路の高速化として別軸で管理。Map追加時間の削減効果と混ぜない |
+| 既知の7原文の全探索WASM trap | 新旧に同じ問題があることを確認。今回の改善に紛れて成功扱い・黙ったfallbackをしない |
+| v0.3.1公開 | 未実施。性能/互換確認と明示的な公開工程の後に実施 |
 
 ## v0.2.0のローカル完成確認（1〜5完了）
 
@@ -25,14 +64,14 @@
 
 手順と実行条件は[release](docs/release.md)。Playground CLIはリポジトリから使う確認用CLIとして提供し、独立npx packageや各OSの単体binaryを今回の条件に加えません。
 
-[公開記録](docs/verification/release-0.2.0.md)に対象commit・CI・registry導入・本番確認を記録しました。Storm Min自身のnpm公開は別工程で、private CIの課金制限は未実行理由として明示しています。
+[公開記録](docs/verification/release-0.2.0.md)に対象commit・CI・registry導入・本番確認を記録しました。consumer自身のnpm公開は別工程で、consumer側remote CIは未実行として区別しています。
 
 ## ログ発生位置（後続版）
 
 - Rust/構造化WASM/TS: 実装・検証済み。[検証記録](docs/verification/log-locations-20260929.md)。
 - 本文と位置の上限、取得不能な位置、旧レコード受理と不正位置拒否を検証する。
 - Named include、alias、tick/draw、reset、Addon、停止/失敗、非短縮map、Nativeのdebug feature無効を実際に実行する。
-- consumerのTerminalリンク・実行世代保存はconsumer側。新しいSDK版の公開・タグは別の承認工程。
+- 利用側IDEのログ表示リンク・実行世代保存はconsumer側。新しいSDK版の公開・タグは別の承認工程。
 
 ## 後続項目
 
@@ -42,7 +81,7 @@
 | 元変数・元の実行順での高度なデバッグ | 位置マップとは別機能。消えた値の復元を自動保証しない |
 | Addonコンパイラ | 現在はVehicle専用。Addon指定は明示拒否を維持 |
 | requireとextendedの分離、値返却型の動的loader | 現行経路を維持。具体的な追加host要件が出た段階で再評価 |
-| 各consumerの採用 | Storm Min/Editor等の実装・検証はconsumer側が所有。Phys Sim/Storm Code全体の完成は別工程 |
+| 各consumerの採用 | 実装・検証はconsumer側が所有。利用側製品全体の完成は別工程 |
 | Propertyの保存精度・型不一致等の実ゲーム観察 | SDK間の一致とは区別する独立oracle。確認したゲーム版・モードの範囲を明示 |
 | Addonの追加server/matrix規則 | 実hostとゲーム観察に基づき追加。未実装を成功stubで埋めない |
 | map座標変換、描画専用TS rasterのmap provider | 実利用要求がある段階で入力・精度を検証して追加 |
@@ -53,9 +92,9 @@
 Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへIDE、共同編集、クラウド同期、ゲーム世界・仮物理を追加しません。過去版の確認件数と初回移管時の結果は各verificationに保持します。
 
 
-## Storm Code向け実行ホスト操作（未公開）
+## consumer向け実行ホスト操作（未公開）
 
-名前付きtick/draw、即時property/input状態操作、typed property snapshot、runtime専用analyzeを実装。静的ビルド契約は維持する。独立consumerとNative/WASMで検証し、Storm Codeでの利用は同製品の段階移行へ記録する。未公開の識別可能なSDKスナップショットと既存npm版を混同しない。
+名前付きtick/draw、即時property/input状態操作、typed property snapshot、runtime専用analyzeを実装。静的ビルド契約は維持する。独立consumerとNative/WASMで検証し、利用側製品への統合はconsumer側が所有する。未公開の識別可能なSDKスナップショットと既存npm版を混同しない。
 
 ## ソース位置追跡とtarget探索（P0/P1実装済み）
 
@@ -86,3 +125,8 @@ v0.3.0公開前の最小限ラウンドは完了。今後は追加profileの結�
 ## v0.2.1 公開工程（2026-09-30完了）
 
 npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、registryからの再取得・独立導入と公開状態文書の更新が完了した。GitHubとPlaygroundも公開・検証済み。詳細は[公開記録](docs/verification/release-0.2.1.md)。
+
+
+## 2026-10-05 印字ラウンドの検証引継ぎ
+
+`f3e5c87`までの実装の検証・計測・失敗ケース再確認を完了し、docs/verification/compile-emission-20261005.mdに保存した。最大Map比1.2（理想1.1）と、Map無効時も速くする要件は継続する。最適化の全入力・毎回の改善が完了したとは扱わない。

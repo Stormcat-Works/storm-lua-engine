@@ -20,6 +20,7 @@ fn original_library_and_caller_locations_survive_bundle_debugging() -> Result<()
     let artifact = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             minify: Some(false),
             ..Default::default()
         },
@@ -97,6 +98,7 @@ fn runtime_error_points_into_the_original_returned_function() -> Result<(), Box<
     let result = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             minify: Some(false),
             ..Default::default()
         },

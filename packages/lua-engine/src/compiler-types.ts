@@ -167,6 +167,8 @@ export interface AnalyzeResult {
 }
 
 export interface ProjectCompileOptions extends CompileOptions {
+  /** Remove a leading long comment whose first content line matches this tag. */
+  metadataTag?: string;
   /** false = link only (readable output + Source Map). Default true. */
   minify?: boolean;
 }
@@ -211,3 +213,10 @@ export interface SourceComment {start:number;end:number;line:number;text:string;
 export interface SourceInspection {ok:boolean;error:string|null;statements:SourceStatement[];comments:SourceComment[];replacedRoots:string[]}
 
 export type * from "./optimization-map-types.js";
+
+/** Addon include-once linking only; no optimizer or Vehicle size assumptions. */
+export interface AddonBuildOptions {
+  environment?: EnvironmentProfile;
+  /** First line of a leading long comment used for metadata. */
+  metadataTag?: string;
+}

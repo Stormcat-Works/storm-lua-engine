@@ -2,6 +2,16 @@
 
 リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
 
+## v0.3.1の公開前準備
+
+v0.3.1は、検証済みのコンパイル性能改善、入れ子条件分岐のpanic/trap修正、Addon実行修正、非短縮Addon buildとmetadata除去を一つの公開候補にまとめる。追加性能研究と全入力でのMap比1.2目標はv0.3.2以降へ送る。
+
+ローカル候補は`feat/minify-performance-v0.3.1`のworking treeで検証した。公開版は既公開main/developを親とする新規1コミットへまとめ、未公開作業履歴を祖先に含めない。候補の結果と制限を[公開候補の記録](verification/release-candidate-0.3.1.md)へ集約する。source manifest、npm tarball、静的サイトZIP、SHA256SUMS、公開用release notesを保存する。未コミット候補のproducerはdirty=trueのまま正直に記録する。
+
+公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。未コミット候補を公開commitのCI成功として扱わない。
+
+描画命令ABI、Composite I/O、savedata、Source Map v3とx_storm schema1、Playground保存形式は維持する。低レベルRustの`ApiProjectCompileOptions.metadata_tag`と内部candidate形式の更新を確認し、Rustの全フィールド指定とWorker内のcompiler版混在を避ける。既公開タグとtarballは変更しない。
+
 ## v0.3.0の公開前準備
 
 v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。v0.3.0の公開状態と検査済み成果物は[公開記録](verification/release-0.3.0.md)を参照する。

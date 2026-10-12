@@ -23,6 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let result = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             compile: ApiCompileOptions {
                 numeric_mode: Some(ApiNumericMode::Exact),
                 zero_cost_newlines: Some(false),

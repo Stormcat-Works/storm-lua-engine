@@ -214,8 +214,8 @@ fn rewrite_node(
                 unreachable!()
             };
             let original = originals[candidate.initializer.expression_index];
-            if source.nodes.origin(original).is_some()
-                && source.nodes.origin(candidate.divisor_expression).is_some()
+            if source.nodes.has_origin(original)
+                && source.nodes.has_origin(candidate.divisor_expression)
             {
                 target
                     .nodes

@@ -39,14 +39,19 @@ pub fn integer_literal_value(s: &str) -> Option<i64> {
         .strip_prefix("0x")
         .or_else(|| unsigned.strip_prefix("0X"))
     {
-        if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+        // from_str_radix validates every remaining digit and overflow. Checking
+        // the first byte separately rejects its optional '+' spelling, which
+        // this Lua-literal API has never accepted after the 0x prefix.
+        if !hex.as_bytes().first().is_some_and(u8::is_ascii_hexdigit) {
             return None;
         }
         let value = u64::from_str_radix(hex, 16).ok()?;
         let value = value as i64;
         return negative.then_some(value.wrapping_neg()).or(Some(value));
     }
-    if unsigned.is_empty() || !unsigned.bytes().all(|c| c.is_ascii_digit()) {
+    // The standard integer parser checks the tail; do not scan it twice.
+    // A second sign after strip_prefix is not a decimal digit and stays invalid.
+    if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return None;
     }
     let value = unsigned.parse::<i64>().ok()?;
@@ -386,6 +391,17 @@ fn short_num_uncached(v: f64) -> String {
         return if v.is_sign_negative() { "-0" } else { "0" }.into();
     }
     if is_integer(v) {
+        // Every signed 32-bit integer is exactly representable in binary64,
+        // and its historical shortest decimal uses fixed notation. Avoid the
+        // float formatter, digit vector and reconstruction for common literals.
+        // Keep the two existing compact-positive-exponent exceptions verbatim.
+        if (i32::MIN as f64..=i32::MAX as f64).contains(&v) {
+            return match v {
+                100_000.0 => "1e5".into(),
+                1_000_000.0 => "1e6".into(),
+                _ => (v as i32).to_string(),
+            };
+        }
         let d = es_to_string(v);
         // Only these two values use the exponential alternative below.
         // Generating it for every integer discarded the result after formatting.
@@ -679,6 +695,12 @@ pub fn quote_lua(s: &str) -> String {
 /// `\n`/`\r`/制御文字）は全て ASCII 1 文字のため、候補間の長さ差は byte/UTF-16
 /// どちらでも同値になる。
 pub fn qstr(raw: &str) -> String {
+    render_quoted(raw).into_owned()
+}
+
+/// Borrow a canonical, unescaped double-quoted literal until the caller actually
+/// needs an owned output buffer. Other quoting rules use the same implementation.
+pub(crate) fn render_quoted(raw: &str) -> Cow<'_, str> {
     qstr_with_long_overhead(raw, 0)
 }
 
@@ -686,11 +708,23 @@ pub fn qstr(raw: &str) -> String {
 /// lexed as a call argument (`t[[...]]`) rather than an indexed expression.
 /// The printer inserts one disambiguating space there, so account for that byte
 /// before deciding whether the long-bracket spelling is actually shorter.
-pub(crate) fn qstr_bracket_key(raw: &str) -> String {
+pub(crate) fn qstr_bracket_key(raw: &str) -> Cow<'_, str> {
     qstr_with_long_overhead(raw, 1)
 }
 
-fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
+fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> Cow<'_, str> {
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2
+        && bytes[0] == b'"'
+        && bytes[bytes.len() - 1] == b'"'
+        && bytes[1..bytes.len() - 1]
+            .iter()
+            .all(|&b| b >= 32 && b != b'"' && b != b'\\')
+    {
+        // No escape, embedded quote or control byte can make this double-quote
+        // tie winner shorter in the single/long-bracket forms. UTF-8 is unchanged.
+        return Cow::Borrowed(raw);
+    }
     let value = decoded_quote_value(raw);
     let (quoted_len, quote) = quote_shape(&value);
     if let Some((long_len, level)) = shorter_long_bracket_shape(&value, quoted_len, long_overhead) {
@@ -702,10 +736,10 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
         out.push(']');
         out.extend(std::iter::repeat_n('=', level));
         out.push(']');
-        return out;
+        return Cow::Owned(out);
     }
     if quote == '"' {
-        return json_stringify(&value);
+        return Cow::Owned(json_stringify(&value));
     }
     let mut out = String::with_capacity(quoted_len);
     out.push('\'');
@@ -719,7 +753,7 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> String {
         }
     }
     out.push('\'');
-    out
+    Cow::Owned(out)
 }
 
 /// Common API keys and generated payloads are already unescaped strings. Borrow
@@ -1111,5 +1145,247 @@ mod tests {
             checked += 1;
         }
         assert!(checked > 15_000);
+    }
+}
+
+#[cfg(test)]
+mod small_integer_format_tests {
+    use super::*;
+    fn previous(v: f64) -> String {
+        if v == 0.0 {
+            return if v.is_sign_negative() {
+                "-0".into()
+            } else {
+                "0".into()
+            };
+        }
+        let decimal = es_to_string(v);
+        if matches!(v, 100_000.0 | 1_000_000.0) {
+            let exponent = compact_exponent_text(&es_to_exponential(v));
+            if exponent.len() < decimal.len() {
+                return exponent;
+            }
+        }
+        decimal
+    }
+    #[test]
+    fn integer_shortcut_matches_independent_float_digit_formatting() {
+        for value in -8192..=8192 {
+            let v = value as f64;
+            assert_eq!(short_num(v), previous(v));
+        }
+        for center in [
+            i32::MIN as f64,
+            i32::MAX as f64,
+            100_000.0,
+            1_000_000.0,
+            -100_000.0,
+            -1_000_000.0,
+            9_007_199_254_740_992.0,
+        ] {
+            for delta in -4..=4 {
+                let v = center + delta as f64;
+                assert_eq!(short_num(v), previous(v));
+            }
+        }
+        let mut state = 0x243f_6a88u32;
+        for _ in 0..65_536 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let v = (state as i32) as f64;
+            assert_eq!(short_num(v), previous(v), "{v}");
+        }
+        assert_eq!(short_num(-0.0), "-0");
+        assert_eq!(short_num(0.0), "0");
+        assert_eq!(short_num(f64::NAN), "0/0");
+        assert_eq!(short_num(f64::INFINITY), "1/0");
+        assert_eq!(short_num(f64::NEG_INFINITY), "-1/0");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowed_quote_tests {
+    use super::*;
+    fn reference(raw: &str, long_overhead: usize) -> String {
+        let value = decoded_quote_value(raw);
+        let (quoted_len, quote) = quote_shape(&value);
+        if let Some((long_len, level)) =
+            shorter_long_bracket_shape(&value, quoted_len, long_overhead)
+        {
+            let mut out = String::with_capacity(long_len);
+            out.push('[');
+            out.extend(std::iter::repeat_n('=', level));
+            out.push('[');
+            out.push_str(&value);
+            out.push(']');
+            out.extend(std::iter::repeat_n('=', level));
+            out.push(']');
+            return out;
+        }
+        if quote == '"' {
+            return json_stringify(&value);
+        }
+        let mut out = String::with_capacity(quoted_len);
+        out.push('\'');
+        for c in value.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '\'' => out.push_str("\\'"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                _ => out.push(c),
+            }
+        }
+        out.push('\'');
+        out
+    }
+
+    #[test]
+    fn borrowed_quotes_match_the_original_owned_encoder_for_controls_and_unicode() {
+        for value in (0..=256)
+            .filter_map(char::from_u32)
+            .map(|c| format!("a{c}雪😀b"))
+        {
+            for raw in [
+                format!("\"{value}\""),
+                format!("'{value}'"),
+                format!("[==[{value}]==]"),
+                quote_lua(&value),
+            ] {
+                for overhead in [0, 1] {
+                    assert_eq!(
+                        qstr_with_long_overhead(&raw, overhead).as_ref(),
+                        reference(&raw, overhead)
+                    );
+                }
+            }
+        }
+        for raw in [
+            "",
+            "'",
+            "\"",
+            "\"a\\x41b\"",
+            "'it\\\'s'",
+            "[=[\nx]=]",
+            "[broken",
+            "\"\\ud800\"",
+            "\"a\"b\"",
+        ] {
+            for overhead in [0, 1] {
+                assert_eq!(
+                    qstr_with_long_overhead(raw, overhead).as_ref(),
+                    reference(raw, overhead)
+                );
+            }
+        }
+        for raw in [
+            "\"\"",
+            "\"already\"",
+            "\"雪😀\"",
+            "\"it's\"",
+            "\"x]===]\"",
+            "\"\u{2028}\u{2029}\"",
+        ] {
+            for overhead in [0, 1] {
+                let value = qstr_with_long_overhead(raw, overhead);
+                assert!(matches!(value, Cow::Borrowed(_)));
+                assert_eq!(value.as_ptr(), raw.as_ptr());
+                assert_eq!(value.as_ref(), reference(raw, overhead));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod integer_single_scan_tests {
+    use super::*;
+    fn reference(s: &str) -> Option<i64> {
+        let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+        let negative = s.starts_with('-');
+        if let Some(hex) = unsigned
+            .strip_prefix("0x")
+            .or_else(|| unsigned.strip_prefix("0X"))
+        {
+            if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            let value = u64::from_str_radix(hex, 16).ok()?;
+            let value = value as i64;
+            return negative.then_some(value.wrapping_neg()).or(Some(value));
+        }
+        if unsigned.is_empty() || !unsigned.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let value = unsigned.parse::<i64>().ok()?;
+        if negative {
+            value.checked_neg()
+        } else {
+            Some(value)
+        }
+    }
+
+    #[test]
+    fn one_pass_integer_validation_keeps_signs_overflow_hex_and_invalid_input_exact() {
+        let mut samples = vec!["".into(), "0".into(), "-0".into(), "+0".into()];
+        for body in [
+            "0",
+            "00",
+            "1",
+            "2147483647",
+            "4294967295",
+            "9007199254740993",
+            "9223372036854775807",
+            "9223372036854775808",
+            "18446744073709551615",
+            "18446744073709551616",
+            "0x0",
+            "0x7fffffffffffffff",
+            "0xffffffffffffffff",
+            "0x10000000000000000",
+            "0x+1",
+            "0x-1",
+            "0x",
+            "0x1p2",
+            "0x1.0",
+            "1.0",
+            "1e2",
+            "NaN",
+            "inf",
+            "０",
+        ] {
+            for prefix in ["", "+", "-", "++", "--", "+-", "-+", " "] {
+                for tail in ["", " ", "_", "x", "\0", "\n"] {
+                    samples.push(format!("{prefix}{body}{tail}"));
+                }
+            }
+        }
+        let mut state = 0x74eb31cu64;
+        for _ in 0..32768 {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            samples.extend([
+                state.to_string(),
+                format!("-{}", state),
+                format!("0x{state:x}"),
+                format!("-0X{state:X}"),
+            ]);
+        }
+        for text in samples {
+            assert_eq!(integer_literal_value(&text), reference(&text), "{text:?}");
+        }
+        for digit in [
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'f', 'g', '+', '-', '.', '\0',
+            '雪',
+        ] {
+            for length in [1, 2, 15, 19, 20, 64, 256] {
+                let text = std::iter::repeat_n(digit, length).collect::<String>();
+                for value in [text.clone(), format!("0x{text}"), format!("-{text}")] {
+                    assert_eq!(integer_literal_value(&value), reference(&value));
+                }
+            }
+        }
     }
 }

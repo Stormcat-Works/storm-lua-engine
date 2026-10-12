@@ -1,6 +1,6 @@
 /** v0.3.0: generate, validate and inspect an optimized source map.
  * Run in a Node ESM project after installing:
- * npm install @stormcat-works/storm-lua-engine@0.3.0 @jridgewell/trace-mapping
+ * npm install @stormcat-works/storm-lua-engine@0.3.1 @jridgewell/trace-mapping
  * node optimized-source-map.mjs
  * This example never executes the supplied Lua or reads a source file named by a map.
  */
@@ -40,7 +40,7 @@ if (!result.ok || result.code === undefined || result.map === undefined) {
 const artifact = {code: result.code, map: result.map};
 const details = compiler.validateSourceMap(artifact.code, artifact.map);
 assert.equal(details.schemaVersion, 1);
-assert.equal(details.producer.version, '0.3.0');
+assert.equal(details.producer.version, JSON.parse(await readFile(new URL('../package.json',import.meta.resolve('@stormcat-works/storm-lua-engine/compiler')),'utf8')).version);
 const standard = JSON.parse(artifact.map); // Only inspect after the SDK's validation.
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', {fatal: true});

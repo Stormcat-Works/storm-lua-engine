@@ -132,13 +132,17 @@ impl OptimizationReason {
         }
     }
     pub(crate) fn action(code: &str, operation: ReasonOperation) -> Self {
+        Self::action_shared(code.into(), operation)
+    }
+    pub(crate) fn action_shared(code: Arc<str>, operation: ReasonOperation) -> Self {
+        static EMPTY: std::sync::OnceLock<Arc<Vec<ReasonFact>>> = std::sync::OnceLock::new();
         Self {
-            code: code.into(),
+            code,
             operation,
             before: None,
             after: None,
             basis: None,
-            facts: Arc::default(),
+            facts: Arc::clone(EMPTY.get_or_init(Arc::default)),
         }
     }
     pub(crate) fn rewrite(code: &str, before: &Node, after: &Node) -> Self {

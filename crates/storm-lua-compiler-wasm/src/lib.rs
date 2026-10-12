@@ -290,3 +290,34 @@ pub fn validate_source_map(code: &str, map: &str) -> Result<JsValue, JsValue> {
     to_js(&details)
         .map_err(|e| JsValue::from_str(&format!("failed to encode source map details: {e}")))
 }
+
+/// Non-optimizing Addon include-once build. Never applies Vehicle phase/size rules.
+#[wasm_bindgen(js_name = buildAddon)]
+pub fn build_addon(project: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
+    let project = decode_project(project)?;
+    let options = if options.is_null() || options.is_undefined() {
+        storm_lua_build::addon::AddonBuildOptions::default()
+    } else {
+        // serde-wasm-bindgen reads the declared struct fields directly; check
+        // own JS keys as well so unknown Vehicle options are visibly rejected.
+        if !options.is_object() || Array::is_array(&options) {
+            return Err(JsValue::from_str(
+                "invalid Addon build options: expected an object",
+            ));
+        }
+        for key in Reflect::own_keys(&options)?.iter() {
+            if !matches!(
+                key.as_string().as_deref(),
+                Some("environment" | "metadataTag")
+            ) {
+                return Err(JsValue::from_str(
+                    "invalid Addon build options: unknown field",
+                ));
+            }
+        }
+        serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("invalid Addon build options: {e}")))?
+    };
+    to_js(&storm_lua_build::addon::build_addon(&project, &options))
+        .map_err(|e| JsValue::from_str(&format!("failed to encode Addon build result: {e}")))
+}

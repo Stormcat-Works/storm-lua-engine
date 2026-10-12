@@ -1,8 +1,10 @@
 # Storm Lua Engine: Playground
 
+v0.3.1のSDKとPlaygroundは同じcheckoutから検証・梱包する。最終公開状態はGitHub Releaseと本番version.jsonで確認する。
+
 SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホスト接続を実際に試すCLI/Webです。Storm MinのCLI/Webとは併存し、置き換えません。ゲーム世界、仮物理、共同編集、クラウド保存は実装しません。
 
-Playgroundとnpm SDKはv0.3.0を公開済みで、公開後のregistry導入・本番3ブラウザー検証まで完了しています。[公開記録](../docs/verification/release-0.3.0.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKとタグは固定し、Webはreleaseブランチから更新します。
+v0.3.0では公開後のregistry導入・本番3ブラウザー検証まで完了しています。v0.3.1の最終公開状態は[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)で確認してください。[公開記録](../docs/verification/release-0.3.0.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKとタグは固定し、Webはreleaseブランチから更新します。
 
 ## v0.3.0のSource Map検査
 

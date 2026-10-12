@@ -55,6 +55,10 @@ impl EnvironmentProfile {
         GAME_UNAVAILABLE.contains(&name)
             && !(self == Self::Extended && EXTENDED_FUNCTIONS.contains(&name))
     }
+    /// Addon-specific base-function availability; Vehicle keeps `select`.
+    pub fn is_addon_unavailable(self, name: &str) -> bool {
+        self.is_unavailable(name) || (self == Self::Game && name == "select")
+    }
     /// Stable wire/profile identifier.
     pub fn as_str(self) -> &'static str {
         match self {

@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::link::{analyze_structure, link_project, lookup_source_byte, LinkResult};
+#[cfg(test)]
+use crate::link::link_project;
+use crate::link::{analyze_structure, lookup_source_byte, LinkResult};
 use crate::source_map::generate_source_map;
 use storm_lua_analysis::diagnostic::{codes, Diagnostic, Range, Severity};
 use storm_lua_analysis::lint::collect_written_global_names;
@@ -16,8 +18,8 @@ use storm_lua_minify::config::{
 };
 use storm_lua_minify::pass_ids::{OPTIMIZATION_PASS_IDS, PASS_RECORD_NAMES};
 use storm_lua_minify::search::{compile_code, CandidateSize, CompileCodeResult, SearchStats};
-use storm_lua_syntax::parser::{parse_source, parse_source_with_positions};
-use storm_lua_syntax::print::token_minify;
+use storm_lua_syntax::parser::{parse_source, parse_source_with_diagnostic_positions};
+use storm_lua_syntax::print::token_minified_utf16_len;
 use storm_lua_syntax::source_position::LineIndex;
 
 /// Optimization pipeline selection; numeric precision is configured separately.
@@ -452,13 +454,22 @@ fn failure_diagnostics(source: &str, error: &str) -> Vec<Diagnostic> {
 }
 
 /// `compile()` の既知ハザード診断。位置サイドテーブル付きで再パースする
-/// （検索ホットパスの `parse_source` とは別経路。`success()` で1回だけ呼ばれる非ホットパス）。
+/// （検索側とは別経路。完了時に一度だけ実行し、成功結果にも同じ診断を渡す）。
 fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnostic>, String> {
-    let (ast, root, positions) = parse_source_with_positions(source).map_err(|e| e.to_string())?;
+    let (ast, root, positions) =
+        parse_source_with_diagnostic_positions(source).map_err(|e| e.to_string())?;
+    Ok(hazards_from_parsed(&ast, root, &positions, options))
+}
+fn hazards_from_parsed(
+    ast: &storm_lua_syntax::Ast,
+    root: storm_lua_syntax::NodeId,
+    positions: &storm_lua_syntax::parser::NodePositions,
+    options: &CompileOptions,
+) -> Vec<Diagnostic> {
     let mut diagnostics = storm_lua_analysis::environment_checks::diagnostics(
-        &ast,
+        ast,
         root,
-        Some(&positions),
+        Some(positions),
         options.environment,
         &options.host_bindings,
         &Default::default(),
@@ -466,7 +477,7 @@ fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnost
         None,
     );
     if let Some(reason) = storm_lua_analysis::environment_checks::lexical_reason(
-        &ast,
+        ast,
         options.environment,
         &options.host_bindings,
     ) {
@@ -478,7 +489,7 @@ fn detect_hazards(source: &str, options: &CompileOptions) -> Result<Vec<Diagnost
         diagnostics.push(Diagnostic::warning(codes::CONSERVATIVE_MINIFICATION,
             format!("Token-preserving minification only: {reason}. Names, literals, globals, token line positions and evaluation order are unchanged; property specialization and AST passes are not applied.")).with_range(range));
     }
-    Ok(diagnostics)
+    diagnostics
 }
 
 fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats {
@@ -529,20 +540,16 @@ fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats 
     }
 }
 
-fn success(source: &str, options: &CompileOptions, result: CompileCodeResult) -> ApiCompileResult {
-    let diagnostics = match detect_hazards(source, options) {
-        Ok(diagnostics) => diagnostics,
-        Err(error) => return ApiCompileResult::failure(source, error),
-    };
-    if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
-        return ApiCompileResult::with_error(error.message.clone(), diagnostics);
-    }
+fn success(
+    source: &str,
+    options: &CompileOptions,
+    mut result: CompileCodeResult,
+    diagnostics: Vec<Diagnostic>,
+) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
-    let original = source.encode_utf16().count();
-    let baseline = token_minify(source)
-        .map(|value| value.encode_utf16().count())
-        .unwrap_or(original);
-    let size = result.code.encode_utf16().count();
+    let original = storm_lua_syntax::source_position::utf16_len(source);
+    let baseline = token_minified_utf16_len(source).unwrap_or(original);
+    let size = storm_lua_syntax::source_position::utf16_len(&result.code);
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
     let tolerance = options.numeric_tolerance.unwrap_or(NumericTolerance {
         abs: if options.numeric_mode == NumericMode::Exact {
@@ -556,16 +563,29 @@ fn success(source: &str, options: &CompileOptions, result: CompileCodeResult) ->
             1e-6
         },
     });
-    let map = match result.origins.as_ref() {
-        Some(origins) => match crate::optimized_source_map::encode(
+    let map = if let Some(lexical) = result.lexical_origins.take() {
+        match crate::optimized_source_map::encode_compact_lexical_for_options(
             &result.code,
-            origins,
-            crate::optimized_source_map::compilation_settings(options, Some(&result.stats)),
+            lexical.as_ref(),
+            options,
+            Some(&result.stats),
         ) {
             Ok(map) => Some(map),
             Err(error) => return ApiCompileResult::failure(source, error),
-        },
-        None => None,
+        }
+    } else {
+        match result.origins.take() {
+            Some(origins) => match crate::optimized_source_map::encode_owned_for_options(
+                &result.code,
+                origins,
+                options,
+                Some(&result.stats),
+            ) {
+                Ok(map) => Some(map),
+                Err(error) => return ApiCompileResult::failure(source, error),
+            },
+            None => None,
+        }
     };
     ApiCompileResult {
         map,
@@ -635,16 +655,23 @@ pub fn finish_compile_result(
     options: &CompileOptions,
     result: Result<CompileCodeResult, String>,
 ) -> ApiCompileResult {
-    match detect_hazards(source, options) {
-        Ok(diagnostics) => {
-            if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
-                return ApiCompileResult::with_error(error.message.clone(), diagnostics);
-            }
-        }
+    let diagnostics = match detect_hazards(source, options) {
+        Ok(diagnostics) => diagnostics,
         Err(error) => return ApiCompileResult::failure(source, error),
+    };
+    finish_with_diagnostics(source, options, result, diagnostics)
+}
+fn finish_with_diagnostics(
+    source: &str,
+    options: &CompileOptions,
+    result: Result<CompileCodeResult, String>,
+    diagnostics: Vec<Diagnostic>,
+) -> ApiCompileResult {
+    if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
+        return ApiCompileResult::with_error(error.message.clone(), diagnostics);
     }
     match result {
-        Ok(result) => success(source, options, result),
+        Ok(result) => success(source, options, result, diagnostics),
         Err(error) => ApiCompileResult::failure(source, error),
     }
 }
@@ -655,7 +682,18 @@ pub fn compile(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
         Ok(options) => options,
         Err(error) => return ApiCompileResult::invalid_options(error),
     };
-    finish_compile_result(source, &core_options, compile_code(source, &core_options))
+    let mut diagnostics = None;
+    let result = storm_lua_minify::search::compile_code_with_source_inspection_compact(
+        source,
+        &core_options,
+        |ast, root, positions| {
+            diagnostics = Some(hazards_from_parsed(ast, root, positions, &core_options));
+        },
+    );
+    match diagnostics {
+        Some(diagnostics) => finish_with_diagnostics(source, &core_options, result, diagnostics),
+        None => finish_compile_result(source, &core_options, result),
+    }
 }
 
 /// `compileProject()` のオプション（設計 §6）。既存 `ApiCompileOptions` を全部そのまま内包する
@@ -663,6 +701,8 @@ pub fn compile(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiProjectCompileOptions {
+    /// Optional leading long-comment metadata marker, shared with Addon builds.
+    pub metadata_tag: Option<String>,
     /// Compilation options shared with the single-source API.
     #[serde(flatten)]
     pub compile: ApiCompileOptions,
@@ -871,8 +911,8 @@ fn remap_diagnostics_to_modules(
 ///   土台のため）が、`ok`/失敗判定は到達集合基準（タスク2: §7-2、`analyze` とのパリティは
 ///   診断集合のみ、`ok` 判定はここだけの独自ロジック）。
 /// - `minify:false`: リンク済み可読ソース + Source Map(v3) + `usedModules`/`injectedAmbient`。
-/// - `minify:true`: リンク済みソースを既存 `compile()` の minify パイプラインへそのまま通す。
-///   `map` は返さない（v1 は minify 後の Source Map を作らない。§6/§11 非目標・v2 予約）。
+/// - `minify:true`: リンク済みソースを既存のminifyパイプラインへ通す。
+///   `sourceMap:true`では、最適化後の位置を元モジュールへ合成してmapを返す。
 ///   `compile()` 由来の診断（`env-access` 等）はオフセット区間表で元モジュール・元行へ
 ///   逆引きしてから合流する（逆引き不能なら位置なし診断。位置は捏造しない）。
 pub fn compile_project(
@@ -888,41 +928,38 @@ pub fn compile_project(
             )])
         }
     };
-    let mut link = link_project(project);
-    if link.linked_source.is_none() {
-        // `link_project` が到達可能モジュールの error（またはモジュール無しのプロジェクト
-        // 全体診断）を検出済み。到達不能モジュールの error だけが残るケースはここには来ない
-        // （`link_project` はその場合リンクを継続する）。
-        return ApiProjectCompileResult::structural_failure(link.diagnostics);
+    let prepared = match prepare_metadata(project, options.metadata_tag.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return ApiProjectCompileResult::structural_failure(error),
+    };
+    let structural = analyze_structure(&prepared);
+    if structural.has_blocking_error(project) {
+        return ApiProjectCompileResult::structural_failure(structural.diagnostics);
     }
-
-    // Stormworks 固有制限の検出（`analyze()` と同じロジック。severity のみ error）。
-    // `sw_restrict` は `analyze_structure` の外側にある独立レイヤーのため、ここで改めて
-    // 構造解析を行う（`analyze()` は warning として同じ検出を行うため、severity だけが
-    // 両者の違いになる）。診断は到達可否を問わず全モジュール分を追加する（`analyze` との
-    // パリティ維持）。
-    let structural = analyze_structure(project);
+    // Analyze each original module once for linking and restriction diagnostics.
+    // Unreachable module diagnostics are retained, with the same blocking rule.
+    let mut restrictions = Vec::new();
     let written_globals = collect_written_global_names(structural.modules.values());
     for (key, analysis) in &structural.modules {
-        link.diagnostics
-            .extend(sw_restrict::scan_module_in_environment(
-                key,
-                analysis,
-                &written_globals,
-                Severity::Error,
-                core_options.environment,
-                &core_options.host_bindings,
-            ));
+        restrictions.extend(sw_restrict::scan_module_in_environment(
+            key,
+            analysis,
+            &written_globals,
+            Severity::Error,
+            core_options.environment,
+            &core_options.host_bindings,
+        ));
     }
-    // ok/失敗判定は entry から到達するモジュールの error のみで決める（タスク2）。
-    // 到達不能モジュールの error は診断に残したまま、リンクは成功扱いを続ける。
-    if link
-        .diagnostics
+    if restrictions
         .iter()
         .any(|d| structural.is_blocking(project, d))
     {
-        return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        let mut diagnostics = structural.diagnostics;
+        diagnostics.extend(restrictions);
+        return ApiProjectCompileResult::structural_failure(diagnostics);
     }
+    let mut link = crate::link::link_analyzed_project(&prepared, structural);
+    link.diagnostics.extend(restrictions);
     #[expect(
         clippy::expect_used,
         reason = "link_project produced this result and the preceding gate rejected every blocking diagnostic"
@@ -940,10 +977,11 @@ pub fn compile_project(
             );
             match crate::map_composition::compose(project, &link, &linked_source, &origins)
                 .and_then(|o| {
-                    crate::optimized_source_map::encode(
+                    crate::optimized_source_map::encode_for_options(
                         &linked_source,
                         &o,
-                        crate::optimized_source_map::compilation_settings(&core_options, None),
+                        &core_options,
+                        None,
                     )
                 }) {
                 Ok(map) => Some(map),
@@ -992,6 +1030,27 @@ pub fn compile_project(
     )
 }
 
+fn prepare_metadata<'a>(
+    project: &'a LuaProject,
+    tag: Option<&str>,
+) -> Result<std::borrow::Cow<'a, LuaProject>, Vec<Diagnostic>> {
+    if tag.is_none() {
+        return Ok(std::borrow::Cow::Borrowed(project));
+    }
+    let mut prepared = project.clone();
+    for (name, source) in &mut prepared.modules {
+        match crate::metadata::metadata(source, tag) {
+            Ok(value) => *source = value,
+            Err(error) => {
+                return Err(vec![
+                    Diagnostic::error("build-metadata", error).with_module(name)
+                ])
+            }
+        }
+    }
+    Ok(std::borrow::Cow::Owned(prepared))
+}
+
 /// LB include-once build. Separate from the existing return-valued static linker.
 pub fn compile_lifeboat(
     project: &LuaProject,
@@ -1001,7 +1060,11 @@ pub fn compile_lifeboat(
         Ok(value) => value,
         Err(error) => return ApiProjectCompileResult::compile_failure(error),
     };
-    let link = crate::lifeboat::link_lifeboat(project);
+    let prepared = match prepare_metadata(project, options.metadata_tag.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return ApiProjectCompileResult::structural_failure(error),
+    };
+    let link = crate::lifeboat::link_lifeboat(&prepared);
     let Some(source) = link.linked_source.as_deref() else {
         return ApiProjectCompileResult::structural_failure(link.diagnostics);
     };
@@ -1041,13 +1104,7 @@ pub fn compile_lifeboat(
                 let origins =
                     storm_lua_syntax::provenance::GeneratedOrigins::identity("linked.lua", source);
                 match crate::map_composition::compose(project, &link, source, &origins).and_then(
-                    |o| {
-                        crate::optimized_source_map::encode(
-                            source,
-                            &o,
-                            crate::optimized_source_map::compilation_settings(&core, None),
-                        )
-                    },
+                    |o| crate::optimized_source_map::encode_for_options(source, &o, &core, None),
                 ) {
                     Ok(map) => Some(map),
                     Err(error) => return ApiProjectCompileResult::compile_failure(error),
@@ -1510,5 +1567,345 @@ mod tests {
         let result = compile_project(&p, &ApiProjectCompileOptions::default());
         assert!(!result.ok);
         assert!(result.code.is_none());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_project_analysis_tests {
+    use super::*;
+    use serde_json::json;
+    fn reference_project(
+        project: &LuaProject,
+        options: &ApiProjectCompileOptions,
+    ) -> ApiProjectCompileResult {
+        let core_options = match options.compile.to_core() {
+            Ok(options) => options,
+            Err(error) => {
+                return ApiProjectCompileResult::structural_failure(vec![Diagnostic::error(
+                    options_error_code(&error),
+                    error,
+                )])
+            }
+        };
+        let mut link = link_project(project);
+        if link.linked_source.is_none() {
+            // `link_project` が到達可能モジュールの error（またはモジュール無しのプロジェクト
+            // 全体診断）を検出済み。到達不能モジュールの error だけが残るケースはここには来ない
+            // （`link_project` はその場合リンクを継続する）。
+            return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        }
+
+        // Stormworks 固有制限の検出（`analyze()` と同じロジック。severity のみ error）。
+        // `sw_restrict` は `analyze_structure` の外側にある独立レイヤーのため、ここで改めて
+        // 構造解析を行う（`analyze()` は warning として同じ検出を行うため、severity だけが
+        // 両者の違いになる）。診断は到達可否を問わず全モジュール分を追加する（`analyze` との
+        // パリティ維持）。
+        let prepared = match prepare_metadata(project, options.metadata_tag.as_deref()) {
+            Ok(value) => value,
+            Err(error) => return ApiProjectCompileResult::structural_failure(error),
+        };
+        let structural = analyze_structure(&prepared);
+        let written_globals = collect_written_global_names(structural.modules.values());
+        for (key, analysis) in &structural.modules {
+            link.diagnostics
+                .extend(sw_restrict::scan_module_in_environment(
+                    key,
+                    analysis,
+                    &written_globals,
+                    Severity::Error,
+                    core_options.environment,
+                    &core_options.host_bindings,
+                ));
+        }
+        // ok/失敗判定は entry から到達するモジュールの error のみで決める（タスク2）。
+        // 到達不能モジュールの error は診断に残したまま、リンクは成功扱いを続ける。
+        if link
+            .diagnostics
+            .iter()
+            .any(|d| structural.is_blocking(project, d))
+        {
+            return ApiProjectCompileResult::structural_failure(link.diagnostics);
+        }
+        #[expect(
+            clippy::expect_used,
+            reason = "link_project produced this result and the preceding gate rejected every blocking diagnostic"
+        )]
+        let linked_source = link
+            .linked_source
+            .clone()
+            .expect("no error diagnostics -> link_project always returns linked_source");
+
+        if !options.minify.unwrap_or(true) {
+            let map = if core_options.origin_source.is_some() {
+                let origins = storm_lua_syntax::provenance::GeneratedOrigins::identity(
+                    "linked.lua",
+                    &linked_source,
+                );
+                match crate::map_composition::compose(project, &link, &linked_source, &origins)
+                    .and_then(|o| {
+                        crate::optimized_source_map::encode(
+                            &linked_source,
+                            &o,
+                            crate::optimized_source_map::compilation_settings(&core_options, None),
+                        )
+                    }) {
+                    Ok(map) => Some(map),
+                    Err(error) => return ApiProjectCompileResult::compile_failure(error),
+                }
+            } else {
+                generate_source_map(project, &link)
+            };
+            return ApiProjectCompileResult {
+                ok: true,
+                code: Some(linked_source),
+                map,
+                used_modules: link.used_modules,
+                injected_ambient: link.injected_ambient,
+                diagnostics: link.diagnostics,
+                ..Default::default()
+            };
+        }
+
+        let compiled = finish_compile_result(
+            &linked_source,
+            &core_options,
+            compile_code(&linked_source, &core_options).and_then(|mut result| {
+                if let Some(origins) = result.origins.as_ref() {
+                    result.origins = Some(crate::map_composition::compose(
+                        project,
+                        &link,
+                        &result.code,
+                        origins,
+                    )?);
+                }
+                Ok(result)
+            }),
+        );
+        let mut diagnostics =
+            remap_diagnostics_to_modules(compiled.diagnostics.clone(), project, &link);
+        // 構造/sw_restrict 診断（到達不能モジュールの Error を含む）を合流する。ok:true でも
+        // 到達不能モジュールの Error はここまで捨てずに残っている（タスク2: §7-2、
+        // `analyze` とのパリティ維持のため minify:true でも diagnostics は落とさない）。
+        diagnostics.extend(link.diagnostics);
+        ApiProjectCompileResult::from_minified(
+            compiled,
+            link.used_modules,
+            link.injected_ambient,
+            diagnostics,
+        )
+    }
+
+    fn compare(project: &LuaProject) {
+        for minify in [false, true] {
+            for mapped in [false, true] {
+                let options: ApiProjectCompileOptions =
+                    serde_json::from_value(json!({"minify":minify,"sourceMap":mapped})).unwrap();
+                let before = serde_json::to_vec(project).unwrap();
+                let mut expected = reference_project(project, &options);
+                let mut actual = compile_project(project, &options);
+                // Native PassRecord clocks are observations, not artifact semantics.
+                // Preserve all other fields, including exact encoded map bytes.
+                for result in [&mut expected, &mut actual] {
+                    for pass in &mut result.passes {
+                        pass.elapsed_ms = None;
+                    }
+                }
+                assert_eq!(
+                    serde_json::to_value(&actual).unwrap(),
+                    serde_json::to_value(&expected).unwrap(),
+                    "full project result changed"
+                );
+                assert_eq!(
+                    serde_json::to_vec(project).unwrap(),
+                    before,
+                    "project input mutated"
+                );
+            }
+        }
+    }
+    #[test]
+    fn shared_structural_analysis_keeps_success_errors_reachability_and_ambient_order() {
+        for project in [
+            json!({"entry":"main","modules":{"main":"function onTick()output.setNumber(1,2*3)end"}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f(3))end","helper":"return function(x)return x*2 end","unused":"local ="}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f(3))end","helper":"local ="}}),
+            json!({"entry":"main","modules":{"main":"require('absent')"}}),
+            json!({"entry":"main","modules":{"main":"require('helper')","helper":"require('main')"}}),
+            json!({"entry":"absent","modules":{"main":"return 1"}}),
+            json!({"entry":"main","modules":{"main":"function onTick()pcall(function()end)end"}}),
+            json!({"entry":"main","modules":{"main":"function onTick()output.setNumber(1,lib.double(2))end","unused":"pcall(function()end)"},"ambient":{"lib":{"members":{"double":{"kind":"module","source":"return function(x)return x*2 end"},"unused":{"kind":"environmentOnly"}}}}}),
+            json!({"entry":"main","modules":{"main":"function onTick()lib.hidden()end"},"ambient":{"lib":{"members":{"hidden":{"kind":"environmentOnly"}}}}}),
+            json!({"entry":"main","modules":{"main":"local f=require('helper') function onTick()output.setNumber(1,f())end","helper":"-- 雪😀\r\nreturn function()return 1 end\r\n"}}),
+        ] {
+            compare(&serde_json::from_value(project).unwrap());
+        }
+    }
+    #[test]
+    fn project_analysis_reuse_does_not_change_many_module_link_maps() {
+        for count in [1, 4, 16] {
+            let mut modules = BTreeMap::new();
+            let mut main = String::new();
+            for n in 0..count {
+                main.push_str(&format!("local v{n}=require('part{n}')\n"));
+                modules.insert(format!("part{n}"), format!("local x={n}+2 return x"));
+            }
+            main.push_str("function onTick()output.setNumber(1,v0)end");
+            modules.insert("main".into(), main);
+            compare(&LuaProject {
+                entry: "main".into(),
+                modules,
+                ambient: BTreeMap::new(),
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shared_public_source_tests {
+    use super::*;
+    fn normalized(mut value: ApiCompileResult) -> serde_json::Value {
+        for pass in &mut value.passes {
+            pass.elapsed_ms = None;
+        }
+        value.elapsed_ms = None;
+        serde_json::to_value(value).unwrap()
+    }
+    fn previous(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
+        let core = match options.to_core() {
+            Ok(core) => core,
+            Err(error) => return ApiCompileResult::invalid_options(error),
+        };
+        finish_compile_result(source, &core, compile_code(source, &core))
+    }
+    #[test]
+    fn single_parse_public_results_preserve_error_precedence_positions_and_all_map_fields() {
+        for source in [
+            "",
+            "local =",
+            "local _ENV=_ENV return '雪😀'",
+            "function onTick()pcall(function()end)end",
+            "function onDraw()local a=input.getNumber(1)end",
+            "-- 雪😀\r\nfunction onDraw()screen.drawText(1,2,'雪')end\r\n",
+            "local function f(x)return x*2 end function onTick()output.setNumber(1,f(3))end",
+            "function onTick()output.setNumber(1,property.getNumber('value'))end",
+        ] {
+            for source_map in [false, true] {
+                for target_size in [None, Some(0), Some(8192)] {
+                    for environment in ["game", "extended"] {
+                        let options:ApiCompileOptions=serde_json::from_value(serde_json::json!({"sourceMap":source_map,"sourceName":"controller.lua","targetSize":target_size,"environment":environment})).unwrap();
+                        let expected = normalized(previous(source, &options));
+                        let actual = normalized(compile(source, &options));
+                        assert_eq!(actual,expected,"source={source:?} map={source_map} target={target_size:?} env={environment}");
+                    }
+                }
+            }
+        }
+        for settings in [
+            serde_json::json!({"sourceMap":true,"targetSize":8192,"property":{"mode":"hardcode","numbers":{"value":9}}}),
+            serde_json::json!({"sourceMap":true,"numericMode":"exact"}),
+            serde_json::json!({"sourceMap":true,"passToggles":{"constant-folding":false}}),
+            serde_json::json!({"sourceMap":true,"passToggles":{"not-a-pass":true}}),
+        ] {
+            let source = "function onTick()output.setNumber(1,property.getNumber('value')+2*3)end";
+            let options: ApiCompileOptions = serde_json::from_value(settings).unwrap();
+            assert_eq!(
+                normalized(compile(source, &options)),
+                normalized(previous(source, &options))
+            );
+        }
+    }
+    #[test]
+    fn project_metadata_blanking_keeps_original_source_map_content() {
+        let source = "--[==[studio-test\n{\"label\":\"速度\"}\n]==]\nfunction onTick() output.setNumber(1,42) end";
+        let project = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([("main".into(), source.into())]),
+            ambient: BTreeMap::new(),
+        };
+        for build in [compile_project, compile_lifeboat] {
+            let result = build(
+                &project,
+                &ApiProjectCompileOptions {
+                    minify: Some(false),
+                    metadata_tag: Some("studio-test".into()),
+                    ..Default::default()
+                },
+            );
+            assert!(result.ok, "{:?}", result.diagnostics);
+            assert!(!result.code.as_ref().unwrap().contains("studio-test"));
+            assert!(result.code.as_ref().unwrap().contains("output.setNumber"));
+            let map: serde_json::Value =
+                serde_json::from_str(result.map.as_ref().unwrap()).unwrap();
+            assert_eq!(map["sourcesContent"][0], source);
+        }
+    }
+
+    #[test]
+    fn metadata_does_not_change_a_lua_string_or_untagged_comment() {
+        let source = "-- ordinary comment\nlocal text=[==[studio-test\nsecret-in-string\n]==]\nfunction onTick() output.setNumber(1,#text) end";
+        let p = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([("main".into(), source.into())]),
+            ambient: BTreeMap::new(),
+        };
+        let result = compile_project(
+            &p,
+            &ApiProjectCompileOptions {
+                minify: Some(false),
+                metadata_tag: Some("studio-test".into()),
+                ..Default::default()
+            },
+        );
+        assert!(result.ok, "{:?}", result.diagnostics);
+        assert!(result.code.unwrap().contains("secret-in-string"));
+    }
+
+    #[test]
+    fn lifeboat_metadata_and_simulator_section_are_removed_before_linking() {
+        let source = "--[==[studio-test\n{}\n]==]\n---@section __LB_SIMULATOR_ONLY__\nrequire('missing-development-only')\nsimulator:setProperty('a',1)\n---@endsection\nfunction onTick() output.setNumber(1,1) end";
+        let p = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([("main".into(), source.into())]),
+            ambient: BTreeMap::new(),
+        };
+        for minify in [false, true] {
+            let result = compile_lifeboat(
+                &p,
+                &ApiProjectCompileOptions {
+                    minify: Some(minify),
+                    metadata_tag: Some("studio-test".into()),
+                    ..Default::default()
+                },
+            );
+            assert!(result.ok, "{:?}", result.diagnostics);
+            let code = result.code.unwrap();
+            assert!(!code.contains("simulator"));
+            assert!(!code.contains("studio-test"));
+            assert!(!code.contains("missing-development-only"));
+        }
+    }
+
+    #[test]
+    fn malformed_metadata_tag_is_rejected_by_both_vehicle_build_paths() {
+        let p = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([("main".into(), "function onTick() end".into())]),
+            ambient: BTreeMap::new(),
+        };
+        for build in [compile_project, compile_lifeboat] {
+            let result = build(
+                &p,
+                &ApiProjectCompileOptions {
+                    minify: Some(false),
+                    metadata_tag: Some("bad\ntag".into()),
+                    ..Default::default()
+                },
+            );
+            assert!(!result.ok);
+            assert!(result.code.is_none());
+            assert!(result.map.is_none());
+        }
     }
 }

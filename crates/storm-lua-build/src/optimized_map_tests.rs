@@ -35,7 +35,7 @@ fn standard_map_and_versioned_extension_describe_the_same_generated_buffer() {
     assert_eq!(parsed["version"], 3);
     assert_eq!(details.schema_version, 1);
     assert_eq!(details.producer.name, "storm-lua-engine");
-    assert_eq!(details.producer.version, "0.3.0");
+    assert_eq!(details.producer.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(parsed["sourcesContent"][0], source);
     assert_eq!(parsed["sources"][0], "controller.lua");
     assert_eq!(details.generated.bytes, code.len());
@@ -225,6 +225,7 @@ fn regular_and_lifeboat_projects_compose_source_ranges_before_encoding() {
         };
         for minify in [false, true] {
             let options = ApiProjectCompileOptions {
+                metadata_tag: None,
                 compile: ApiCompileOptions {
                     source_map: Some(true),
                     zero_cost_newlines: Some(false),
@@ -242,6 +243,7 @@ fn regular_and_lifeboat_projects_compose_source_ranges_before_encoding() {
             let map = result.map.unwrap();
             let details = validate(&code, &map).unwrap();
             let plain_options = ApiProjectCompileOptions {
+                metadata_tag: None,
                 compile: ApiCompileOptions {
                     source_map: Some(false),
                     ..options.compile
@@ -289,6 +291,7 @@ fn linked_identity_early_exit_splits_copied_ranges_and_generated_glue() {
     let result = compile_project(
         &p,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             compile: ApiCompileOptions {
                 source_map: Some(true),
                 target_size: Some(8192),
@@ -321,6 +324,7 @@ fn unicode_crlf_offsets_and_same_line_link_boundaries_keep_original_columns() {
         let result = compile_project(
             &p,
             &ApiProjectCompileOptions {
+                metadata_tag: None,
                 compile: ApiCompileOptions {
                     source_map: Some(true),
                     ..Default::default()
@@ -370,6 +374,7 @@ fn empty_sources_lexical_paths_and_removed_lifeboat_sections_are_valid() {
         "",
     );
     let options = ApiProjectCompileOptions {
+        metadata_tag: None,
         compile: ApiCompileOptions {
             source_map: Some(true),
             ..Default::default()

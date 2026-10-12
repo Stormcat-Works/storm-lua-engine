@@ -96,7 +96,7 @@ const optimized = compiler.minify(optimizedSource, {sourceMap:true,sourceName:'o
 assert.equal(optimized.ok,true);
 const details = compiler.validateSourceMap(optimized.code,optimized.map);
 assert.equal(details.schemaVersion,1);
-assert.equal(details.producer.version,'0.3.0');
+assert.equal(details.producer.version,JSON.parse(await readFile(new URL('../package.json',import.meta.resolve('@stormcat-works/storm-lua-engine/compiler')),'utf8')).version);
 const star = optimized.code.indexOf('*2');assert.ok(star>=0);
 const point = originalPositionFor(new TraceMap(optimized.map), {line:1,column:star+1});
 assert.equal(point.source,'optimized.lua');assert.equal(point.line,2);

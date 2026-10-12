@@ -19,6 +19,7 @@ fn run(project: LuaProject, minify: bool) -> Result<[f32; 3], Box<dyn std::error
     let result = compile_lifeboat(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             minify: Some(minify),
             compile: ApiCompileOptions {
                 mode: Some(ApiCompileMode::Safe),
@@ -99,6 +100,7 @@ fn malformed_directives_missing_modules_and_dynamic_game_requires_are_explicit_e
         let result = compile_lifeboat(
             &project(&[("main", source)]),
             &ApiProjectCompileOptions {
+                metadata_tag: None,
                 minify: Some(false),
                 ..Default::default()
             },

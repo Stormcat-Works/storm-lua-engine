@@ -1,0 +1,702 @@
+{
+  "schemaVersion": 1,
+  "version": "0.3.1",
+  "date": "2026-10-12",
+  "status": "local-release-candidate-unpublished",
+  "sourceBaseRevision": "88a9e531faf7b4ed787c41e784f58376d5b48372",
+  "dirty": true,
+  "sourceManifestSha256": "b379ab4d62b1606f89853677da6e3a7f6f8e223ec28b7e5b81670f7dd8ac2821",
+  "integrationSources": [
+    "feat/minify-performance-v0.3.1 at 88a9e53 and its compact lexical map changes",
+    "7834de8 Addon non-minifying build and original working-tree metadata changes",
+    "da32aa3 Addon lifecycle/environment fix",
+    "ec7fa7f accepted game-observation raster/743-case contract fix"
+  ],
+  "tests": {
+    "native": 871,
+    "sdk": 30,
+    "wasm": 87,
+    "playgroundAndCli": 38,
+    "browsers": 3,
+    "recipesPerBrowser": 16,
+    "rgbaCasesPerDirectAndLuaPath": 743,
+    "allExitCodesZero": true
+  },
+  "qualityGates": {
+    "fmt": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "architecture": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "default": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "native": {
+      "exitCode": 0,
+      "seconds": 15
+    },
+    "clippy": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "rustdoc": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "python": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "licenses": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "screen": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "publication-tests": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "sdk": {
+      "exitCode": 0,
+      "seconds": 2
+    },
+    "runtime-build": {
+      "exitCode": 0,
+      "seconds": 18
+    },
+    "compiler-build": {
+      "exitCode": 0,
+      "seconds": 20
+    },
+    "wasm": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "runtime-browser": {
+      "exitCode": 0,
+      "seconds": 12
+    },
+    "compiler-browser": {
+      "exitCode": 0,
+      "seconds": 7
+    },
+    "app-install": {
+      "exitCode": 0,
+      "seconds": 2
+    },
+    "app-build": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "app-test": {
+      "exitCode": 0,
+      "seconds": 1
+    },
+    "app-browser": {
+      "exitCode": 0,
+      "seconds": 93
+    },
+    "artifacts": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "package-shape": {
+      "exitCode": 0,
+      "seconds": 0
+    },
+    "consumer": {
+      "exitCode": 0,
+      "seconds": 1
+    }
+  },
+  "correctness": {
+    "fixedConfigurations": 240,
+    "unmetTargetComparisons": 240,
+    "mutualMapReaders": 480,
+    "sameCompilerCandidatePipelines": 3,
+    "projectBuilds": 8,
+    "knownTrapInputsFixed": 7,
+    "knownTrapWasmConfigurations": 28,
+    "knownTrapNativeComparisons": 7,
+    "corpusSources": 4155,
+    "nonTrapSuccessfulPairs": 8175,
+    "fullMapComparisonExcluded": [
+      "x_storm.producer",
+      "x_storm.integrity"
+    ]
+  },
+  "compilePerformance": {
+    "schemaVersion": 1,
+    "baseline": "published 0.3.0",
+    "baselineWasmSha256": "86a21f79a5d9926b5baebc7fca72dc4d7500a4af8da567fb3b0b87927f13ebca",
+    "candidateWasmSha256": "85961fd7be7fd50e5994063a75796529407eae5d6f0b22ad837a7d2907a6f318",
+    "nonTrapSources": 4148,
+    "successfulPairs": 8175,
+    "stats": {
+      "exhaustive": {
+        "sources": 4148,
+        "success": 4054,
+        "compileErrors": 94,
+        "meanMs": {
+          "beforePlain": 88.0013007799706,
+          "afterPlain": 44.99345280932313,
+          "beforeMapped": 130.76418428786465,
+          "afterMapped": 51.21708384139184
+        },
+        "plainImprovementPercent": 48.87183210868652,
+        "mappedImprovementPercent": 60.83248320607238
+      },
+      "target8192": {
+        "sources": 4148,
+        "success": 4121,
+        "compileErrors": 27,
+        "meanMs": {
+          "beforePlain": 21.15084909415243,
+          "afterPlain": 5.257852580929558,
+          "beforeMapped": 29.134743788156424,
+          "afterMapped": 6.079775103372634
+        },
+        "plainImprovementPercent": 75.1411749120597,
+        "mappedImprovementPercent": 79.13221702727269
+      }
+    },
+    "comparison": "Complete code, diagnostics, search, pass records except wall time and complete map except producer/integrity; one paired sample per corpus condition."
+  },
+  "repeatedPerformance": {
+    "baseline": "published 0.3.0",
+    "scenes": 46,
+    "success": 42,
+    "maximumMapRatio": 7.018831869212524
+  },
+  "wasm": {
+    "compiler-wasm/compiler_bg.wasm": {
+      "bytes": 2732258,
+      "sha256": "85961fd7be7fd50e5994063a75796529407eae5d6f0b22ad837a7d2907a6f318"
+    },
+    "wasm/storm_lua_wasm.wasm": {
+      "bytes": 905988,
+      "sha256": "1ed6c0dd35eb587ba89020f64c7a5c097a6bb18a46dde61aa68b5e3625cdd6c7"
+    },
+    "wasm/screen.wasm": {
+      "bytes": 85282,
+      "sha256": "9999c6e04db98a1e2d0e3a0d1b101080c5355d6f6959acb8e1bb9c62ba229bd8"
+    }
+  },
+  "assets": {
+    "stormcat-works-storm-lua-engine-0.3.1.tgz": {
+      "bytes": 1542478,
+      "sha256": "bd40119804e3be3da9229868321c8d026cf768fc6adb8ae3144a42ffa91bdec4"
+    },
+    "storm-lua-engine-playground-0.3.1.zip": {
+      "bytes": 2647514,
+      "sha256": "357b92dc8d0f7d8dc196b70f02e2d4346147f5b4bdc27fecf1ae04e5198736d2"
+    }
+  },
+  "prepared": [
+    "source manifest",
+    "exact tested npm tarball",
+    "static Playground zip",
+    "SHA256SUMS",
+    "release notes",
+    "checked public-guide patch",
+    "Worker deployment dry-run"
+  ],
+  "publication": {
+    "commitCreated": false,
+    "pushed": false,
+    "tagCreated": false,
+    "githubReleasePublished": false,
+    "npmPublished": false,
+    "productionDeployed": false,
+    "threeOsCiExecuted": false
+  },
+  "remainingPublicationGates": [
+    "approval for final commit/push",
+    "3 OS/WASM CI for that commit",
+    "rebuild and retest artifacts with final producer/revision",
+    "explicit tag/Release/production deployment and registry verification"
+  ],
+  "deferredTo032": [
+    "maximum Map/plain ratio <=1.2 for every scene",
+    "further map size/peak memory/candidate pooling improvements",
+    "Addon optimization and comprehensive server lint",
+    "dynamic variable/storage/lifetime/bytecode PC reconstruction"
+  ],
+  "memoryObservations": {
+    "method": "8 isolated processes; published 0.3.0 versus candidate, 2 inputs, Map OFF/ON, 6 compile+validate calls with explicit JS GC; max RSS includes initialization and external validator; last 3 external-capacity samples equal, not a proof of zero allocation/GC or arbitrary-input leak freedom",
+    "allExitCodesZero": true,
+    "rows": [
+      {
+        "sourceBytes": 129812,
+        "map": false,
+        "node": "v24.19.0",
+        "maxRssKiB": 328216,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7339168,
+            "heapAfter": 7436896,
+            "rss": 329015296,
+            "external": 65230392,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7438024,
+            "heapAfter": 7476512,
+            "rss": 335831040,
+            "external": 68376120,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7476664,
+            "heapAfter": 7479176,
+            "rss": 335962112,
+            "external": 68376120,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7479328,
+            "heapAfter": 7479424,
+            "rss": 336093184,
+            "external": 68376120,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7479576,
+            "heapAfter": 7480448,
+            "rss": 336093184,
+            "external": 68376120,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7480600,
+            "heapAfter": 7483376,
+            "rss": 336093184,
+            "external": 68376120,
+            "arrayBuffers": 2830841
+          }
+        ],
+        "scene": "draw-4096",
+        "owner": "baseline"
+      },
+      {
+        "sourceBytes": 129812,
+        "map": true,
+        "node": "v24.19.0",
+        "maxRssKiB": 492544,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7336592,
+            "heapAfter": 6156152,
+            "rss": 438132736,
+            "external": 186240515,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 6156640,
+            "heapAfter": 6199848,
+            "rss": 471281664,
+            "external": 204918275,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 6199392,
+            "heapAfter": 6199848,
+            "rss": 475643904,
+            "external": 204918275,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 6199464,
+            "heapAfter": 6200528,
+            "rss": 497160192,
+            "external": 211144195,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 6200008,
+            "heapAfter": 6201632,
+            "rss": 502923264,
+            "external": 211144195,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 6201480,
+            "heapAfter": 6209912,
+            "rss": 502947840,
+            "external": 211144195,
+            "arrayBuffers": 2830841
+          }
+        ],
+        "scene": "draw-4096",
+        "owner": "baseline"
+      },
+      {
+        "sourceBytes": 129812,
+        "map": false,
+        "node": "v24.19.0",
+        "maxRssKiB": 267516,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7289128,
+            "heapAfter": 7440760,
+            "rss": 208834560,
+            "external": 65606060,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7441888,
+            "heapAfter": 7480376,
+            "rss": 218927104,
+            "external": 84283820,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7480528,
+            "heapAfter": 7483040,
+            "rss": 221286400,
+            "external": 84283820,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7483192,
+            "heapAfter": 7483288,
+            "rss": 221286400,
+            "external": 84283820,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7483440,
+            "heapAfter": 7484312,
+            "rss": 221286400,
+            "external": 84283820,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7484464,
+            "heapAfter": 7487240,
+            "rss": 221417472,
+            "external": 84283820,
+            "arrayBuffers": 2878829
+          }
+        ],
+        "scene": "draw-4096",
+        "owner": "candidate"
+      },
+      {
+        "sourceBytes": 129812,
+        "map": true,
+        "node": "v24.19.0",
+        "maxRssKiB": 418176,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7543216,
+            "heapAfter": 6154936,
+            "rss": 410628096,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 6155328,
+            "heapAfter": 6199256,
+            "rss": 426770432,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 6198872,
+            "heapAfter": 6199464,
+            "rss": 418541568,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 6199080,
+            "heapAfter": 6199872,
+            "rss": 426680320,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 6199488,
+            "heapAfter": 6200864,
+            "rss": 426680320,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 6200712,
+            "heapAfter": 6209784,
+            "rss": 426680320,
+            "external": 166955382,
+            "arrayBuffers": 2878829
+          }
+        ],
+        "scene": "draw-4096",
+        "owner": "candidate"
+      },
+      {
+        "sourceBytes": 2853,
+        "map": false,
+        "node": "v24.19.0",
+        "maxRssKiB": 101020,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7186896,
+            "heapAfter": 7061648,
+            "rss": 100560896,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7062776,
+            "heapAfter": 7065584,
+            "rss": 103313408,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7065736,
+            "heapAfter": 7070520,
+            "rss": 103313408,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7070672,
+            "heapAfter": 7070768,
+            "rss": 103313408,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7070920,
+            "heapAfter": 7071792,
+            "rss": 103444480,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7075768,
+            "heapAfter": 7075960,
+            "rss": 103444480,
+            "external": 8017464,
+            "arrayBuffers": 2830841
+          }
+        ],
+        "scene": "dense-lexical",
+        "owner": "baseline"
+      },
+      {
+        "sourceBytes": 2853,
+        "map": true,
+        "node": "v24.19.0",
+        "maxRssKiB": 120736,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7215104,
+            "heapAfter": 7415056,
+            "rss": 117542912,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7415824,
+            "heapAfter": 7424152,
+            "rss": 118374400,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7424136,
+            "heapAfter": 7426752,
+            "rss": 121405440,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7426752,
+            "heapAfter": 7426848,
+            "rss": 118308864,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7426832,
+            "heapAfter": 7439960,
+            "rss": 118382592,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7439944,
+            "heapAfter": 7440272,
+            "rss": 118472704,
+            "external": 12342840,
+            "arrayBuffers": 2830841
+          }
+        ],
+        "scene": "dense-lexical",
+        "owner": "baseline"
+      },
+      {
+        "sourceBytes": 2853,
+        "map": false,
+        "node": "v24.19.0",
+        "maxRssKiB": 98848,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7192224,
+            "heapAfter": 7066248,
+            "rss": 98598912,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7067376,
+            "heapAfter": 7070184,
+            "rss": 99516416,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7070336,
+            "heapAfter": 7075120,
+            "rss": 99516416,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7075272,
+            "heapAfter": 7075368,
+            "rss": 100040704,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7075520,
+            "heapAfter": 7076392,
+            "rss": 100040704,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7080368,
+            "heapAfter": 7080560,
+            "rss": 101220352,
+            "external": 7934380,
+            "arrayBuffers": 2878829
+          }
+        ],
+        "scene": "dense-lexical",
+        "owner": "candidate"
+      },
+      {
+        "sourceBytes": 2853,
+        "map": true,
+        "node": "v24.19.0",
+        "maxRssKiB": 117180,
+        "rows": [
+          {
+            "iteration": 0,
+            "heapBefore": 7386672,
+            "heapAfter": 7402584,
+            "rss": 113795072,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 1,
+            "heapBefore": 7403352,
+            "heapAfter": 7411680,
+            "rss": 116580352,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 2,
+            "heapBefore": 7411664,
+            "heapAfter": 7414280,
+            "rss": 117633024,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 3,
+            "heapBefore": 7414280,
+            "heapAfter": 7414376,
+            "rss": 112771072,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 4,
+            "heapBefore": 7414360,
+            "heapAfter": 7427488,
+            "rss": 112840704,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          },
+          {
+            "iteration": 5,
+            "heapBefore": 7427472,
+            "heapAfter": 7427800,
+            "rss": 112852992,
+            "external": 12390828,
+            "arrayBuffers": 2878829
+          }
+        ],
+        "scene": "dense-lexical",
+        "owner": "candidate"
+      }
+    ]
+  }
+}

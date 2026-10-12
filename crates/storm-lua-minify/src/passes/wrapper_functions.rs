@@ -601,7 +601,7 @@ fn annotate_wrapper_argument(
     if !target.nodes.tracks_origins() {
         return;
     }
-    let complete = inputs.iter().all(|&n| source.nodes.origin(n).is_some());
+    let complete = inputs.iter().all(|&n| source.nodes.has_origin(n));
     for id in first..target.nodes.len() {
         let id = id as NodeId;
         if matches!(target.node(id), Node::Name(_)) {
@@ -610,9 +610,9 @@ fn annotate_wrapper_argument(
             target
                 .nodes
                 .derive_from(id, &source.nodes, inputs[0], reason);
-            for &input in &inputs[1..] {
-                target.nodes.relate_from(id, &source.nodes, input, reason);
-            }
+            target
+                .nodes
+                .relate_many_from(id, &source.nodes, &inputs[1..], reason);
         }
     }
 }

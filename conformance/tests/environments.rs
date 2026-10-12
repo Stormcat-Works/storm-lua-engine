@@ -87,6 +87,7 @@ fn builtin_rejections_match_single_source_projects_and_editing_diagnostics() {
                 let result = build(
                     &project(&source),
                     &ApiProjectCompileOptions {
+                        metadata_tag: None,
                         compile: options.clone(),
                         minify: Some(compress),
                     },

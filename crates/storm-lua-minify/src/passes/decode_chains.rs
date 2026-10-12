@@ -105,7 +105,7 @@ fn make_quotient_assignment(
     // factors lost attribution in an earlier, unannotated transformation.
     let literal = divisor_sources
         .iter()
-        .all(|&id| ast.nodes.origin(id).is_some())
+        .all(|&id| ast.nodes.has_origin(id))
         .then(|| ast.nodes.capture_origin(divisor_sources[0]))
         .flatten();
     let divisor_node = ast.num(short_num(divisor));

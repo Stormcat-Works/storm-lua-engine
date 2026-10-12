@@ -79,7 +79,7 @@ try {
       assert.equal(result.addonRejected, true);
       assert.equal(new Set(result.ids).size, 67);
       assert.equal(result.mapping.schema,1);
-      assert.equal(result.mapping.producer,'0.3.0');
+      assert.equal(result.mapping.producer,JSON.parse(await readFile(new URL('../packages/lua-engine/package.json',import.meta.url),'utf8')).version);
       assert.ok(result.mapping.contexts>0 && result.mapping.leafContexts);
       assert.ok(result.mapping.reasonCount>0);
       assert.equal(result.mapping.staleRejected,true);

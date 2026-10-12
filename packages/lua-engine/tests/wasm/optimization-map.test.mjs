@@ -35,7 +35,7 @@ test('optimized maps are opt-in, standard-decodable and independently fingerprin
  const result=mapped(source,{zeroCostNewlines:false});
  assert.equal(compiler.minify(source).map,undefined);
  assert.equal(result.json.version,3);assert.equal(result.details.schemaVersion,1);
- assert.equal(result.details.producer.name,'storm-lua-engine');assert.equal(result.details.producer.version,'0.3.0');
+ assert.equal(result.details.producer.name,'storm-lua-engine');assert.equal(result.details.producer.version,coordinator.version());
  assert.equal(result.details.generated.sha256,hash(result.code));assert.equal(result.details.sources[0].sha256,hash(source));
  assert.equal(result.details.generated.bytes,bytes(result.code));
  assert.deepEqual(result.json.sourcesContent,[source]);
@@ -157,4 +157,11 @@ test('loop body keywords map to do rather than the loop starting keyword',()=>{
   const {origin,mapping}=selected(result,'do');assert.equal(origin.precision,'token');assert.ok(mapping.copied);
   assert.equal(source.slice(origin.primary.start,origin.primary.end),'do');
  }
+});
+
+test('large conservative lexical maps validate after repeated names are deserialized',()=>{
+ const source=`local _ENV=_ENV function onTick() ${'output.setNumber(1,2) '.repeat(128)} end`;
+ const result=compiler.minify(source,{sourceMap:true});
+ assert.equal(result.ok,true);const details=compiler.validateSourceMap(result.code,result.map);
+ assert.ok(details.origins.length>64);assert.ok(JSON.parse(result.map).names.length<10);
 });

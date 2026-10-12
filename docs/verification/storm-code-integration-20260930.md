@@ -1,4 +1,4 @@
-# Storm Code統合用APIの検証（2026-09-30）
+# consumer統合用APIの検証（2026-09-30）
 
 ブランチfeat/storm-code-integration。今回の対象は利用側のEngine移行、LBビルド、構造化Sim I/Oだけであり、最適化探索・Compiler性能・minify後ソースマップは対象外。
 
@@ -17,4 +17,4 @@ NativeのLB結合では循環include・戻り値破棄・ローカル変数隔�
 
 ## 明示的な境界
 
-LifeBoatのWindows外部Simulatorプロセスやsocket内部APIを移植するものではない。コード共有ライブラリの配置・取り込み、UIとデバッグ、課題帳はStorm Code側。上流MCライブラリ原文をこのEngineへ同梱していない。公開version、tag、npm公開、Playground配備は実行しない。
+LifeBoatのWindows外部Simulatorプロセスやsocket内部APIを移植するものではない。コード共有ライブラリの配置・取り込み、UIとデバッグ、課題管理は利用側製品が所有する。上流MCライブラリ原文をこのEngineへ同梱していない。公開version、tag、npm公開、Playground配備は実行しない。

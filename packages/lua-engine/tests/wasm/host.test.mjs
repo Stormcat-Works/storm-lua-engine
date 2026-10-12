@@ -84,3 +84,17 @@ test('Promise-returning log sinks fail synchronously without unhandled rejection
     finally {vm.dispose();}
   }
 });
+
+test('ordinary Addon Lua errors stop ticks while retaining savedata and later events',()=>{
+  const vm=engine.createAddon({savedata:api.luaTable({count:41n}),newWorld:false});
+  try {
+    assert.throws(()=>vm.load('function onCreate()g_savedata.count=g_savedata.count+1 end function onPlayerJoin()g_savedata.joined=true end server.missing()'),e=>e.code===1);
+    assert.equal(vm.start(),'completed');
+    assert.equal(vm.tick(),'missing');
+    assert.equal(vm.dispatch('onPlayerJoin',[]),'completed');
+    assert.equal(vm.destroy(),'missing');
+    const data=vm.savedata();
+    assert.equal(api.luaField(data,'count'),42n);
+    assert.equal(api.luaField(data,'joined'),true);
+  } finally {vm.dispose();}
+});

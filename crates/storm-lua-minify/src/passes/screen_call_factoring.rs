@@ -147,11 +147,12 @@ fn make_candidate(source: &Ast, root: NodeId, groups: &[Group], chosen: &[usize]
         candidate
             .nodes
             .derive_from(callstat, &source.nodes, original, "screen-call-shared-body");
-        for &site in &group.sites {
-            candidate
-                .nodes
-                .relate_from(callstat, &source.nodes, site, "screen-call-shared-body");
-        }
+        candidate.nodes.relate_many_from(
+            callstat,
+            &source.nodes,
+            &group.sites,
+            "screen-call-shared-body",
+        );
         let body = candidate.push(Node::Block(vec![callstat]));
         let function = candidate.push(Node::Function(Vec::new(), false, body));
         let target = candidate.push(Node::Name(symbol));

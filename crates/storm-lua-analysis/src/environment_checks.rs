@@ -40,6 +40,51 @@ pub fn diagnostics(
     severity: Severity,
     module: Option<&str>,
 ) -> Vec<Diagnostic> {
+    diagnostics_for(
+        ast,
+        root,
+        positions,
+        environment,
+        host_bindings,
+        written_globals,
+        severity,
+        module,
+        EnvironmentProfile::is_unavailable,
+    )
+}
+
+/// Addon base-function diagnostics, with the same shadowing and probe rules.
+pub fn addon_diagnostics(
+    ast: &Ast,
+    root: NodeId,
+    positions: Option<&NodePositions>,
+    environment: EnvironmentProfile,
+) -> Vec<Diagnostic> {
+    diagnostics_for(
+        ast,
+        root,
+        positions,
+        environment,
+        &[],
+        &HashSet::new(),
+        Severity::Error,
+        None,
+        EnvironmentProfile::is_addon_unavailable,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn diagnostics_for(
+    ast: &Ast,
+    root: NodeId,
+    positions: Option<&NodePositions>,
+    environment: EnvironmentProfile,
+    host_bindings: &[String],
+    written_globals: &HashSet<String>,
+    severity: Severity,
+    module: Option<&str>,
+    unavailable: fn(EnvironmentProfile, &str) -> bool,
+) -> Vec<Diagnostic> {
     // The selected lexical path preserves explicit environment rebinding. Static global lookup
     // cannot assume that the ambient game environment remains visible in such a chunk.
     if ast.strings.contains("_ENV") {
@@ -99,7 +144,7 @@ pub fn diagnostics(
         {
             return;
         }
-        if environment.is_unavailable(name) {
+        if unavailable(environment, name) {
             result.push(Diagnostic {
                 code: codes::SW_UNAVAILABLE_GLOBAL, severity,
                 message: format!("{name} is absent from the {} environment; use an explicit extended environment or define your own binding.", environment.as_str()),

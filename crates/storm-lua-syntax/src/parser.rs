@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::ast::{Ast, IfArm, NodeId, TableField};
-use crate::lexer::{LexError, Lexer, Token, TokenKind};
+use crate::lexer::{LexError, Lexer, TokenKind};
 
 /// A syntactic failure after successful tokenization.
 #[derive(Debug)]
@@ -47,7 +47,7 @@ pub enum NameSite {
 pub struct NodePositions {
     /// index = NodeId。
     positions: Vec<(u32, u32)>,
-    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    spans: Vec<Option<(usize, usize)>>,
     names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
@@ -62,7 +62,7 @@ impl NodePositions {
     /// A declaration's Function child starts at `(`; a function expression also
     /// includes its `function` keyword. Empty blocks have an empty span.
     pub fn span(&self, id: NodeId) -> Option<(usize, usize)> {
-        self.spans.get(&id).copied()
+        self.spans.get(id as usize).copied().flatten()
     }
     /// Exact source span of one identifier occurrence inside this parsed node.
     /// Implicit names (such as a method's self argument) have no source occurrence.
@@ -75,14 +75,33 @@ impl NodePositions {
     }
 }
 
+// Retain one input buffer rather than allocating each token spelling and then
+// cloning punctuation during parsing. Ranges come only from our lexer and stay
+// valid for this immutable buffer. The public Parser still owns its input.
+#[derive(Clone, Copy, Debug)]
+struct ParserToken {
+    k: TokenKind,
+    p: usize,
+    end: usize,
+    line: u32,
+    col: u32,
+}
+impl ParserToken {
+    fn text<'a>(&self, source: &'a str) -> &'a str {
+        &source[self.p..self.end]
+    }
+}
+
 /// Parser state and the arena it constructs from a source chunk.
 pub struct Parser {
-    ts: Vec<Token>,
+    source: Box<str>,
+    ts: Vec<ParserToken>,
     i: usize,
     ast: Ast,
     capture_positions: bool,
+    capture_ranges: bool,
     positions: Vec<(u32, u32)>,
-    spans: std::collections::BTreeMap<NodeId, (usize, usize)>,
+    spans: Vec<Option<(usize, usize)>>,
     names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
 }
 
@@ -114,14 +133,30 @@ fn is_unary(v: &str) -> bool {
 impl Parser {
     /// Tokenize the source and prepare an empty parser arena.
     pub fn new(source: &str) -> Result<Self, LexError> {
-        let ts = Lexer::new(source).all()?;
+        let mut lexer = Lexer::new(source);
+        let mut ts = Vec::new();
+        loop {
+            let t = lexer.next_borrowed()?;
+            ts.push(ParserToken {
+                k: t.k,
+                p: t.p,
+                end: t.p + t.v.len(),
+                line: t.line,
+                col: t.col,
+            });
+            if t.k == TokenKind::Eof {
+                break;
+            }
+        }
         Ok(Self {
+            source: source.into(),
             ts,
             i: 0,
             ast: Ast::new(),
             capture_positions: false,
+            capture_ranges: false,
             positions: Vec::new(),
-            spans: std::collections::BTreeMap::new(),
+            spans: Vec::new(),
             names: std::collections::BTreeMap::new(),
         })
     }
@@ -132,6 +167,7 @@ impl Parser {
     pub fn new_capturing_positions(source: &str) -> Result<Self, LexError> {
         let mut parser = Self::new(source)?;
         parser.capture_positions = true;
+        parser.capture_ranges = true;
         Ok(parser)
     }
 
@@ -169,60 +205,62 @@ impl Parser {
     }
 
     fn span_from(&mut self, id: NodeId, start: usize) {
-        if self.capture_positions {
-            let end = self
-                .i
-                .checked_sub(1)
-                .map_or(start, |i| self.ts[i].p + self.ts[i].v.len());
-            self.spans.insert(id, (start, end.max(start)));
+        if self.capture_ranges {
+            let end = self.i.checked_sub(1).map_or(start, |i| self.ts[i].end);
+            self.spans.resize(self.ast.nodes.len(), None);
+            self.spans[id as usize] = Some((start, end.max(start)));
         }
     }
 
     fn mark_name(&mut self, id: NodeId, site: NameSite, token: usize) {
-        if self.capture_positions {
+        if self.capture_ranges {
             let token = &self.ts[token];
             debug_assert_eq!(token.k, TokenKind::Id);
-            self.names
-                .insert((id, site), (token.p, token.p + token.v.len()));
+            self.names.insert((id, site), (token.p, token.end));
         }
     }
 
     fn record_name_token(&self, tokens: &mut Vec<usize>) {
-        if self.capture_positions {
+        if self.capture_ranges {
             tokens.push(self.i);
         }
     }
 
-    fn cur(&self) -> &Token {
+    fn cur(&self) -> &ParserToken {
         &self.ts[self.i]
     }
     fn cur_v(&self) -> &str {
-        &self.ts[self.i].v
+        self.ts[self.i].text(&self.source)
     }
     fn cur_k(&self) -> TokenKind {
         self.ts[self.i].k
     }
     fn at(&self, v: Option<&str>, k: Option<TokenKind>) -> bool {
         let t = &self.ts[self.i];
-        v.is_none_or(|vv| t.v == vv) && k.is_none_or(|kk| t.k == kk)
+        v.is_none_or(|vv| t.text(&self.source) == vv) && k.is_none_or(|kk| t.k == kk)
     }
     fn identifier(&mut self) -> Result<String, ParseError> {
         if self.cur_k() != TokenKind::Id {
             let token = self.cur();
             return Err(ParseError(format!(
                 "expected identifier, got {} at {}:{}",
-                token.v, token.line, token.col
+                token.text(&self.source),
+                token.line,
+                token.col
             )));
         }
-        Ok(self.pop(None)?.v)
+        Ok(self.pop(None)?.text(&self.source).to_owned())
     }
-    fn pop(&mut self, v: Option<&str>) -> Result<Token, ParseError> {
-        let t = self.ts[self.i].clone();
+    fn pop(&mut self, v: Option<&str>) -> Result<ParserToken, ParseError> {
+        let t = self.ts[self.i];
         if let Some(vv) = v {
-            if t.v != vv {
+            if t.text(&self.source) != vv {
                 return Err(ParseError(format!(
                     "expected {}, got {} at {}:{}",
-                    vv, t.v, t.line, t.col
+                    vv,
+                    t.text(&self.source),
+                    t.line,
+                    t.col
                 )));
             }
         }
@@ -230,7 +268,7 @@ impl Parser {
         Ok(t)
     }
     fn accept(&mut self, v: &str) -> bool {
-        if self.ts[self.i].v == v {
+        if self.cur_v() == v {
             self.i += 1;
             return true;
         }
@@ -521,12 +559,12 @@ impl Parser {
     }
 
     fn expr_min(&mut self, minp: u32) -> Result<NodeId, ParseError> {
-        let tok = self.ts[self.i].clone();
+        let tok = self.ts[self.i];
         let mut left: NodeId;
-        if is_unary(&tok.v) {
+        if is_unary(tok.text(&self.source)) {
             self.pop(None)?;
             let e = self.expr_min(12)?;
-            left = self.ast.un(&tok.v, e);
+            left = self.ast.un(tok.text(&self.source), e);
             self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("nil") {
             left = self.ast.nil();
@@ -542,11 +580,11 @@ impl Parser {
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Num {
             self.pop(None)?;
-            left = self.ast.num(tok.v);
+            left = self.ast.num(tok.text(&self.source).to_owned());
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Str {
             self.pop(None)?;
-            left = self.ast.str(tok.v);
+            left = self.ast.str(tok.text(&self.source).to_owned());
             self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("function") {
             left = self.func_body()?;
@@ -560,11 +598,10 @@ impl Parser {
             if lp < minp {
                 break;
             }
-            let op_tok = self.cur().clone();
-            let op = op_tok.v.clone();
+            let op_tok = *self.cur();
             self.pop(None)?;
             let r = self.expr_min(rp)?;
-            left = self.ast.bin(&op, left, r);
+            left = self.ast.bin(op_tok.text(&self.source), left, r);
             self.mark(left, op_tok.line, op_tok.col, tok.p);
         }
         Ok(left)
@@ -587,9 +624,12 @@ impl Parser {
                 let v = self.expr()?;
                 fs.push(TableField::KVar(k, v));
             } else if self.cur_k() == TokenKind::Id
-                && self.ts.get(self.i + 1).is_some_and(|t| t.v == "=")
+                && self
+                    .ts
+                    .get(self.i + 1)
+                    .is_some_and(|t| t.text(&self.source) == "=")
             {
-                if self.capture_positions {
+                if self.capture_ranges {
                     field_tokens.push((fs.len(), self.i));
                 }
                 let k = self.identifier()?;
@@ -632,10 +672,12 @@ impl Parser {
             self.pop(Some(")"))?;
             self.mark(e, line0, col0, start);
         } else {
-            let t = self.cur().clone();
+            let t = self.cur();
             return Err(ParseError(format!(
                 "expected expression at {}:{}, got {}",
-                t.line, t.col, t.v
+                t.line,
+                t.col,
+                t.text(&self.source)
             )));
         }
         loop {
@@ -724,14 +766,53 @@ pub fn parse_source_with_positions(
     Ok((ast, root, positions))
 }
 
+/// Parse the same AST while recording only diagnostic line/byte-column points.
+/// Name and expression byte spans are intentionally absent; use the full
+/// position/origin parser for source maps or exact-range tooling.
+pub fn parse_source_with_diagnostic_positions(
+    source: &str,
+) -> Result<(Ast, NodeId, NodePositions), ParserError> {
+    let mut parser = Parser::new(source).map_err(ParserError::Lex)?;
+    parser.capture_positions = true;
+    let root = parser.parse().map_err(ParserError::Parse)?;
+    let (ast, positions) = parser.into_ast_with_positions();
+    Ok((ast, root, positions))
+}
+
 /// Parse and initialize opt-in origins. The source name is a label, not a filesystem path.
 /// Origin tables follow candidate clones and are invalidated by unannotated writes.
 pub fn parse_source_with_origins(name: &str, source: &str) -> Result<(Ast, NodeId), String> {
+    parse_source_with_conditional_origins(name, source, |_| true)
+}
+
+/// Parse exactly once with positions, then initialize AST origins only if the
+/// caller will use AST transformations. A lexical-only path can retain its own
+/// token copies without first constructing and discarding a full origin arena.
+/// The predicate observes a successfully parsed immutable AST and runs once.
+pub fn parse_source_with_conditional_origins(
+    name: &str,
+    source: &str,
+    track: impl FnOnce(&Ast) -> bool,
+) -> Result<(Ast, NodeId), String> {
+    parse_source_with_origin_positions(name, source, track).map(|(ast, root, _)| (ast, root))
+}
+
+/// Parse once, retaining diagnostic points as well as optional source origins.
+/// The returned positions refer only to this original immutable parsed arena,
+/// not to later transformed nodes. This serves consumers inspecting the input
+/// before transferring the same arena to the compiler.
+pub fn parse_source_with_origin_positions(
+    name: &str,
+    source: &str,
+    track: impl FnOnce(&Ast) -> bool,
+) -> Result<(Ast, NodeId, NodePositions), String> {
     let (mut ast, root, positions) =
         parse_source_with_positions(source).map_err(|error| error.to_string())?;
-    let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
-    ast.nodes.set_provenance(origins);
-    Ok((ast, root))
+    if track(&ast) {
+        let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
+        ast.nodes.set_provenance(origins);
+    }
+    Ok((ast, root, positions))
 }
 
 /// Distinguishes lexical and syntactic source failures.
@@ -1109,6 +1190,177 @@ mod provenance_span_tests {
                     && omitted.spans.is_empty()
                     && omitted.names.is_empty()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod conditional_origin_tests {
+    use super::*;
+    use std::cell::Cell;
+    #[test]
+    fn conditional_source_tracking_uses_the_same_parse_and_complete_origins() {
+        for source in [
+            "",
+            "-- comment",
+            "local _ENV=_ENV return 2*3",
+            "local text='_ENV' return text",
+            "-- 雪😀\r\nfunction f(x)return x+1 end\r\n",
+        ] {
+            let (mut expected, root, positions) = parse_source_with_positions(source).unwrap();
+            let origin = crate::provenance::ArenaOrigins::seed(
+                &expected,
+                &positions,
+                "original.lua",
+                source,
+            )
+            .unwrap();
+            expected.nodes.set_provenance(origin);
+            let called = Cell::new(0);
+            let (actual, actual_root) =
+                parse_source_with_conditional_origins("original.lua", source, |ast| {
+                    called.set(called.get() + 1);
+                    assert!(!ast.nodes.tracks_origins());
+                    true
+                })
+                .unwrap();
+            assert_eq!(called.get(), 1);
+            assert_eq!(actual_root, root);
+            assert_eq!(
+                serde_json::to_value(actual).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+            let (plain, plain_root) = parse_source(source).unwrap();
+            let (untracked, untracked_root) =
+                parse_source_with_conditional_origins("original.lua", source, |_| false).unwrap();
+            assert_eq!(plain_root, untracked_root);
+            assert_eq!(
+                serde_json::to_value(untracked).unwrap(),
+                serde_json::to_value(plain).unwrap()
+            );
+        }
+        let called = Cell::new(false);
+        assert!(
+            parse_source_with_conditional_origins("error.lua", "local =", |_| {
+                called.set(true);
+                false
+            })
+            .is_err()
+        );
+        assert!(
+            !called.get(),
+            "failed parses must not invoke a selection predicate"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod diagnostic_point_tests {
+    use super::*;
+    #[test]
+    fn line_only_positions_equal_full_positions_without_collecting_unused_ranges() {
+        for source in [
+            "",
+            "-- comment",
+            "local x=1 function f(a,...)if a then return x+a else return ... end end",
+            "local t={x=3,['雪']=4} function t:f(a)return self.x+a end",
+            "-- 😀雪\r\nfunction onTick()debug.traceback()end\r\n",
+            "for i=1,8 do local v=2 end",
+        ] {
+            let (expected, root, full) = parse_source_with_positions(source).unwrap();
+            let (actual, actual_root, points) =
+                parse_source_with_diagnostic_positions(source).unwrap();
+            assert_eq!(actual_root, root);
+            assert_eq!(
+                serde_json::to_value(&actual).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            for id in 0..actual.nodes.len() {
+                assert_eq!(points.get(id as u32), full.get(id as u32));
+            }
+            assert!(points.spans.is_empty());
+            assert!(points.names.is_empty());
+        }
+        for source in ["local =", "function f( end", "'unclosed"] {
+            assert_eq!(
+                parse_source_with_diagnostic_positions(source)
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                parse_source_with_positions(source)
+                    .err()
+                    .unwrap()
+                    .to_string()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod source_token_storage_tests {
+    use super::*;
+    #[test]
+    fn range_tokens_reproduce_owned_lexer_spelling_kind_and_positions() {
+        for source in [
+            "",
+            "-- only comment\r\n",
+            "-- 😀雪\r\nlocal value=0x10;return value,'escaped\\nstring',[==[long\ntext]==]",
+            "local t={a=1,[ [=[key]=] ]=2};function obj:method(x,...)return -x^2,1 .. 'a',... end",
+            "\u{feff}function onTick()output.setNumber(1,2*3)end",
+        ] {
+            let expected = Lexer::new(source).all().unwrap();
+            let parser = Parser::new(source).unwrap();
+            assert_eq!(parser.ts.len(), expected.len());
+            for (a, b) in parser.ts.iter().zip(&expected) {
+                assert_eq!(
+                    (a.k, a.text(&parser.source), a.p, a.line, a.col),
+                    (b.k, b.v.as_str(), b.p, b.line, b.col)
+                );
+                assert_eq!(a.end, b.p + b.v.len());
+            }
+            let mut consumed = parser;
+            for token in expected {
+                let at = consumed.pop(None).unwrap();
+                assert_eq!(at.text(&consumed.source), token.v);
+            }
+        }
+    }
+    #[test]
+    fn parser_remains_owned_after_caller_drops_or_edits_input() {
+        let mut input = String::from("local x=1;function f(v)return v+x end");
+        let mut parser = Parser::new_capturing_positions(&input).unwrap();
+        input.clear();
+        input.push_str("local =");
+        drop(input);
+        let root = parser.parse().unwrap();
+        let (ast, positions) = parser.into_ast_with_positions();
+        assert!(matches!(ast.node(root), crate::Node::Block(_)));
+        assert_eq!(
+            positions.span(root),
+            Some((0, "local x=1;function f(v)return v+x end".len()))
+        );
+        assert_eq!(
+            crate::Printer::new(&ast, false).output(root),
+            "local x=1 function f(v)return v+x end"
+        );
+    }
+    #[test]
+    fn lexical_errors_still_precede_syntax_errors_and_have_the_same_message() {
+        for input in [
+            "local = 'unterminated",
+            "return [=[open",
+            "local x=1 @",
+            "--[=[unfinished",
+        ] {
+            let expected = Lexer::new(input).all().unwrap_err().to_string();
+            let actual = match Parser::new(input) {
+                Ok(_) => panic!("invalid lexical input accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert_eq!(actual, expected);
         }
     }
 }

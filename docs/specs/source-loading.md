@@ -53,3 +53,8 @@ buildLifeboat creates include-once loaders with private chunk locals and shared 
 Real section/endsection comments support EXACT (default), PATTERN using bounded Lua pattern matching, instance thresholds and named/nested regions. Strings and ordinary comments do not count as code references. __LB_SIMULATOR_ONLY__ and explicit Storm Code managed setup blocks are removed before resolving game dependencies, independently of minification. Offsets/newlines are preserved during removal and non-minified code uses the existing link source map; no optimization source map is provided. Pattern/depth/module/size budgets fail visibly rather than silently keep or delete ambiguous sections.
 
 Source inspection is limited to 2 MiB, 200,000 lexical tokens and bounded syntax/literal nesting. It exposes exact i64 strings, binary64 bits and byte strings. It is opt-in and does not change default optimization parsing or search settings.
+
+
+## Tagged metadata in project builds
+
+`ProjectCompileOptions.metadataTag` removes only a leading long comment whose first content line matches the tag. It preserves UTF-8 byte positions and newlines; Source Map sourcesContent contains the original input. Normal, LifeBoat and Addon builds share this operation. Without metadataTag the normal build avoids preprocessing and project cloning. Development-only sections are stripped by the LifeBoat/Addon linker only.

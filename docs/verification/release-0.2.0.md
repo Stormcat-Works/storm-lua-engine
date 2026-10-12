@@ -45,6 +45,6 @@ releaseへの実pushで、`22592de`の初回自動配備が成功しました。
 
 Storm Minの専用統合ブランチを、公開タグの対象commitへ固定してpushしました。CLI/Web、製品版番号、既存の公開routeは変更していません。独立JS回帰25件を再実行して成功しました。
 
-privateリポジトリのGitHub Actionsは、支払い・spending limitの設定によりジョブ開始前に拒否されています。ワークフロー構文はactionlintで検査しましたが、課金設定は変更せず、未実行のremoteテストを成功と表現しません。これは成功済みの公開Engine CIと別の制限です。
+consumer側のremote CIは未実行です。ワークフロー構文はactionlintで検査しましたが、未実行のremoteテストを成功と表現しません。これは成功済みの公開Engine CIとは別の検証範囲です。
 
 最適化後Source Mapはv0.2.5/v0.3.0、Addonコンパイラや全consumerの移行は後続工程です。実ゲーム全版・全入力の互換性を証明したという意味ではありません。

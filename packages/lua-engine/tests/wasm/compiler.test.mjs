@@ -108,3 +108,63 @@ test('variadic-only functions accepted by Lua are accepted by both compiler anal
   assert.equal(compiler.minify(source).ok,true);
   assert.ok(compiler.analyze({entry:'main',modules:{main:'function f(...,x)end'}}).diagnostics.some(d=>d.code==='syntax-error'));
 });
+
+test('compiled metadata keeps field presence, insertion order and nonfinite number values',()=>{
+  for(const sourceMap of [false,true]) {
+    const source='-- 雪😀\r\nfunction onTick()end';
+    const result=compiler.minify(source,{sourceMap,targetSize:8192,numericMode:'tolerant',numericTolerance:{abs:-0,rel:0.01}});
+    assert.equal(result.ok,true);assert.equal(result.code,source);
+    assert.equal(Object.getPrototypeOf(result),Object.prototype);
+    assert.ok(Object.is(result.assumptions.numericTolerance.abs,-0));
+    assert.equal(result.assumptions.numericTolerance.rel,0.01);
+    assert.equal(Object.hasOwn(result,'map'),sourceMap);
+    assert.equal(Object.hasOwn(result,'error'),false);
+    assert.equal(Object.hasOwn(result,'elapsedMs'),false);
+    assert.equal(Object.keys(result)[0],sourceMap?'map':'ok');
+    assert.equal(result.search.beamWidth,null);
+    if(sourceMap) {
+      assert.equal(JSON.parse(result.map).sourcesContent[0],source);
+      compiler.validateSourceMap(result.code,result.map);
+    }
+    for(const abs of [Infinity,-Infinity,NaN]) {
+      const unusual=compiler.minify(source,{sourceMap,targetSize:8192,numericMode:'tolerant',numericTolerance:{abs,rel:0.01}});
+      assert.equal(unusual.ok,true);assert.ok(Object.is(unusual.assumptions.numericTolerance.abs,abs));
+      if(sourceMap)compiler.validateSourceMap(unusual.code,unusual.map);
+    }
+  }
+});
+
+test('large returned code and map strings are exact values rather than nested encoded payloads',()=>{
+  const text='\\"integrity\\":\\"\\"\\n雪😀'.repeat(256);
+  const source=`local _ENV=_ENV\nlocal value=${JSON.stringify(text)}\nfunction onDraw()screen.drawText(0,0,value)end`;
+  const plain=compiler.minify(source,{sourceMap:false});
+  const mapped=compiler.minify(source,{sourceMap:true});
+  assert.equal(plain.ok,true);assert.equal(mapped.ok,true);assert.equal(plain.code,mapped.code);
+  const map=JSON.parse(mapped.map);
+  assert.equal(map.sourcesContent[0],source);
+  compiler.validateSourceMap(mapped.code,mapped.map);
+  const {map:unused,...metadata}=mapped;
+  assert.deepEqual(metadata,plain);
+  const failed=compiler.minify('local =',{sourceMap:true});
+  assert.equal(failed.ok,false);assert.equal(Object.hasOwn(failed,'map'),false);assert.equal(Object.hasOwn(failed,'code'),false);
+  assert.equal(failed.error,failed.diagnostics[0].message);
+});
+
+test('Addon linking and metadata stripping preserve original snapshots without Vehicle rules', () => {
+  const source='--[==[studio\n{}\n]==]\n---@section __LB_SIMULATOR_ONLY__\nrequire("missing")\n---@endsection\nfunction onCreate()g_savedata.x=3 end';
+  const linked=compiler.buildAddon({entry:'main',modules:{main:source}}, {metadataTag:'studio'});
+  assert.equal(linked.ok,true,JSON.stringify(linked.diagnostics));
+  assert.ok(!linked.code.includes('studio') && !linked.code.includes('missing'));
+  assert.equal(JSON.parse(linked.map).sourcesContent[0],source);
+  assert.equal(linked.search,undefined);
+  assert.throws(()=>compiler.buildAddon(project,{minify:true}),/unknown field/);
+  assert.equal(compiler.buildAddon({entry:'main',modules:{main:'pcall(function()end)'}}).ok,false);
+});
+
+test('nested conditional calls complete in both map modes', async () => {
+  const source='function onTick()if input.getBool(1) then if input.getBool(2) then output.setNumber(1,2)else output.setNumber(1,3)end else output.setNumber(1,4)end end';
+  const plain=compiler.minify(source,{sourceMap:false});
+  const mapped=compiler.minify(source,{sourceMap:true});
+  assert.equal(plain.ok,true);assert.equal(mapped.ok,true);
+  assert.equal(plain.code,mapped.code);compiler.validateSourceMap(mapped.code,mapped.map);
+});

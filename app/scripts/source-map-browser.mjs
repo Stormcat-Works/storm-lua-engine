@@ -24,7 +24,9 @@ async function download(page,button){const pending=page.waitForEvent('download')
 export async function sourceMapBrowser({page,browser,name,url,evidence}){
  await page.locator('[data-recipe="source-map"]').click();await page.locator('#run').click();await complete(page);
  await page.locator('#map-panel').waitFor({state:'visible'});
- assert.match(await page.locator('#map-meta').textContent(),/Engine 0\.3\.0.*Unknown 0 bytes/);
+ const version=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')).version;
+ assert.ok((await page.locator('#map-meta').textContent()).includes(`Engine ${version}`));
+ assert.match(await page.locator('#map-meta').textContent(),/Unknown 0 bytes/);
  assert.equal(await page.locator('#map-tick').isDisabled(),true,'compilation must not load a VM');
  await select(page,'generated','*2',{offset:1,length:1});
  assert.match(await page.locator('#map-detail').textContent(),/インライン文脈/);

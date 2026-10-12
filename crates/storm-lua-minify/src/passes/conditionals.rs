@@ -530,20 +530,25 @@ enum ConditionalKind {
     Assignments,
 }
 
+struct ConditionalPass {
+    root: NodeId,
+    kind: ConditionalKind,
+}
+
 fn transform_node(
     ast: &mut Ast,
     res: &Resolution,
     analyzer: &EffectAnalyzer<'_>,
     id: NodeId,
-    kind: &ConditionalKind,
+    pass: &ConditionalPass,
     lowered: &mut usize,
 ) -> NodeId {
     if matches!(ast.node(id), Node::Block(_)) {
-        return transform_block(ast, res, analyzer, id, kind, lowered);
+        return transform_block(ast, res, analyzer, id, pass, lowered);
     }
     let node = ast.node(id).clone();
     let (mapped, changed) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
-        transform_node(ast, res, analyzer, child, kind, lowered)
+        transform_node(ast, res, analyzer, child, pass, lowered)
     });
     if changed {
         ast.nodes.rewrite(id, mapped, "conditional-lowering");
@@ -556,7 +561,7 @@ fn transform_block(
     res: &Resolution,
     analyzer: &EffectAnalyzer<'_>,
     block: NodeId,
-    kind: &ConditionalKind,
+    pass: &ConditionalPass,
     lowered: &mut usize,
 ) -> NodeId {
     let Node::Block(statements) = ast.node(block).clone() else {
@@ -564,13 +569,31 @@ fn transform_block(
     };
     let mut output = Vec::with_capacity(statements.len());
     for statement in statements {
-        let statement = transform_node(ast, res, analyzer, statement, kind, lowered);
+        let previous = *lowered;
+        let statement = transform_node(ast, res, analyzer, statement, pass, lowered);
         let start = ast.nodes.len();
-        let candidate = match kind {
-            ConditionalKind::Calls => call_candidate(ast, res, analyzer, statement),
-            ConditionalKind::Assignments => assignment_candidate(ast, analyzer, statement),
+        let candidate = if *lowered != previous {
+            // Descendant lowering may add expressions referenced by this statement.
+            // The original analyzer owns an older arena and cannot inspect them.
+            let source = ast.clone();
+            let current_resolution = resolve(&source, pass.root);
+            let current_analyzer =
+                EffectAnalyzer::new(&source, &current_resolution, pass.root, true);
+            match pass.kind {
+                ConditionalKind::Calls => {
+                    call_candidate(ast, &current_resolution, &current_analyzer, statement)
+                }
+                ConditionalKind::Assignments => {
+                    assignment_candidate(ast, &current_analyzer, statement)
+                }
+            }
+        } else {
+            match pass.kind {
+                ConditionalKind::Calls => call_candidate(ast, res, analyzer, statement),
+                ConditionalKind::Assignments => assignment_candidate(ast, analyzer, statement),
+            }
         };
-        let transformation = match kind {
+        let transformation = match pass.kind {
             ConditionalKind::Calls => "conditional-call-lowering",
             ConditionalKind::Assignments => "conditional-assignment-lowering",
         };
@@ -603,7 +626,8 @@ fn process(ast: &mut Ast, root: NodeId, kind: ConditionalKind) -> PassResult {
     let res = resolve(&source, root);
     let analyzer = EffectAnalyzer::new(&source, &res, root, true);
     let mut lowered = 0usize;
-    let out = transform_node(ast, &res, &analyzer, root, &kind, &mut lowered);
+    let pass = ConditionalPass { root, kind };
+    let out = transform_node(ast, &res, &analyzer, root, &pass, &mut lowered);
     let after = measure_size(ast, out);
     PassResult {
         root: out,
@@ -649,6 +673,17 @@ mod tests {
         let (mut ast, root) = parse_source(source).expect("parse");
         let result = lower_conditional_returns(&mut ast, root);
         Printer::new(&ast, false).output(result.root)
+    }
+
+    #[test]
+    fn nested_calls_refresh_analysis_after_child_lowering() {
+        let source = "if a then if b then output.setNumber(1,2) else output.setNumber(1,3) end else output.setNumber(1,4) end";
+        let out = output(source, true);
+        assert_eq!(
+            out,
+            "if a then output.setNumber(1,b and 2 or 3)else output.setNumber(1,4)end"
+        );
+        storm_lua_syntax::parse_source(&out).expect("lowered nested calls remain valid");
     }
 
     #[test]

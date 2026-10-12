@@ -194,7 +194,7 @@
     "branch": "docs/compiler-sdk-plan-20260926",
     "engineRevision": "22592de08cfaadfc5696da001add1634149ba2cc",
     "localIndependentTests": 25,
-    "remoteCI": "Job rejected before any steps by GitHub account payment/spending limit settings",
+    "remoteCI": "Not executed; separate from successful public Engine CI",
     "productVersionChanged": false,
     "productionRouteChanged": false
   },

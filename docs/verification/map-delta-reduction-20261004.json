@@ -1,0 +1,3123 @@
+{
+  "verification": {
+    "schemaVersion": 1,
+    "date": "2026-10-04",
+    "developmentTarget": "0.3.1",
+    "branch": "feat/minify-performance-v0.3.1",
+    "baselineCommit": "d3bd35c426d96483390b8927df12216e3907a922",
+    "planCommit": "bf5e2d7c4f7064296360d46a28b9236c7b23d8b5",
+    "implementationCommit": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+    "baselineSourceSnapshotSha256": "4124a8e96896cd90d92607ed8e5f51dc353bc0ed88b25f00d1c88db4019c1a7a",
+    "wasmSha256": {
+      "before": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+      "after": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a"
+    },
+    "producers": {
+      "before": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+        "dirty": true
+      },
+      "after": {
+        "name": "storm-lua-engine",
+        "version": "0.3.0",
+        "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+        "dirty": false
+      }
+    },
+    "goal": {
+      "maximumMapToNoMapRatio": 1.2,
+      "repeatedSubsetLargestMedianRatio": 5.5364744927388125,
+      "allRepeatedCasesMeetGoal": false,
+      "note": "A weighted corpus ratio is not a maximum guarantee. Single-sample corpus timings are exploratory; repeated subset timings use three measurements after per-input warmup.",
+      "largeFixtureNote": "Repeated large-input comparisons are additional observations. No average, matched corpus sum or finite subset is a universal maximum guarantee."
+    },
+    "correctness": {
+      "corpusScripts": 4155,
+      "completeCodeMapDiagnosticSearchComparisons": 8182,
+      "ordinaryFailurePairs": 121,
+      "mutualMapReaderChecks": 16364,
+      "fixedMatrixSettings": 240,
+      "failedTargetMatrixComparisons": 240,
+      "matrixReaderChecks": 480,
+      "crossVersionWorkerPipelines": [
+        {
+          "sourceSha256": "1f0ec38548ce5ec5c0edfa9ba0307473778ad010e233cb238aca40dd14a8fca7",
+          "prepare": "baseline",
+          "evaluate": "candidate",
+          "finish": "candidate",
+          "jobs": 1,
+          "exact": true
+        },
+        {
+          "sourceSha256": "1f0ec38548ce5ec5c0edfa9ba0307473778ad010e233cb238aca40dd14a8fca7",
+          "prepare": "candidate",
+          "evaluate": "baseline",
+          "finish": "baseline",
+          "jobs": 1,
+          "exact": true
+        },
+        {
+          "sourceSha256": "21ccae5333689f3b1c0a148f4f6f6398b871e6fc67b22694133593070ea3f059",
+          "prepare": "baseline",
+          "evaluate": "candidate",
+          "finish": "candidate",
+          "jobs": 2,
+          "exact": true
+        },
+        {
+          "sourceSha256": "21ccae5333689f3b1c0a148f4f6f6398b871e6fc67b22694133593070ea3f059",
+          "prepare": "candidate",
+          "evaluate": "baseline",
+          "finish": "baseline",
+          "jobs": 2,
+          "exact": true
+        },
+        {
+          "sourceSha256": "b0fd9402c366c74e6a26063e4ecd68c0bff21f3b08b537d8203b2cc6595098e2",
+          "prepare": "baseline",
+          "evaluate": "candidate",
+          "finish": "candidate",
+          "jobs": 1,
+          "exact": true
+        },
+        {
+          "sourceSha256": "b0fd9402c366c74e6a26063e4ecd68c0bff21f3b08b537d8203b2cc6595098e2",
+          "prepare": "candidate",
+          "evaluate": "baseline",
+          "finish": "baseline",
+          "jobs": 1,
+          "exact": true
+        }
+      ],
+      "projectBuildComparisons": [
+        {
+          "method": "compileProject",
+          "minify": false,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "compileProject",
+          "minify": true,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "buildLifeboat",
+          "minify": false,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "buildLifeboat",
+          "minify": true,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "compileProject",
+          "minify": false,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "compileProject",
+          "minify": true,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "buildLifeboat",
+          "minify": false,
+          "ok": true,
+          "exact": true
+        },
+        {
+          "method": "buildLifeboat",
+          "minify": true,
+          "ok": true,
+          "exact": true
+        }
+      ],
+      "knownTrappingScripts": 7,
+      "knownFailureIsolatedProbes": 56,
+      "newBehaviorDifferences": 0,
+      "timingExcludedFromPassRecordComparison": "elapsedMs only; ordered pass name/details/saved and all other result fields are compared"
+    },
+    "tests": {
+      "native": 786,
+      "sdk": 30,
+      "wasm": 81,
+      "playground": 38,
+      "browserEngines": 3,
+      "recipesPerBrowser": 16,
+      "consolePageErrors": 0
+    },
+    "gates": {
+      "fmt": 0,
+      "architecture": 0,
+      "default": 0,
+      "native": 0,
+      "clippy": 0,
+      "rustdoc": 0,
+      "python": 0,
+      "licenses": 0,
+      "screen": 0,
+      "publication-tests": 0,
+      "sdk": 0,
+      "runtime-build": 0,
+      "compiler-build": 0,
+      "wasm": 0,
+      "runtime-browser": 0,
+      "compiler-browser": 0,
+      "app-install": 0,
+      "app-build": 0,
+      "app-test": 0,
+      "app-browser": 0,
+      "artifacts": 0,
+      "package-shape": 0,
+      "consumer": 0,
+      "diff": 0
+    },
+    "notPerformed": [
+      "No push, tag, release or production deployment",
+      "No new hosted multi-OS CI run",
+      "No optimization of unrelated block-analysis work in this change"
+    ],
+    "newCodeScope": "api_aliases.rs cost-only provenance-free candidates and one tracked winner replay; new regression tests compare the pre-change algorithm on all 67 registered pass inputs and transformed/partial-origin states.",
+    "additionalLargeFixtures": {
+      "paired": {
+        "header": {
+          "event": "worker",
+          "node": "v22.22.1",
+          "wasmSha256": {
+            "before": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+            "after": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a"
+          },
+          "producers": {
+            "before": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+              "dirty": true
+            },
+            "after": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+              "dirty": false
+            }
+          },
+          "job": "large",
+          "warmupsPerMode": 12
+        },
+        "rows": [
+          {
+            "name": "vehicle-control",
+            "strategy": "exhaustive",
+            "bytes": 20275,
+            "repetitions": 3,
+            "mapBytes": 1374918,
+            "beforePlainMs": 3455.5042460000004,
+            "beforeMappedMs": 5094.2144439999975,
+            "afterPlainMs": 3274.6143729999967,
+            "afterMappedMs": 3747.3751580000026,
+            "beforeRatio": 1.4742318577373836,
+            "afterRatio": 1.14437143771738,
+            "beforeExtraMs": 1638.710197999997,
+            "afterExtraMs": 472.76078500000585,
+            "samples": [
+              {
+                "repeat": 0,
+                "order": [
+                  "beforePlain",
+                  "afterMapped",
+                  "beforeMapped",
+                  "afterPlain"
+                ],
+                "beforePlain": 3236719035.000002,
+                "beforePlainCpuUs": 3273446,
+                "afterMapped": 3656126639.9999986,
+                "afterMappedCpuUs": 3698312,
+                "beforeMapped": 5038043268.000001,
+                "beforeMappedCpuUs": 5124422,
+                "afterPlain": 3240914724.000002,
+                "afterPlainCpuUs": 3312057,
+                "unknownBytes": 0
+              },
+              {
+                "repeat": 1,
+                "order": [
+                  "beforePlain",
+                  "afterPlain",
+                  "beforeMapped",
+                  "afterMapped"
+                ],
+                "beforePlain": 3455504246.0000005,
+                "beforePlainCpuUs": 3470201,
+                "afterPlain": 3274614372.9999967,
+                "afterPlainCpuUs": 3286993,
+                "beforeMapped": 5094214443.999997,
+                "beforeMappedCpuUs": 5107838,
+                "afterMapped": 3850346983.000003,
+                "afterMappedCpuUs": 3865668
+              },
+              {
+                "repeat": 2,
+                "order": [
+                  "beforeMapped",
+                  "afterPlain",
+                  "beforePlain",
+                  "afterMapped"
+                ],
+                "beforeMapped": 5872617764.999995,
+                "beforeMappedCpuUs": 5896508,
+                "afterPlain": 3744208652.000001,
+                "afterPlainCpuUs": 3752322,
+                "beforePlain": 3505102766.000004,
+                "beforePlainCpuUs": 3507552,
+                "afterMapped": 3747375158.0000024,
+                "afterMappedCpuUs": 3759082
+              }
+            ]
+          },
+          {
+            "name": "vehicle-control",
+            "strategy": "target8192",
+            "bytes": 20275,
+            "repetitions": 3,
+            "mapBytes": 1523794,
+            "beforePlainMs": 310.17310400000133,
+            "beforeMappedMs": 384.1588369999954,
+            "afterPlainMs": 321.97634700000344,
+            "afterMappedMs": 406.532355000003,
+            "beforeRatio": 1.2385304594301438,
+            "afterRatio": 1.2626155889643615,
+            "beforeExtraMs": 73.98573299999407,
+            "afterExtraMs": 84.55600799999957,
+            "samples": [
+              {
+                "repeat": 0,
+                "order": [
+                  "beforePlain",
+                  "afterMapped",
+                  "beforeMapped",
+                  "afterPlain"
+                ],
+                "beforePlain": 305507622.00000465,
+                "beforePlainCpuUs": 305445,
+                "afterMapped": 381143530.0000012,
+                "afterMappedCpuUs": 383220,
+                "beforeMapped": 384158836.9999954,
+                "beforeMappedCpuUs": 385732,
+                "afterPlain": 285950349.0000061,
+                "afterPlainCpuUs": 287912,
+                "unknownBytes": 0
+              },
+              {
+                "repeat": 1,
+                "order": [
+                  "beforePlain",
+                  "afterPlain",
+                  "beforeMapped",
+                  "afterMapped"
+                ],
+                "beforePlain": 334965895.0000012,
+                "beforePlainCpuUs": 324108,
+                "afterPlain": 329364111.0000026,
+                "afterPlainCpuUs": 339285,
+                "beforeMapped": 414120993.99999714,
+                "beforeMappedCpuUs": 417940,
+                "afterMapped": 453708608.99999386,
+                "afterMappedCpuUs": 453825
+              },
+              {
+                "repeat": 2,
+                "order": [
+                  "beforeMapped",
+                  "afterPlain",
+                  "beforePlain",
+                  "afterMapped"
+                ],
+                "beforeMapped": 379808452.9999905,
+                "beforeMappedCpuUs": 382486,
+                "afterPlain": 321976347.00000346,
+                "afterPlainCpuUs": 328258,
+                "beforePlain": 310173104.0000013,
+                "beforePlainCpuUs": 311530,
+                "afterMapped": 406532355.000003,
+                "afterMappedCpuUs": 404436
+              }
+            ]
+          },
+          {
+            "name": "draw-4096",
+            "strategy": "exhaustive",
+            "bytes": 129812,
+            "repetitions": 3,
+            "mapBytes": 8226791,
+            "beforePlainMs": 2852.7577049999963,
+            "beforeMappedMs": 4455.6474730000045,
+            "afterPlainMs": 2629.424040999991,
+            "afterMappedMs": 5298.042522000003,
+            "beforeRatio": 1.5618737845105601,
+            "afterRatio": 2.0149060932694276,
+            "beforeExtraMs": 1602.8897680000082,
+            "afterExtraMs": 2668.6184810000123,
+            "samples": [
+              {
+                "repeat": 0,
+                "order": [
+                  "afterMapped",
+                  "beforeMapped",
+                  "afterPlain",
+                  "beforePlain"
+                ],
+                "afterMapped": 5298042522.000004,
+                "afterMappedCpuUs": 5280210,
+                "beforeMapped": 4142176976.9999957,
+                "beforeMappedCpuUs": 4163283,
+                "afterPlain": 2629424040.999991,
+                "afterPlainCpuUs": 2636321,
+                "beforePlain": 2852757704.999996,
+                "beforePlainCpuUs": 2857992,
+                "unknownBytes": 0
+              },
+              {
+                "repeat": 1,
+                "order": [
+                  "afterMapped",
+                  "beforePlain",
+                  "afterPlain",
+                  "beforeMapped"
+                ],
+                "afterMapped": 4424385657.999999,
+                "afterMappedCpuUs": 4428511,
+                "beforePlain": 2676418097.9999948,
+                "beforePlainCpuUs": 2679370,
+                "afterPlain": 2618824057.0000052,
+                "afterPlainCpuUs": 2622743,
+                "beforeMapped": 4455647473.000005,
+                "beforeMappedCpuUs": 4452749
+              },
+              {
+                "repeat": 2,
+                "order": [
+                  "afterPlain",
+                  "beforePlain",
+                  "afterMapped",
+                  "beforeMapped"
+                ],
+                "afterPlain": 2809684988.000008,
+                "afterPlainCpuUs": 2807394,
+                "beforePlain": 2905952090.000006,
+                "beforePlainCpuUs": 2909605,
+                "afterMapped": 5417040359.000006,
+                "afterMappedCpuUs": 5386595,
+                "beforeMapped": 4966804407.999996,
+                "beforeMappedCpuUs": 4924037
+              }
+            ]
+          },
+          {
+            "name": "draw-4096",
+            "strategy": "target8192",
+            "bytes": 129812,
+            "repetitions": 3,
+            "mapBytes": 8226791,
+            "beforePlainMs": 3213.3604709999927,
+            "beforeMappedMs": 4625.828807999991,
+            "afterPlainMs": 3164.889817999996,
+            "afterMappedMs": 4374.389832000015,
+            "beforeRatio": 1.43956112292638,
+            "afterRatio": 1.3821618076942548,
+            "beforeExtraMs": 1412.4683369999984,
+            "afterExtraMs": 1209.5000140000193,
+            "samples": [
+              {
+                "repeat": 0,
+                "order": [
+                  "afterMapped",
+                  "beforeMapped",
+                  "afterPlain",
+                  "beforePlain"
+                ],
+                "afterMapped": 3936063720.0000057,
+                "afterMappedCpuUs": 3949191,
+                "beforeMapped": 4625828807.999991,
+                "beforeMappedCpuUs": 4634988,
+                "afterPlain": 2984170759.999979,
+                "afterPlainCpuUs": 2959188,
+                "beforePlain": 3255492231.9999895,
+                "beforePlainCpuUs": 3211973,
+                "unknownBytes": 0
+              },
+              {
+                "repeat": 1,
+                "order": [
+                  "afterMapped",
+                  "beforePlain",
+                  "afterPlain",
+                  "beforeMapped"
+                ],
+                "afterMapped": 4616815303.999989,
+                "afterMappedCpuUs": 4597616,
+                "beforePlain": 3213360470.999993,
+                "beforePlainCpuUs": 3037973,
+                "afterPlain": 3199173829.999985,
+                "afterPlainCpuUs": 3118462,
+                "beforeMapped": 5344795499,
+                "beforeMappedCpuUs": 5341517
+              },
+              {
+                "repeat": 2,
+                "order": [
+                  "afterPlain",
+                  "beforePlain",
+                  "afterMapped",
+                  "beforeMapped"
+                ],
+                "afterPlain": 3164889817.999996,
+                "afterPlainCpuUs": 3166130,
+                "beforePlain": 2981807450.000022,
+                "beforePlainCpuUs": 2977461,
+                "afterMapped": 4374389832.000015,
+                "afterMappedCpuUs": 4378421,
+                "beforeMapped": 4227041477.999999,
+                "beforeMappedCpuUs": 4233461
+              }
+            ]
+          }
+        ],
+        "note": "Two previously fixed large benchmark fixtures are separate from the real-world corpus population; three measured repetitions after identical per-input warmup. Full map and code equality checked."
+      },
+      "isolated": {
+        "rows": [
+          {
+            "owner": "before",
+            "name": "vehicle-control",
+            "strategy": "exhaustive",
+            "sourceSha256": "fea7b54f9de665c95d0641cec799cfe19ea81d66e84b45cac401bd87e4e8ca1a",
+            "wasmSha256": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+              "dirty": true
+            },
+            "outputSha256": "b135f0b451e3b247480c9269e5af7053e85895b4b79d3d16e53862f814677632",
+            "mapBytes": 1374917,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 3529.583488000004,
+            "mappedMedianMs": 5479.652519000003,
+            "ratio": 1.5524926772889518,
+            "extraMs": 1950.069030999999,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 3680.6104349999987,
+                "cpuMs": 3675.325,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 5889.549401999997,
+                "cpuMs": 5907.252,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 5479.652519000003,
+                "cpuMs": 5488.97,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 3502.7889490000016,
+                "cpuMs": 3503.474,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 3529.583488000004,
+                "cpuMs": 3542.901,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 5817.677382000002,
+                "cpuMs": 5823.895,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 5396.910121000001,
+                "cpuMs": 5394.616,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 3426.6459819999945,
+                "cpuMs": 3426.697,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 3339.3247289999927,
+                "cpuMs": 3342.613,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 4799.148254,
+                "cpuMs": 4797.851,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 5075.656627000004,
+                "cpuMs": 5073.759,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 3714.350007000001,
+                "cpuMs": 3683.859,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 3667.3304609999905,
+                "cpuMs": 3656.519,
+                "mapBytes": 0,
+                "wasmBytes": 31457280
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 5792.609062999996,
+                "cpuMs": 5780.638,
+                "mapBytes": 1374917,
+                "wasmBytes": 31457280
+              }
+            ]
+          },
+          {
+            "owner": "after",
+            "name": "vehicle-control",
+            "strategy": "exhaustive",
+            "sourceSha256": "fea7b54f9de665c95d0641cec799cfe19ea81d66e84b45cac401bd87e4e8ca1a",
+            "wasmSha256": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+              "dirty": false
+            },
+            "outputSha256": "b135f0b451e3b247480c9269e5af7053e85895b4b79d3d16e53862f814677632",
+            "mapBytes": 1374918,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 3749.086666999996,
+            "mappedMedianMs": 4127.9734690000005,
+            "ratio": 1.1010610945153712,
+            "extraMs": 378.88680200000454,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 3751.3523840000016,
+                "cpuMs": 3770.333,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 4127.9734690000005,
+                "cpuMs": 4143.496,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 4222.3362369999995,
+                "cpuMs": 4218.995,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 3761.4248399999997,
+                "cpuMs": 3733.542,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 3592.402197999996,
+                "cpuMs": 3596.449,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 3317.7841250000056,
+                "cpuMs": 3327.386,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 3782.407321999999,
+                "cpuMs": 3788.917,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 3567.097197000003,
+                "cpuMs": 3569.581,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 3552.3986709999954,
+                "cpuMs": 3558.954,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 3800.346811999996,
+                "cpuMs": 3794.75,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 4170.7924459999995,
+                "cpuMs": 4171.484,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 3971.4473179999986,
+                "cpuMs": 3971.094,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 3749.086666999996,
+                "cpuMs": 3741.154,
+                "mapBytes": 0,
+                "wasmBytes": 31195136
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 4460.504285999996,
+                "cpuMs": 4463.235,
+                "mapBytes": 1374918,
+                "wasmBytes": 31195136
+              }
+            ]
+          },
+          {
+            "owner": "after",
+            "name": "draw-4096",
+            "strategy": "exhaustive",
+            "sourceSha256": "d88ca7f592c9ab5aaf4e7193bc07130d3d28fb422f14b2fdfea857a1208ae287",
+            "wasmSha256": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+              "dirty": false
+            },
+            "outputSha256": "328a3aedec096029715cfbe15457e9d0e317179d615ceb9df2c6b1c3f4ee670d",
+            "mapBytes": 8226791,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 3222.1860639999977,
+            "mappedMedianMs": 3808.597158000004,
+            "ratio": 1.1819916920849816,
+            "extraMs": 586.4110940000064,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 2057.476154,
+                "cpuMs": 2069.957,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 3079.692225999999,
+                "cpuMs": 3095.693,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 3024.8296200000004,
+                "cpuMs": 3029.44,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 3222.1860639999977,
+                "cpuMs": 3094.412,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 3348.7821260000055,
+                "cpuMs": 3134.894,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 4787.349621000001,
+                "cpuMs": 4490.694,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 3808.597158000004,
+                "cpuMs": 3811.299,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 3076.079375000001,
+                "cpuMs": 3072.886,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 3511.607950000005,
+                "cpuMs": 3469.868,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 4752.646553999999,
+                "cpuMs": 4713.678,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 5297.412561000005,
+                "cpuMs": 5218.858,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 3614.659697999996,
+                "cpuMs": 3591.528,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 2986.7965410000033,
+                "cpuMs": 2953.609,
+                "mapBytes": 0,
+                "wasmBytes": 124125184
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 3670.9497219999903,
+                "cpuMs": 3648.058,
+                "mapBytes": 8226791,
+                "wasmBytes": 124125184
+              }
+            ]
+          },
+          {
+            "owner": "before",
+            "name": "draw-4096",
+            "strategy": "exhaustive",
+            "sourceSha256": "d88ca7f592c9ab5aaf4e7193bc07130d3d28fb422f14b2fdfea857a1208ae287",
+            "wasmSha256": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+              "dirty": true
+            },
+            "outputSha256": "328a3aedec096029715cfbe15457e9d0e317179d615ceb9df2c6b1c3f4ee670d",
+            "mapBytes": 8226790,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 2877.9755609999993,
+            "mappedMedianMs": 4898.524682999996,
+            "ratio": 1.7020730646155744,
+            "extraMs": 2020.5491219999967,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 2877.9755609999993,
+                "cpuMs": 2884.777,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 4905.802853999998,
+                "cpuMs": 4913.739,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 4829.180017999999,
+                "cpuMs": 4820.284,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 2743.917371000003,
+                "cpuMs": 2747.639,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 2578.457846999998,
+                "cpuMs": 2581.293,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 4574.084044000003,
+                "cpuMs": 4585.772,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 4921.224220000004,
+                "cpuMs": 4917.327,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 2784.951550000005,
+                "cpuMs": 2790.915,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 2879.8771140000026,
+                "cpuMs": 2882.003,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 4793.281761999999,
+                "cpuMs": 4787.146,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 4898.524682999996,
+                "cpuMs": 4897.069,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 3328.2188900000037,
+                "cpuMs": 3255.097,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 3170.8433559999976,
+                "cpuMs": 3102.251,
+                "mapBytes": 0,
+                "wasmBytes": 110755840
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 5194.929891000007,
+                "cpuMs": 5060.699,
+                "mapBytes": 8226790,
+                "wasmBytes": 110755840
+              }
+            ]
+          },
+          {
+            "owner": "before",
+            "name": "vehicle-control",
+            "strategy": "target8192",
+            "sourceSha256": "fea7b54f9de665c95d0641cec799cfe19ea81d66e84b45cac401bd87e4e8ca1a",
+            "wasmSha256": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+              "dirty": true
+            },
+            "outputSha256": "fef6af418dc1a425c3edcef74c1e63d6982d2b712d9eb72a1f9011a446de587e",
+            "mapBytes": 1523793,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 303.7242700000006,
+            "mappedMedianMs": 423.86801299999934,
+            "ratio": 1.395568464120429,
+            "extraMs": 120.14374299999872,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 324.67777300000034,
+                "cpuMs": 347.293,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 417.5567329999999,
+                "cpuMs": 434.595,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 390.74321599999985,
+                "cpuMs": 395.531,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 296.71826299999975,
+                "cpuMs": 304.256,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 303.7242700000006,
+                "cpuMs": 314.855,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 441.0034650000007,
+                "cpuMs": 438.757,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 403.9864200000002,
+                "cpuMs": 409.784,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 322.79408199999943,
+                "cpuMs": 325.242,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 299.13071599999967,
+                "cpuMs": 303.624,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 461.8029610000003,
+                "cpuMs": 435.75,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 432.2705390000001,
+                "cpuMs": 428.944,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 306.472667,
+                "cpuMs": 308.306,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 294.18158799999946,
+                "cpuMs": 294.855,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 423.86801299999934,
+                "cpuMs": 428.463,
+                "mapBytes": 1523793,
+                "wasmBytes": 22806528
+              }
+            ]
+          },
+          {
+            "owner": "after",
+            "name": "vehicle-control",
+            "strategy": "target8192",
+            "sourceSha256": "fea7b54f9de665c95d0641cec799cfe19ea81d66e84b45cac401bd87e4e8ca1a",
+            "wasmSha256": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+              "dirty": false
+            },
+            "outputSha256": "fef6af418dc1a425c3edcef74c1e63d6982d2b712d9eb72a1f9011a446de587e",
+            "mapBytes": 1523794,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 337.7691049999994,
+            "mappedMedianMs": 413.3795369999998,
+            "ratio": 1.2238524213160364,
+            "extraMs": 75.6104320000004,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 365.5883340000005,
+                "cpuMs": 367.207,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 425.7092819999998,
+                "cpuMs": 446.566,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 476.73681000000033,
+                "cpuMs": 469.544,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 446.9553329999999,
+                "cpuMs": 337.014,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 324.02027499999986,
+                "cpuMs": 332.818,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 397.9969860000001,
+                "cpuMs": 402.05,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 413.3795369999998,
+                "cpuMs": 414.331,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 337.7691049999994,
+                "cpuMs": 338.752,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 334.4030650000004,
+                "cpuMs": 336.765,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 400.0684110000002,
+                "cpuMs": 396.876,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 421.22391999999945,
+                "cpuMs": 410.394,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 376.9005619999989,
+                "cpuMs": 333.309,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 318.469509999999,
+                "cpuMs": 318.495,
+                "mapBytes": 0,
+                "wasmBytes": 22806528
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 412.1975220000004,
+                "cpuMs": 417.894,
+                "mapBytes": 1523794,
+                "wasmBytes": 22806528
+              }
+            ]
+          },
+          {
+            "owner": "after",
+            "name": "draw-4096",
+            "strategy": "target8192",
+            "sourceSha256": "d88ca7f592c9ab5aaf4e7193bc07130d3d28fb422f14b2fdfea857a1208ae287",
+            "wasmSha256": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "153a8c9c48e680c1bfb67e538eb4ed94de71d6c5",
+              "dirty": false
+            },
+            "outputSha256": "328a3aedec096029715cfbe15457e9d0e317179d615ceb9df2c6b1c3f4ee670d",
+            "mapBytes": 8226791,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 2427.969146999996,
+            "mappedMedianMs": 3452.467791999996,
+            "ratio": 1.4219570278583944,
+            "extraMs": 1024.4986449999997,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 2407.007196999999,
+                "cpuMs": 2408.576,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 3961.656299000002,
+                "cpuMs": 3988.52,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 5846.345893999998,
+                "cpuMs": 5731.436,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 3196.9546960000007,
+                "cpuMs": 3174.774,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 2435.4841220000017,
+                "cpuMs": 2436.989,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 3452.467791999996,
+                "cpuMs": 3460.053,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 4444.963355,
+                "cpuMs": 4400.106,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 3523.1295189999946,
+                "cpuMs": 3404.06,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 2427.969146999996,
+                "cpuMs": 2428.056,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 3143.515951000001,
+                "cpuMs": 3144.446,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 3017.446388000004,
+                "cpuMs": 3021.586,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 2134.231307000009,
+                "cpuMs": 2134.124,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 2249.4663819999987,
+                "cpuMs": 2250.268,
+                "mapBytes": 0,
+                "wasmBytes": 140902400
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 3069.4248269999953,
+                "cpuMs": 3072.818,
+                "mapBytes": 8226791,
+                "wasmBytes": 140902400
+              }
+            ]
+          },
+          {
+            "owner": "before",
+            "name": "draw-4096",
+            "strategy": "target8192",
+            "sourceSha256": "d88ca7f592c9ab5aaf4e7193bc07130d3d28fb422f14b2fdfea857a1208ae287",
+            "wasmSha256": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+            "producer": {
+              "name": "storm-lua-engine",
+              "version": "0.3.0",
+              "revision": "7976ededc29f7ff7b431d37757911cbc8a0c99f4",
+              "dirty": true
+            },
+            "outputSha256": "328a3aedec096029715cfbe15457e9d0e317179d615ceb9df2c6b1c3f4ee670d",
+            "mapBytes": 8226790,
+            "node": "v22.22.1",
+            "initializationOutsideTiming": true,
+            "perModeModuleWarmups": 12,
+            "perInputModeWarmups": 3,
+            "repetitionsPerMode": 7,
+            "processIsolation": "One input+strategy+compiler version per fresh Node process. Modes alternate; no expanded map objects retained during timing.",
+            "plainMedianMs": 3126.6604459999944,
+            "mappedMedianMs": 4113.577107999998,
+            "ratio": 1.3156456158399252,
+            "extraMs": 986.9166620000033,
+            "samples": [
+              {
+                "repeat": 0,
+                "sourceMap": false,
+                "ms": 2563.354900000002,
+                "cpuMs": 2561.304,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 0,
+                "sourceMap": true,
+                "ms": 3676.0043320000004,
+                "cpuMs": 3702.267,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 1,
+                "sourceMap": true,
+                "ms": 3650.231975999999,
+                "cpuMs": 3655.308,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 1,
+                "sourceMap": false,
+                "ms": 2557.1791709999998,
+                "cpuMs": 2545.794,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 2,
+                "sourceMap": false,
+                "ms": 3245.392893999997,
+                "cpuMs": 3234.478,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 2,
+                "sourceMap": true,
+                "ms": 4113.577107999998,
+                "cpuMs": 4116.148,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 3,
+                "sourceMap": true,
+                "ms": 3596.141115000006,
+                "cpuMs": 3595.445,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 3,
+                "sourceMap": false,
+                "ms": 3076.371527000003,
+                "cpuMs": 3057.619,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 4,
+                "sourceMap": false,
+                "ms": 3126.6604459999944,
+                "cpuMs": 3108.236,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 4,
+                "sourceMap": true,
+                "ms": 5140.3847559999995,
+                "cpuMs": 5126.461,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 5,
+                "sourceMap": true,
+                "ms": 4980.319318999995,
+                "cpuMs": 4973.809,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 5,
+                "sourceMap": false,
+                "ms": 3313.7349359999935,
+                "cpuMs": 3298.178,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 6,
+                "sourceMap": false,
+                "ms": 3306.1955630000084,
+                "cpuMs": 3281.294,
+                "mapBytes": 0,
+                "wasmBytes": 140509184
+              },
+              {
+                "repeat": 6,
+                "sourceMap": true,
+                "ms": 4871.602037999997,
+                "cpuMs": 4869.393,
+                "mapBytes": 8226790,
+                "wasmBytes": 140509184
+              }
+            ]
+          }
+        ],
+        "purpose": "Follow up volatile large-fixture paired results with independent Node heaps. Both observations are retained, not substituted into corpus statistics.",
+        "repetitionsPerMode": 7,
+        "sameCodeAndInputAcrossVersions": true,
+        "crossVersionFullMapComparison": "Verified separately in the same-input paired large run."
+      },
+      "negativeObservationsRetained": true
+    }
+  },
+  "measurements": {
+    "corpus": {
+      "counts": {
+        "exhaustive": {
+          "pairs": 4148,
+          "success": 4054,
+          "failure": 94
+        },
+        "target8192": {
+          "pairs": 4155,
+          "success": 4128,
+          "failure": 27
+        }
+      },
+      "groups": [
+        {
+          "strategy": "exhaustive",
+          "population": "all-success",
+          "sources": 4054,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 4054,
+              "min": 0.29683400000067195,
+              "max": 12246.683346999998,
+              "mean": 103.63029633769116,
+              "median": 37.69297149999966,
+              "p10": 4.9447656000004825,
+              "p90": 204.19650859999985,
+              "bottom10Mean": 2.7668298004926766,
+              "top10Mean": 596.3614963054185
+            },
+            "beforeMappedMs": {
+              "n": 4054,
+              "min": 0.39628999999695225,
+              "max": 15645.703921,
+              "mean": 143.68938938431174,
+              "median": 51.805562500000406,
+              "p10": 7.011849899999288,
+              "p90": 285.73542480000134,
+              "bottom10Mean": 3.812500096058948,
+              "top10Mean": 804.0687120172414
+            },
+            "afterPlainMs": {
+              "n": 4054,
+              "min": 0.2730389999996987,
+              "max": 11540.591031000004,
+              "mean": 103.04486634854463,
+              "median": 36.513700499999686,
+              "p10": 5.079800799999794,
+              "p90": 198.05573170000082,
+              "bottom10Mean": 2.841492660098348,
+              "top10Mean": 594.1236266871922
+            },
+            "afterMappedMs": {
+              "n": 4054,
+              "min": 0.4026269999999385,
+              "max": 14466.92643,
+              "mean": 116.54438626566353,
+              "median": 44.87126199999693,
+              "p10": 6.283371999999917,
+              "p90": 223.50913360000163,
+              "bottom10Mean": 3.553705945812903,
+              "top10Mean": 653.8368838275863
+            },
+            "beforeExtraMs": {
+              "n": 4054,
+              "min": -143.6413150000003,
+              "max": 3672.438302999999,
+              "mean": 40.05909304662056,
+              "median": 14.270162500000424,
+              "p10": 1.0028614000002565,
+              "p90": 87.38529969999955,
+              "bottom10Mean": -3.0224487561575994,
+              "top10Mean": 222.10225075369473
+            },
+            "afterExtraMs": {
+              "n": 4054,
+              "min": -494.63928299999657,
+              "max": 2926.335398999996,
+              "mean": 13.499519917118905,
+              "median": 5.473947499999667,
+              "p10": -0.5369477999996891,
+              "p90": 33.03961040000042,
+              "bottom10Mean": -12.731804344827568,
+              "top10Mean": 82.40812252463054
+            },
+            "beforeRatio": {
+              "n": 4054,
+              "min": 0.16566483845016122,
+              "max": 5.6647376755095085,
+              "mean": 1.448546212178792,
+              "median": 1.4322037104446657,
+              "p10": 1.1341264156249813,
+              "p90": 1.750855882456902,
+              "bottom10Mean": 0.9827027592039101,
+              "top10Mean": 2.0486362988382587
+            },
+            "afterRatio": {
+              "n": 4054,
+              "min": 0.17382270614234382,
+              "max": 5.089309266649841,
+              "mean": 1.230898272948199,
+              "median": 1.1821200536706196,
+              "p10": 0.9782513839642181,
+              "p90": 1.5117019743508942,
+              "bottom10Mean": 0.8627345712337353,
+              "top10Mean": 1.8669418669079616
+            }
+          },
+          "beforeWeightedRatio": 1.3865577390233783,
+          "afterWeightedRatio": 1.131006234424696,
+          "extraTimeReduction": 0.6630098464433971,
+          "mappedTimeReduction": 0.18891445801920814,
+          "plainTimeChange": -0.005649216588543227,
+          "beforeAtMost1_2": 625,
+          "afterAtMost1_2": 2188
+        },
+        {
+          "strategy": "exhaustive",
+          "population": "vehicle-success",
+          "sources": 3950,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 3950,
+              "min": 0.29683400000067195,
+              "max": 2375.6961010000014,
+              "mean": 85.77223152481012,
+              "median": 38.35518050000064,
+              "p10": 5.228548300000082,
+              "p90": 199.90087410000103,
+              "bottom10Mean": 2.9837975772152583,
+              "top10Mean": 418.16532519240485
+            },
+            "beforeMappedMs": {
+              "n": 3950,
+              "min": 0.39628999999695225,
+              "max": 2719.5791070000014,
+              "mean": 121.40121508227841,
+              "median": 52.39831299999844,
+              "p10": 7.350904999999876,
+              "p90": 279.01266419999985,
+              "bottom10Mean": 4.154708789873255,
+              "top10Mean": 581.7586577974683
+            },
+            "afterPlainMs": {
+              "n": 3950,
+              "min": 0.2730389999996987,
+              "max": 2446.097484,
+              "mean": 84.96024102886074,
+              "median": 36.91377899999998,
+              "p10": 5.268026100001089,
+              "p90": 194.20243119999938,
+              "bottom10Mean": 3.069602078480837,
+              "top10Mean": 413.7552277367089
+            },
+            "afterMappedMs": {
+              "n": 3950,
+              "min": 0.4026269999999385,
+              "max": 2509.4913180000003,
+              "mean": 96.94202143645569,
+              "median": 45.24155350000069,
+              "p10": 6.539701899999409,
+              "p90": 218.69056810000006,
+              "bottom10Mean": 3.848500949367186,
+              "top10Mean": 458.74936892405077
+            },
+            "beforeExtraMs": {
+              "n": 3950,
+              "min": -143.6413150000003,
+              "max": 819.0148899999986,
+              "mean": 35.62898355746828,
+              "median": 14.54464149999967,
+              "p10": 1.136024900000439,
+              "p90": 85.96467369999738,
+              "bottom10Mean": -3.051132321519022,
+              "top10Mean": 177.02817015189893
+            },
+            "afterExtraMs": {
+              "n": 3950,
+              "min": -494.63928299999657,
+              "max": 455.61116800000036,
+              "mean": 11.981780407594947,
+              "median": 5.623683999999914,
+              "p10": -0.4163062000001428,
+              "p90": 32.48906719999948,
+              "bottom10Mean": -10.804668286075904,
+              "top10Mean": 64.8518889873418
+            },
+            "beforeRatio": {
+              "n": 3950,
+              "min": 0.3279664104870854,
+              "max": 5.6647376755095085,
+              "mean": 1.4504269568936237,
+              "median": 1.4361291870756545,
+              "p10": 1.1415267302613716,
+              "p90": 1.7529478050855862,
+              "bottom10Mean": 0.9870953973293995,
+              "top10Mean": 2.024951690916124
+            },
+            "afterRatio": {
+              "n": 3950,
+              "min": 0.17382270614234382,
+              "max": 5.087877453850649,
+              "mean": 1.2304742555167827,
+              "median": 1.1838916266381585,
+              "p10": 0.9820596681324741,
+              "p90": 1.5122292975332419,
+              "bottom10Mean": 0.8678392464554046,
+              "top10Mean": 1.842379010044081
+            }
+          },
+          "beforeWeightedRatio": 1.4153906564406267,
+          "afterWeightedRatio": 1.141028088697686,
+          "extraTimeReduction": 0.6637069259001239,
+          "mappedTimeReduction": 0.20147404314895656,
+          "plainTimeChange": -0.009466822554506038,
+          "beforeAtMost1_2": 580,
+          "afterAtMost1_2": 2114
+        },
+        {
+          "strategy": "exhaustive",
+          "population": "optimized-output",
+          "sources": 4054,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 4054,
+              "min": 0.29683400000067195,
+              "max": 12246.683346999998,
+              "mean": 103.63029633769116,
+              "median": 37.69297149999966,
+              "p10": 4.9447656000004825,
+              "p90": 204.19650859999985,
+              "bottom10Mean": 2.7668298004926766,
+              "top10Mean": 596.3614963054185
+            },
+            "beforeMappedMs": {
+              "n": 4054,
+              "min": 0.39628999999695225,
+              "max": 15645.703921,
+              "mean": 143.68938938431174,
+              "median": 51.805562500000406,
+              "p10": 7.011849899999288,
+              "p90": 285.73542480000134,
+              "bottom10Mean": 3.812500096058948,
+              "top10Mean": 804.0687120172414
+            },
+            "afterPlainMs": {
+              "n": 4054,
+              "min": 0.2730389999996987,
+              "max": 11540.591031000004,
+              "mean": 103.04486634854463,
+              "median": 36.513700499999686,
+              "p10": 5.079800799999794,
+              "p90": 198.05573170000082,
+              "bottom10Mean": 2.841492660098348,
+              "top10Mean": 594.1236266871922
+            },
+            "afterMappedMs": {
+              "n": 4054,
+              "min": 0.4026269999999385,
+              "max": 14466.92643,
+              "mean": 116.54438626566353,
+              "median": 44.87126199999693,
+              "p10": 6.283371999999917,
+              "p90": 223.50913360000163,
+              "bottom10Mean": 3.553705945812903,
+              "top10Mean": 653.8368838275863
+            },
+            "beforeExtraMs": {
+              "n": 4054,
+              "min": -143.6413150000003,
+              "max": 3672.438302999999,
+              "mean": 40.05909304662056,
+              "median": 14.270162500000424,
+              "p10": 1.0028614000002565,
+              "p90": 87.38529969999955,
+              "bottom10Mean": -3.0224487561575994,
+              "top10Mean": 222.10225075369473
+            },
+            "afterExtraMs": {
+              "n": 4054,
+              "min": -494.63928299999657,
+              "max": 2926.335398999996,
+              "mean": 13.499519917118905,
+              "median": 5.473947499999667,
+              "p10": -0.5369477999996891,
+              "p90": 33.03961040000042,
+              "bottom10Mean": -12.731804344827568,
+              "top10Mean": 82.40812252463054
+            },
+            "beforeRatio": {
+              "n": 4054,
+              "min": 0.16566483845016122,
+              "max": 5.6647376755095085,
+              "mean": 1.448546212178792,
+              "median": 1.4322037104446657,
+              "p10": 1.1341264156249813,
+              "p90": 1.750855882456902,
+              "bottom10Mean": 0.9827027592039101,
+              "top10Mean": 2.0486362988382587
+            },
+            "afterRatio": {
+              "n": 4054,
+              "min": 0.17382270614234382,
+              "max": 5.089309266649841,
+              "mean": 1.230898272948199,
+              "median": 1.1821200536706196,
+              "p10": 0.9782513839642181,
+              "p90": 1.5117019743508942,
+              "bottom10Mean": 0.8627345712337353,
+              "top10Mean": 1.8669418669079616
+            }
+          },
+          "beforeWeightedRatio": 1.3865577390233783,
+          "afterWeightedRatio": 1.131006234424696,
+          "extraTimeReduction": 0.6630098464433971,
+          "mappedTimeReduction": 0.18891445801920814,
+          "plainTimeChange": -0.005649216588543227,
+          "beforeAtMost1_2": 625,
+          "afterAtMost1_2": 2188
+        },
+        {
+          "strategy": "target8192",
+          "population": "all-success",
+          "sources": 4128,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 4128,
+              "min": 0.09736699999984921,
+              "max": 11108.039136000009,
+              "mean": 20.09998216230621,
+              "median": 0.819101000000046,
+              "p10": 0.3257245999998304,
+              "p90": 1.7323599999994257,
+              "bottom10Mean": 0.25323922033908824,
+              "top10Mean": 193.77640901210663
+            },
+            "beforeMappedMs": {
+              "n": 4128,
+              "min": 0.19120400000247173,
+              "max": 16465.74253399999,
+              "mean": 24.171596833817844,
+              "median": 1.208698999999342,
+              "p10": 0.5123138999995718,
+              "p90": 2.4795023000006955,
+              "bottom10Mean": 0.4160518765133109,
+              "top10Mean": 230.98095041888612
+            },
+            "afterPlainMs": {
+              "n": 4128,
+              "min": 0.0862730000008014,
+              "max": 11208.444338999994,
+              "mean": 19.36170914437982,
+              "median": 0.8069854999998824,
+              "p10": 0.3218395999999303,
+              "p90": 1.6515656999998556,
+              "bottom10Mean": 0.2531083050848677,
+              "top10Mean": 186.50192673607728
+            },
+            "afterMappedMs": {
+              "n": 4128,
+              "min": 0.207292999999936,
+              "max": 13725.30889600001,
+              "mean": 22.249259374273276,
+              "median": 1.2352194999998574,
+              "p10": 0.526337599999897,
+              "p90": 2.568204800000058,
+              "bottom10Mean": 0.426281602905471,
+              "top10Mean": 211.5532079491526
+            },
+            "beforeExtraMs": {
+              "n": 4128,
+              "min": -1079.7480540000106,
+              "max": 5357.7033979999815,
+              "mean": 4.071614671511637,
+              "median": 0.35882949999904673,
+              "p10": 0.08575999999929992,
+              "p90": 0.9458830000005035,
+              "bottom10Mean": -4.159288154963743,
+              "top10Mean": 41.642494636803825
+            },
+            "afterExtraMs": {
+              "n": 4128,
+              "min": -986.207871000006,
+              "max": 2516.8645570000153,
+              "mean": 2.887550229893455,
+              "median": 0.3804139999956533,
+              "p10": 0.11029439999956604,
+              "p90": 1.0446650000003501,
+              "bottom10Mean": -4.476517905569029,
+              "top10Mean": 29.910035099273756
+            },
+            "beforeRatio": {
+              "n": 4128,
+              "min": 0.03430322283161241,
+              "max": 21.469145077574495,
+              "mean": 1.5999750964716943,
+              "median": 1.5238249596034064,
+              "p10": 1.108141191656305,
+              "p90": 2.010945991522423,
+              "bottom10Mean": 0.8708201886559204,
+              "top10Mean": 2.891765231620053
+            },
+            "afterRatio": {
+              "n": 4128,
+              "min": 0.09046075611671991,
+              "max": 17.07314486207585,
+              "mean": 1.651763404572391,
+              "median": 1.5410202717429533,
+              "p10": 1.148634203297143,
+              "p90": 2.1427601319925724,
+              "bottom10Mean": 0.9263133584634354,
+              "top10Mean": 3.1235971164823857
+            }
+          },
+          "beforeWeightedRatio": 1.2025680738735776,
+          "afterWeightedRatio": 1.1491371556282073,
+          "extraTimeReduction": 0.29080955275627385,
+          "mappedTimeReduction": 0.07952877390603652,
+          "plainTimeChange": -0.03673003348783477,
+          "beforeAtMost1_2": 597,
+          "afterAtMost1_2": 510
+        },
+        {
+          "strategy": "target8192",
+          "population": "vehicle-success",
+          "sources": 4024,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 4024,
+              "min": 0.09736699999984921,
+              "max": 20.949992999999267,
+              "mean": 0.963293083747524,
+              "median": 0.8184675000002244,
+              "p10": 0.3288256999994701,
+              "p90": 1.6925177000000082,
+              "bottom10Mean": 0.25806435235742997,
+              "top10Mean": 2.5282155310174015
+            },
+            "beforeMappedMs": {
+              "n": 4024,
+              "min": 0.19120400000247173,
+              "max": 17.2602480000005,
+              "mean": 1.423113858598435,
+              "median": 1.2060829999991256,
+              "p10": 0.5187009000005673,
+              "p90": 2.4172981999973673,
+              "bottom10Mean": 0.4226447841190897,
+              "top10Mean": 3.6539203027294453
+            },
+            "afterPlainMs": {
+              "n": 4024,
+              "min": 0.0862730000008014,
+              "max": 10.240929999999935,
+              "mean": 0.935302738320058,
+              "median": 0.8047790000000532,
+              "p10": 0.3263093999996272,
+              "p90": 1.6184931000004332,
+              "bottom10Mean": 0.257001496278049,
+              "top10Mean": 2.3599943300246466
+            },
+            "afterMappedMs": {
+              "n": 4024,
+              "min": 0.207292999999936,
+              "max": 15.72943800000212,
+              "mean": 1.4365231876242666,
+              "median": 1.2338600000011866,
+              "p10": 0.5317934999990029,
+              "p90": 2.5143002000018897,
+              "bottom10Mean": 0.4314700669974097,
+              "top10Mean": 3.5668395012407483
+            },
+            "beforeExtraMs": {
+              "n": 4024,
+              "min": -18.130887999998777,
+              "max": 16.45629199999985,
+              "mean": 0.459820774850911,
+              "median": 0.3573380000098041,
+              "p10": 0.08485079999982191,
+              "p90": 0.9221614000023692,
+              "bottom10Mean": -0.41961461538464784,
+              "top10Mean": 1.8334391364764404
+            },
+            "afterExtraMs": {
+              "n": 4024,
+              "min": -8.673503999999866,
+              "max": 11.956491000000824,
+              "mean": 0.5012204493042086,
+              "median": 0.380870999999388,
+              "p10": 0.11143069999934596,
+              "p90": 1.017575899999065,
+              "bottom10Mean": -0.26084113151365945,
+              "top10Mean": 1.8625118188585992
+            },
+            "beforeRatio": {
+              "n": 4024,
+              "min": 0.03430322283161241,
+              "max": 21.469145077574495,
+              "mean": 1.5918486286917604,
+              "median": 1.523282481167335,
+              "p10": 1.1057144075687049,
+              "p90": 1.9981048444053726,
+              "bottom10Mean": 0.8687159178651318,
+              "top10Mean": 2.820992253540311
+            },
+            "afterRatio": {
+              "n": 4024,
+              "min": 0.09046075611671991,
+              "max": 17.07314486207585,
+              "mean": 1.6497011626179414,
+              "median": 1.5411436328949746,
+              "p10": 1.1566182704763157,
+              "p90": 2.1338010417208606,
+              "bottom10Mean": 0.9311086565220436,
+              "top10Mean": 3.085547648654846
+            }
+          },
+          "beforeWeightedRatio": 1.4773425477758633,
+          "afterWeightedRatio": 1.5358911385253449,
+          "extraTimeReduction": -0.09003437147162563,
+          "mappedTimeReduction": -0.00942252718910197,
+          "plainTimeChange": -0.029056935941628947,
+          "beforeAtMost1_2": 578,
+          "afterAtMost1_2": 481
+        },
+        {
+          "strategy": "target8192",
+          "population": "source-checkpoint",
+          "sources": 4089,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 4089,
+              "min": 0.09736699999984921,
+              "max": 20.949992999999267,
+              "mean": 0.9562010939104987,
+              "median": 0.8096580000019458,
+              "p10": 0.3250503999995999,
+              "p90": 1.6832303999974105,
+              "bottom10Mean": 0.25253398533018057,
+              "top10Mean": 2.5099762298288852
+            },
+            "beforeMappedMs": {
+              "n": 4089,
+              "min": 0.19120400000247173,
+              "max": 17.2602480000005,
+              "mean": 1.4131238701394184,
+              "median": 1.1940579999936745,
+              "p10": 0.5114433999995527,
+              "p90": 2.4092159999996516,
+              "bottom10Mean": 0.4151149608802056,
+              "top10Mean": 3.614980220048812
+            },
+            "afterPlainMs": {
+              "n": 4089,
+              "min": 0.0862730000008014,
+              "max": 10.240929999999935,
+              "mean": 0.9296554639275872,
+              "median": 0.7964050000009593,
+              "p10": 0.3210539999989123,
+              "p90": 1.6048102000000664,
+              "bottom10Mean": 0.2524403227385132,
+              "top10Mean": 2.343716410757779
+            },
+            "afterMappedMs": {
+              "n": 4089,
+              "min": 0.207292999999936,
+              "max": 15.075823000000128,
+              "mean": 1.4243228517975202,
+              "median": 1.22350699999879,
+              "p10": 0.5250269999996817,
+              "p90": 2.4922698000002135,
+              "bottom10Mean": 0.42530872860624697,
+              "top10Mean": 3.518893200489075
+            },
+            "beforeExtraMs": {
+              "n": 4089,
+              "min": -18.130887999998777,
+              "max": 16.45629199999985,
+              "mean": 0.45692277622891964,
+              "median": 0.35571100000015576,
+              "p10": 0.08550199999972392,
+              "p90": 0.9218400000012482,
+              "bottom10Mean": -0.41461223716384815,
+              "top10Mean": 1.8109392273838816
+            },
+            "afterExtraMs": {
+              "n": 4089,
+              "min": -8.673503999999866,
+              "max": 11.956491000000824,
+              "mean": 0.494667387869933,
+              "median": 0.37882100000024344,
+              "p10": 0.1103425999994216,
+              "p90": 1.0078518000002081,
+              "bottom10Mean": -0.26243208801957557,
+              "top10Mean": 1.8241669682151884
+            },
+            "beforeRatio": {
+              "n": 4089,
+              "min": 0.03430322283161241,
+              "max": 21.469145077574495,
+              "mean": 1.5951294888657868,
+              "median": 1.5248054018198598,
+              "p10": 1.108252977350244,
+              "p90": 2.0057836538905964,
+              "bottom10Mean": 0.8700477645698563,
+              "top10Mean": 2.8348175571030994
+            },
+            "afterRatio": {
+              "n": 4089,
+              "min": 0.09046075611671991,
+              "max": 17.07314486207585,
+              "mean": 1.648329139733037,
+              "median": 1.5417355534552288,
+              "p10": 1.156354410014506,
+              "p90": 2.13204027878977,
+              "bottom10Mean": 0.9283155713515445,
+              "top10Mean": 3.0726557874436766
+            }
+          },
+          "beforeWeightedRatio": 1.4778521789389294,
+          "afterWeightedRatio": 1.532097542653139,
+          "extraTimeReduction": -0.08260610677482005,
+          "mappedTimeReduction": -0.007924982299674088,
+          "plainTimeChange": -0.027761555756383727,
+          "beforeAtMost1_2": 583,
+          "afterAtMost1_2": 488
+        },
+        {
+          "strategy": "target8192",
+          "population": "optimized-output",
+          "sources": 39,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 39,
+              "min": 2.5476279999993494,
+              "max": 11108.039136000009,
+              "mean": 2027.2517972564103,
+              "median": 228.9109669999998,
+              "p10": 4.075141799998528,
+              "p90": 7445.0291510000025,
+              "bottom10Mean": 3.4425942499998428,
+              "top10Mean": 8769.067896000004
+            },
+            "beforeMappedMs": {
+              "n": 39,
+              "min": 13.056918999995105,
+              "max": 16465.74253399999,
+              "mean": 2410.3099544871793,
+              "median": 308.25921599999856,
+              "p10": 19.95095059999985,
+              "p90": 7631.2067678,
+              "bottom10Mean": 16.485439999999016,
+              "top10Mean": 11021.501594249998
+            },
+            "afterPlainMs": {
+              "n": 39,
+              "min": 2.9396160000001146,
+              "max": 11208.444338999994,
+              "mean": 1951.8916450256406,
+              "median": 247.2023390000004,
+              "p10": 3.7767765999986294,
+              "p90": 6573.3374774,
+              "bottom10Mean": 3.424790000001053,
+              "top10Mean": 8623.816767749997
+            },
+            "afterMappedMs": {
+              "n": 39,
+              "min": 13.133327000003193,
+              "max": 13725.30889600001,
+              "mean": 2205.663757846154,
+              "median": 281.2584719999977,
+              "p10": 19.900096000000122,
+              "p90": 8097.649390599998,
+              "bottom10Mean": 15.77812675000132,
+              "top10Mean": 9979.890079
+            },
+            "beforeExtraMs": {
+              "n": 39,
+              "min": -1079.7480540000106,
+              "max": 5357.7033979999815,
+              "mean": 383.0581572307688,
+              "median": 53.717006999999285,
+              "p10": 7.795663600000626,
+              "p90": 1320.324351000005,
+              "bottom10Mean": -385.5017640000026,
+              "top10Mean": 2802.7840029999966
+            },
+            "afterExtraMs": {
+              "n": 39,
+              "min": -986.207871000006,
+              "max": 2516.8645570000153,
+              "mean": 253.77211282051348,
+              "median": 42.51732700000133,
+              "p10": 2.2834129999991104,
+              "p90": 758.953767400007,
+              "bottom10Mean": -435.3667927500006,
+              "top10Mean": 2010.2394597500058
+            },
+            "beforeRatio": {
+              "n": 39,
+              "min": 0.8708959488955237,
+              "max": 7.064985154820559,
+              "mean": 2.108018416998784,
+              "median": 1.2550066253215617,
+              "p10": 1.0973143683918287,
+              "p90": 4.93120775436825,
+              "bottom10Mean": 0.949800551455964,
+              "top10Mean": 5.768673805197858
+            },
+            "afterRatio": {
+              "n": 39,
+              "min": 0.8614729395808443,
+              "max": 6.8473256370898286,
+              "mean": 2.0118328642677117,
+              "median": 1.1572660758314435,
+              "p10": 1.018508745107415,
+              "p90": 5.065723049601754,
+              "bottom10Mean": 0.9267671368078717,
+              "top10Mean": 5.725179914223116
+            }
+          },
+          "beforeWeightedRatio": 1.1889544050468632,
+          "afterWeightedRatio": 1.1300134223471097,
+          "extraTimeReduction": 0.33751022389106444,
+          "mappedTimeReduction": 0.08490451456670267,
+          "plainTimeChange": -0.03717355304987702,
+          "beforeAtMost1_2": 14,
+          "afterAtMost1_2": 22
+        }
+      ],
+      "measurement": {
+        "mode": "corpus",
+        "sources": 4155,
+        "totalSources": 4155,
+        "resultPairs": 8303,
+        "elapsedSeconds": 3181.5705251693726,
+        "repetitions": 1,
+        "wasmSha256": {
+          "before": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+          "after": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a"
+        },
+        "complete": true,
+        "inputWarmups": 0,
+        "excludedExhaustiveSources": [
+          "1021390ad8f93123b09c38bd7aad170e1835b5dbff8e0e22fa0f7b3b8db73881",
+          "1f5c259f0f38253da79151a277f3e75be9cc5beb7b50b652e0f6a8c0ca14f052",
+          "265e3d68e5518cd1e704a92185d1a54c312d40a6bcbee53547861cd2d38d663a",
+          "480e5cb42b51fbda61cdd774dfe76c393216aa4aad8d9563a0233758416303ac",
+          "a7ee4285373ceaf3022d6889f39d3c3b8e00e312f6ccdbe21b26f27623975560",
+          "e1c8320746e54bcc0388936e4554a482867dbcdf791d487f19d15aa339465316",
+          "e52b09febbc55347f1e7315a27e998528f62a131e87b038e0de6b01ed01987c1"
+        ],
+        "scriptSelection": "all corpus with separately identified known exhaustive traps",
+        "timing": "Uninstrumented Node/WASM. Same-process old/new and map off/on, rotated order. GC and initial warmups outside timing. Complete code/map/diagnostic/search equality checked; external map validation outside timing."
+      }
+    },
+    "focus": {
+      "counts": {
+        "exhaustive": {
+          "pairs": 21,
+          "success": 21,
+          "failure": 0
+        },
+        "target8192": {
+          "pairs": 21,
+          "success": 21,
+          "failure": 0
+        }
+      },
+      "groups": [
+        {
+          "strategy": "exhaustive",
+          "population": "all-success",
+          "sources": 21,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 21,
+              "min": 0.44994500000007065,
+              "max": 11577.851270999992,
+              "mean": 1234.684313142842,
+              "median": 47.713595999986865,
+              "p10": 4.464732000022195,
+              "p90": 6491.244567000002,
+              "bottom10Mean": 2.887019666649015,
+              "top10Mean": 8305.732014333329
+            },
+            "beforeMappedMs": {
+              "n": 21,
+              "min": 0.583866000000171,
+              "max": 15276.982498999976,
+              "mean": 1583.290474428569,
+              "median": 86.72874899994349,
+              "p10": 10.962241000001086,
+              "p90": 7904.274835999997,
+              "bottom10Mean": 5.494762000016408,
+              "top10Mean": 10483.756792666658
+            },
+            "afterPlainMs": {
+              "n": 21,
+              "min": 0.4515949999999976,
+              "max": 11329.82880800002,
+              "mean": 1248.0949821904799,
+              "median": 42.2704200000735,
+              "p10": 4.509438999986742,
+              "p90": 6170.891388000004,
+              "bottom10Mean": 2.6482233333158547,
+              "top10Mean": 8394.276824000008
+            },
+            "afterMappedMs": {
+              "n": 21,
+              "min": 1.1193629999997936,
+              "max": 13265.427479000005,
+              "mean": 1366.8961244285751,
+              "median": 62.682507000048645,
+              "p10": 8.24252699999488,
+              "p90": 6619.989291000005,
+              "bottom10Mean": 4.5992709999924655,
+              "top10Mean": 9064.11059266667
+            },
+            "beforeExtraMs": {
+              "n": 21,
+              "min": 0.13392100000010032,
+              "max": 3699.131227999984,
+              "mean": 348.6061612857271,
+              "median": 36.40555700000006,
+              "p10": 2.4525119999889284,
+              "p90": 1413.0302689999953,
+              "bottom10Mean": 1.2594100000374056,
+              "top10Mean": 2178.0247783333275
+            },
+            "afterExtraMs": {
+              "n": 21,
+              "min": -375.1952680000031,
+              "max": 1935.5986709999852,
+              "mean": 118.80114223809518,
+              "median": 15.688640000065789,
+              "p10": 1.4522870000218973,
+              "p90": 147.77972899994347,
+              "bottom10Mean": -124.35840433332714,
+              "top10Mean": 844.1587676666435
+            },
+            "beforeRatio": {
+              "n": 21,
+              "min": 1.135521957420015,
+              "max": 6.567008093648666,
+              "mean": 1.9862299026433687,
+              "median": 1.424794914973074,
+              "p10": 1.207636102778085,
+              "p90": 4.350019751224362,
+              "bottom10Mean": 1.173138881513765,
+              "top10Mean": 5.513160294485792
+            },
+            "afterRatio": {
+              "n": 21,
+              "min": 0.9511598695514478,
+              "max": 5.5364744927388125,
+              "mean": 1.8678236965999475,
+              "median": 1.2718107239252303,
+              "p10": 1.0727768282996073,
+              "p90": 4.47924063682625,
+              "bottom10Mean": 1.027962985711953,
+              "top10Mean": 5.107283553765172
+            }
+          },
+          "beforeWeightedRatio": 1.282344367361697,
+          "afterWeightedRatio": 1.0951859785780025,
+          "extraTimeReduction": 0.6592110082049797,
+          "mappedTimeReduction": 0.13667381538317758,
+          "plainTimeChange": 0.010861617747051078,
+          "beforeAtMost1_2": 2,
+          "afterAtMost1_2": 8
+        },
+        {
+          "strategy": "exhaustive",
+          "population": "vehicle-success",
+          "sources": 15,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 15,
+              "min": 3.746381999924779,
+              "max": 322.573750999989,
+              "mean": 62.11335006664743,
+              "median": 32.31409199995687,
+              "p10": 5.240275600005408,
+              "p90": 120.69774580000256,
+              "bottom10Mean": 4.105556999973487,
+              "top10Mean": 225.4561059999944
+            },
+            "beforeMappedMs": {
+              "n": 15,
+              "min": 4.938179000047967,
+              "max": 487.8568250000244,
+              "mean": 92.2819769333336,
+              "median": 43.839249999960884,
+              "p10": 13.124062999995658,
+              "p90": 167.3103832000005,
+              "bottom10Mean": 7.950210000024526,
+              "top10Mean": 332.56567450001216
+            },
+            "afterPlainMs": {
+              "n": 15,
+              "min": 2.983635999960825,
+              "max": 344.52227899996797,
+              "mean": 63.34158186666039,
+              "median": 29.122280000010505,
+              "p10": 5.152436199982185,
+              "p90": 124.71335420000068,
+              "bottom10Mean": 3.7465374999737833,
+              "top10Mean": 240.68153999998412
+            },
+            "afterMappedMs": {
+              "n": 15,
+              "min": 4.435922999982722,
+              "max": 365.1771679999656,
+              "mean": 75.99532993333393,
+              "median": 50.79830799996853,
+              "p10": 11.515031799982536,
+              "p90": 144.5086128000027,
+              "bottom10Mean": 6.339224999988801,
+              "top10Mean": 260.08544499998266
+            },
+            "beforeExtraMs": {
+              "n": 15,
+              "min": 1.191797000123188,
+              "max": 165.2830740000354,
+              "mean": 30.16862686668616,
+              "median": 20.63801399996737,
+              "p10": 3.2232148000271996,
+              "p90": 46.61263739999794,
+              "bottom10Mean": 1.8221545000560582,
+              "top10Mean": 107.10956850001776
+            },
+            "afterExtraMs": {
+              "n": 15,
+              "min": 1.4522870000218973,
+              "max": 28.755093000014313,
+              "mean": 12.653748066673536,
+              "median": 8.119097000104375,
+              "p10": 2.7270401999994647,
+              "p90": 25.507334200002518,
+              "bottom10Mean": 1.7889410000207135,
+              "top10Mean": 28.21407000000727
+            },
+            "beforeRatio": {
+              "n": 15,
+              "min": 1.135521957420015,
+              "max": 5.622453038584348,
+              "mean": 1.7167561500166184,
+              "median": 1.4366020620860593,
+              "p10": 1.2330029326150256,
+              "p90": 1.7753726505670575,
+              "bottom10Mean": 1.1558902708816055,
+              "top10Mean": 3.7200738528694566
+            },
+            "afterRatio": {
+              "n": 15,
+              "min": 1.0599522592848039,
+              "max": 5.5364744927388125,
+              "mean": 1.5843637369318417,
+              "median": 1.2718107239252303,
+              "p10": 1.1031660239342023,
+              "p90": 1.787135217975786,
+              "bottom10Mean": 1.0717287410774816,
+              "top10Mean": 3.7619330181291026
+            }
+          },
+          "beforeWeightedRatio": 1.4857027810336316,
+          "afterWeightedRatio": 1.1997700040600627,
+          "extraTimeReduction": 0.5805659925262792,
+          "mappedTimeReduction": 0.1764878423851438,
+          "plainTimeChange": 0.01977403889333096,
+          "beforeAtMost1_2": 2,
+          "afterAtMost1_2": 5
+        },
+        {
+          "strategy": "exhaustive",
+          "population": "optimized-output",
+          "sources": 21,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 21,
+              "min": 0.44994500000007065,
+              "max": 11577.851270999992,
+              "mean": 1234.684313142842,
+              "median": 47.713595999986865,
+              "p10": 4.464732000022195,
+              "p90": 6491.244567000002,
+              "bottom10Mean": 2.887019666649015,
+              "top10Mean": 8305.732014333329
+            },
+            "beforeMappedMs": {
+              "n": 21,
+              "min": 0.583866000000171,
+              "max": 15276.982498999976,
+              "mean": 1583.290474428569,
+              "median": 86.72874899994349,
+              "p10": 10.962241000001086,
+              "p90": 7904.274835999997,
+              "bottom10Mean": 5.494762000016408,
+              "top10Mean": 10483.756792666658
+            },
+            "afterPlainMs": {
+              "n": 21,
+              "min": 0.4515949999999976,
+              "max": 11329.82880800002,
+              "mean": 1248.0949821904799,
+              "median": 42.2704200000735,
+              "p10": 4.509438999986742,
+              "p90": 6170.891388000004,
+              "bottom10Mean": 2.6482233333158547,
+              "top10Mean": 8394.276824000008
+            },
+            "afterMappedMs": {
+              "n": 21,
+              "min": 1.1193629999997936,
+              "max": 13265.427479000005,
+              "mean": 1366.8961244285751,
+              "median": 62.682507000048645,
+              "p10": 8.24252699999488,
+              "p90": 6619.989291000005,
+              "bottom10Mean": 4.5992709999924655,
+              "top10Mean": 9064.11059266667
+            },
+            "beforeExtraMs": {
+              "n": 21,
+              "min": 0.13392100000010032,
+              "max": 3699.131227999984,
+              "mean": 348.6061612857271,
+              "median": 36.40555700000006,
+              "p10": 2.4525119999889284,
+              "p90": 1413.0302689999953,
+              "bottom10Mean": 1.2594100000374056,
+              "top10Mean": 2178.0247783333275
+            },
+            "afterExtraMs": {
+              "n": 21,
+              "min": -375.1952680000031,
+              "max": 1935.5986709999852,
+              "mean": 118.80114223809518,
+              "median": 15.688640000065789,
+              "p10": 1.4522870000218973,
+              "p90": 147.77972899994347,
+              "bottom10Mean": -124.35840433332714,
+              "top10Mean": 844.1587676666435
+            },
+            "beforeRatio": {
+              "n": 21,
+              "min": 1.135521957420015,
+              "max": 6.567008093648666,
+              "mean": 1.9862299026433687,
+              "median": 1.424794914973074,
+              "p10": 1.207636102778085,
+              "p90": 4.350019751224362,
+              "bottom10Mean": 1.173138881513765,
+              "top10Mean": 5.513160294485792
+            },
+            "afterRatio": {
+              "n": 21,
+              "min": 0.9511598695514478,
+              "max": 5.5364744927388125,
+              "mean": 1.8678236965999475,
+              "median": 1.2718107239252303,
+              "p10": 1.0727768282996073,
+              "p90": 4.47924063682625,
+              "bottom10Mean": 1.027962985711953,
+              "top10Mean": 5.107283553765172
+            }
+          },
+          "beforeWeightedRatio": 1.282344367361697,
+          "afterWeightedRatio": 1.0951859785780025,
+          "extraTimeReduction": 0.6592110082049797,
+          "mappedTimeReduction": 0.13667381538317758,
+          "plainTimeChange": 0.010861617747051078,
+          "beforeAtMost1_2": 2,
+          "afterAtMost1_2": 8
+        },
+        {
+          "strategy": "target8192",
+          "population": "all-success",
+          "sources": 21,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 21,
+              "min": 0.19146599999999128,
+              "max": 11952.682894999976,
+              "mean": 1327.3717230476093,
+              "median": 1.0663089998997748,
+              "p10": 0.3701180000207387,
+              "p90": 7673.301900999999,
+              "bottom10Mean": 0.28853800000668645,
+              "top10Mean": 9260.793740666655
+            },
+            "beforeMappedMs": {
+              "n": 21,
+              "min": 0.36165600000003906,
+              "max": 16395.51682000002,
+              "mean": 1782.426738190478,
+              "median": 1.4155780000146478,
+              "p10": 0.61513599997852,
+              "p90": 9726.29420199999,
+              "bottom10Mean": 0.4619343333491391,
+              "top10Mean": 12347.606520666674
+            },
+            "afterPlainMs": {
+              "n": 21,
+              "min": 0.17855899999995017,
+              "max": 12311.43173000007,
+              "mean": 1294.9645138095227,
+              "median": 1.0124030000297353,
+              "p10": 0.3880879999778699,
+              "p90": 7160.297961000004,
+              "bottom10Mean": 0.2744036666335887,
+              "top10Mean": 9035.864877666696
+            },
+            "afterMappedMs": {
+              "n": 21,
+              "min": 0.3777780000000348,
+              "max": 13364.857109999983,
+              "mean": 1487.1106030476233,
+              "median": 1.7961920000379905,
+              "p10": 0.7145989999989979,
+              "p90": 8637.518854999973,
+              "bottom10Mean": 0.4999616666773363,
+              "top10Mean": 10277.442740999986
+            },
+            "beforeExtraMs": {
+              "n": 21,
+              "min": 0.10498100006952882,
+              "max": 4442.833925000043,
+              "mean": 455.0550151428689,
+              "median": 0.4535139999934472,
+              "p10": 0.24501799995778129,
+              "p90": 2052.992300999991,
+              "bottom10Mean": 0.17339633334245264,
+              "top10Mean": 3086.812780000017
+            },
+            "afterExtraMs": {
+              "n": 21,
+              "min": 0.15094400011003017,
+              "max": 1477.2208939999691,
+              "mean": 192.14608923810061,
+              "median": 0.7837890000082552,
+              "p10": 0.2514380000066012,
+              "p90": 1053.4253799999133,
+              "bottom10Mean": 0.20053366670557202,
+              "top10Mean": 1241.5778633332914
+            },
+            "beforeRatio": {
+              "n": 21,
+              "min": 1.2675500491818836,
+              "max": 4.834172993572498,
+              "mean": 1.8805283576973695,
+              "median": 1.4737440697102089,
+              "p10": 1.3327327239766233,
+              "p90": 3.015915604252785,
+              "bottom10Mean": 1.3092774307483654,
+              "top10Mean": 4.2134587998626385
+            },
+            "afterRatio": {
+              "n": 21,
+              "min": 1.0855648151329924,
+              "max": 5.472651691169798,
+              "mean": 2.0414958695170986,
+              "median": 1.5451056106744587,
+              "p10": 1.2063071819142093,
+              "p90": 4.880048637519925,
+              "bottom10Mean": 1.149416928830931,
+              "top10Mean": 5.112182681724546
+            }
+          },
+          "beforeWeightedRatio": 1.3428240991137546,
+          "afterWeightedRatio": 1.1483794244468104,
+          "extraTimeReduction": 0.5777519577983895,
+          "mappedTimeReduction": 0.16568206076321557,
+          "plainTimeChange": -0.024414569540234354,
+          "beforeAtMost1_2": 0,
+          "afterAtMost1_2": 2
+        },
+        {
+          "strategy": "target8192",
+          "population": "vehicle-success",
+          "sources": 15,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 15,
+              "min": 0.30402999999932945,
+              "max": 7.138842999993358,
+              "mean": 1.3412001333200048,
+              "median": 0.7560829999856651,
+              "p10": 0.4084431999945082,
+              "p90": 1.9083799999923938,
+              "bottom10Mean": 0.33707400001003407,
+              "top10Mean": 4.633063499990385
+            },
+            "beforeMappedMs": {
+              "n": 15,
+              "min": 0.40901100006885827,
+              "max": 21.53014799999073,
+              "mean": 2.699076800004635,
+              "median": 1.1114999999990687,
+              "p10": 0.7129791999934242,
+              "p90": 2.644200599985197,
+              "bottom10Mean": 0.5120735000236891,
+              "top10Mean": 12.182624499982921
+            },
+            "afterPlainMs": {
+              "n": 15,
+              "min": 0.2565639999229461,
+              "max": 4.397273000038695,
+              "mean": 1.166508199993829,
+              "median": 0.8820139999734238,
+              "p10": 0.41811719998368063,
+              "p90": 1.9316681999847787,
+              "bottom10Mean": 0.322325999950408,
+              "top10Mean": 3.282409000006737
+            },
+            "afterMappedMs": {
+              "n": 15,
+              "min": 0.40750800003297627,
+              "max": 21.91533899999922,
+              "mean": 2.80255966668016,
+              "median": 1.245363000081852,
+              "p10": 0.7177973999991082,
+              "p90": 2.7733594000084847,
+              "bottom10Mean": 0.5610535000159871,
+              "top10Mean": 12.444591000006767
+            },
+            "beforeExtraMs": {
+              "n": 15,
+              "min": 0.10498100006952882,
+              "max": 14.391304999997374,
+              "mean": 1.35787666668463,
+              "median": 0.3898150000022724,
+              "p10": 0.2705215999747452,
+              "p90": 0.7858956000054604,
+              "bottom10Mean": 0.17499950001365505,
+              "top10Mean": 7.601056500003324
+            },
+            "afterExtraMs": {
+              "n": 15,
+              "min": 0.15094400011003017,
+              "max": 17.518065999960527,
+              "mean": 1.636051466686331,
+              "median": 0.3680939999758266,
+              "p10": 0.25552440001629295,
+              "p90": 0.8593878000157928,
+              "bottom10Mean": 0.2011910000583157,
+              "top10Mean": 9.206423499980247
+            },
+            "beforeRatio": {
+              "n": 15,
+              "min": 1.3275495190865891,
+              "max": 3.015915604252785,
+              "mean": 1.59997028130568,
+              "median": 1.4737440697102089,
+              "p10": 1.3377588990240168,
+              "p90": 1.7828287221955132,
+              "bottom10Mean": 1.3301411215316064,
+              "top10Mean": 2.43056651468095
+            },
+            "afterRatio": {
+              "n": 15,
+              "min": 1.3404213283469957,
+              "max": 4.983847716483915,
+              "mean": 1.7969838727782455,
+              "median": 1.5451056106744587,
+              "p10": 1.3567186068557866,
+              "p90": 1.8957497294303236,
+              "bottom10Mean": 1.3434805896258952,
+              "top10Mean": 3.4510699818422834
+            }
+          },
+          "beforeWeightedRatio": 2.0124340379562478,
+          "afterWeightedRatio": 2.402520330928652,
+          "extraTimeReduction": -0.20486013702620598,
+          "mappedTimeReduction": -0.03834009713074771,
+          "plainTimeChange": -0.13025045926124668,
+          "beforeAtMost1_2": 0,
+          "afterAtMost1_2": 0
+        },
+        {
+          "strategy": "target8192",
+          "population": "source-checkpoint",
+          "sources": 15,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 15,
+              "min": 0.19146599999999128,
+              "max": 2.1272839999874122,
+              "mean": 0.8780416666537804,
+              "median": 0.7207799999996496,
+              "p10": 0.33046520000789315,
+              "p90": 1.5668311999963407,
+              "bottom10Mean": 0.24774799999966035,
+              "top10Mean": 1.8536539999936394
+            },
+            "beforeMappedMs": {
+              "n": 15,
+              "min": 0.36165600000003906,
+              "max": 2.8351009999751113,
+              "mean": 1.2878440000052553,
+              "median": 1.0773280000139493,
+              "p10": 0.49146100003272297,
+              "p90": 2.346130400000038,
+              "bottom10Mean": 0.38533350003444866,
+              "top10Mean": 2.5964754999877186
+            },
+            "afterPlainMs": {
+              "n": 15,
+              "min": 0.17855899999995017,
+              "max": 2.16754499997478,
+              "mean": 0.8852605999912461,
+              "median": 0.6908360000234097,
+              "p10": 0.30917359994491567,
+              "p90": 1.5691029999956299,
+              "bottom10Mean": 0.21756149996144813,
+              "top10Mean": 1.8726989999872785
+            },
+            "afterMappedMs": {
+              "n": 15,
+              "min": 0.3777780000000348,
+              "max": 2.9738430000143126,
+              "mean": 1.3667222666802141,
+              "median": 1.1876670000201557,
+              "p10": 0.530344400019385,
+              "p90": 2.425123999997959,
+              "bottom10Mean": 0.39264300001650554,
+              "top10Mean": 2.723238500007028
+            },
+            "beforeExtraMs": {
+              "n": 15,
+              "min": 0.10498100006952882,
+              "max": 0.8108080000092741,
+              "mean": 0.4098023333514751,
+              "median": 0.34926900011487305,
+              "p10": 0.20012119998314118,
+              "p90": 0.7322429999949236,
+              "bottom10Mean": 0.1375855000347883,
+              "top10Mean": 0.779667500004507
+            },
+            "afterExtraMs": {
+              "n": 15,
+              "min": 0.15094400011003017,
+              "max": 0.8947809999999663,
+              "mean": 0.48146166668896817,
+              "median": 0.35319900000467896,
+              "p10": 0.22010660000269128,
+              "p90": 0.8029312000260689,
+              "bottom10Mean": 0.1750815000550574,
+              "top10Mean": 0.8505395000197495
+            },
+            "beforeRatio": {
+              "n": 15,
+              "min": 1.3275495190865891,
+              "max": 1.8888784431703567,
+              "mean": 1.5248344705668515,
+              "median": 1.4737440697102089,
+              "p10": 1.3377588990240168,
+              "p90": 1.7828287221955132,
+              "bottom10Mean": 1.3301411215316064,
+              "top10Mean": 1.8670479341397361
+            },
+            "afterRatio": {
+              "n": 15,
+              "min": 1.3404213283469957,
+              "max": 2.115704053002874,
+              "mean": 1.6057742952128427,
+              "median": 1.5451056106744587,
+              "p10": 1.3567186068557866,
+              "p90": 1.8957497294303236,
+              "bottom10Mean": 1.3434805896258952,
+              "top10Mean": 2.016998150101763
+            }
+          },
+          "beforeWeightedRatio": 1.466723105423041,
+          "afterWeightedRatio": 1.5438643340658436,
+          "extraTimeReduction": -0.17486316574003746,
+          "mappedTimeReduction": -0.061248308548734975,
+          "plainTimeChange": 0.008221629578214706,
+          "beforeAtMost1_2": 0,
+          "afterAtMost1_2": 0
+        },
+        {
+          "strategy": "target8192",
+          "population": "optimized-output",
+          "sources": 6,
+          "metrics": {
+            "beforePlainMs": {
+              "n": 6,
+              "min": 7.138842999993358,
+              "max": 11952.682894999976,
+              "mean": 4643.605926499998,
+              "median": 3857.616573499996,
+              "p10": 18.661545500013744,
+              "p90": 10054.539660499984,
+              "bottom10Mean": 7.138842999993358,
+              "top10Mean": 11952.682894999976
+            },
+            "beforeMappedMs": {
+              "n": 6,
+              "min": 21.53014799999073,
+              "max": 16395.51682000002,
+              "mean": 6235.27397366666,
+              "median": 4964.4985495,
+              "p10": 83.06069149996618,
+              "p90": 13658.262680000014,
+              "bottom10Mean": 21.53014799999073,
+              "top10Mean": 16395.51682000002
+            },
+            "afterPlainMs": {
+              "n": 6,
+              "min": 4.397273000038695,
+              "max": 12311.43173000007,
+              "mean": 4530.162646833352,
+              "median": 3599.510169499961,
+              "p10": 17.32943500005058,
+              "p90": 9973.648336000042,
+              "bottom10Mean": 4.397273000038695,
+              "top10Mean": 12311.43173000007
+            },
+            "afterMappedMs": {
+              "n": 6,
+              "min": 21.91533899999922,
+              "max": 13364.857109999983,
+              "mean": 5201.470304999981,
+              "median": 4413.2429715000035,
+              "p10": 93.76325949994498,
+              "p90": 11097.404683999994,
+              "bottom10Mean": 21.91533899999922,
+              "top10Mean": 13364.857109999983
+            },
+            "beforeExtraMs": {
+              "n": 6,
+              "min": 14.391304999997374,
+              "max": 4442.833925000043,
+              "mean": 1591.6680471666623,
+              "median": 1106.8819760000042,
+              "p10": 64.39914599995244,
+              "p90": 3603.72301950003,
+              "bottom10Mean": 14.391304999997374,
+              "top10Mean": 4442.833925000043
+            },
+            "afterExtraMs": {
+              "n": 6,
+              "min": 17.518065999960527,
+              "max": 1477.2208939999691,
+              "mean": 671.3076581666297,
+              "median": 601.8350450000144,
+              "p10": 76.4338244998944,
+              "p90": 1335.6541049999805,
+              "bottom10Mean": 17.518065999960527,
+              "top10Mean": 1477.2208939999691
+            },
+            "beforeRatio": {
+              "n": 6,
+              "min": 1.2675500491818836,
+              "max": 4.834172993572498,
+              "mean": 2.769763075523665,
+              "median": 2.193808709576575,
+              "p10": 1.3032501193268544,
+              "p90": 4.812230397667565,
+              "bottom10Mean": 1.2675500491818836,
+              "top10Mean": 4.834172993572498
+            },
+            "afterRatio": {
+              "n": 6,
+              "min": 1.0855648151329924,
+              "max": 5.472651691169798,
+              "mean": 3.130799805277739,
+              "median": 3.043177909717067,
+              "p10": 1.1209718022892918,
+              "p90": 5.228249703826856,
+              "bottom10Mean": 1.0855648151329924,
+              "top10Mean": 5.472651691169798
+            }
+          },
+          "beforeWeightedRatio": 1.3427655301418617,
+          "afterWeightedRatio": 1.1481862154851952,
+          "extraTimeReduction": 0.5782363920909084,
+          "mappedTimeReduction": 0.1657992372159951,
+          "plainTimeChange": -0.02442999717509431,
+          "beforeAtMost1_2": 0,
+          "afterAtMost1_2": 2
+        }
+      ],
+      "measurement": {
+        "mode": "focus",
+        "sources": 21,
+        "totalSources": 21,
+        "resultPairs": 42,
+        "elapsedSeconds": 982.2900111675262,
+        "repetitions": 3,
+        "wasmSha256": {
+          "before": "6708ce91a5bdb96dd07c70f17a8dfc0e34b5ef47cf55fe500978797f10705e5a",
+          "after": "d443c34b010c4604b52509e750c3ad3686320b654722defd9b20224003b3513a"
+        },
+        "complete": true,
+        "inputWarmups": 1,
+        "excludedExhaustiveSources": [],
+        "scriptSelection": "deterministic quantiles plus high-overhead/slow outliers; not population weighted",
+        "timing": "Uninstrumented Node/WASM. Same-process old/new and map off/on, rotated order. GC and initial warmups outside timing. Complete code/map/diagnostic/search equality checked; external map validation outside timing."
+      }
+    }
+  }
+}

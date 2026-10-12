@@ -6,7 +6,7 @@
 
 ## インストール
 
-`npm install @stormcat-works/storm-lua-engine@0.3.0`
+`npm install @stormcat-works/storm-lua-engine@0.3.1`
 
 WASMと型定義は同梱済みです。利用時にRustやEmscriptenをインストールする必要はありません。
 
@@ -63,3 +63,8 @@ Vehicleのloadは別チャンクの追加実行です。resetは正常完了し�
 標準readerによる表示、UTF-8バイト範囲とエディタのUTF-16位置の変換、結果の保存、VMの生成行との接続はホストが担当します。SDK更新だけで既存エディタの画面やブレークポイントが自動的に元位置へ切り替わるわけではありません。実行環境が行しか返さない場合は列を推測せず候補を表示してください。
 
 マップには原文全文と固定化した設定を含みます。共有先を確認し、生成後のLuaに別の編集・minify・前置きを加えた古いmapは使わないでください。詳細な利用方法とNodeの実行例は[Source Mapガイド](https://docs.makkii.jp/storm-lua-engine/source-maps)にあります。
+
+
+## 0.3.1の追加ビルド操作
+
+`compiler.buildAddon(project, {environment, metadataTag})`はAddon専用の非短縮include-onceリンクです。Vehicle用の最適化やサイズ目標を使いません。通常の`build`と`buildLifeboat`にも`metadataTag`を指定でき、元ソースの位置とSource MapのsourcesContentを保持します。

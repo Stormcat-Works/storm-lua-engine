@@ -1,11 +1,13 @@
 //! Lua project linking, source maps and coarse compiler API.
 //! Compiler-only code: no VM, filesystem or scheduler is initialized.
 
+pub mod addon;
 pub mod lifeboat;
 mod lifeboat_ambient;
 #[doc(hidden)]
 pub mod link;
 mod lua_pattern;
+mod metadata;
 pub mod public_api;
 #[doc(hidden)]
 pub mod source_map;
@@ -23,3 +25,7 @@ pub mod optimized_source_map;
 mod map_composition;
 #[cfg(test)]
 mod optimized_map_tests;
+
+mod canonical_map;
+
+mod map_settings;

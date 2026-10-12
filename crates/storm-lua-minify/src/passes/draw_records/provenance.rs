@@ -22,7 +22,7 @@ pub(super) struct Trace {
 pub(super) fn known(source: &Ast, node: NodeId) -> bool {
     let mut complete = true;
     storm_lua_syntax::ast_utils::walk(source, node, &mut |n| {
-        complete &= source.nodes.origin(n).is_some();
+        complete &= source.nodes.has_origin(n);
     });
     complete
 }
@@ -45,9 +45,9 @@ pub(super) fn derive(
     target
         .nodes
         .derive_from(node, &source.nodes, inputs[0], reason);
-    for &input in &inputs[1..] {
-        target.nodes.relate_from(node, &source.nodes, input, reason);
-    }
+    target
+        .nodes
+        .relate_many_from(node, &source.nodes, &inputs[1..], reason);
 }
 
 impl Trace {
@@ -227,11 +227,12 @@ impl Trace {
                 }
             }
         }
-        for original in self.calls {
-            target
-                .nodes
-                .relate_from(definition, &source.nodes, original, "draw-record-decoder");
-        }
+        target.nodes.relate_many_from(
+            definition,
+            &source.nodes,
+            &self.calls,
+            "draw-record-decoder",
+        );
     }
 }
 

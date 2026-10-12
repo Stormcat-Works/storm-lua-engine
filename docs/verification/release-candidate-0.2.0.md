@@ -102,6 +102,6 @@ It was installed offline and the exact installed package executed successfully. 
 
 No push, remote CI, main/develop integration, tag, npm publish, GitHub Release, production Worker deployment, docs deployment or blog publication occurred. Remote Linux/Windows/macOS validation of the eventual public commit and final distribution-asset fixation remain release-stage work.
 
-Non-minified maps remain line-granular; mixed-source lines are best effort, and a mapped comment/blank line is not necessarily executable. No post-minify origin propagation, restored optimized variable state, new require mode, Addon compiler, real-game recalibration, complete collected-corpus readmission or speedup claim is included. Storm Min and Playground remain separate frontends. No new Phys Sim/Storm Code/Editor migration was performed as part of this review.
+Non-minified maps remain line-granular; mixed-source lines are best effort, and a mapped comment/blank line is not necessarily executable. No post-minify origin propagation, restored optimized variable state, new require mode, Addon compiler, real-game recalibration, complete collected-corpus readmission or speedup claim is included. Storm Min and Playground remain separate frontends. No new external consumer product migration was performed as part of this review.
 
 The local candidate is ready for the separately authorized publication steps in [release](../release.md), not already published.

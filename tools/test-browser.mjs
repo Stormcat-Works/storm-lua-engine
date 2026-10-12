@@ -1,9 +1,10 @@
 /** 実ブラウザ + モジュールWorkerの検証。一時HTTPサーバーは必ずクローズされます。 */
 import {createRequire} from 'node:module';
 import {createServer} from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {resolve,sep,extname} from 'node:path';
+import {resolve,sep,extname,join} from 'node:path';
 import assert from 'node:assert/strict';
 const require=createRequire(new URL('../packages/lua-engine/package.json',import.meta.url));
 const playwright=require('playwright');
@@ -22,6 +23,8 @@ const server=createServer(async(req,res)=>{
 await new Promise((ok,error)=>{server.once('error',error);server.listen(0,'127.0.0.1',ok);});
 const url=`http://127.0.0.1:${server.address().port}`;
 const results=[];
+const evidence=process.env.STORM_BROWSER_EVIDENCE_DIR??join(tmpdir(),'storm-lua-sdk-browser');
+await mkdir(evidence,{recursive:true});
 try{
   for(const name of ['chromium','firefox','webkit']){
     let browser;
@@ -30,6 +33,10 @@ try{
       const page=await browser.newPage();page.setDefaultTimeout(30000);
       const errors=[];page.on('pageerror',e=>errors.push(String(e)));
       await page.goto(url+'/examples/browser/');
+      assert.equal(await page.title(),'Lua engine — headless embedding example');
+      assert.equal(await page.locator('#run').count(),1);
+      // Capture the first painted viewport before testing user interaction.
+      await page.screenshot({path:join(evidence,`${name}-initial.png`)});
       await page.click('#run');await page.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('tick:'));
       const result=await page.evaluate(async()=>{
         const assert=(v,m)=>{if(!v)throw new Error(m);};
@@ -71,6 +78,7 @@ try{
         assert(workers.every(w=>w.pixels.length===256&&w.pixels[0]===25),'transferred pixels');
         return {rgbaCases:fixture.cases.length,luaCases:fixture.cases.length,workers:workers.length,debugger:true,canvasExample:true,...hostSmoke(engine,api)};
       });
+      await page.screenshot({path:join(evidence,`${name}-result.png`)});
       assert.deepEqual(errors,[]);results.push({browser:name,version:browser.version(),...result});
       console.log(JSON.stringify(results.at(-1)));
     }finally{await browser?.close();}

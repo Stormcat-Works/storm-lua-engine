@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 — 2026-10-12
+
+- コンパイルの解析・字句処理・候補評価・印字・Source Map生成で重複走査と割り当てを削減。Map有無で生成Lua、探索順、診断、Source Map v3とx_storm schema1の精度・理由を維持する。
+- 字句短縮mapの標準アンカーと名前の重複排除を修正し、由来未取得mapと多数の反復識別子を含むmapの生成・読み込みを維持する。
+- 入れ子の条件分岐を最適化する際、子の変換後に解析を更新し、NativeのpanicとWASM trapを修正。
+- 描画の1/256px格子の中間座標とdrawCircleFの境界を、Stormworks v1.15.23の撮影に基づく契約へ合わせる。レビュー済み5ケースを修正し、12ケースを追加して743件へ拡張。
+- AddonのGame環境からselectを除き、通常のLuaエラー後も保存状態とイベント配送を維持する。onTickは停止し、資源制限やホスト境界の失敗は引き続きVM再作成を要求する。
+- 非短縮のAddon include-onceビルドを`buildAddon`として追加。Vehicleの最適化・8192文字制限を適用せず、元ソース入りSource Mapを返す。
+- Vehicleの通常/LifeBoatビルドへ`metadataTag`を追加。明示した先頭metadata commentだけを除去し、元位置とsourcesContentを保つ。
+- Rustの`ApiProjectCompileOptions`に`metadata_tag`が追加された。構造体を全フィールド指定する利用者は`None`または既定値を指定する。内部candidateのバイナリ/JSON、JS glueとWASMは同じcompiler版で利用する。
+- 全入力でMapあり/なし1.2倍以内にする研究目標、map容量・追加キャッシュ等の改善はv0.3.2以降へ継続する。実測した条件と限界は公開候補の検証記録に示す。
+
 ## 0.3.0 — 2026-10-02
 
 ### 最適化後Source Mapと説明情報

@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-**v0.3.0をnpm・GitHub Release・Playgroundへ公開済み。** 最適化理由付きSource Map、SDK/Worker、Playgroundの双方向ソース検査を利用できます。 [公開状況](docs/verification/release-0.3.0.md)。[利用ガイド](https://docs.makkii.jp/storm-lua-engine/index)と[変更点](CHANGELOG.md)を参照してください。
+v0.3.1ではコンパイルとSource Map生成を高速化し、入れ子条件分岐の最適化・map読取り・Addon実行の不具合を修正しました。Addon専用の非短縮ビルドも利用できます。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.3.1.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)で確認できます。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,11 +14,11 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.3.0`。新しい版のJavaScript・型定義・WASMを一組で使用してください。
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.3.1`。新しい版のJavaScript・型定義・WASMを一組で使用してください。
 
 実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
-Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.3.0" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
+Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.3.1" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
 
 ## できること
 
@@ -30,7 +30,7 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 | IDE・テストハーネス | ブレークポイント、ステップ実行、変数・テーブル検査、watch、ログ配送 |
 | 自分のワールドとの接続 | `drawMap`の地図プロバイダー、同期サーバー関数、HTTP要求・返信キュー |
 
-**描画仕様と採用済みの入出力は、このリポジトリが所有します。** 固定した731ケースのRGBAを直接描画とLua実行の両方から検証し、下流アプリの実装へ逆依存しません。通常のビルド・実行にゲーム本体や外部フォントは不要です。[描画仕様](docs/specs/screen.md)
+**描画仕様と採用済みの入出力は、このリポジトリが所有します。** 固定した743ケースのRGBAを直接描画とLua実行の両方から検証し、下流アプリの実装へ逆依存しません。通常のビルド・実行にゲーム本体や外部フォントは不要です。[描画仕様](docs/specs/screen.md)
 
 ## 使うモードを選ぶ
 

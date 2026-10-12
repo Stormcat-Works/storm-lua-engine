@@ -92,6 +92,7 @@ fn project_build_and_minify_preserve_real_vehicle_io_and_two_draws() -> Result<(
     let linked = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             compile: options.clone(),
             minify: Some(false),
         },
@@ -99,6 +100,7 @@ fn project_build_and_minify_preserve_real_vehicle_io_and_two_draws() -> Result<(
     let optimized = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             compile: options,
             minify: Some(true),
         },
@@ -175,6 +177,7 @@ fn compilation_does_not_execute_top_level_lua() {
     let result = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             minify: Some(false),
             compile: ApiCompileOptions {
                 environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
@@ -251,6 +254,7 @@ fn captured_property_snapshot_is_not_resampled_on_later_callbacks() -> Result<()
     let result = build(
         &project,
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             compile: ApiCompileOptions {
                 numeric_mode: Some(ApiNumericMode::Exact),
                 ..Default::default()
@@ -311,6 +315,7 @@ fn target_checkpoints_and_full_search_preserve_real_io_and_draw_commands(
     let linked = build(
         &project(),
         &ApiProjectCompileOptions {
+            metadata_tag: None,
             minify: Some(false),
             ..Default::default()
         },
@@ -363,6 +368,51 @@ fn target_checkpoints_and_full_search_preserve_real_io_and_draw_commands(
                 optimized.replay(&mut b)?;
                 assert_eq!(a.pixels(), b.pixels());
             }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_conditional_call_lowering_preserves_all_branches() -> Result<(), Box<dyn Error>> {
+    let source = b"function onTick() if input.getBool(1) then if input.getBool(2) then output.setNumber(1,2) else output.setNumber(1,3) end else output.setNumber(1,4) end end";
+    let compiled = minify(
+        std::str::from_utf8(source)?,
+        &ApiCompileOptions {
+            source_map: Some(true),
+            ..Default::default()
+        },
+    );
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let code = compiled.code.ok_or("missing generated Lua")?;
+    storm_lua_build::optimized_source_map::validate(
+        &code,
+        compiled.map.as_deref().ok_or("missing map")?,
+    )?;
+    let mut original = Microcontroller::new(Default::default())?;
+    let mut optimized = Microcontroller::new(Default::default())?;
+    original.load(source, "=original")?;
+    optimized.load(code.as_bytes(), "=optimized")?;
+    for a in [false, true] {
+        for b in [false, true] {
+            let mut signal = CompositeSignal::default();
+            signal.booleans[0] = a;
+            signal.booleans[1] = b;
+            original.tick(&signal)?;
+            optimized.tick(&signal)?;
+            assert_signals(original.output(), optimized.output());
+            assert_eq!(
+                optimized.output().numbers[0],
+                if a {
+                    if b {
+                        2.0
+                    } else {
+                        3.0
+                    }
+                } else {
+                    4.0
+                }
+            );
         }
     }
     Ok(())

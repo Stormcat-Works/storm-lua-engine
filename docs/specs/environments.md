@@ -45,7 +45,7 @@
 
 `type(pcall)`、`pcall == nil`などの存在確認と、同名のユーザー定義ローカルは拒否しません。`_ENV`を再束縛できる入力では元のグローバル環境を仮定した可否判定を行わず、字句短縮の制約を通知します。未知の動的参照を成功保証として説明しません。
 
-Addonのコンパイラは未対応です。Addon実行、あるいはextendedの選択を根拠にVehicle用の解析・最適化を流用しません。
+公開0.2.0/0.2.1のAddonコンパイラは未対応です。この開発ツリーでは[buildAddon](addon-build.md)として非短縮のinclude-onceリンク・構文/環境検証を追加しています。Addon最適化や全server APIの解析は未提供です。Addon実行やextendedを根拠にVehicle用のphase検査・8192文字目標・最適化を流用しません。
 
 ## ホストbindings
 

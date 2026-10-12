@@ -48,4 +48,4 @@ Workspace crates, SDK package and Playground are version 0.2.0. CHANGELOG record
 
 ## Limits
 
-These checks do not constitute integration of Phys Sim or every LifeBoatAPI feature. Include semantics are distinct from standard Lua module-return require and the compiler's static project linker. No map API or clock API was added. The full collected real-world Lua corpus was not readmitted, and performance gains are not claimed. Publication and deployments remain separate authorized operations.
+These checks do not constitute integration of external consumer products or every LifeBoatAPI feature. Include semantics are distinct from standard Lua module-return require and the compiler's static project linker. No map API or clock API was added. The full collected real-world Lua corpus was not readmitted, and performance gains are not claimed. Publication and deployments remain separate authorized operations.

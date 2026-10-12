@@ -63,3 +63,18 @@ pub mod draw_sequences;
 pub mod adjacent_locals;
 
 mod origins;
+
+// These passes use linear statement liveness, not a control-flow graph. Do not
+// infer dominance across arbitrary jumps until that graph is represented.
+fn has_unstructured_flow(ast: &storm_lua_syntax::Ast, root: storm_lua_syntax::NodeId) -> bool {
+    let mut found = false;
+    storm_lua_syntax::ast_utils::walk(ast, root, &mut |node| {
+        found |= matches!(
+            ast.node(node),
+            storm_lua_syntax::Node::Goto(_) | storm_lua_syntax::Node::Label(_)
+        );
+    });
+    found
+}
+
+mod numeric_proof;

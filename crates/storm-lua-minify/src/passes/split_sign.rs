@@ -127,6 +127,19 @@ fn old_value_is_read(ast: &Ast, res: &Resolution, statements: &[NodeId], bid: Bi
     false
 }
 
+fn captured_in_nested_function(ast: &Ast, res: &Resolution, node: NodeId, bid: BindingId) -> bool {
+    let mut captured = false;
+    storm_lua_syntax::ast_utils::walk(ast, node, &mut |child| {
+        if matches!(ast.node(child), Node::Function(..)) {
+            storm_lua_syntax::ast_utils::walk(ast, child, &mut |reference| {
+                captured |= matches!(ast.node(reference), Node::Name(_))
+                    && node_bid(res, reference) == Some(bid);
+            });
+        }
+    });
+    captured
+}
+
 fn transform_blocks_node(
     target: &mut Ast,
     source: &Ast,
@@ -207,6 +220,13 @@ fn transform_block(
                     && negative_value_is_target
                     && ast_same(target, positive.value, negative.value)
                     && recomposes
+                    && res
+                        .binding(positive.target)
+                        .decl_node
+                        .is_some_and(|declaration| nested.contains(&declaration))
+                    && res.binding(positive.target).kind
+                        == storm_lua_analysis::resolver::BindingKind::Local
+                    && !captured_in_nested_function(source, res, block, positive.target)
                     && !old_value_is_read(target, res, &nested[index + 3..], positive.target)
                 {
                     *eliminated += 1;
@@ -259,10 +279,15 @@ fn expression_size(ast: &Ast, node: NodeId) -> usize {
     measure_expr(ast, node)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The recursive rewrite needs both effect and numeric proofs from the source AST"
+)]
 fn transform_squares_node(
     target: &mut Ast,
     source: &Ast,
     analyzer: &EffectAnalyzer<'_>,
+    proof: &super::numeric_proof::NumericProof<'_>,
     node: NodeId,
     aggressive: bool,
     abs_alias: Option<&str>,
@@ -271,7 +296,7 @@ fn transform_squares_node(
     let original = source.node(node).clone();
     let (mapped, changed) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
         transform_squares_node(
-            target, source, analyzer, child, aggressive, abs_alias, squared,
+            target, source, analyzer, proof, child, aggressive, abs_alias, squared,
         )
     });
     if changed {
@@ -304,7 +329,23 @@ fn transform_squares_node(
         return node;
     }
 
+    if !analyzer.is_movable(positive.value)
+        || positive
+            .factor
+            .is_some_and(|factor| !analyzer.is_movable(factor))
+    {
+        return node;
+    }
+    let Some(number) = proof.value(positive.value) else {
+        return node;
+    };
     let generated_start = target.nodes.len();
+    let value = if matches!(number, super::numeric_proof::Number::Integer(_)) {
+        let one = target.num("1.0".into());
+        target.bin("*", positive.value, one)
+    } else {
+        positive.value
+    };
     let abs_function = if let Some(alias) = abs_alias {
         target.name(alias)
     } else {
@@ -312,8 +353,8 @@ fn transform_squares_node(
         let key = target.str("\"abs\"".to_string());
         target.index(math, key, true)
     };
-    let abs_call = target.call(abs_function, vec![positive.value], None);
-    let mut replacement = target.bin("*", positive.value, abs_call);
+    let abs_call = target.call(abs_function, vec![value], None);
+    let mut replacement = target.bin("*", value, abs_call);
     if let Some(factor) = positive.factor {
         replacement = target.bin("*", replacement, factor);
     }
@@ -380,6 +421,7 @@ pub fn eliminate_split_sign_recomposition(
         &mut candidate,
         &after_blocks,
         &analyzer,
+        &super::numeric_proof::NumericProof::new(&after_blocks, &resolution, &analyzer, root),
         root,
         aggressive,
         abs_alias.as_deref(),

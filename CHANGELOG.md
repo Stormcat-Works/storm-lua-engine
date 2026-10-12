@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- minifyのLua byte文字列・hex/64bit数値・型/overflow・スコープ/capture・API差し替え・描画helperの意味保存を修正。深すぎる構文はNative/WASMとも診断を返す。未存在tableキー、色候補探索、format候補割り当ての無駄を削減。安全な適用条件への限定で文字数が増える場合がある。詳細は[実装検証](docs/verification/minify-review-fixes-20261013.md)。
+- Rust syntax utilityの`decode_lua_string`はバイナリ値を失わないよう`Option<String>`を返す。byte列は`source_tools::string_bytes`を使用する。
+
+- `metadataTag`・`minify:false`・`sourceMap:true`を同時指定した通常/LifeBoatビルドがexact-copy検査に失敗する不具合を修正。空白化した範囲をコピー区間から除き、元のsourcesContentと残存コードの位置を保持する。Addonと標準mapも同じ除去範囲を使用し、metadataだけのmoduleでも元snapshotを保持する。
+
 ## 0.3.1 — 2026-10-12
 
 - コンパイルの解析・字句処理・候補評価・印字・Source Map生成で重複走査と割り当てを削減。Map有無で生成Lua、探索順、診断、Source Map v3とx_storm schema1の精度・理由を維持する。

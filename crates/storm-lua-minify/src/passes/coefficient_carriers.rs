@@ -226,6 +226,8 @@ pub fn synthesize_coefficient_carriers(
     for _ in 0..max_rounds {
         let source = clone_ast(ast);
         let res = resolve(&source, root);
+        let analyzer = storm_lua_analysis::effects::EffectAnalyzer::new(&source, &res, root, true);
+        let proof = super::numeric_proof::NumericProof::new(&source, &res, &analyzer, root);
         let Node::Block(statements) = source.node(root) else {
             break;
         };
@@ -292,6 +294,9 @@ pub fn synthesize_coefficient_carriers(
                     .take(count)
                     .map(|occurrence| occurrence.node)
                     .collect::<HashSet<_>>();
+                if selected.iter().any(|node| proof.value(*node).is_none()) {
+                    continue;
+                }
                 let mut candidate = clone_ast(&source);
                 let carrier_symbol = candidate.strings.intern(&carrier);
                 for occurrence in &ranked {
@@ -368,6 +373,25 @@ pub fn synthesize_coefficient_carriers(
                     sign: group.constant_sign,
                     node: constant,
                 });
+                // A newly grouped integer coefficient must not wrap before
+                // multiplication by the original floating operand.
+                let Some(binding_value) = proof.value(source_binding) else {
+                    continue;
+                };
+                let Some(constant_value) = proof.value(group.constant) else {
+                    continue;
+                };
+                if group.binding_sign == 1 && group.constant_sign == 1 {
+                    if let (
+                        super::numeric_proof::Number::Integer(a),
+                        super::numeric_proof::Number::Integer(b),
+                    ) = (binding_value, constant_value)
+                    {
+                        if a.checked_mul(b).is_none() {
+                            continue;
+                        }
+                    }
+                }
                 let first_formula = candidate.nodes.len();
                 let Some(coefficient) = build_product(&mut candidate, &coefficient_factors) else {
                     continue;
@@ -399,6 +423,25 @@ pub fn synthesize_coefficient_carriers(
                 candidate
                     .nodes
                     .rewrite(root, Node::Block(top), "coefficient-storage-insertion");
+                let candidate_res = resolve(&candidate, root);
+                let candidate_analyzer = storm_lua_analysis::effects::EffectAnalyzer::new(
+                    &candidate,
+                    &candidate_res,
+                    root,
+                    true,
+                );
+                let candidate_proof = super::numeric_proof::NumericProof::new(
+                    &candidate,
+                    &candidate_res,
+                    &candidate_analyzer,
+                    root,
+                );
+                if selected
+                    .iter()
+                    .any(|node| candidate_proof.value(*node).is_none())
+                {
+                    continue;
+                }
                 let size = renamed_size(&candidate, root);
                 if size < baseline && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
                     best = Some((candidate, size));

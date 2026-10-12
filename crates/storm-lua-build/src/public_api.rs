@@ -932,7 +932,7 @@ pub fn compile_project(
         Ok(value) => value,
         Err(error) => return ApiProjectCompileResult::structural_failure(error),
     };
-    let structural = analyze_structure(&prepared);
+    let structural = analyze_structure(&prepared.project);
     if structural.has_blocking_error(project) {
         return ApiProjectCompileResult::structural_failure(structural.diagnostics);
     }
@@ -958,7 +958,10 @@ pub fn compile_project(
         diagnostics.extend(restrictions);
         return ApiProjectCompileResult::structural_failure(diagnostics);
     }
-    let mut link = crate::link::link_analyzed_project(&prepared, structural);
+    let mut link = crate::link::link_analyzed_project(&prepared.project, structural);
+    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
+        return ApiProjectCompileResult::compile_failure(error);
+    }
     link.diagnostics.extend(restrictions);
     #[expect(
         clippy::expect_used,
@@ -1033,22 +1036,9 @@ pub fn compile_project(
 fn prepare_metadata<'a>(
     project: &'a LuaProject,
     tag: Option<&str>,
-) -> Result<std::borrow::Cow<'a, LuaProject>, Vec<Diagnostic>> {
-    if tag.is_none() {
-        return Ok(std::borrow::Cow::Borrowed(project));
-    }
-    let mut prepared = project.clone();
-    for (name, source) in &mut prepared.modules {
-        match crate::metadata::metadata(source, tag) {
-            Ok(value) => *source = value,
-            Err(error) => {
-                return Err(vec![
-                    Diagnostic::error("build-metadata", error).with_module(name)
-                ])
-            }
-        }
-    }
-    Ok(std::borrow::Cow::Owned(prepared))
+) -> Result<crate::metadata::PreparedMetadata<'a>, Vec<Diagnostic>> {
+    crate::metadata::prepare(project, tag)
+        .map_err(|(name, error)| vec![Diagnostic::error("build-metadata", error).with_module(name)])
 }
 
 /// LB include-once build. Separate from the existing return-valued static linker.
@@ -1064,7 +1054,10 @@ pub fn compile_lifeboat(
         Ok(value) => value,
         Err(error) => return ApiProjectCompileResult::structural_failure(error),
     };
-    let link = crate::lifeboat::link_lifeboat(&prepared);
+    let mut link = crate::lifeboat::link_lifeboat(&prepared.project);
+    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
+        return ApiProjectCompileResult::compile_failure(error);
+    }
     let Some(source) = link.linked_source.as_deref() else {
         return ApiProjectCompileResult::structural_failure(link.diagnostics);
     };
@@ -1605,7 +1598,7 @@ mod shared_project_analysis_tests {
             Ok(value) => value,
             Err(error) => return ApiProjectCompileResult::structural_failure(error),
         };
-        let structural = analyze_structure(&prepared);
+        let structural = analyze_structure(&prepared.project);
         let written_globals = collect_written_global_names(structural.modules.values());
         for (key, analysis) in &structural.modules {
             link.diagnostics
@@ -1871,19 +1864,28 @@ mod shared_public_source_tests {
             ambient: BTreeMap::new(),
         };
         for minify in [false, true] {
-            let result = compile_lifeboat(
-                &p,
-                &ApiProjectCompileOptions {
-                    minify: Some(minify),
-                    metadata_tag: Some("studio-test".into()),
-                    ..Default::default()
-                },
-            );
-            assert!(result.ok, "{:?}", result.diagnostics);
-            let code = result.code.unwrap();
-            assert!(!code.contains("simulator"));
-            assert!(!code.contains("studio-test"));
-            assert!(!code.contains("missing-development-only"));
+            for source_map in [false, true] {
+                let result = compile_lifeboat(
+                    &p,
+                    &ApiProjectCompileOptions {
+                        minify: Some(minify),
+                        compile: ApiCompileOptions {
+                            source_map: Some(source_map),
+                            ..Default::default()
+                        },
+                        metadata_tag: Some("studio-test".into()),
+                    },
+                );
+                assert!(result.ok, "{:?}", result.diagnostics);
+                let code = result.code.unwrap();
+                assert!(!code.contains("simulator"));
+                assert!(!code.contains("studio-test"));
+                assert!(!code.contains("missing-development-only"));
+                if source_map {
+                    crate::optimized_source_map::validate(&code, result.map.as_ref().unwrap())
+                        .unwrap();
+                }
+            }
         }
     }
 

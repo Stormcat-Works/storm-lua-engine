@@ -78,7 +78,7 @@ fn resolve_key_literal_depth(
         return None;
     }
     match ast.node(node) {
-        Node::Str(raw) => Some(decode_lua_string(raw)),
+        Node::Str(raw) => decode_lua_string(raw),
         Node::Name(_) => {
             let bid = resolution.node_bid[node as usize]?;
             let binding = resolution.binding(bid);
@@ -252,7 +252,10 @@ pub fn scan_properties(source: &str) -> PropertyScanResult {
                 continue;
             };
             match ast.node(call_arg) {
-                Node::Str(raw) => push(kind, decode_lua_string(raw)),
+                Node::Str(raw) => match decode_lua_string(raw) {
+                    Some(key) => push(kind, key),
+                    None => dynamic_count += 1,
+                },
                 _ => dynamic_count += 1,
             }
         }

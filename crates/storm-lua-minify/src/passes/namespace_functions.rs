@@ -236,7 +236,10 @@ impl Uses<'_> {
                     self.bad.insert(owner);
                     return;
                 };
-                let key = decode_lua_string(raw);
+                let Some(key) = decode_lua_string(raw) else {
+                    self.bad.insert(owner);
+                    return;
+                };
                 if write {
                     let valid = store.is_some_and(|stmt| {
                         if !self.inventory.unconditional.contains(&stmt) {

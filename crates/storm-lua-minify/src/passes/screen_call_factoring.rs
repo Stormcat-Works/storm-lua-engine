@@ -106,7 +106,7 @@ fn make_candidate(source: &Ast, root: NodeId, groups: &[Group], chosen: &[usize]
     let mut candidate = clone_ast(source);
     let mut aliases = Vec::<SymbolId>::with_capacity(chosen.len());
     for index in 0..chosen.len() {
-        aliases.push(candidate.strings.intern(&format!("__sc{index}")));
+        aliases.push(candidate.strings.fresh(&format!("__sc{index}")));
     }
 
     for (alias_index, group_index) in chosen.iter().copied().enumerate() {
@@ -180,6 +180,32 @@ fn measured(ast: &Ast, root: NodeId) -> usize {
     measure_renamed_size(ast, root)
 }
 
+// With at most 32 bindings including every possible wrapper, all renamed
+// bindings fit the 53 single-character names even when fixed names occupy
+// part of that alphabet. Changing frequency/rank therefore cannot change any
+// identifier length. Multi-argument calls also retain their lexical boundary
+// characters when replaced by helper calls. In this domain the exact complete
+// renamed cost is additive, so measure each marginal cost just once.
+fn independent_subset_costs(
+    source: &Ast,
+    root: NodeId,
+    groups: &[Group],
+    eligible: &[usize],
+    baseline: usize,
+) -> Option<Vec<isize>> {
+    let all = make_candidate(source, root, groups, eligible);
+    if resolve(&all, root).bindings.len() > 32 || eligible.iter().any(|index| !matches!(source.node(groups[*index].call), Node::Call(_, args, None) if args.len() >= 2)) { return None; }
+    Some(
+        eligible
+            .iter()
+            .map(|index| {
+                measured(&make_candidate(source, root, groups, &[*index]), root) as isize
+                    - baseline as isize
+            })
+            .collect(),
+    )
+}
+
 pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
     let source = clone_ast(ast);
     // Subset trials exist only to compare generated size. Building provenance for
@@ -212,20 +238,46 @@ pub fn factor_repeated_screen_calls(ast: &mut Ast, root: NodeId) -> PassResult {
     let mut best_length = baseline;
 
     if eligible.len() <= 12 {
-        for mask in 1usize..(1usize << eligible.len()) {
-            let subset = eligible
-                .iter()
-                .enumerate()
-                .filter_map(|(bit, group)| ((mask & (1usize << bit)) != 0).then_some(*group))
-                .collect::<Vec<_>>();
-            let trial = make_candidate(trial_source, root, &groups, &subset);
-            let length = measured(&trial, root);
-            if length < best_length {
-                chosen = subset;
-                if !tracking {
-                    best_ast = Some(trial);
+        if let Some(costs) =
+            independent_subset_costs(trial_source, root, &groups, &eligible, baseline)
+        {
+            for mask in 1usize..(1usize << eligible.len()) {
+                let length = baseline as isize
+                    + costs
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(bit, cost)| ((mask & (1usize << bit)) != 0).then_some(*cost))
+                        .sum::<isize>();
+                if length < best_length as isize {
+                    chosen = eligible
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(bit, group)| {
+                            ((mask & (1usize << bit)) != 0).then_some(*group)
+                        })
+                        .collect();
+                    best_length = length as usize;
                 }
-                best_length = length;
+            }
+            if !tracking {
+                best_ast = Some(make_candidate(trial_source, root, &groups, &chosen));
+            }
+        } else {
+            for mask in 1usize..(1usize << eligible.len()) {
+                let subset = eligible
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(bit, group)| ((mask & (1usize << bit)) != 0).then_some(*group))
+                    .collect::<Vec<_>>();
+                let trial = make_candidate(trial_source, root, &groups, &subset);
+                let length = measured(&trial, root);
+                if length < best_length {
+                    chosen = subset;
+                    if !tracking {
+                        best_ast = Some(trial);
+                    }
+                    best_length = length;
+                }
             }
         }
     } else {
@@ -362,6 +414,52 @@ mod provenance_trial_tests {
                 origins.validate_for_code(&printed.code).unwrap();
                 assert_eq!(origins.unknown_bytes(), 0);
                 assert_eq!(printed.code, expected.code);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod review_cost_regression {
+    use super::*;
+    #[test]
+    fn additive_cost_matches_every_exhaustive_subset() {
+        for groups_count in [1, 3, 6, 9, 12] {
+            for prefix in ["", "local a,b,c=1,2,3 __sc0=42 __sc1=43 "] {
+                let mut source = prefix.to_owned();
+                source.push_str("function onDraw()");
+                for group in 0..groups_count {
+                    for _ in 0..5 {
+                        source.push_str(&format!(
+                            "screen.setColor({},{},{})",
+                            100 + group,
+                            180 + group,
+                            200 + group
+                        ));
+                    }
+                }
+                source.push_str("end");
+                let (ast, root) = storm_lua_syntax::parser::parse_source(&source).unwrap();
+                let groups = collect_groups(&ast, root);
+                let eligible = (0..groups.len()).collect::<Vec<_>>();
+                let baseline = measured(&ast, root);
+                let costs =
+                    independent_subset_costs(&ast, root, &groups, &eligible, baseline).unwrap();
+                for mask in 0usize..1 << groups_count {
+                    let subset = eligible
+                        .iter()
+                        .copied()
+                        .filter(|i| mask & (1 << i) != 0)
+                        .collect::<Vec<_>>();
+                    let predicted =
+                        baseline as isize + subset.iter().map(|i| costs[*i]).sum::<isize>();
+                    assert_eq!(
+                        predicted as usize,
+                        measured(&make_candidate(&ast, root, &groups, &subset), root),
+                        "groups={groups_count} mask={mask} prefix={prefix}"
+                    );
+                }
             }
         }
     }

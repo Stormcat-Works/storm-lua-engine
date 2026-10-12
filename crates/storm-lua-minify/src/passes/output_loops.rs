@@ -138,8 +138,14 @@ fn build_candidate(
         return None;
     }
 
-    let table_name = format!("__stormmin_output_values_{}", *sequence);
-    let index_name = format!("__stormmin_output_index_{}", *sequence);
+    let table_symbol = ast
+        .strings
+        .fresh(&format!("__stormmin_output_values_{}", *sequence));
+    let index_symbol = ast
+        .strings
+        .fresh(&format!("__stormmin_output_index_{}", *sequence));
+    let table_name = ast.strings.get(table_symbol).to_string();
+    let index_name = ast.strings.get(index_symbol).to_string();
     let table = ast.table(values.into_iter().map(TableField::Arr).collect());
     ast.nodes.mark_synthetic(table, "output-loop-value-storage");
     let target = ast.name(&table_name);

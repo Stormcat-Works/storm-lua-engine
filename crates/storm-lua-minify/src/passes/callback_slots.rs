@@ -178,14 +178,17 @@ fn candidate_for_count(
         .chain(selected_draw)
         .map(|entry| entry.bid)
         .collect::<HashSet<_>>();
+    let mut target = storm_lua_syntax::ast_utils::inherit_ast(source);
     let mut names = HashMap::new();
     for index in 0..count {
-        let name = format!("__stormmin_phase_function_{index}");
+        let symbol = target
+            .strings
+            .fresh(&format!("__stormmin_phase_function_{index}"));
+        let name = target.strings.get(symbol).to_string();
         names.insert(selected_tick[index].bid, name.clone());
         names.insert(selected_draw[index].bid, name);
     }
 
-    let mut target = storm_lua_syntax::ast_utils::inherit_ast(source);
     target.nodes = source.nodes.clone();
     let mut tick_entries = selected_tick.to_vec();
     let mut draw_entries = selected_draw.to_vec();
@@ -322,7 +325,8 @@ pub fn slot_callback_exclusive_functions(ast: &mut Ast, root: NodeId) -> PassRes
         };
     }
 
-    let definition_ids = definitions.keys().copied().collect::<HashSet<_>>();
+    let mut definition_ids = definitions.keys().copied().collect::<HashSet<_>>();
+    definition_ids.extend([tick_bid, draw_bid]);
     let mut calls = HashMap::new();
     let mut non_call_references = HashSet::new();
     for statement in statements {
@@ -362,12 +366,16 @@ pub fn slot_callback_exclusive_functions(ast: &mut Ast, root: NodeId) -> PassRes
             &mut non_call_references,
         );
     }
+    let mut other_reachable = reachable(0, &calls);
+    for escaped in &non_call_references {
+        other_reachable.extend(reachable(*escaped, &calls));
+    }
     let tick_reachable = reachable(tick_bid, &calls);
     let draw_reachable = reachable(draw_bid, &calls);
     let mut tick_only = Vec::new();
     let mut draw_only = Vec::new();
     for entry in definitions.values() {
-        if non_call_references.contains(&entry.bid) {
+        if non_call_references.contains(&entry.bid) || other_reachable.contains(&entry.bid) {
             continue;
         }
         let tick = tick_reachable.contains(&entry.bid);

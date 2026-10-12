@@ -150,7 +150,7 @@ pub fn string_bytes(raw: &str) -> Result<Vec<u8>, String> {
                 out.push(10);
             }
             b'z' => {
-                while i < end && b[i].is_ascii_whitespace() {
+                while i < end && matches!(b[i], b'\t'..=b'\r' | b' ') {
                     i += 1;
                 }
             }
@@ -179,9 +179,31 @@ pub fn string_bytes(raw: &str) -> Result<Vec<u8>, String> {
                     std::str::from_utf8(&b[begin..i]).map_err(|_| "invalid Unicode escape")?;
                 let code =
                     u32::from_str_radix(hex, 16).map_err(|_| "Unicode escape out of range")?;
-                let ch = char::from_u32(code).ok_or("Unicode escape out of range")?;
-                let mut buffer = [0; 4];
-                out.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+                if code > 0x10ffff {
+                    return Err("Unicode escape out of range".into());
+                }
+                // Lua 5.3 emits UTF-8 bytes for surrogate code points too.
+                if code < 0x80 {
+                    out.push(code as u8);
+                } else if code < 0x800 {
+                    out.extend_from_slice(&[
+                        (0xc0 | (code >> 6)) as u8,
+                        (0x80 | (code & 63)) as u8,
+                    ]);
+                } else if code < 0x10000 {
+                    out.extend_from_slice(&[
+                        (0xe0 | (code >> 12)) as u8,
+                        (0x80 | ((code >> 6) & 63)) as u8,
+                        (0x80 | (code & 63)) as u8,
+                    ]);
+                } else {
+                    out.extend_from_slice(&[
+                        (0xf0 | (code >> 18)) as u8,
+                        (0x80 | ((code >> 12) & 63)) as u8,
+                        (0x80 | ((code >> 6) & 63)) as u8,
+                        (0x80 | (code & 63)) as u8,
+                    ]);
+                }
                 i += 1;
             }
             b'0'..=b'9' => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import {TraceMap, originalPositionFor} from '@jridgewell/trace-mapping';
 import { loadCompiler } from '../../dist/compiler.js';
 
 const wasmBinary = new Uint8Array(await readFile(new URL('../../dist/compiler-wasm/compiler_bg.wasm', import.meta.url)));
@@ -167,4 +168,123 @@ test('nested conditional calls complete in both map modes', async () => {
   const mapped=compiler.minify(source,{sourceMap:true});
   assert.equal(plain.ok,true);assert.equal(mapped.ok,true);
   assert.equal(plain.code,mapped.code);compiler.validateSourceMap(mapped.code,mapped.map);
+});
+
+
+function metadataPosition(code, token) {
+  const prefix=code.slice(0,code.indexOf(token));
+  return {line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1};
+}
+function metadataSnapshots(map, project) {
+  for(const [name,source] of Object.entries(project.modules)) {
+    assert.equal(map.sourcesContent[map.sources.indexOf(name.replaceAll('.','/')+'.lua')],source);
+  }
+}
+function metadataToken(map, code, project, module, token) {
+  const actual=originalPositionFor(new TraceMap(map),metadataPosition(code,token));
+  assert.equal(actual.source,module.replaceAll('.','/')+'.lua');
+  const expected=metadataPosition(project.modules[module],token);
+  assert.deepEqual({line:actual.line,column:actual.column},expected);
+}
+
+test('non-minified metadata builds keep exact remaining positions and unmapped removed bytes', () => {
+  for(const source of [
+    '--[[stormmin-metadata\nprivate development note\n]]\nfunction onTick()output.setNumber(1,3)end',
+    ' \t--[==[stormmin-metadata\r\n雪😀\r\n]==]\r\nfunction onTick()output.setNumber(1,3)end',
+    '--[[stormmin-metadata\n雪😀]]function onTick()output.setNumber(1,3)end',
+  ]) {
+    const project={entry:'main',modules:{main:source}};
+    for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
+      for(const sourceMap of [false,true]) {
+        const result=build(project,{metadataTag:'stormmin-metadata',minify:false,sourceMap});
+        assert.equal(result.ok,true,JSON.stringify(result));
+        const map=JSON.parse(result.map);metadataSnapshots(map,project);
+        metadataToken(map,result.code,project,'main','output.setNumber');
+        const start=result.code.indexOf('function onTick')-Buffer.byteLength(source.slice(0,source.indexOf('function onTick')))+source.indexOf('--[');
+        const prefix=Buffer.from(result.code).subarray(0,start).toString('utf8');
+        const point={line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1};
+        assert.equal(originalPositionFor(new TraceMap(map),point).source,null);
+        if(sourceMap) {
+          const data=compiler.validateSourceMap(result.code,result.map);
+          const removed=data.mappings.find(m=>m.start<=start && start<m.end);
+          assert.equal(removed.copied,null);
+          assert.equal(data.origins[removed.origin].kind,'synthetic');
+        }
+      }
+    }
+  }
+});
+
+test('metadata maps retain each module snapshot including fully blanked bodies in both minify modes', () => {
+  const project={entry:'main',modules:{
+    main:'--[[stormmin-metadata\nmain note\n]]\nrequire("empty");require("lib");function onTick()output.setNumber(1,value())end',
+    lib:'--[=[stormmin-metadata\n雪😀]=]function value()return 3 end',
+    empty:'--[[stormmin-metadata\nempty note\n]]',
+  }};
+  for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
+    for(const minify of [false,true]) {
+      const plain=build(project,{metadataTag:'stormmin-metadata',minify,sourceMap:false});
+      const mapped=build(project,{metadataTag:'stormmin-metadata',minify,sourceMap:true});
+      assert.equal(plain.ok,true,JSON.stringify(plain));assert.equal(mapped.ok,true,JSON.stringify(mapped));
+      assert.equal(plain.code,mapped.code);
+      const map=JSON.parse(mapped.map);metadataSnapshots(map,project);compiler.validateSourceMap(mapped.code,mapped.map);
+      if(!minify) {
+        metadataSnapshots(JSON.parse(plain.map),project);
+        metadataToken(map,mapped.code,project,'main','output.setNumber');
+        metadataToken(map,mapped.code,project,'lib','function value');
+      }
+    }
+    const empty={entry:'main',modules:{main:project.modules.empty}};
+    for(const sourceMap of [false,true]) {
+      const result=build(empty,{metadataTag:'stormmin-metadata',minify:false,sourceMap});
+      assert.equal(result.ok,true,JSON.stringify(result));metadataSnapshots(JSON.parse(result.map),empty);
+      if(sourceMap) assert.ok(compiler.validateSourceMap(result.code,result.map).mappings.every(m=>m.copied===null));
+    }
+  }
+});
+
+test('Addon metadata map excludes blanked text and preserves following UTF16 columns', () => {
+  const project={entry:'main',modules:{main:'--[[stormmin-metadata\n雪😀]]function onCreate()g_savedata.value=3 end'}};
+  const result=compiler.buildAddon(project,{metadataTag:'stormmin-metadata'});
+  assert.equal(result.ok,true,JSON.stringify(result));const map=JSON.parse(result.map);metadataSnapshots(map,project);
+  metadataToken(map,result.code,project,'main','g_savedata');
+  const start=result.code.indexOf('function onCreate')-Buffer.byteLength(project.modules.main.slice(0,project.modules.main.indexOf('function onCreate')));
+  const prefix=Buffer.from(result.code).subarray(0,start).toString('utf8');
+  assert.equal(originalPositionFor(new TraceMap(map),{line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1}).source,null);
+  const empty={entry:'main',modules:{main:'--[[stormmin-metadata\nempty note\n]]'}};
+  const blank=compiler.buildAddon(empty,{metadataTag:'stormmin-metadata'});
+  assert.equal(blank.ok,true,JSON.stringify(blank));metadataSnapshots(JSON.parse(blank.map),empty);
+});
+
+
+test('metadata detailed maps validate identity targets and conservative minification', () => {
+  for(const source of [
+    '--[[stormmin-metadata\nnote\n]]\nfunction onTick()output.setNumber(1,3)end',
+    '--[[stormmin-metadata\n雪😀\n]]\nlocal _ENV=_ENV;function onTick()output.setNumber(1,3)end',
+  ]) {
+    for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
+      const project={entry:'main',modules:{main:source}};
+      const result=build(project,{metadataTag:'stormmin-metadata',minify:true,sourceMap:true,targetSize:8192});
+      assert.equal(result.ok,true,JSON.stringify(result));compiler.validateSourceMap(result.code,result.map);
+      metadataSnapshots(JSON.parse(result.map),project);
+    }
+  }
+});
+
+
+test('minify nesting and integer overflow return normally and preserve the compiler instance', () => {
+  for (const source of [
+    'return '+'('.repeat(6400)+'1'+')'.repeat(6400),
+    'return '+'not '.repeat(6400)+'1',
+    'return 1'+'+1'.repeat(6400),
+    'do '.repeat(6400)+'end '.repeat(6400),
+  ]) {
+    const result=compiler.minify(source);
+    assert.equal(result.ok,false);
+    assert.match(result.error,/nesting/);
+    assert.equal(compiler.minify('return 1+2').ok,true);
+  }
+  const result=compiler.minify('return 0x8000000000000000//-1',{sourceMap:true});
+  assert.equal(result.ok,true);
+  compiler.validateSourceMap(result.code,result.map);
 });

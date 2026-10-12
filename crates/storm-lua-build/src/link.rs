@@ -17,12 +17,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use storm_lua_analysis::structure::{analyze_structure, StructuralAnalysis};
 
+use std::ops::Range;
 use storm_lua_analysis::diagnostic::Diagnostic;
 use storm_lua_analysis::project::{AmbientMember, AmbientModuleKey, LuaProject, ModuleAnalysis};
 use storm_lua_analysis::require_scan::RequireSite;
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::lexer::Lexer;
 use storm_lua_syntax::numeric::quote_lua;
+use storm_lua_syntax::source_position::LineIndex;
 
 /// Verbatim generated/original byte correspondence, with a coarse line projection.
 /// `output_start_line..=output_end_line`（1-based, 両端含む）の各行 L は、
@@ -94,6 +96,78 @@ pub fn lookup_source_byte(
         .source_start_byte
         .checked_add(output_byte - range.output_start_byte)?;
     Some((range, source_byte))
+}
+
+// Edits blank bytes without moving offsets. Subtract their explicitly recorded
+// intervals from original slices; never infer provenance by comparing strings.
+pub(crate) fn exclude_blanked_ranges(
+    project: &LuaProject,
+    code: &str,
+    ranges: Vec<LinkedRange>,
+    mut removed: Vec<Range<usize>>,
+) -> Result<Vec<LinkedRange>, String> {
+    removed.sort_by_key(|span| span.start);
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for span in removed {
+        if let Some(last) = merged.last_mut() {
+            if span.start <= last.end {
+                last.end = last.end.max(span.end);
+                continue;
+            }
+        }
+        merged.push(span);
+    }
+    let output_index = LineIndex::new(code);
+    let mut originals = BTreeMap::new();
+    let mut retained = Vec::new();
+    for range in ranges {
+        if !originals.contains_key(&range.module) {
+            let text = crate::source_map::source_text(project, &range.module)
+                .ok_or("linked source snapshot missing")?;
+            originals.insert(range.module.clone(), LineIndex::new(text));
+        }
+        let original = &originals[&range.module];
+        let mut append = |start: usize, end: usize| -> Result<(), String> {
+            if start >= end {
+                return Ok(());
+            }
+            let source_start_byte = range.source_start_byte + start - range.output_start_byte;
+            let output_start_line = output_index
+                .byte_position(start)
+                .ok_or("linked start boundary invalid")?
+                .0;
+            let output_end_line = output_index
+                .byte_position(end)
+                .ok_or("linked end boundary invalid")?
+                .0
+                - u32::from(code.as_bytes()[end - 1] == b'\n');
+            let source_start_line = original
+                .byte_position(source_start_byte)
+                .ok_or("linked original boundary invalid")?
+                .0;
+            retained.push(LinkedRange {
+                output_start_line,
+                output_end_line,
+                module: range.module.clone(),
+                source_start_line,
+                output_start_byte: start,
+                output_end_byte: end,
+                source_start_byte,
+            });
+            Ok(())
+        };
+        let mut cursor = range.output_start_byte;
+        let first = merged.partition_point(|span| span.end <= cursor);
+        for span in &merged[first..] {
+            if span.start >= range.output_end_byte {
+                break;
+            }
+            append(cursor, span.start.min(range.output_end_byte))?;
+            cursor = cursor.max(span.end).min(range.output_end_byte);
+        }
+        append(cursor, range.output_end_byte)?;
+    }
+    Ok(retained)
 }
 
 /// モジュール本体の展開形（設計 §10 実装ノート3）。

@@ -80,6 +80,7 @@ fn collect_carriers(
         return Vec::new();
     };
     let mut carriers = Vec::new();
+    let proof = super::numeric_proof::NumericProof::new(ast, resolution, analyzer, root);
     for statement in statements {
         let entries = match ast.node(*statement) {
             Node::Local(_, expressions) => {
@@ -114,7 +115,8 @@ fn collect_carriers(
 
         for (bid, expression, expected_writes) in entries {
             let product = factors(ast, expression);
-            if product.len() < 2
+            if proof.value(expression).is_none()
+                || product.len() < 2
                 || resolution
                     .binding_write_counts
                     .get(bid as usize)
@@ -294,6 +296,7 @@ pub fn reuse_multiplicative_carriers_with_options(
         let resolution = resolve(&source, root);
         let analyzer = EffectAnalyzer::new(&source, &resolution, root, true);
         let carriers = collect_carriers(&source, root, &resolution, &analyzer);
+        let proof = super::numeric_proof::NumericProof::new(&source, &resolution, &analyzer, root);
         let mut opportunities = Vec::new();
         inspect(
             &source,
@@ -311,7 +314,23 @@ pub fn reuse_multiplicative_carriers_with_options(
         let mut best: Option<(Ast, usize)> = None;
         for opportunity in opportunities {
             considered += 1;
+            // Reassociation must neither introduce nor remove integer wrap in
+            // the original product or in the remaining-factor prefix.
+            if proof.value(opportunity.node).is_none() {
+                continue;
+            }
             let candidate = apply_opportunity(&source, &opportunity);
+            let candidate_res = resolve(&candidate, root);
+            let candidate_analyzer = EffectAnalyzer::new(&candidate, &candidate_res, root, true);
+            let candidate_proof = super::numeric_proof::NumericProof::new(
+                &candidate,
+                &candidate_res,
+                &candidate_analyzer,
+                root,
+            );
+            if candidate_proof.value(opportunity.node).is_none() {
+                continue;
+            }
             let size = measured(&candidate, root);
             if size < baseline && best.as_ref().is_none_or(|(_, best_size)| size < *best_size) {
                 best = Some((candidate, size));

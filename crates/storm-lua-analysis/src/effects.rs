@@ -185,15 +185,130 @@ impl<'a> BuiltinReference<'a> {
         }
     }
 }
-fn borrowed_member(raw: &str) -> std::borrow::Cow<'_, str> {
+fn borrowed_member(raw: &str) -> Option<std::borrow::Cow<'_, str>> {
     let bytes = raw.as_bytes();
     if bytes.len() >= 2 && matches!(bytes[0], b'\'' | b'"') && bytes.last() == Some(&bytes[0]) {
         let inner = &raw[1..raw.len() - 1];
         if !inner.as_bytes().contains(&b'\\') {
-            return std::borrow::Cow::Borrowed(inner);
+            return Some(std::borrow::Cow::Borrowed(inner));
         }
     }
-    std::borrow::Cow::Owned(decode_lua_string(raw))
+    decode_lua_string(raw).map(std::borrow::Cow::Owned)
+}
+
+/// API tables lose builtin identity when mutated through any known alias or
+/// passed as table values to unknown code. This is shared by effect analysis
+/// and the lightweight alias collector used by field renaming.
+pub fn mutated_builtin_roots(
+    ast: &Ast,
+    res: &Resolution,
+    root: NodeId,
+) -> std::collections::HashSet<String> {
+    use std::collections::{HashMap, HashSet};
+    fn base(ast: &Ast, res: &Resolution, mut node: NodeId) -> Option<BindingId> {
+        loop {
+            match ast.node(node) {
+                Node::Name(_) => return res.node_bid[node as usize],
+                Node::Paren(inner) | Node::Methodname(inner, _) | Node::Index(inner, _, _) => {
+                    node = *inner
+                }
+                _ => return None,
+            }
+        }
+    }
+    fn named_base(ast: &Ast, res: &Resolution, mut node: NodeId) -> Option<BindingId> {
+        while let Node::Paren(inner) = ast.node(node) {
+            node = *inner;
+        }
+        matches!(ast.node(node), Node::Name(_))
+            .then(|| res.node_bid[node as usize])
+            .flatten()
+    }
+    // Alias roots are a union: overwriting an alias later does not undo a
+    // mutation that could have happened through its previous value.
+    let mut aliases = HashMap::<BindingId, HashSet<String>>::new();
+    for (bid, binding) in res.bindings.iter().enumerate().skip(1) {
+        let name = ast.strings.get(binding.name);
+        if binding.kind == BindingKind::Global && api_roots(name) {
+            aliases.insert(bid as BindingId, HashSet::from([name.to_string()]));
+        }
+    }
+    let mut edges = Vec::new();
+    let mut mutated = Vec::new();
+    storm_lua_syntax::ast_utils::walk(ast, root, &mut |node| match ast.node(node) {
+        Node::Local(_, values) => {
+            for (bid, value) in res.node_bids[node as usize].iter().zip(values) {
+                if let Some(source) = base(ast, res, *value) {
+                    edges.push((*bid, source));
+                }
+            }
+        }
+        Node::Assign(targets, values) => {
+            for target in targets {
+                if matches!(ast.node(*target), Node::Index(..) | Node::Methodname(..)) {
+                    if let Some(bid) = base(ast, res, *target) {
+                        mutated.push(bid);
+                    }
+                }
+            }
+            for (target, value) in targets.iter().zip(values) {
+                if !matches!(ast.node(*target), Node::Name(_)) {
+                    if let Some(bid) = named_base(ast, res, *value) {
+                        mutated.push(bid);
+                    }
+                } else {
+                    if let (Some(to), Some(from)) =
+                        (base(ast, res, *target), base(ast, res, *value))
+                    {
+                        edges.push((to, from));
+                    }
+                }
+            }
+        }
+        Node::Funcstat(target, _) if !matches!(ast.node(*target), Node::Name(_)) => {
+            if let Some(bid) = base(ast, res, *target) {
+                mutated.push(bid);
+            }
+        }
+        Node::Call(_, args, _) | Node::Return(args) => {
+            for arg in args {
+                if let Some(bid) = named_base(ast, res, *arg) {
+                    mutated.push(bid);
+                }
+            }
+        }
+        Node::Table(fields) => {
+            for field in fields {
+                let value = match field {
+                    storm_lua_syntax::TableField::Arr(v)
+                    | storm_lua_syntax::TableField::Name(_, v)
+                    | storm_lua_syntax::TableField::KVar(_, v) => v,
+                };
+                if let Some(bid) = named_base(ast, res, *value) {
+                    mutated.push(bid);
+                }
+            }
+        }
+        _ => {}
+    });
+    loop {
+        let mut changed = false;
+        for (to, from) in &edges {
+            if let Some(roots) = aliases.get(from).cloned() {
+                let target = aliases.entry(*to).or_default();
+                let before = target.len();
+                target.extend(roots);
+                changed |= before != target.len();
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    mutated
+        .into_iter()
+        .flat_map(|bid| aliases.get(&bid).into_iter().flatten().cloned())
+        .collect()
 }
 
 pub struct EffectAnalyzer<'a> {
@@ -227,8 +342,9 @@ impl<'a> EffectAnalyzer<'a> {
         // A later write may invalidate a root first seen as a read; remove those
         // candidates before any alias propagation or effect query can use them.
         analyzer.seed_root_occurrences(root, &mut writes);
-        analyzer.api_alias_order.retain(|(bid, _)| {
-            if writes[*bid as usize] == 0 {
+        let mutated = mutated_builtin_roots(ast, res, root);
+        analyzer.api_alias_order.retain(|(bid, name)| {
+            if writes[*bid as usize] == 0 && !mutated.contains(name) {
                 true
             } else {
                 analyzer.api_alias_map[*bid as usize] = None;
@@ -274,9 +390,11 @@ impl<'a> EffectAnalyzer<'a> {
                                 {
                                     res.node_bid[*obj as usize]
                                         .and_then(|bid| analyzer.api_alias_get(bid))
-                                        .map(|base| BuiltinReference {
-                                            base: std::borrow::Cow::Borrowed(base),
-                                            member: Some(borrowed_member(raw)),
+                                        .and_then(|base| {
+                                            Some(BuiltinReference {
+                                                base: std::borrow::Cow::Borrowed(base),
+                                                member: Some(borrowed_member(raw)?),
+                                            })
                                         })
                                 } else {
                                     None
@@ -447,7 +565,7 @@ impl<'a> EffectAnalyzer<'a> {
                 let base = self.builtin_reference(*obj)?.into_text();
                 Some(BuiltinReference {
                     base,
-                    member: Some(borrowed_member(raw)),
+                    member: Some(borrowed_member(raw)?),
                 })
             }
             _ => None,
@@ -782,7 +900,7 @@ impl<'a> EffectAnalyzer<'a> {
     }
 }
 
-pub fn decode_lua_string(s: &str) -> String {
+pub fn decode_lua_string(s: &str) -> Option<String> {
     storm_lua_syntax::numeric::decode_lua_string(s)
 }
 
@@ -931,7 +1049,9 @@ impl<'a> EffectAnalyzer<'a> {
                                     } else {
                                         None
                                     };
-                                    base.map(|base| format!("{}.{}", base, decode_lua_string(ksid)))
+                                    base.and_then(|base| {
+                                        Some(format!("{}.{}", base, decode_lua_string(ksid)?))
+                                    })
                                 } else {
                                     None
                                 }
@@ -1192,9 +1312,12 @@ mod borrowed_builtin_tests {
             "'a\\\nb'",
             "unquoted",
         ] {
-            assert_eq!(borrowed_member(raw).as_ref(), decode_lua_string(raw));
+            assert_eq!(
+                borrowed_member(raw).as_deref(),
+                decode_lua_string(raw).as_deref()
+            );
         }
-        assert!(matches!(borrowed_member("'sin'"), Cow::Borrowed(_)));
+        assert!(matches!(borrowed_member("'sin'"), Some(Cow::Borrowed(_))));
     }
     #[test]
     fn borrowed_classification_matches_allocating_effects_with_aliases_shadowing_and_summaries() {

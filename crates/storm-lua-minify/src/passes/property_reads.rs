@@ -38,6 +38,21 @@ fn rewrite_node_inner(
         target.nodes.rewrite(node, mapped, "property-hardcoding");
     }
 
+    // A folded call in statement position has no value consumer. An empty
+    // do-block is valid Lua and retains a node for its removal attribution.
+    if let Node::Callstat(_) = original {
+        if matches!(target.node(node), Node::Callstat(child) if matches!(target.node(*child), Node::Num(_) | Node::Str(_) | Node::Bool(_)))
+        {
+            let empty = target.block(Vec::new());
+            target
+                .nodes
+                .mark_synthetic(empty, "discarded-property-value");
+            target
+                .nodes
+                .rewrite(node, Node::Do(empty), "discarded-property-value");
+        }
+        return node;
+    }
     let Node::Call(function, args, _) = original else {
         return node;
     };
@@ -50,7 +65,9 @@ fn rewrite_node_inner(
     let Some(builtin) = analyzer.resolve_builtin_reference(function) else {
         return node;
     };
-    let key = decode_lua_string(raw_key);
+    let Some(key) = decode_lua_string(raw_key) else {
+        return node;
+    };
     match builtin.as_str() {
         "property.getNumber" => {
             let Some(value) = config.numbers.as_ref().and_then(|values| values.get(&key)) else {

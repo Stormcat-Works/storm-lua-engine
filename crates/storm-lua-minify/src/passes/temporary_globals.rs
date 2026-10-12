@@ -457,7 +457,7 @@ pub fn pack_temporary_globals(ast: &mut Ast, root: NodeId) -> PassResult {
     let mut target = clone_ast(&source);
     let mut color_symbols = HashMap::new();
     for color in colors.values().copied().collect::<HashSet<_>>() {
-        color_symbols.insert(color, target.strings.intern(&format!("__gs{color}")));
+        color_symbols.insert(color, target.strings.fresh(&format!("__gs{color}")));
     }
     for node in 0..source.nodes.len() as NodeId {
         if matches!(source.node(node), Node::Name(_)) {

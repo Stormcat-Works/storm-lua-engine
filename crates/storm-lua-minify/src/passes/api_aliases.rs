@@ -171,12 +171,12 @@ fn apply_alias_set(
     analyzer: &EffectAnalyzer<'_>,
     selected: &[String],
 ) -> (Ast, NodeId) {
+    let mut target = storm_lua_syntax::ast_utils::inherit_ast(source);
     let mut alias_names = HashMap::new();
     for (index, key) in selected.iter().enumerate() {
-        alias_names.insert(key.clone(), format!("__api{index}"));
+        let symbol = target.strings.fresh(&format!("__api{index}"));
+        alias_names.insert(key.clone(), target.strings.get(symbol).to_string());
     }
-
-    let mut target = storm_lua_syntax::ast_utils::inherit_ast(source);
     let body_root = clone_rewriting(
         &mut target,
         source,

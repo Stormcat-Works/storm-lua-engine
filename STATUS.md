@@ -1,5 +1,13 @@
 # Current status
 
+## minifyレビュー修正（2026-10-13、未公開）
+
+レビューの35指摘と3性能課題を修正し、Native/WASM・Source Map・既存最適化の回帰を検証した。深い構文の診断境界と保守的な適用条件を追加している。文字数増加・性能が悪化する小ケースを含む測定結果は[単一の実装レポート](docs/verification/minify-review-fixes-20261013.md)に記録した。metadata修正とともに未公開。
+
+## metadataと詳細Source Mapの修正（2026-10-12、未公開）
+
+公開v0.3.1で`metadataTag`・`minify:false`・`sourceMap:true`を併用すると、空白化したmetadataに完全一致コピーを主張して失敗する。除去範囲を共通リンカーのコピー区間から除外し、通常/LifeBoat/Addon、標準/詳細mapを修正した。元snapshotと変更範囲外のbyte/UTF-16位置を保持する。[修正と検証](docs/verification/metadata-source-map-20261012.md)。公開済み0.3.1のタグ・配布物は固定されており、この修正は未公開。
+
 ## v0.3.1 公開版の準備と検証（2026-10-12）
 
 最新性能ブランチ、Addon実行/非短縮build/metadata、採用済み743件の描画契約を統合した。条件分岐のpanic/trap、部分/大量反復名mapとWASMオプション拒否を修正。Native871、SDK30、実WASM87、Playground/CLI38、3ブラウザ各16例、独立tarball consumerと基本ゲートが成功した。[候補の検証・性能・成果物](docs/verification/release-candidate-0.3.1.md)。

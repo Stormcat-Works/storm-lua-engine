@@ -82,7 +82,7 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
     }
 
     let mut bad: std::collections::HashSet<u32> = std::collections::HashSet::new();
-    let mut reads: std::collections::HashMap<u32, std::collections::HashSet<String>> =
+    let mut reads: std::collections::HashMap<u32, std::collections::HashSet<Vec<u8>>> =
         std::collections::HashMap::new();
     for &bid in roots.keys() {
         reads.insert(bid, std::collections::HashSet::new());
@@ -99,7 +99,7 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
         top: usize,
         roots: &std::collections::HashMap<u32, usize>,
         bad: &mut std::collections::HashSet<u32>,
-        reads: &mut std::collections::HashMap<u32, std::collections::HashSet<String>>,
+        reads: &mut std::collections::HashMap<u32, std::collections::HashSet<Vec<u8>>>,
     ) {
         let node = ast.node(id).clone();
         match &node {
@@ -116,7 +116,9 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
                                         clippy::unwrap_used,
                                         reason = "The reads map is initialized for every root binding before scanning; root membership was checked above"
                                     )]
-                                    reads.get_mut(&obid).unwrap().insert(decode_lua_string(s));
+                                    reads.get_mut(&obid).unwrap().insert(
+                                        storm_lua_syntax::source_tools::string_bytes(s).unwrap(),
+                                    );
                                 }
                             }
                             // key のみ訪問（parent=index, parentKey=key）
@@ -193,7 +195,10 @@ fn impl_remove(ast: &Ast, res: &Resolution, root: NodeId) -> (Ast, NodeId, usize
         let Node::Str(s) = ast.node(*key) else {
             return false;
         };
-        !reads.get(&bid).unwrap().contains(&decode_lua_string(s))
+        !reads
+            .get(&bid)
+            .unwrap()
+            .contains(&storm_lua_syntax::source_tools::string_bytes(s).unwrap())
     };
 
     // transform: block 文は assign=nil のフィールドを落とす
@@ -315,14 +320,31 @@ fn renamed_table_size(ast: &Ast, root: NodeId) -> usize {
 
 #[derive(Clone, Debug, PartialEq)]
 enum StaticTableKey {
-    Str(String),
+    Str(Vec<u8>),
+    Int(i64),
     Num(f64),
 }
 
 fn static_table_key(ast: &Ast, node: NodeId) -> Option<StaticTableKey> {
     match ast.node(node) {
-        Node::Str(value) => Some(StaticTableKey::Str(decode_lua_string(value))),
-        Node::Num(value) => Some(StaticTableKey::Num(num_val(value))),
+        Node::Str(value) => storm_lua_syntax::source_tools::string_bytes(value)
+            .ok()
+            .map(StaticTableKey::Str),
+        Node::Num(value) => {
+            if let Some(integer) = storm_lua_syntax::numeric::integer_literal_value(value) {
+                return Some(StaticTableKey::Int(integer));
+            }
+            let value = num_val(value);
+            if value.fract() == 0.0
+                && (-9223372036854775808.0..9223372036854775808.0).contains(&value)
+            {
+                Some(StaticTableKey::Int(value as i64))
+            } else if !value.is_nan() {
+                Some(StaticTableKey::Num(value))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
@@ -334,43 +356,55 @@ fn table_literal_pure(ast: &Ast, node: NodeId) -> bool {
         Node::Bin(_, left, right) => {
             table_literal_pure(ast, *left) && table_literal_pure(ast, *right)
         }
-        Node::Table(fields) => fields.iter().all(|field| match field {
-            TableField::Arr(value) | TableField::Name(_, value) => table_literal_pure(ast, *value),
-            TableField::KVar(key, value) => {
-                table_literal_pure(ast, *key) && table_literal_pure(ast, *value)
-            }
-        }),
+        Node::Table(fields) => {
+            // Lua flushes array entries with SETLIST in batches; textual order
+            // does not determine the winner of mixed array/index duplicates.
+            let array_len = fields
+                .iter()
+                .filter(|field| matches!(field, TableField::Arr(_)))
+                .count() as i64;
+            fields.iter().all(|field| match field {
+                TableField::Arr(value) | TableField::Name(_, value) => table_literal_pure(ast, *value),
+                TableField::KVar(key, value) => {
+                    !matches!(static_table_key(ast, *key), Some(StaticTableKey::Int(index)) if (1..=array_len).contains(&index))
+                        && table_literal_pure(ast, *key) && table_literal_pure(ast, *value)
+                }
+            })
+        }
         _ => false,
     }
 }
 
-fn table_get(ast: &mut Ast, table: NodeId, key: &StaticTableKey) -> NodeId {
-    let Node::Table(fields) = ast.node(table).clone() else {
-        return ast.push(Node::Nil);
+// Read-only lookup: an absent entry must not allocate a Nil in a scratch
+// arena (which would clone the entire COW AST on every miss).
+fn table_get(ast: &Ast, table: NodeId, key: &StaticTableKey) -> Option<NodeId> {
+    let Node::Table(fields) = ast.node(table) else {
+        return None;
     };
-    let mut array_index = 1f64;
+    let mut array_index = 1i64;
+    let mut found = None;
     for field in fields {
         match field {
             TableField::Arr(value) => {
-                if matches!(key, StaticTableKey::Num(value_key) if *value_key == array_index) {
-                    return value;
+                if matches!(key, StaticTableKey::Int(value_key) if *value_key == array_index) {
+                    found = Some(*value);
                 }
-                array_index += 1.0;
+                array_index += 1;
             }
             TableField::Name(name, value) => {
-                if matches!(key, StaticTableKey::Str(value_key) if value_key == ast.strings.get(name))
+                if matches!(key, StaticTableKey::Str(value_key) if value_key == ast.strings.get(*name).as_bytes())
                 {
-                    return value;
+                    found = Some(*value);
                 }
             }
             TableField::KVar(field_key, value) => {
-                if static_table_key(ast, field_key).as_ref() == Some(key) {
-                    return value;
+                if static_table_key(ast, *field_key).as_ref() == Some(key) {
+                    found = Some(*value);
                 }
             }
         }
     }
-    ast.push(Node::Nil)
+    found
 }
 
 fn static_index_chain(
@@ -415,36 +449,7 @@ fn index_root_info(ast: &Ast, res: &Resolution, mut node: NodeId) -> Option<(u32
 fn static_table_chain_value(ast: &Ast, table: NodeId, keys: &[StaticTableKey]) -> Option<NodeId> {
     let mut current = table;
     for key in keys {
-        let Node::Table(fields) = ast.node(current) else {
-            return None;
-        };
-        let mut array_index = 1.0;
-        let mut next = None;
-        for field in fields {
-            match field {
-                TableField::Arr(value) => {
-                    if matches!(key, StaticTableKey::Num(expected) if *expected == array_index) {
-                        next = Some(*value);
-                        break;
-                    }
-                    array_index += 1.0;
-                }
-                TableField::Name(name, value) => {
-                    if matches!(key, StaticTableKey::Str(expected) if expected == ast.strings.get(*name))
-                    {
-                        next = Some(*value);
-                        break;
-                    }
-                }
-                TableField::KVar(field_key, value) => {
-                    if static_table_key(ast, *field_key).as_ref() == Some(key) {
-                        next = Some(*value);
-                        break;
-                    }
-                }
-            }
-        }
-        current = next?;
+        current = table_get(ast, current, key)?;
     }
     Some(current)
 }
@@ -531,6 +536,38 @@ fn scan_immutable_table_uses(
                 );
             }
         }
+        Node::Funcstat(target, function) => {
+            scan_immutable_table_uses(
+                ast,
+                res,
+                *target,
+                TableScanCtx::AssignTarget,
+                top_statement,
+                init,
+                bad,
+            );
+            scan_immutable_table_uses(
+                ast,
+                res,
+                *function,
+                TableScanCtx::Other,
+                top_statement,
+                init,
+                bad,
+            );
+        }
+        Node::Methodname(object, _) => {
+            // function t:method() writes through t even though the member is a symbol.
+            scan_immutable_table_uses(
+                ast,
+                res,
+                *object,
+                TableScanCtx::AssignTarget,
+                top_statement,
+                init,
+                bad,
+            );
+        }
         Node::Index(object, key, _) => {
             scan_immutable_table_uses(
                 ast,
@@ -583,15 +620,19 @@ fn rewrite_static_table_chains(
         if candidates.contains(&bid) {
             let mut current = init[&bid].table;
             let mut ok = true;
-            for key in &keys {
+            for (index, key) in keys.iter().enumerate() {
                 if !matches!(source.node(current), Node::Table(_)) {
                     ok = false;
                     break;
                 }
-                let mut scratch = clone_table_ast(source);
-                current = table_get(&mut scratch, current, key);
-                if current as usize >= source.nodes.len() {
-                    // missing key -> nil allocated in scratch
+                if let Some(value) = table_get(source, current, key) {
+                    current = value;
+                } else {
+                    if index + 1 != keys.len() {
+                        // Missing intermediate values still raise an indexing error.
+                        ok = false;
+                        break;
+                    }
                     target
                         .nodes
                         .rewrite(node, Node::Nil, "immutable-table-missing-key");
@@ -723,9 +764,7 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
 
         let old_len = renamed_table_size(&source, root);
         let mut trial = clone_table_ast(&source);
-        for node in 0..source.nodes.len() as NodeId {
-            rewrite_static_table_chains(&mut trial, &source, &res, node, &candidates, &init);
-        }
+        rewrite_static_table_chains(&mut trial, &source, &res, root, &candidates, &init);
         let mut out = Vec::new();
         for statement in statements {
             match source.node(statement).clone() {
@@ -843,7 +882,10 @@ fn scan_closed_namespace(
             if let Some(bid) = bid_of(res, *object) {
                 if init.contains_key(&bid) {
                     if let Node::Str(value) = ast.node(*key) {
-                        let value = decode_lua_string(value);
+                        let Some(value) = decode_lua_string(value) else {
+                            bad.insert(bid);
+                            return;
+                        };
                         let list = fields.entry(bid).or_default();
                         if !list.contains(&value) {
                             list.push(value);
@@ -1084,7 +1126,7 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                 // Sanitization is not injective (`a-b` and `a_b`), so retain a
                 // deterministic ordinal to keep distinct members distinct.
                 let name = format!("__sf{bid}_{field_index}_{}", sanitize_field(field));
-                let symbol = trial.strings.intern(&name);
+                let symbol = trial.strings.fresh(&name);
                 field_names.insert((*bid, field.clone()), symbol);
             }
         }
@@ -1095,7 +1137,9 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                     if let (Some(bid), Node::Str(value)) =
                         (bid_of(&res, *object), source.node(*key))
                     {
-                        let field = decode_lua_string(value);
+                        let Some(field) = decode_lua_string(value) else {
+                            continue;
+                        };
                         if candidates.contains(&bid) {
                             if let Some(symbol) = field_names.get(&(bid, field)).copied() {
                                 trial.nodes.rewrite(
@@ -1137,10 +1181,9 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                     }
                     TableField::KVar(key, value) => {
                         if let Node::Str(raw) = source.node(*key) {
-                            values.insert(
-                                decode_lua_string(raw),
-                                (*value, field_index as u32, Some(*key)),
-                            );
+                            if let Some(key_text) = decode_lua_string(raw) {
+                                values.insert(key_text, (*value, field_index as u32, Some(*key)));
+                            }
                         }
                     }
                     TableField::Arr(_) => {}
@@ -1355,8 +1398,15 @@ fn inspect_table_parameter_uses(
     if *bad {
         return;
     }
-    // Nested function bodies are excluded just like the TS implementation.
     if matches!(ast.node(node), Node::Function(..)) {
+        // The scalar replacement is not captured by nested closures. Decline
+        // only parameters actually captured, including deeper descendants.
+        storm_lua_syntax::ast_utils::walk(ast, node, &mut |child| {
+            if matches!(ast.node(child), Node::Name(_)) && bid_of(res, child) == Some(parameter_bid)
+            {
+                *bad = true;
+            }
+        });
         return;
     }
     if let Node::Index(object, key, _) = ast.node(node) {
@@ -1512,7 +1562,7 @@ pub fn scalarize_table_literal_parameters(
                 for (index, key) in keys.iter().cloned().enumerate() {
                     let symbol = trial
                         .strings
-                        .intern(&format!("__tp{}_{}_{}", info.bid, parameter_index, index));
+                        .fresh(&format!("__tp{}_{}_{}", info.bid, parameter_index, index));
                     replacements.push((key, symbol));
                 }
                 // Rewrite every call of the candidate function.
@@ -1525,7 +1575,7 @@ pub fn scalarize_table_literal_parameters(
                     expanded.extend(arguments[..parameter_index].iter().copied());
                     for key in &keys {
                         let start = trial.nodes.len();
-                        let value = table_get(&mut trial, table, key);
+                        let value = table_get(&trial, table, key).unwrap_or_else(|| trial.nil());
                         if value as usize >= start {
                             trial.nodes.derive_from(
                                 value,

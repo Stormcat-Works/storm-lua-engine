@@ -50,6 +50,21 @@ impl Interner {
         Arc::make_mut(&mut self.strings).push(text);
         id
     }
+    /// Allocate a deterministic identifier absent from every existing scope.
+    /// Rewriters must retain this returned symbol for all uses of the new binding.
+    pub fn fresh(&mut self, preferred: &str) -> SymbolId {
+        if !self.contains(preferred) {
+            return self.intern(preferred);
+        }
+        let mut serial = 1usize;
+        loop {
+            let candidate = format!("{preferred}_{serial}");
+            if !self.contains(&candidate) {
+                return self.intern(&candidate);
+            }
+            serial += 1;
+        }
+    }
     /// Borrow an identifier. Panics if the ID does not belong to this registry.
     pub fn get(&self, id: SymbolId) -> &str {
         &self.strings[id.0 as usize]

@@ -94,6 +94,7 @@ impl ParserToken {
 
 /// Parser state and the arena it constructs from a source chunk.
 pub struct Parser {
+    recursion_depth: usize,
     source: Box<str>,
     ts: Vec<ParserToken>,
     i: usize,
@@ -149,6 +150,7 @@ impl Parser {
             }
         }
         Ok(Self {
+            recursion_depth: 0,
             source: source.into(),
             ts,
             i: 0,
@@ -276,6 +278,18 @@ impl Parser {
     }
 
     fn block(&mut self, stops: &[&str]) -> Result<NodeId, ParseError> {
+        if self.recursion_depth >= 128 {
+            return Err(ParseError(
+                "source nesting exceeds parser limit (128)".into(),
+            ));
+        }
+        self.recursion_depth += 1;
+        let result = self.block_inner(stops);
+        self.recursion_depth -= 1;
+        result
+    }
+
+    fn block_inner(&mut self, stops: &[&str]) -> Result<NodeId, ParseError> {
         let (line, col) = (self.cur().line, self.cur().col);
         let start = self.cur().p;
         let mut ss = Vec::new();
@@ -559,6 +573,18 @@ impl Parser {
     }
 
     fn expr_min(&mut self, minp: u32) -> Result<NodeId, ParseError> {
+        if self.recursion_depth >= 128 {
+            return Err(ParseError(
+                "source nesting exceeds parser limit (128)".into(),
+            ));
+        }
+        self.recursion_depth += 1;
+        let result = self.expr_min_inner(minp);
+        self.recursion_depth -= 1;
+        result
+    }
+
+    fn expr_min_inner(&mut self, minp: u32) -> Result<NodeId, ParseError> {
         let tok = self.ts[self.i];
         let mut left: NodeId;
         if is_unary(tok.text(&self.source)) {
@@ -737,6 +763,17 @@ impl Parser {
         let root = self.block(&[])?;
         if self.cur_k() != TokenKind::Eof {
             return Err(ParseError("trailing input".to_string()));
+        }
+        let mut pending = vec![(root, 0usize)];
+        while let Some((node, depth)) = pending.pop() {
+            if depth > 256 {
+                return Err(ParseError(
+                    "syntax tree nesting exceeds parser limit (256)".into(),
+                ));
+            }
+            crate::ast_utils::for_each_child(&self.ast, node, &mut |child| {
+                pending.push((child, depth + 1))
+            });
         }
         Ok(root)
     }

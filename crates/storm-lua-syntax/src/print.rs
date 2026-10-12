@@ -151,6 +151,9 @@ pub fn render_num(raw: &str) -> Cow<'_, str> {
             Cow::Borrowed(raw)
         };
     }
+    if !crate::numeric::num_val(raw).is_finite() {
+        return Cow::Borrowed(raw);
+    }
     let mut normalized = normalize_num_literal(raw);
     if integer_literal_value(&normalized).is_some() {
         normalized.push_str(".0");
@@ -430,7 +433,19 @@ impl<'a> Printer<'a> {
         a
     }
     fn expr(&mut self, id: NodeId, parent: u8) -> Fragment<'a> {
-        let result = self.expr_inner(id, parent);
+        let result = if parent == 15
+            && !matches!(
+                self.ast.node(id),
+                Node::Name(_) | Node::Paren(_) | Node::Index(..) | Node::Call(..)
+            ) {
+            fragments!(
+                Fragment::literal("("),
+                self.expr_inner(id, 0),
+                Fragment::literal(")")
+            )
+        } else {
+            self.expr_inner(id, parent)
+        };
         self.record(result, id, None)
     }
     #[expect(
@@ -444,7 +459,17 @@ impl<'a> Printer<'a> {
         let prec: u8;
         match node {
             Node::Name(sym) => return self.name(*sym, id, NameSite::Reference),
-            Node::Num(v) => return render_num(v).into(),
+            Node::Num(v) => {
+                let text = render_num(v);
+                if (text.contains('/') && parent > 11) || (text.starts_with('-') && parent >= 14) {
+                    return fragments!(
+                        Fragment::literal("("),
+                        Fragment::from(text),
+                        Fragment::literal(")")
+                    );
+                }
+                return text.into();
+            }
             Node::Str(v) => return crate::numeric::render_quoted(v).into(),
             Node::Nil => return Fragment::literal("nil"),
             Node::Bool(b) => {
@@ -484,11 +509,16 @@ impl<'a> Printer<'a> {
                         )
                     }
                 });
-                return fragments!(
+                let table = fragments!(
                     Fragment::literal("{"),
                     Fragment::join(parts, ","),
                     Fragment::literal("}")
                 );
+                return if parent == 15 {
+                    fragments!(Fragment::literal("("), table, Fragment::literal(")"))
+                } else {
+                    table
+                };
             }
             Node::Index(obj, key, _) => {
                 let obj_s = self.expr(*obj, 15);
@@ -505,7 +535,14 @@ impl<'a> Printer<'a> {
                     Fragment::literal("]")
                 );
             }
-            Node::Function(..) => return self.function(id, true),
+            Node::Function(..) => {
+                let function = self.function(id, true);
+                return if parent == 15 {
+                    fragments!(Fragment::literal("("), function, Fragment::literal(")"))
+                } else {
+                    function
+                };
+            }
             Node::Un(op, e) => {
                 prec = 12;
                 s = join_lex([
@@ -885,7 +922,7 @@ pub(crate) fn plain_name_from_string_literal(raw: &str) -> Option<Cow<'_, str>> 
             return is_plain_name(inner).then_some(Cow::Borrowed(inner));
         }
     }
-    let decoded = decode_lua_string(raw);
+    let decoded = decode_lua_string(raw)?;
     is_plain_name(&decoded).then_some(Cow::Owned(decoded))
 }
 

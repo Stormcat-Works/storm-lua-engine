@@ -176,6 +176,7 @@ fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// Stateful UTF-8 lexer. It borrows source and does not read files.
 pub struct Lexer<'a> {
+    newline_pending: Option<u8>,
     source: &'a str,
     s: &'a [u8],
     i: usize,
@@ -190,6 +191,7 @@ impl<'a> Lexer<'a> {
     /// Create a lexer over UTF-8 source without capturing comments.
     pub fn new(source: &'a str) -> Self {
         Self {
+            newline_pending: None,
             source,
             s: source.as_bytes(),
             i: 0,
@@ -235,10 +237,20 @@ impl<'a> Lexer<'a> {
             if self.i >= self.s.len() {
                 return;
             }
-            if self.s[self.i] == b'\n' {
-                self.line += 1;
+            let byte = self.s[self.i];
+            if matches!(byte, b'\n' | b'\r') {
+                if self
+                    .newline_pending
+                    .is_some_and(|previous| previous != byte)
+                {
+                    self.newline_pending = None;
+                } else {
+                    self.line += 1;
+                    self.newline_pending = Some(byte);
+                }
                 self.col = 1;
             } else {
+                self.newline_pending = None;
                 self.col += 1;
             }
             self.i += 1;
@@ -296,7 +308,7 @@ impl<'a> Lexer<'a> {
                 let start = self.i;
                 let line = self.line;
                 let col = self.col;
-                while self.i < self.s.len() && self.s[self.i] != b'\n' {
+                while self.i < self.s.len() && !matches!(self.s[self.i], b'\n' | b'\r') {
                     self.adv(1);
                 }
                 if let Some(comments) = &mut self.source_comments {
@@ -359,6 +371,7 @@ impl<'a> Lexer<'a> {
         if let Some(level) = self.long_bracket(self.i) {
             self.read_long(level)?;
             let v = &self.source[p..self.i];
+            crate::source_tools::string_bytes(v).map_err(LexError)?;
             return Ok(BorrowedToken {
                 k: TokenKind::Str,
                 v,
@@ -388,6 +401,7 @@ impl<'a> Lexer<'a> {
                 return Err(LexError(format!("unclosed string at {}:{}", line, col)));
             }
             let v = &self.source[p..self.i];
+            crate::source_tools::string_bytes(v).map_err(LexError)?;
             return Ok(BorrowedToken {
                 k: TokenKind::Str,
                 v,

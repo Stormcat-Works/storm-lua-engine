@@ -20,9 +20,16 @@ fn js_decimal(s: &str) -> Option<f64> {
 /// Lua 数値リテラル → f64。
 /// 16 進（0x…p…）は手動パース、それ以外は JS Number 相当（Rust f64 パース）。
 pub fn num_val(s: &str) -> f64 {
-    let bytes = s.as_bytes();
-    if bytes.len() >= 2 && bytes[0] == b'0' && (bytes[1] == b'x' || bytes[1] == b'X') {
-        return hex_num_val(&s[2..]);
+    if let Some(integer) = integer_literal_value(s) {
+        return integer as f64;
+    }
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    if let Some(rest) = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    {
+        let value = hex_num_val(rest);
+        return if s.starts_with('-') { -value } else { value };
     }
     s.parse::<f64>().unwrap_or(f64::NAN)
 }
@@ -39,13 +46,17 @@ pub fn integer_literal_value(s: &str) -> Option<i64> {
         .strip_prefix("0x")
         .or_else(|| unsigned.strip_prefix("0X"))
     {
-        // from_str_radix validates every remaining digit and overflow. Checking
-        // the first byte separately rejects its optional '+' spelling, which
-        // this Lua-literal API has never accepted after the 0x prefix.
-        if !hex.as_bytes().first().is_some_and(u8::is_ascii_hexdigit) {
+        // Lua accumulates hexadecimal integers modulo 2^64, including
+        // literals with more than sixteen digits.
+        if hex.is_empty() {
             return None;
         }
-        let value = u64::from_str_radix(hex, 16).ok()?;
+        let mut value = 0u64;
+        for digit in hex.bytes() {
+            value = value
+                .wrapping_mul(16)
+                .wrapping_add(hex_digit(digit)? as u64);
+        }
         let value = value as i64;
         return negative.then_some(value.wrapping_neg()).or(Some(value));
     }
@@ -148,69 +159,97 @@ fn hex_digit(c: u8) -> Option<u32> {
     }
 }
 
-/// `0[xX](hex.maybe)[pP]exp` の本体部分（0x 以降）を評価する。
-/// TS の numVal は `/^0[xX]([0-9a-fA-F]*\.?[0-9a-fA-F]+)(?:[pP]([+-]?\d+))?$/`
-/// で完全一致を検証し、不一致なら NaN を返す。ここもそれと同一の境界で NaN を返す
-/// （例: 小数指数 `0x1p1.5`、末尾ドット `0x1.`、hex 以外の文字は NaN）。
-#[expect(
-    clippy::expect_used,
-    reason = "The exponent is checked for nonempty ASCII decimal digits immediately before parsing; this is an internal invariant, not input recovery"
-)]
+/// Parse a hex float with a single ties-to-even rounding step. Keeping the
+/// leading 64 significand bits and a sticky tail avoids intermediate floating
+/// overflow, underflow and rounding, including at the subnormal boundary.
 fn hex_num_val(rest: &str) -> f64 {
-    let (mant, exp_opt) = match rest.find(['p', 'P']) {
+    let (mantissa, exponent) = match rest.find(['p', 'P']) {
         Some(i) => (&rest[..i], Some(&rest[i + 1..])),
         None => (rest, None),
     };
-    // マンティサ部分を 1 パスで評価。'.' は高々 1 個、全桁が hex、末尾に hex 桁が必須。
-    let mut v: f64 = 0.0;
-    let mut seendot = false;
-    let mut any_hex = false;
-    let mut n_frac = 0u32;
-    for c in mant.bytes() {
-        match c {
-            b'.' => {
-                if seendot {
-                    return f64::NAN; // '.' が 2 つ以上（正規表現に一致しない）
-                }
-                seendot = true;
-            }
-            _ => match hex_digit(c) {
-                Some(d) => {
-                    any_hex = true;
-                    if seendot {
-                        n_frac += 1;
-                        v += d as f64 / 16.0_f64.powi(n_frac as i32);
-                    } else {
-                        v = v * 16.0 + d as f64;
-                    }
-                }
-                None => return f64::NAN, // hex 以外の文字（TS は正規表現で NaN）
-            },
+    let mut exponent_value = 0i64;
+    if let Some(exponent) = exponent {
+        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
+            return f64::NAN;
+        }
+        for digit in digits.bytes() {
+            exponent_value = exponent_value
+                .saturating_mul(10)
+                .saturating_add((digit - b'0') as i64);
+        }
+        if exponent.starts_with('-') {
+            exponent_value = -exponent_value;
         }
     }
-    if !any_hex || (seendot && n_frac == 0) {
-        return f64::NAN; // 1 桁もない / 末尾ドット（正規表現に一致しない）
-    }
-    // 指数: [+-]?\d+（整数のみ。小数は TS で NaN）。
-    let e: f64 = match exp_opt {
-        None => 0.0,
-        Some(s) => {
-            let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
-            if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
-                return f64::NAN;
+    let mut dot = false;
+    let mut digits = false;
+    let mut fractional_digits = 0i64;
+    let mut bit_count = 0i64;
+    let mut head = 0u64;
+    let mut sticky = false;
+    for c in mantissa.bytes() {
+        if c == b'.' && !dot {
+            dot = true;
+            continue;
+        }
+        let Some(digit) = hex_digit(c) else {
+            return f64::NAN;
+        };
+        digits = true;
+        if dot {
+            fractional_digits += 1;
+        }
+        for bit in (0..4).rev() {
+            let set = (digit >> bit) & 1;
+            if bit_count == 0 && set == 0 {
+                continue;
             }
-            let negative = s.starts_with('-');
-            let val: f64 = digits.parse().expect("指数は数字のみ");
-            if negative {
-                -val
+            bit_count += 1;
+            if bit_count <= 64 {
+                head = (head << 1) | set as u64;
             } else {
-                val
+                sticky |= set != 0;
             }
         }
+    }
+    if !digits {
+        return f64::NAN;
+    }
+    if bit_count == 0 {
+        return 0.0;
+    }
+    if bit_count < 64 {
+        head <<= 64 - bit_count;
+    }
+    let exponent = exponent_value
+        .saturating_sub(4 * fractional_digits)
+        .saturating_add(bit_count - 1);
+    if exponent > 1023 {
+        return f64::INFINITY;
+    }
+    if exponent < -1075 {
+        return 0.0;
+    }
+    let keep = if exponent >= -1022 {
+        53
+    } else {
+        exponent + 1075
     };
-    // TS は `2 ** Number(m[2])`（整数指数は exact）。powf(e) は 2^integer なので 1-ulp では
-    // ずれない（subnormal の 2^-1074 等は 373 件のゴールデンで確認済み）。
-    v * 2.0_f64.powf(e)
+    let rounded = if keep == 0 {
+        u64::from(head > (1u64 << 63) || sticky)
+    } else {
+        let shift = 64 - keep;
+        let value = head >> shift;
+        let remainder = head & ((1u64 << shift) - 1);
+        let half = 1u64 << (shift - 1);
+        value + u64::from(remainder > half || (remainder == half && (sticky || value & 1 != 0)))
+    };
+    if exponent < -1022 {
+        return f64::from_bits(rounded);
+    }
+    // Addition also handles a carry into the next exponent (or infinity).
+    f64::from_bits((((exponent + 1022) as u64) << 52) + rounded)
 }
 
 /// f64 の最短ラウンドトリップ桁列（符号なし・正の数）を
@@ -477,187 +516,10 @@ pub fn normalize_num_literal(s: &str) -> String {
     }
 }
 
-/// Lua 文字列リテラルを JS 文字列へデコード（decodeLuaString 相当）。
-/// 長い括弧 [==[ … ]==] は内容を切り出す。それ以外は JSON.parse を試み、
-/// 失敗したら両端のクォートを外すだけにする（TS と同一の挙動）。
-pub fn decode_lua_string(raw: &str) -> String {
-    if let Some(rest) = raw.strip_prefix('[') {
-        // Lua long strings remove one initial newline after the opening delimiter.
-        let Some(level) = rest.find('[') else {
-            return String::new();
-        };
-        let close = format!("]{}]", "=".repeat(level));
-        let start = level + 2;
-        let Some(end) = raw.rfind(&close) else {
-            return String::new();
-        };
-        if end < start {
-            return String::new();
-        }
-        let mut value = raw[start..end].to_string();
-        if value.starts_with("\r\n") {
-            value.drain(..2);
-        } else if value.starts_with(['\n', '\r']) {
-            value.drain(..1);
-        }
-        return value;
-    }
-    decode_quoted_lua_string(raw).unwrap_or_else(|| {
-        if raw.len() >= 2 {
-            raw[1..raw.len() - 1].to_string()
-        } else {
-            String::new()
-        }
-    })
-}
-
-/// Decode Lua's quoted-string escapes.  Keeping this separate from JSON parsing is
-/// important: Lua accepts `\ddd` and `\xhh`, and single-quoted strings as well.
-fn decode_quoted_lua_string(raw: &str) -> Option<String> {
-    let mut chars = raw.chars();
-    let quote = chars.next()?;
-    if !matches!(quote, '\'' | '"') || !raw.ends_with(quote) {
-        return None;
-    }
-    let mut out = String::new();
-    let mut escaped = false;
-    while let Some(c) = chars.next() {
-        if !escaped {
-            if c == quote {
-                break;
-            }
-            if c == '\\' {
-                escaped = true;
-            } else {
-                out.push(c);
-            }
-            continue;
-        }
-        escaped = false;
-        match c {
-            'a' => out.push('\u{0007}'),
-            'b' => out.push('\u{0008}'),
-            'f' => out.push('\u{000c}'),
-            'n' => out.push('\n'),
-            'r' => out.push('\r'),
-            't' => out.push('\t'),
-            'v' => out.push('\u{000b}'),
-            '\\' => out.push('\\'),
-            '\'' => out.push('\''),
-            '"' => out.push('"'),
-            '\n' => out.push('\n'),
-            '\r' => {
-                if chars.as_str().starts_with('\n') {
-                    chars.next();
-                }
-                out.push('\n');
-            }
-            'z' => {
-                while let Some(next) = chars.clone().next() {
-                    if !next.is_whitespace() {
-                        break;
-                    }
-                    chars.next();
-                }
-            }
-            'x' => {
-                let hi = chars.next()?.to_digit(16)?;
-                let lo = chars.next()?.to_digit(16)?;
-                out.push(char::from_u32(hi * 16 + lo)?);
-            }
-            c if c.is_ascii_digit() => {
-                let mut value = c.to_digit(10)?;
-                for _ in 0..2 {
-                    let Some(next) = chars.clone().next() else {
-                        break;
-                    };
-                    if !next.is_ascii_digit() {
-                        break;
-                    }
-                    value = value * 10 + next.to_digit(10)?;
-                    chars.next();
-                }
-                if value > 255 {
-                    return None;
-                }
-                out.push(char::from_u32(value)?);
-            }
-            _ => return None,
-        }
-    }
-    Some(out)
-}
-
-/// JSON 文字列（"…"）をデコードする最小実装。失敗時は None。
-/// TS の JSON.parse が受ける文字列（Lua 文字列リテラル）のみを対象とするため、
-/// Lua 独自の \ddd / \x エスケープはここでは受け付けない（TS と同じく失敗→フォールバック）。
-#[allow(dead_code)]
-fn json_parse_string(raw: &str) -> Option<String> {
-    let mut chars = raw.chars();
-    if chars.next()? != '"' {
-        return None;
-    }
-    let mut out = String::new();
-    let mut closed = false;
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => {
-                closed = true;
-                break;
-            }
-            '\\' => {
-                let e = chars.next()?;
-                match e {
-                    '"' => out.push('"'),
-                    '\\' => out.push('\\'),
-                    '/' => out.push('/'),
-                    'b' => out.push('\u{0008}'),
-                    'f' => out.push('\u{000C}'),
-                    'n' => out.push('\n'),
-                    'r' => out.push('\r'),
-                    't' => out.push('\t'),
-                    'u' => {
-                        let mut code = 0u32;
-                        for _ in 0..4 {
-                            let h = chars.next()?.to_digit(16)?;
-                            code = code * 16 + h;
-                        }
-                        // サロゲートペア（高位サロゲートの直後に \uXXXX が続く場合のみ）
-                        if (0xD800..=0xDBFF).contains(&code) {
-                            if chars.next()? == '\\' && chars.next()? == 'u' {
-                                let mut lo = 0u32;
-                                for _ in 0..4 {
-                                    let h = chars.next()?.to_digit(16)?;
-                                    lo = lo * 16 + h;
-                                }
-                                // 低位サロゲート範囲の検証（不正なら fallback）。
-                                // TS の JSON.parse は単独サロゲートを返すが、Rust は
-                                // 単独サロゲートを String で保持できないため parity
-                                // 対象外（lexer.rs と同じ方針）。ここで範囲を外れたら
-                                // None を返し、クォート除去の fallback へ落ちる
-                                // （未チェックのまま引くと u32 がアンダーフローする）。
-                                if !(0xDC00..=0xDFFF).contains(&lo) {
-                                    return None;
-                                }
-                                let c = 0x10000 + ((code - 0xD800) << 10) + (lo - 0xDC00);
-                                out.push(char::from_u32(c)?);
-                            } else {
-                                return None;
-                            }
-                        } else {
-                            out.push(char::from_u32(code)?);
-                        }
-                    }
-                    _ => return None,
-                }
-            }
-            c => out.push(c),
-        }
-    }
-    if !closed || chars.next().is_some() {
-        return None;
-    }
-    Some(out)
+/// Decode a Lua string only when its exact bytes are UTF-8. Name/host-text
+/// consumers must reject `None`; value transformations use `string_bytes`.
+pub fn decode_lua_string(raw: &str) -> Option<String> {
+    String::from_utf8(crate::source_tools::string_bytes(raw).ok()?).ok()
 }
 
 /// JSON.stringify(s) 相当（文字列のみ）。printer の qstr で使う。
@@ -684,8 +546,37 @@ fn json_stringify(s: &str) -> String {
 }
 
 /// JSON.stringify(s) 相当。TS `quoteLua` と同じく常に double-quoted form。
-pub fn quote_lua(s: &str) -> String {
-    json_stringify(s)
+pub fn quote_lua(s: impl AsRef<[u8]>) -> String {
+    let bytes = s.as_ref();
+    let mut out = String::with_capacity(bytes.len() + 2);
+    out.push('"');
+    let mut remaining = bytes;
+    while !remaining.is_empty() {
+        let valid = match std::str::from_utf8(remaining) {
+            Ok(text) => text.len(),
+            Err(error) => error.valid_up_to(),
+        };
+        // The validated UTF-8 prefix preserves Unicode source text compactly.
+        if let Ok(text) = std::str::from_utf8(&remaining[..valid]) {
+            for c in text.chars() {
+                match c {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    c => out.push(c),
+                }
+            }
+        }
+        remaining = &remaining[valid..];
+        if let Some((&byte, tail)) = remaining.split_first() {
+            // Three decimal digits cannot absorb the next digit in the value.
+            out.push_str(&format!("\\{byte:03}"));
+            remaining = tail;
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// printer の qstr 相当。JSON 形式、シングルクォート形式、Lua long-bracket
@@ -725,7 +616,15 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> Cow<'_, str> {
         // tie winner shorter in the single/long-bracket forms. UTF-8 is unchanged.
         return Cow::Borrowed(raw);
     }
-    let value = decoded_quote_value(raw);
+    let value = match decoded_quote_value(raw) {
+        Some(value) => value,
+        None => {
+            return match crate::source_tools::string_bytes(raw) {
+                Ok(bytes) => Cow::Owned(quote_lua(bytes)),
+                Err(_) => Cow::Borrowed(raw),
+            }
+        }
+    };
     let (quoted_len, quote) = quote_shape(&value);
     if let Some((long_len, level)) = shorter_long_bracket_shape(&value, quoted_len, long_overhead) {
         let mut out = String::with_capacity(long_len);
@@ -759,15 +658,18 @@ fn qstr_with_long_overhead(raw: &str, long_overhead: usize) -> Cow<'_, str> {
 /// Common API keys and generated payloads are already unescaped strings. Borrow
 /// only when the entire quoted body is unambiguous; all other forms retain the
 /// public decoder's existing escape, long-bracket and malformed-input behavior.
-fn decoded_quote_value(raw: &str) -> Cow<'_, str> {
+fn decoded_quote_value(raw: &str) -> Option<Cow<'_, str>> {
     let bytes = raw.as_bytes();
     if bytes.len() >= 2 && matches!(bytes[0], b'\'' | b'"') && bytes.last() == Some(&bytes[0]) {
         let body = &raw[1..raw.len() - 1];
-        if !body.bytes().any(|b| b == b'\\' || b == bytes[0]) {
-            return Cow::Borrowed(body);
+        if !body
+            .bytes()
+            .any(|b| b == b'\\' || b == bytes[0] || matches!(b, b'\n' | b'\r'))
+        {
+            return Some(Cow::Borrowed(body));
         }
     }
-    Cow::Owned(decode_lua_string(raw))
+    decode_lua_string(raw).map(Cow::Owned)
 }
 
 /// Both quote candidates differ only in ASCII escaping. Count those bytes
@@ -833,7 +735,14 @@ pub(crate) fn qstr_bracket_key_shape(raw: &str) -> (usize, char, char) {
 }
 
 fn qstr_shape_with_long_overhead(raw: &str, long_overhead: usize) -> (usize, char, char) {
-    let value = decoded_quote_value(raw);
+    let Some(value) = decoded_quote_value(raw) else {
+        let rendered = qstr_with_long_overhead(raw, long_overhead);
+        return (
+            rendered.len(),
+            rendered.chars().next().unwrap_or('"'),
+            rendered.chars().next_back().unwrap_or('"'),
+        );
+    };
     let (quoted_len, quote) = quote_shape(&value);
     if let Some((long_len, _)) = shorter_long_bracket_shape(&value, quoted_len, long_overhead) {
         return (long_len, '[', ']');
@@ -845,6 +754,9 @@ fn qstr_shape_with_long_overhead(raw: &str, long_overhead: usize) -> (usize, cha
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    fn decode_lua_string(raw: &str) -> String {
+        super::decode_lua_string(raw).expect("valid UTF-8 Lua string")
+    }
 
     fn n(s: &str) -> f64 {
         num_val(s)
@@ -888,13 +800,15 @@ mod tests {
         assert_eq!(decode_lua_string("[=[x]=]"), "x");
         assert_eq!(decode_lua_string("[==[x]]==]"), "x]");
         assert_eq!(decode_lua_string("\"a\\n b\""), "a\n b");
-        // 不正な長い括弧は TS 同様 ""（panic しない）
-        assert_eq!(decode_lua_string("[abc"), "");
-        assert_eq!(decode_lua_string("[["), "");
-        // 単独サロゲートを含む JSON 文字列は panic せず fallback（パリティ対象外）
-        assert_eq!(decode_lua_string("\"\\ud800\""), "\\ud800");
-        assert_eq!(decode_lua_string("\"\\ud800\\u0000\""), "\\ud800\\u0000");
-        assert_eq!(decode_lua_string("\"\\udc00\""), "\\udc00");
+        for raw in [
+            "[abc",
+            "[[",
+            r#""\ud800""#,
+            r#""\ud800\u0000""#,
+            r#""\udc00""#,
+        ] {
+            assert_eq!(super::decode_lua_string(raw), None);
+        }
     }
 
     #[test]
@@ -914,7 +828,7 @@ mod tests {
         assert_eq!(normalize_num_literal("0x1p1.5"), "0/0"); // 小数指数
         assert_eq!(normalize_num_literal("0x1pp2"), "0/0"); // 指数に 'p'
         assert_eq!(normalize_num_literal("0x1.5.2"), "0/0"); // '.' が 2 つ
-        assert_eq!(normalize_num_literal("0x1."), "0/0"); // 末尾ドット
+        assert_eq!(normalize_num_literal("0x1."), "1"); // Lua accepts a trailing dot
         assert_eq!(normalize_num_literal("0x"), "0/0"); // 桁なし
         assert_eq!(normalize_num_literal("0x1g"), "0/0"); // hex 以外の文字
     }
@@ -951,7 +865,13 @@ mod tests {
     // Keep a structurally independent candidate builder here so a shared
     // length-model error cannot validate itself.
     fn assert_quote_parity(raw: &str) {
-        let value = decode_lua_string(raw);
+        let Some(value) = super::decode_lua_string(raw) else {
+            let expected = crate::source_tools::string_bytes(raw)
+                .map(quote_lua)
+                .unwrap_or_else(|_| raw.into());
+            assert_eq!(qstr(raw), expected);
+            return;
+        };
         let double = json_stringify(&value);
         let single = format!(
             "'{}'",
@@ -1031,7 +951,7 @@ mod tests {
     #[test]
     fn quote_borrowing_preserves_escape_and_malformed_boundaries() {
         for raw in ["\"plain\"", "'plain'", "\"\"", "'😀'", "\"it's\""] {
-            assert!(matches!(decoded_quote_value(raw), Cow::Borrowed(_)));
+            assert!(matches!(decoded_quote_value(raw), Some(Cow::Borrowed(_))));
             assert_quote_parity(raw);
         }
         for raw in [
@@ -1053,7 +973,7 @@ mod tests {
             "",
             "x",
         ] {
-            assert!(matches!(decoded_quote_value(raw), Cow::Owned(_)));
+            assert!(!matches!(decoded_quote_value(raw), Some(Cow::Borrowed(_))));
             assert_quote_parity(raw);
         }
     }
@@ -1074,7 +994,7 @@ mod tests {
             }
         }
         for fragment in ["'\"\\\n\r\t", "雪😀\u{1b}", "'''\"", "\"\"\"'"] {
-            assert_quote_parity(&quote_lua(&fragment.repeat(4096)));
+            assert_quote_parity(&quote_lua(fragment.repeat(4096)));
         }
     }
 
@@ -1209,7 +1129,11 @@ mod small_integer_format_tests {
 mod borrowed_quote_tests {
     use super::*;
     fn reference(raw: &str, long_overhead: usize) -> String {
-        let value = decoded_quote_value(raw);
+        let Some(value) = decoded_quote_value(raw) else {
+            return crate::source_tools::string_bytes(raw)
+                .map(quote_lua)
+                .unwrap_or_else(|_| raw.into());
+        };
         let (quoted_len, quote) = quote_shape(&value);
         if let Some((long_len, level)) =
             shorter_long_bracket_shape(&value, quoted_len, long_overhead)
@@ -1311,7 +1235,9 @@ mod integer_single_scan_tests {
             if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
                 return None;
             }
-            let value = u64::from_str_radix(hex, 16).ok()?;
+            let value = hex.bytes().try_fold(0u64, |v, c| {
+                Some(v.wrapping_mul(16).wrapping_add(hex_digit(c)? as u64))
+            })?;
             let value = value as i64;
             return negative.then_some(value.wrapping_neg()).or(Some(value));
         }

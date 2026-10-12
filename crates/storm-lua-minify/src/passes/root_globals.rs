@@ -48,6 +48,19 @@ pub fn globalize_root_locals(ast: &mut Ast, root: NodeId) -> PassResult {
             _ => {}
         }
     }
+    let resolution = storm_lua_analysis::resolver::resolve(ast, root);
+    for (name, _) in &resolution.globals {
+        *root_name_counts
+            .entry(ast.strings.get(*name).to_string())
+            .or_default() += 1;
+    }
+    for name in ast.strings.iter() {
+        if storm_lua_analysis::resolver::reserved(name)
+            || storm_lua_analysis::resolver::api_roots(name)
+        {
+            root_name_counts.insert(name.to_string(), 2);
+        }
+    }
     let mut output = Vec::with_capacity(statements.len());
     for statement in statements {
         match ast.node(statement).clone() {

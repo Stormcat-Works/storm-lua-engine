@@ -267,6 +267,64 @@ fn replace_xy(
     result
 }
 
+fn safe_helper_site(
+    ast: &Ast,
+    res: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
+    site: &Site,
+) -> bool {
+    let x_key = expr_key(ast, res, site.x);
+    let y_key = expr_key(ast, res, site.y);
+    fn visible(ast: &Ast, res: &Resolution, node: NodeId, x: &str, y: &str) -> bool {
+        if expr_key(ast, res, node) == x || expr_key(ast, res, node) == y {
+            return true;
+        }
+        if matches!(ast.node(node), Node::Name(_)) {
+            return res.node_bid[node as usize].is_some_and(|bid| {
+                res.binding(bid).kind == storm_lua_analysis::resolver::BindingKind::Global
+            });
+        }
+        let mut ok = true;
+        storm_lua_syntax::ast_utils::for_each_child(ast, node, &mut |child| {
+            ok &= visible(ast, res, child, x, y)
+        });
+        ok
+    }
+    // The helper is inserted before root locals, so only genuine global free
+    // bindings remain visible there. x/y are explicitly passed parameters.
+    if ![
+        site.hit,
+        site.active,
+        site.pulse,
+        site.target,
+        site.on,
+        site.off,
+        site.draw_fn,
+        site.offset,
+    ]
+    .iter()
+    .all(|node| visible(ast, res, *node, &x_key, &y_key))
+    {
+        return false;
+    }
+    let effects = [site.hit, site.on, site.off].map(|node| analyzer.effects_for_expr(node));
+    for argument in [site.x, site.y, site.label] {
+        if !analyzer.is_movable(argument) {
+            return false;
+        }
+        let reads = analyzer.effects_for_expr(argument).reads;
+        if reads.iter().any(|bid| {
+            Some(*bid) == res.node_bid[site.target as usize]
+                || effects
+                    .iter()
+                    .any(|effect| effect.writes.contains(bid) || effect.calls)
+        }) {
+            return false;
+        }
+    }
+    true
+}
+
 pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> PassResult {
     if !aggressive || !matches!(ast.node(root), Node::Block(_)) {
         return PassResult {
@@ -282,6 +340,9 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
     let mut groups: HashMap<String, Vec<Site>> = HashMap::new();
     let mut order = Vec::new();
     for site in sites {
+        if !safe_helper_site(&source, &res, &analyzer, &site) {
+            continue;
+        }
         if !groups.contains_key(&site.key) {
             order.push(site.key.clone());
         }
@@ -299,13 +360,19 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
             considered += 1;
             let chosen = &group[..count];
             let first = &group[0];
+            let deferred_value = chosen.iter().any(|site| {
+                !matches!(
+                    source.node(site.value),
+                    Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
+                )
+            });
             let mut candidate = clone_ast(&source);
-            let helper = candidate.strings.intern("__stormmin_screen_button");
-            let xs = candidate.strings.intern("__stormmin_button_x");
-            let ys = candidate.strings.intern("__stormmin_button_y");
-            let label = candidate.strings.intern("__stormmin_button_label");
-            let value = candidate.strings.intern("__stormmin_button_value");
-            let active_name = candidate.strings.intern("__stormmin_button_active");
+            let helper = candidate.strings.fresh("__stormmin_screen_button");
+            let xs = candidate.strings.fresh("__stormmin_button_x");
+            let ys = candidate.strings.fresh("__stormmin_button_y");
+            let label = candidate.strings.fresh("__stormmin_button_label");
+            let value = candidate.strings.fresh("__stormmin_button_value");
+            let active_name = candidate.strings.fresh("__stormmin_button_active");
             let x_key = expr_key(&source, &res, first.x);
             let y_key = expr_key(&source, &res, first.y);
             let hit = replace_xy(
@@ -325,7 +392,12 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
                 candidate.push(Node::Assign(vec![active_assign_target], vec![active_expr]));
             let pulse_cond = candidate.push(Node::Bin("and".into(), active_read, first.pulse));
             let target = first.target;
-            let value_read = candidate.push(Node::Name(value));
+            let value_name = candidate.push(Node::Name(value));
+            let value_read = if deferred_value {
+                candidate.call(value_name, Vec::new(), None)
+            } else {
+                value_name
+            };
             let assign = candidate.push(Node::Assign(vec![target], vec![value_read]));
             let pulse_body = candidate.push(Node::Block(vec![assign]));
             let pulse_if = candidate.push(Node::If(
@@ -386,6 +458,7 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
                     (s_active, &conditions),
                     (active_cond, &conditions),
                     (pulse_cond, &actions),
+                    (value_name, &values),
                     (value_read, &values),
                     (assign, &actions),
                     (pulse_body, &actions),
@@ -424,9 +497,22 @@ pub fn outline_screen_buttons(ast: &mut Ast, root: NodeId, aggressive: bool) -> 
                 while i < statements.len() {
                     if let Some(site) = block_sites.iter().find(|s| s.start == i) {
                         let fnn = candidate.push(Node::Name(helper));
+                        let argument_value = if deferred_value {
+                            let result = candidate.push(Node::Return(vec![site.value]));
+                            let body = candidate.block(vec![result]);
+                            let closure = candidate.push(Node::Function(Vec::new(), false, body));
+                            for node in [result, body, closure] {
+                                candidate
+                                    .nodes
+                                    .mark_synthetic(node, "button-deferred-value");
+                            }
+                            closure
+                        } else {
+                            site.value
+                        };
                         let call = candidate.push(Node::Call(
                             fnn,
-                            vec![site.x, site.y, site.label, site.value],
+                            vec![site.x, site.y, site.label, argument_value],
                             None,
                         ));
                         candidate

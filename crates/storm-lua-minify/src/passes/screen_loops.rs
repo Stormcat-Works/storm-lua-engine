@@ -69,6 +69,14 @@ fn affine_expression(
     {
         return None;
     }
+    // Integer equality must be established before conversion to f64.
+    if values.iter().any(|node| match source.node(*node) {
+        Node::Num(value) => storm_lua_syntax::numeric::integer_literal_value(value)
+            .is_some_and(|v| v.unsigned_abs() > (1u64 << 53)),
+        _ => false,
+    }) {
+        return None;
+    }
     let numbers = values
         .iter()
         .map(|node| match source.node(*node) {
@@ -134,6 +142,13 @@ fn periodic_affine_expression(
             .iter()
             .all(|node| matches!(source.node(*node), Node::Num(_)))
     {
+        return None;
+    }
+    if values.iter().any(|node| match source.node(*node) {
+        Node::Num(value) => storm_lua_syntax::numeric::integer_literal_value(value)
+            .is_some_and(|v| v.unsigned_abs() > (1u64 << 53)),
+        _ => false,
+    }) {
         return None;
     }
     let numbers = values
@@ -623,10 +638,10 @@ fn build_candidate(
     }
     let index_symbol = target
         .strings
-        .intern(&format!("__stormmin_screen_index_{serial}"));
+        .fresh(&format!("__stormmin_screen_index_{serial}"));
     let table_symbol = target
         .strings
-        .intern(&format!("__stormmin_screen_values_{serial}"));
+        .fresh(&format!("__stormmin_screen_values_{serial}"));
     let mut table_values: Option<Vec<NodeId>> = None;
     let mut varying = 0usize;
     let mut args = Vec::new();
@@ -1072,8 +1087,8 @@ mod normalized_cost_tests {
                         _ => panic!(),
                     })
                     .collect::<Vec<_>>();
-                let table = ast.strings.intern("__table");
-                let index = ast.strings.intern("__index");
+                let table = ast.strings.fresh("__table");
+                let index = ast.strings.fresh("__index");
                 let target = ast.push(Node::Name(table));
                 let value = ast.push(Node::Table(vec![TableField::Arr(calls[0])]));
                 let assignment = assign.then(|| ast.push(Node::Assign(vec![target], vec![value])));

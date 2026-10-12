@@ -58,3 +58,14 @@ Source inspection is limited to 2 MiB, 200,000 lexical tokens and bounded syntax
 ## Tagged metadata in project builds
 
 `ProjectCompileOptions.metadataTag` removes only a leading long comment whose first content line matches the tag. It preserves UTF-8 byte positions and newlines; Source Map sourcesContent contains the original input. Normal, LifeBoat and Addon builds share this operation. Without metadataTag the normal build avoids preprocessing and project cloning. Development-only sections are stripped by the LifeBoat/Addon linker only.
+
+Metadata blanking records the original byte intervals and excludes them from the linker’s verbatim-copy ranges before diagnostics and either map format are projected. Standard Source Map anchors in these intervals are unmapped; requested detailed maps describe the generated whitespace as Synthetic without copied spans. Remaining code keeps its exact original byte/UTF-16 positions. Even a used module containing only removed metadata retains its original sourcesContent. Validation continues to reject mismatched exact-copy attribution.
+
+
+## Compiler syntax and literal boundaries
+
+All compiler parsing, including ordinary minification, rejects recursive parser nesting beyond 128 and syntax-tree nesting beyond 256 with a syntax diagnostic. These bounds protect recursive analysis on Native and WASM; they are not a promise that every syntactically valid Lua chunk is accepted. Flat statement lists are not limited by this depth bound.
+
+Lua string literals denote bytes. Decimal/hexadecimal escapes retain individual bytes, Unicode escapes use Lua 5.3 encoding, and quoted and long-string newlines follow Lua normalization. The syntax utility `source_tools::string_bytes` exposes this byte representation; `numeric::decode_lua_string` returns `Option<String>` and declines non-UTF-8 payloads instead of replacing bytes. `numeric::quote_lua` accepts byte slices as well as UTF-8 strings.
+
+Integer literal evaluation uses signed 64-bit Lua arithmetic, including wrapping hexadecimal accumulation and arithmetic overflow. Floating-point folding preserves subtype and negative zero in Safe mode. Exact consumers (table keys, bitwise operations and string packing, including values returned by known functions) are excluded from numeric literal approximation. Rewrites requiring a numeric type or bounded integer intermediates are applied only when that condition is established; unknown input values retain their original evaluation.

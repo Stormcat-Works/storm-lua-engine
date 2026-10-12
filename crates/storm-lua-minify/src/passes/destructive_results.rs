@@ -79,6 +79,16 @@ fn inspect_calls(
     if inspection.invalid {
         return;
     }
+    if matches!(ast.node(node), Node::Name(_))
+        && res.node_bid[node as usize] == Some(function_bid)
+        && !res.node_write[node as usize]
+        && !parent.is_some_and(
+            |p| matches!(ast.node(p), Node::Call(function, _, None) if *function == node),
+        )
+    {
+        inspection.invalid = true;
+        return;
+    }
     if let Node::Call(function, args, _) = ast.node(node) {
         if matches!(ast.node(*function), Node::Name(_))
             && res.node_bid.get(*function as usize).copied().flatten() == Some(function_bid)
@@ -135,6 +145,7 @@ fn contains_binding(ast: &Ast, res: &Resolution, node: NodeId, bid: BindingId) -
 
 fn find_candidates(ast: &Ast, root: NodeId, res: &Resolution) -> Vec<Candidate> {
     let mut candidates = Vec::new();
+    let analyzer = storm_lua_analysis::effects::EffectAnalyzer::new(ast, res, root, true);
     for (function_bid, binding) in res.bindings.iter().enumerate().skip(1) {
         let function_bid = function_bid as BindingId;
         let Some(function_node) = binding.function_node else {
@@ -190,6 +201,18 @@ fn find_candidates(ast: &Ast, root: NodeId, res: &Resolution) -> Vec<Candidate> 
         if !matches!(target.kind, BindingKind::Global)
             || target.fixed
             || contains_binding(ast, res, function_node, target_bid)
+        {
+            continue;
+        }
+        let effects = storm_lua_analysis::effects::merge_effects(
+            &statements
+                .iter()
+                .map(|&statement| analyzer.effects_for_statement(statement))
+                .collect::<Vec<_>>(),
+        );
+        if effects.reads.contains(&target_bid)
+            || effects.writes.contains(&target_bid)
+            || effects.calls
         {
             continue;
         }

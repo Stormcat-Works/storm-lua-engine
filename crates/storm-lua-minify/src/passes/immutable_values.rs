@@ -461,6 +461,22 @@ fn candidate_for_carrier(
             "immutable-value-definition",
         );
     }
+    // Resolve at the insertion sites, where a local with the same spelling can
+    // shadow the carrier. Binding IDs can be renumbered by eliminated globals;
+    // compare the declaration identity rather than raw IDs across resolutions.
+    let resolved = resolve(&candidate, root);
+    let expected = resolution.binding(carrier.bid);
+    if replacements.iter().any(|node| {
+        resolved.node_bid[*node as usize].is_none_or(|bid| {
+            let actual = resolved.binding(bid);
+            actual.name != expected.name
+                || actual.kind != expected.kind
+                || actual.scope != expected.scope
+                || actual.decl_node != expected.decl_node
+        })
+    }) {
+        return None;
+    }
     Some((candidate, replacements.len()))
 }
 

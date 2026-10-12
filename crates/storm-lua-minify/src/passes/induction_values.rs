@@ -15,7 +15,10 @@ fn integer_literal(node: &Node) -> bool {
     match node {
         Node::Num(s) => {
             let v = num_val(s);
-            v.is_finite() && v.fract() == 0.0 && v.abs() <= 9_007_199_254_740_991.0
+            storm_lua_syntax::numeric::integer_literal_value(s).is_some()
+                && v.is_finite()
+                && v.fract() == 0.0
+                && v.abs() <= 9_007_199_254_740_991.0
         }
         _ => false,
     }

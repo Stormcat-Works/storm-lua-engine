@@ -58,10 +58,15 @@ pub fn generate_source_map(project: &LuaProject, link: &LinkResult) -> Option<St
     let generated_index = LineIndex::new(generated);
     let mut builder = SourceMapBuilder::new(None);
     let mut sources = BTreeMap::new();
-    for range in &link.ranges {
-        sources.entry(range.module.as_str()).or_insert_with(|| {
-            let text = source_text(project, &range.module).expect("linked source snapshot");
-            let id = builder.add_source(&module_key_to_path(&range.module));
+    for key in link
+        .ranges
+        .iter()
+        .map(|range| &range.module)
+        .chain(&link.used_modules)
+    {
+        sources.entry(key.as_str()).or_insert_with(|| {
+            let text = source_text(project, key).expect("linked source snapshot");
+            let id = builder.add_source(&module_key_to_path(key));
             builder.set_source_contents(id, Some(text));
             (id, LineIndex::new(text))
         });

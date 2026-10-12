@@ -79,7 +79,14 @@ fn handle_static_access(ctx: &mut ScanCtx, index_id: NodeId, root: &str, key_id:
             "dot アクセスの key は parser が常に Str ノードとして生成する（構文上の不変条件）"
         );
     };
-    let member = decode_lua_string(raw);
+    let Some(member) = decode_lua_string(raw) else {
+        ctx.push(
+            codes::UNKNOWN_AMBIENT_MEMBER,
+            index_id,
+            "ambient member is not UTF-8",
+        );
+        return;
+    };
     #[expect(
         clippy::expect_used,
         reason = "root_name_of returns keys from the same immutable ambient map; the map cannot change during scanning"

@@ -460,8 +460,13 @@ mod tests {
                 assert_eq!(dump(&tracked, id), reference::dump(&tracked, id));
             }
         }
-        let source = format!("return {}2{}", "1+(".repeat(128), ")".repeat(128));
-        let (ast, root) = crate::parse_source(&source).unwrap();
+        let mut ast = Ast::new();
+        let mut root = ast.num("2".into());
+        for _ in 0..128 {
+            let one = ast.num("1".into());
+            let paren = ast.push(Node::Paren(root));
+            root = ast.bin("+", one, paren);
+        }
         assert_eq!(dump(&ast, root), reference::dump(&ast, root));
     }
     #[test]

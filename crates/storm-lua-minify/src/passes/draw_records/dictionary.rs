@@ -11,7 +11,7 @@ fn emit(ast: &mut Ast, bytes: &str, dictionary: &[(char, String)]) -> NodeId {
     }
     value = ast.push(Node::Paren(value));
     for (marker, replacement) in dictionary.iter().rev() {
-        let marker = ast.push(Node::Str(quote_lua(&marker.to_string()).into()));
+        let marker = ast.push(Node::Str(quote_lua(marker.to_string()).into()));
         let replacement = replacement.replace('%', "%%");
         let replacement = ast.push(Node::Str(quote_lua(&replacement).into()));
         value = ast.push(Node::Call(
@@ -32,7 +32,9 @@ pub(super) fn compress_literal(ast: &mut Ast, literal: NodeId) -> bool {
     let Node::Str(raw) = ast.node(literal) else {
         return false;
     };
-    let original = storm_lua_syntax::numeric::decode_lua_string(raw);
+    let Some(original) = storm_lua_syntax::numeric::decode_lua_string(raw) else {
+        return false;
+    };
     if !(80..=8192).contains(&original.len()) || !original.bytes().all(|b| (32..=126).contains(&b))
     {
         return false;

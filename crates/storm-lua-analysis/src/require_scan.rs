@@ -65,7 +65,14 @@ impl ScanCtx<'_> {
         };
         if args.len() == 1 {
             if let Node::Str(raw) = self.ast.node(args[0]) {
-                let key = decode_lua_string(raw);
+                let Some(key) = decode_lua_string(raw) else {
+                    self.push_violation(
+                        codes::REQUIRE_DYNAMIC,
+                        call_id,
+                        "require key must be UTF-8",
+                    );
+                    return;
+                };
                 #[expect(
                     clippy::expect_used,
                     reason = "The position table was produced with this AST and the parser marks every top-level statement"

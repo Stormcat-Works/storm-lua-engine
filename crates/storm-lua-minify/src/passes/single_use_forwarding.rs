@@ -396,6 +396,14 @@ fn collect_blocks_postorder(
 }
 
 pub fn forward_single_use_globals(ast: &mut Ast, root: NodeId) -> PassResult {
+    if super::has_unstructured_flow(ast, root) {
+        return PassResult {
+            root,
+            saved: Some(0),
+            details: None,
+        };
+    }
+
     let original_size = measure_size(ast, root);
     let mut forwarded = 0usize;
     for _ in 0..16 {

@@ -9,7 +9,7 @@ use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::numeric::{
-    decode_lua_string, integer_literal_value, normalize_num_literal, num_val, quote_lua, short_num,
+    decode_lua_string, integer_literal_value, num_val, quote_lua, short_num,
 };
 use storm_lua_syntax::size::measure_expr;
 
@@ -19,7 +19,7 @@ use super::immutable_values::expression_key;
 enum Literal {
     Int(i64),
     Num(f64),
-    Str(String),
+    Str(Vec<u8>),
     Bool(bool),
     Nil,
 }
@@ -50,7 +50,9 @@ fn literal_value(ast: &Ast, node: NodeId) -> Option<Literal> {
         Node::Num(v) => integer_literal_value(v)
             .map(Literal::Int)
             .or_else(|| Some(Literal::Num(num_val(v)))),
-        Node::Str(v) => Some(Literal::Str(decode_lua_string(v))),
+        Node::Str(v) => storm_lua_syntax::source_tools::string_bytes(v)
+            .ok()
+            .map(Literal::Str),
         Node::Bool(v) => Some(Literal::Bool(*v)),
         Node::Nil => Some(Literal::Nil),
         _ => None,
@@ -71,8 +73,18 @@ fn literal_node(ast: &mut Ast, value: Literal) -> Option<NodeId> {
     match value {
         Literal::Nil => Some(ast.push(Node::Nil)),
         Literal::Bool(v) => Some(ast.push(Node::Bool(v))),
-        Literal::Int(v) => Some(ast.push(Node::Num(v.to_string().into()))),
-        Literal::Num(v) if !v.is_nan() => Some(ast.push(Node::Num(short_num(v).into()))),
+        Literal::Int(v) => Some(ast.push(Node::Num(if v == i64::MIN {
+            "0x8000000000000000".into()
+        } else {
+            v.to_string().into()
+        }))),
+        Literal::Num(v) if v.is_finite() => {
+            let mut text = short_num(v);
+            if integer_literal_value(&text).is_some() {
+                text.push_str(".0");
+            }
+            Some(ast.push(Node::Num(text.into())))
+        }
         // JS `shortNum(NaN)` is not a valid Lua literal. The TS implementation
         // constructs it but the parser/printer path does not use such folds in
         // the accepted corpus; keep the fold disabled here rather than emit an
@@ -120,70 +132,35 @@ fn lua_truth(value: &Literal) -> bool {
     !matches!(value, Literal::Nil | Literal::Bool(false))
 }
 
-fn js_number_string(v: f64) -> String {
-    if v.is_nan() {
-        "NaN".into()
-    } else if v == f64::INFINITY {
-        "Infinity".into()
-    } else if v == f64::NEG_INFINITY {
-        "-Infinity".into()
-    } else if v == 0.0 {
-        "0".into()
-    } else {
-        short_num(v)
+fn number(v: &Literal) -> Option<f64> {
+    match v {
+        Literal::Int(v) => Some(*v as f64),
+        Literal::Num(v) => Some(*v),
+        // Preserve Lua's coercion/error path for other types.
+        _ => None,
     }
 }
 
-fn literal_to_js_string(v: &Literal) -> String {
+fn integer(v: &Literal) -> Option<i64> {
     match v {
-        Literal::Int(v) => v.to_string(),
-        Literal::Num(v) => js_number_string(*v),
-        Literal::Str(v) => v.clone(),
-        Literal::Bool(v) => if *v { "true" } else { "false" }.into(),
-        Literal::Nil => "nil".into(),
-    }
-}
-
-fn js_to_number(v: &Literal) -> f64 {
-    match v {
-        Literal::Int(v) => *v as f64,
-        Literal::Num(v) => *v,
-        Literal::Bool(v) => {
-            if *v {
-                1.0
-            } else {
-                0.0
-            }
+        Literal::Int(v) => Some(*v),
+        Literal::Num(v)
+            if v.fract() == 0.0 && *v >= -9223372036854775808.0 && *v < 9223372036854775808.0 =>
+        {
+            Some(*v as i64)
         }
-        Literal::Nil => 0.0,
-        Literal::Str(v) => v.trim().parse::<f64>().unwrap_or(f64::NAN),
+        _ => None,
     }
-}
-
-fn js_to_uint32(v: f64) -> u32 {
-    if !v.is_finite() || v == 0.0 {
-        return 0;
-    }
-    let truncated = v.trunc();
-    let modulo = truncated.rem_euclid(4294967296.0);
-    modulo as u32
-}
-
-fn js_to_int32(v: f64) -> i32 {
-    js_to_uint32(v) as i32
 }
 
 fn eval_unary(op: &str, a: &Literal) -> Option<Literal> {
     match op {
         "not" => Some(Literal::Bool(!lua_truth(a))),
-        "-" => match a {
-            Literal::Int(v) => v.checked_neg().map(Literal::Int),
-            _ => Some(Literal::Num(-js_to_number(a))),
-        },
-        "~" => match a {
-            Literal::Int(v) => Some(Literal::Int(!v)),
-            _ => Some(Literal::Int(!js_to_int32(js_to_number(a)) as i64)),
-        },
+        "-" => Some(match a {
+            Literal::Int(v) => Literal::Int(v.wrapping_neg()),
+            _ => Literal::Num(-number(a)?),
+        }),
+        "~" => Some(Literal::Int(!integer(a)?)),
         "#" => match a {
             Literal::Str(v) => Some(Literal::Int(v.len() as i64)),
             _ => None,
@@ -192,123 +169,177 @@ fn eval_unary(op: &str, a: &Literal) -> Option<Literal> {
     }
 }
 
+fn int_float_cmp(integer: i64, float: f64) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    if float.is_nan() {
+        return None;
+    }
+    if float >= 9223372036854775808.0 {
+        return Some(Ordering::Less);
+    }
+    if float < -9223372036854775808.0 {
+        return Some(Ordering::Greater);
+    }
+    let truncated = float as i64;
+    Some(match integer.cmp(&truncated) {
+        Ordering::Equal if float.fract() > 0.0 => Ordering::Less,
+        Ordering::Equal if float.fract() < 0.0 => Ordering::Greater,
+        order => order,
+    })
+}
+
+fn value_cmp(a: &Literal, b: &Literal) -> Option<std::cmp::Ordering> {
+    match (a, b) {
+        (Literal::Str(a), Literal::Str(b)) => Some(a.cmp(b)),
+        (Literal::Int(a), Literal::Int(b)) => Some(a.cmp(b)),
+        (Literal::Int(a), Literal::Num(b)) => int_float_cmp(*a, *b),
+        (Literal::Num(a), Literal::Int(b)) => {
+            int_float_cmp(*b, *a).map(std::cmp::Ordering::reverse)
+        }
+        (Literal::Num(a), Literal::Num(b)) => a.partial_cmp(b),
+        _ => None,
+    }
+}
+
 fn strict_equal(a: &Literal, b: &Literal) -> bool {
     match (a, b) {
         (Literal::Nil, Literal::Nil) => true,
         (Literal::Bool(a), Literal::Bool(b)) => a == b,
-        (Literal::Str(a), Literal::Str(b)) => a == b,
-        (Literal::Int(a), Literal::Int(b)) => a == b,
-        (Literal::Int(a), Literal::Num(b)) | (Literal::Num(b), Literal::Int(a)) => {
-            (*a as f64) == *b
-        }
-        (Literal::Num(a), Literal::Num(b)) => a == b,
-        _ => false,
+        _ => value_cmp(a, b) == Some(std::cmp::Ordering::Equal),
     }
 }
 
-fn relational(op: &str, a: &Literal, b: &Literal) -> bool {
-    if let (Literal::Str(a), Literal::Str(b)) = (a, b) {
-        return match op {
-            "<" => a < b,
-            ">" => a > b,
-            "<=" => a <= b,
-            ">=" => a >= b,
-            _ => false,
-        };
+fn relational(op: &str, a: &Literal, b: &Literal) -> Option<bool> {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    if !matches!((a, b), (Literal::Str(_), Literal::Str(_)))
+        && (number(a).is_none() || number(b).is_none())
+    {
+        return None;
     }
-    let a = js_to_number(a);
-    let b = js_to_number(b);
-    match op {
-        "<" => a < b,
-        ">" => a > b,
-        "<=" => a <= b,
-        ">=" => a >= b,
-        _ => false,
+    let order = value_cmp(a, b);
+    Some(match op {
+        "<" => order == Some(Less),
+        ">" => order == Some(Greater),
+        "<=" => matches!(order, Some(Less | Equal)),
+        ">=" => matches!(order, Some(Greater | Equal)),
+        _ => return None,
+    })
+}
+
+fn shift(value: i64, count: i64, left: bool) -> i64 {
+    if count.unsigned_abs() >= 64 {
+        return 0;
+    }
+    if left != (count < 0) {
+        value.wrapping_shl(count.unsigned_abs() as u32)
+    } else {
+        ((value as u64) >> count.unsigned_abs()) as i64
     }
 }
 
 fn eval_binary(op: &str, a: &Literal, b: &Literal) -> Option<Literal> {
-    let an = || js_to_number(a);
-    let bn = || js_to_number(b);
     match op {
-        // Unlike JavaScript, Lua does not coerce strings for arithmetic and
-        // `+` is never concatenation.  Refuse to fold such expressions; the
-        // runtime error/number coercion boundary must remain observable.
-        "+" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => x.checked_add(*y).map(Literal::Int),
-            (Literal::Str(_), _) | (_, Literal::Str(_)) => None,
-            _ => Some(Literal::Num(an() + bn())),
-        },
-        "-" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => x.checked_sub(*y).map(Literal::Int),
-            _ => Some(Literal::Num(an() - bn())),
-        },
-        "*" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => x.checked_mul(*y).map(Literal::Int),
-            _ => Some(Literal::Num(an() * bn())),
-        },
-        "/" => {
-            let x = an();
-            let y = bn();
-            (y != 0.0).then_some(Literal::Num(x / y))
-        }
-        "//" => {
+        "+" | "-" | "*" => Some(match (a, b) {
+            (Literal::Int(x), Literal::Int(y)) => Literal::Int(match op {
+                "+" => x.wrapping_add(*y),
+                "-" => x.wrapping_sub(*y),
+                _ => x.wrapping_mul(*y),
+            }),
+            _ => Literal::Num(match op {
+                "+" => number(a)? + number(b)?,
+                "-" => number(a)? - number(b)?,
+                _ => number(a)? * number(b)?,
+            }),
+        }),
+        "/" => Some(Literal::Num(number(a)? / number(b)?)),
+        "//" | "%" => {
             if let (Literal::Int(x), Literal::Int(y)) = (a, b) {
-                if *y != 0 {
-                    return Some(Literal::Int(x.div_euclid(*y)));
+                if *y == 0 {
+                    return None;
+                }
+                // Lua explicitly wraps MIN/-1, and floor division follows the divisor's sign.
+                let mut quotient = x.wrapping_div(*y);
+                let mut remainder = x.wrapping_rem(*y);
+                if remainder != 0 && (remainder < 0) != (*y < 0) {
+                    quotient = quotient.wrapping_sub(1);
+                    remainder = remainder.wrapping_add(*y);
+                }
+                return Some(Literal::Int(if op == "//" { quotient } else { remainder }));
+            }
+            let (x, y) = (number(a)?, number(b)?);
+            let mut remainder = x % y;
+            if remainder != 0.0 && (remainder < 0.0) != (y < 0.0) {
+                remainder += y;
+            }
+            Some(Literal::Num(if op == "//" {
+                (x / y).floor()
+            } else {
+                remainder
+            }))
+        }
+        "^" => Some(Literal::Num(number(a)?.powf(number(b)?))),
+        ".." => {
+            // Float tostring depends on Lua's formatting/locale contract. Keep
+            // that runtime conversion, but fold exact byte strings and integers.
+            fn bytes(value: &Literal) -> Option<Vec<u8>> {
+                match value {
+                    Literal::Str(v) => Some(v.clone()),
+                    Literal::Int(v) => Some(v.to_string().into_bytes()),
+                    _ => None,
                 }
             }
-            (bn() != 0.0).then_some(Literal::Num((an() / bn()).floor()))
+            let mut result = bytes(a)?;
+            result.extend(bytes(b)?);
+            Some(Literal::Str(result))
         }
-        "%" => {
-            if let (Literal::Int(x), Literal::Int(y)) = (a, b) {
-                if *y != 0 {
-                    return Some(Literal::Int(x.rem_euclid(*y)));
-                }
-                return None;
-            }
-            let x = an();
-            let y = bn();
-            (y != 0.0).then_some(Literal::Num(((x % y) + y) % y))
-        }
-        "^" => Some(Literal::Num(an().powf(bn()))),
-        ".." => Some(Literal::Str(format!(
-            "{}{}",
-            literal_to_js_string(a),
-            literal_to_js_string(b)
-        ))),
         "==" => Some(Literal::Bool(strict_equal(a, b))),
         "~=" => Some(Literal::Bool(!strict_equal(a, b))),
-        "<" | ">" | "<=" | ">=" => Some(Literal::Bool(relational(op, a, b))),
-        "&" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => Some(Literal::Int(x & y)),
-            _ => None,
-        },
-        "|" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => Some(Literal::Int(x | y)),
-            _ => None,
-        },
-        "~" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => Some(Literal::Int(x ^ y)),
-            _ => None,
-        },
-        "<<" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => {
-                Some(Literal::Int(x.wrapping_shl((*y as u64 & 63) as u32)))
-            }
-            _ => None,
-        },
-        ">>" => match (a, b) {
-            (Literal::Int(x), Literal::Int(y)) => {
-                // Lua's right shift is logical (zero-filled), unlike Rust's
-                // signed `>>` and JavaScript's 32-bit arithmetic shift.
-                Some(Literal::Int(((*x as u64) >> (*y as u64 & 63)) as i64))
-            }
-            _ => None,
-        },
+        "<" | ">" | "<=" | ">=" => Some(Literal::Bool(relational(op, a, b)?)),
+        "&" => Some(Literal::Int(integer(a)? & integer(b)?)),
+        "|" => Some(Literal::Int(integer(a)? | integer(b)?)),
+        "~" => Some(Literal::Int(integer(a)? ^ integer(b)?)),
+        "<<" | ">>" => Some(Literal::Int(shift(integer(a)?, integer(b)?, op == "<<"))),
         "and" => Some(if lua_truth(a) { b.clone() } else { a.clone() }),
         "or" => Some(if lua_truth(a) { a.clone() } else { b.clone() }),
         _ => None,
+    }
+}
+
+fn eval_math(builtin: &str, values: &[Literal]) -> Option<Literal> {
+    match builtin {
+        "math.min" | "math.max" => {
+            let mut best = values.first()?.clone();
+            for value in &values[1..] {
+                if relational(if builtin == "math.min" { "<" } else { ">" }, value, &best)? {
+                    best = value.clone();
+                }
+            }
+            Some(best)
+        }
+        "math.abs" if values.len() == 1 => Some(match &values[0] {
+            Literal::Int(v) => Literal::Int(v.wrapping_abs()),
+            value => Literal::Num(number(value)?.abs()),
+        }),
+        "math.floor" if values.len() == 1 => {
+            if let Literal::Int(_) = values[0] {
+                return Some(values[0].clone());
+            }
+            let value = Literal::Num(number(&values[0])?.floor());
+            Some(integer(&value).map(Literal::Int).unwrap_or(value))
+        }
+        _ => {
+            let x = number(values.first()?)?;
+            let result = match builtin {
+                "math.sqrt" if values.len() == 1 => x.sqrt(),
+                "math.sin" if values.len() == 1 => x.sin(),
+                "math.cos" if values.len() == 1 => x.cos(),
+                "math.tan" if values.len() == 1 => x.tan(),
+                "math.atan" if values.len() == 1 => x.atan(),
+                "math.atan" if values.len() == 2 => x.atan2(number(&values[1])?),
+                _ => return None,
+            };
+            Some(Literal::Num(result))
+        }
     }
 }
 
@@ -591,14 +622,8 @@ fn fold_node_inner(
         .rewrite(node, mapped, "literal-folding-traversal");
 
     if let Node::Num(v) = target.node(node).clone() {
-        // Keep the lexical float spelling in the AST.  The ordinary printer
-        // may still shorten it, while context-sensitive uses such as
-        // `math.type(1.0)` and `-0.0` can preserve Lua's subtype/sign.
-        let unsafe_integer =
-            integer_literal_value(&v).is_some_and(|value| value.unsigned_abs() > (1u64 << 53));
-        if !(v.contains('.') || v.contains('e') || v.contains('E')) && !unsafe_integer {
-            target.nodes[node as usize] = Node::Num(normalize_num_literal(&v).into());
-        }
+        let rendered = storm_lua_syntax::print::render_num(&v).into_owned();
+        target.nodes[node as usize] = Node::Num(rendered.into());
     }
 
     if let Node::Paren(inner) = target.node(node).clone() {
@@ -634,10 +659,14 @@ fn fold_node_inner(
             if let (Node::Str(format), Node::Num(value)) =
                 (target.node(args[0]).clone(), target.node(args[1]).clone())
             {
-                let decoded = decode_lua_string(&format);
+                let Some(decoded) = decode_lua_string(&format) else {
+                    return;
+                };
                 if decoded.starts_with("%0") && decoded.ends_with('d') {
                     let width_text = &decoded[2..decoded.len() - 1];
                     if !width_text.is_empty()
+                        // Lua 5.3 permits at most two width digits.
+                        && width_text.len() <= 2
                         && !width_text.starts_with('0')
                         && width_text.chars().all(|c| c.is_ascii_digit())
                     {
@@ -648,6 +677,10 @@ fn fold_node_inner(
                                 let sign = if integer < 0 { "-" } else { "" };
                                 let abs = integer.unsigned_abs().to_string();
                                 let zeros = width.saturating_sub(sign.len() + abs.len());
+                                if sign.len() + abs.len() + zeros + 2 >= measure_expr(target, node)
+                                {
+                                    return;
+                                }
                                 let formatted = format!("{sign}{}{abs}", "0".repeat(zeros));
                                 let candidate =
                                     target.push(Node::Str(quote_lua(&formatted).into()));
@@ -797,11 +830,19 @@ fn fold_node_inner(
                 }
             }
         }
-        if matches!(op.as_str(), "+" | "-") && is_zero(target, right) {
+        if aggressive
+            && matches!(op.as_str(), "+" | "-")
+            && matches!(a, Some(Literal::Int(_) | Literal::Num(_)))
+            && is_zero(target, right)
+        {
             target.nodes[node as usize] = target.node(left).clone();
             return;
         }
-        if op == "+" && is_zero(target, left) {
+        if aggressive
+            && op == "+"
+            && matches!(b, Some(Literal::Int(_) | Literal::Num(_)))
+            && is_zero(target, left)
+        {
             target.nodes[node as usize] = target.node(right).clone();
             return;
         }
@@ -816,15 +857,27 @@ fn fold_node_inner(
             target.nodes[node as usize] = Node::Un("-".into(), right);
             return;
         }
-        if op == "*" && is_one(target, right) {
+        if aggressive
+            && op == "*"
+            && matches!(a, Some(Literal::Int(_) | Literal::Num(_)))
+            && is_one(target, right)
+        {
             target.nodes[node as usize] = target.node(left).clone();
             return;
         }
-        if op == "*" && is_one(target, left) {
+        if aggressive
+            && op == "*"
+            && matches!(b, Some(Literal::Int(_) | Literal::Num(_)))
+            && is_one(target, left)
+        {
             target.nodes[node as usize] = target.node(right).clone();
             return;
         }
-        if op == "/" && is_one(target, right) {
+        if aggressive
+            && op == "/"
+            && matches!(a, Some(Literal::Int(_) | Literal::Num(_)))
+            && is_one(target, right)
+        {
             target.nodes[node as usize] = target.node(left).clone();
             return;
         }
@@ -1023,34 +1076,15 @@ fn fold_node_inner(
                         clippy::unwrap_used,
                         reason = "The preceding all-arguments literal check applies to the same immutable target arena"
                     )]
-                    let values: Vec<f64> = args
+                    let values: Vec<Literal> = args
                         .iter()
-                        .map(|a| js_to_number(&literal_value(target, *a).unwrap()))
+                        .map(|a| literal_value(target, *a).unwrap())
                         .collect();
-                    let value = match builtin.as_str() {
-                        "math.min" if !values.is_empty() => {
-                            Some(values.iter().copied().fold(f64::INFINITY, f64::min))
-                        }
-                        "math.max" if !values.is_empty() => {
-                            Some(values.iter().copied().fold(f64::NEG_INFINITY, f64::max))
-                        }
-                        "math.abs" if values.len() == 1 => Some(values[0].abs()),
-                        "math.floor" if values.len() == 1 => Some(values[0].floor()),
-                        "math.sqrt" if values.len() == 1 => Some(values[0].sqrt()),
-                        "math.sin" if values.len() == 1 => Some(values[0].sin()),
-                        "math.cos" if values.len() == 1 => Some(values[0].cos()),
-                        "math.tan" if values.len() == 1 => Some(values[0].tan()),
-                        "math.atan" if values.len() == 1 => Some(values[0].atan()),
-                        "math.atan" if values.len() == 2 => Some(values[0].atan2(values[1])),
-                        _ => None,
-                    };
+                    let value = eval_math(&builtin, &values);
                     if let Some(value) = value {
-                        if let Some(candidate) = aggressive_literal_node(
-                            target,
-                            Literal::Num(value),
-                            aggressive,
-                            tolerance,
-                        ) {
+                        if let Some(candidate) =
+                            aggressive_literal_node(target, value, aggressive, tolerance)
+                        {
                             if measure_expr(target, candidate) <= measure_expr(target, node) {
                                 target.nodes[node as usize] = target.node(candidate).clone();
                             }

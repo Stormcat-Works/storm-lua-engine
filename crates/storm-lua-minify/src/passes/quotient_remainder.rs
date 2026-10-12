@@ -90,6 +90,31 @@ fn matching_pair(
         return None;
     }
 
+    // A nonnegative, exactly represented integer remains in this range after
+    // repeated division. This proof excludes MIN subtraction overflow and
+    // float remainder/cancellation rounding. Unknown operands stay unchanged.
+    let binding = res.binding(source_bid);
+    let declaration = binding.decl_node?;
+    let Node::Local(_, values) = ast.node(declaration) else {
+        return None;
+    };
+    let index = res.node_bids[declaration as usize]
+        .iter()
+        .position(|bid| *bid == source_bid)?;
+    let Node::Num(initial) = ast.node(*values.get(index)?) else {
+        return None;
+    };
+    let Node::Num(divisor) = ast.node(*modulo_rhs) else {
+        return None;
+    };
+    let initial = storm_lua_syntax::numeric::integer_literal_value(initial)?;
+    let divisor = storm_lua_syntax::numeric::integer_literal_value(divisor)?;
+    if !(0..=9_007_199_254_740_992).contains(&initial)
+        || !(1..=9_007_199_254_740_992).contains(&divisor)
+        || res.binding_write_counts[source_bid as usize] != 1
+    {
+        return None;
+    }
     Some((second_targets[0], *modulo_lhs, *modulo_rhs))
 }
 
@@ -209,12 +234,18 @@ mod tests {
 
     #[test]
     fn fuses_adjacent_quotient_and_remainder() {
-        assert_eq!(output("r=x%10\nx=(x-r)/10"), "r=x%10 x=x//10");
+        assert_eq!(
+            output("local x=12345 r=x%10\nx=(x-r)/10"),
+            "local x=12345 r=x%10 x=x//10"
+        );
     }
 
     #[test]
     fn supports_local_remainder_binding() {
-        assert_eq!(output("local r=x%16\nx=(x-r)/16"), "local r=x%16 x=x//16");
+        assert_eq!(
+            output("local x=12345 local r=x%16\nx=(x-r)/16"),
+            "local x=12345 local r=x%16 x=x//16"
+        );
     }
 
     #[test]

@@ -154,7 +154,7 @@ pub(crate) fn builtin_reference(
             Some(format!(
                 "{}.{}",
                 builtin_reference(ast, res, aliases, *object)?,
-                decode_lua_string(raw)
+                decode_lua_string(raw)?
             ))
         }
         _ => None,
@@ -166,12 +166,14 @@ pub(crate) fn builtin_reference(
 // for every final search layout.
 pub(crate) fn api_aliases(ast: &Ast, res: &Resolution, root: NodeId) -> HashMap<BindingId, String> {
     let mut aliases = HashMap::new();
+    let mutated = storm_lua_analysis::effects::mutated_builtin_roots(ast, res, root);
     for (bid, binding) in res.bindings.iter().enumerate().skip(1) {
         let name = ast.strings.get(binding.name);
         if binding.kind == BindingKind::Global
             && res.binding_write_counts[bid] == 0
             && storm_lua_analysis::resolver::api_roots(name)
             && name != "self"
+            && !mutated.contains(name)
         {
             aliases.insert(bid as BindingId, name.to_string());
         }
@@ -406,7 +408,8 @@ impl Scan<'_> {
                 }
             }
             Node::Str(raw) => {
-                let text = decode_lua_string(raw);
+                let text =
+                    decode_lua_string(raw).ok_or("binary field/value requires byte analysis")?;
                 // A string value exposes string-library functions through its
                 // implicit metatable, including via s[key] and an aliased
                 // method. Account for those without relying on a known API
@@ -664,7 +667,10 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
         match ast.node(node) {
             Node::Index(object, key, _) => {
                 if let Node::Str(raw) = ast.node(*key) {
-                    if let Some(short) = mapping.get(&decode_lua_string(raw)) {
+                    if let Some(short) = decode_lua_string(raw)
+                        .as_ref()
+                        .and_then(|key| mapping.get(key))
+                    {
                         let renamed_key = trial.str(quote_lua(short));
                         trial
                             .nodes
@@ -687,7 +693,10 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
                             .unwrap_or_else(|| field.clone()),
                         TableField::KVar(key, value) => {
                             if let Node::Str(raw) = ast.node(*key) {
-                                if let Some(short) = mapping.get(&decode_lua_string(raw)) {
+                                if let Some(short) = decode_lua_string(raw)
+                                    .as_ref()
+                                    .and_then(|key| mapping.get(key))
+                                {
                                     return TableField::Name(trial.strings.intern(short), *value);
                                 }
                             }

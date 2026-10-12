@@ -266,10 +266,26 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
     }
 
     fn expr_seg(&self, id: NodeId, parent: u8) -> Seg {
+        if parent == 15
+            && !matches!(
+                self.ast.node(id),
+                Node::Name(_) | Node::Paren(_) | Node::Index(..) | Node::Call(..)
+            )
+        {
+            return self.concat_segs(&[self.seg_of("("), self.expr_seg(id, 0), self.seg_of(")")]);
+        }
         let node = &self.ast.nodes[id as usize];
         match node {
             Node::Name(sym) => self.name_seg(id, NameSite::Reference, *sym),
-            Node::Num(v) => self.seg_of(&render_num(v)),
+            Node::Num(v) => {
+                let text = render_num(v);
+                let segment = self.seg_of(&text);
+                if (text.contains('/') && parent > 11) || (text.starts_with('-') && parent >= 14) {
+                    self.concat_segs(&[self.seg_of("("), segment, self.seg_of(")")])
+                } else {
+                    segment
+                }
+            }
             Node::Str(v) => self.qstr_seg(v),
             Node::Nil => self.seg_of("nil"),
             Node::Bool(b) => self.seg_of(if parent <= 3 {
@@ -315,11 +331,16 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
                         ])
                     }
                 });
-                self.concat_segs(&[
+                let segment = self.concat_segs(&[
                     self.seg_of("{"),
                     self.join_comma_segs(f_segs),
                     self.seg_of("}"),
-                ])
+                ]);
+                if parent == 15 {
+                    self.concat_segs(&[self.seg_of("("), segment, self.seg_of(")")])
+                } else {
+                    segment
+                }
             }
             Node::Index(obj, key, _) => {
                 let obj_s = self.expr_seg(*obj, 15);
@@ -331,7 +352,14 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
                 let key_s = self.bracket_key_seg(*key);
                 self.concat_segs(&[obj_s, self.seg_of("["), key_s, self.seg_of("]")])
             }
-            Node::Function { .. } => self.function_expr_seg(id),
+            Node::Function { .. } => {
+                let segment = self.function_expr_seg(id);
+                if parent == 15 {
+                    self.concat_segs(&[self.seg_of("("), segment, self.seg_of(")")])
+                } else {
+                    segment
+                }
+            }
             Node::Call(fn_, args, method) => {
                 let fn_s = self
                     .names

@@ -1,0 +1,103 @@
+[
+  {
+    "name": "F1-api-name-collision",
+    "source": "function onTick()__api0=input.getNumber(1)end function onDraw()screen.drawText(0,0,__api0)screen.drawText(0,1,__api0)screen.drawText(0,2,__api0)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F1-color-name-collision",
+    "source": "__sc0=42 function onDraw() screen.setColor(180,180,200)screen.drawText(0,0,__sc0)screen.setColor(180,180,200)screen.drawText(0,1,__sc0)screen.setColor(180,180,200)screen.drawText(0,2,__sc0)screen.setColor(180,180,200)screen.drawText(0,3,__sc0)screen.setColor(180,180,200)screen.drawText(0,4,__sc0)screen.setColor(180,180,200)screen.drawText(0,5,__sc0)screen.setColor(180,180,200)screen.drawText(0,6,__sc0)screen.setColor(180,180,200)screen.drawText(0,7,__sc0)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F1-output-name-collision",
+    "source": "function onTick()__stormmin_output_values_0=input.getNumber(1)output.setNumber(1,100)output.setNumber(2,200)output.setNumber(3,300)output.setNumber(4,400)output.setNumber(5,500)output.setNumber(6,600)output.setNumber(7,700)output.setNumber(8,800)output.setNumber(9,900)output.setNumber(10,1000)output.setNumber(11,1100)output.setNumber(12,1200)output.setNumber(13,1300)output.setNumber(14,1400)if input.getBool(1)then output.setNumber(31,__stormmin_output_values_0)end end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F1-screen-name-collision",
+    "source": "function onTick()__stormmin_screen_index_0=input.getNumber(1)end function onDraw()screen.drawText(0,0,__stormmin_screen_index_0)screen.drawText(0,5,__stormmin_screen_index_0)screen.drawText(0,10,__stormmin_screen_index_0)screen.drawText(0,15,__stormmin_screen_index_0)screen.drawText(0,20,__stormmin_screen_index_0)screen.drawText(0,25,__stormmin_screen_index_0)screen.drawText(0,30,__stormmin_screen_index_0)screen.drawText(0,35,__stormmin_screen_index_0)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F2-button-eager-value",
+    "source": "value=0 count=0 active=true pulse=true\nfunction hit(x,w,y,h)count=count+1 value=value+100 return x+w+y+h>0 end\nfunction onColor()screen.setColor(180,180,200)end\nfunction offColor()screen.setColor(35,30,30)end\nfunction onTick()x=input.getNumber(1) y=input.getNumber(2) w=input.getNumber(3) h=input.getNumber(4)active=input.getBool(1)pulse=input.getBool(2)end\nfunction onDraw()\nif hit(x+1,w,y+1,h)and active then if pulse then value=value+1 end onColor() else offColor() end screen.drawText(x+1+1,y+1,\"Label1\")\nif hit(x+7,w,y+7,h)and active then if pulse then value=value+7 end onColor() else offColor() end screen.drawText(x+7+1,y+7,\"Label7\")\nif hit(x+13,w,y+13,h)and active then if pulse then value=value+13 end onColor() else offColor() end screen.drawText(x+13+1,y+13,\"Label13\")\nscreen.drawText(0,0,value) end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F3-button-local-capture",
+    "source": "value=0 count=0 active=true pulse=true\nfunction hit(x,w,y,h)count=count+1 return x+w+y+h>0 end\nfunction onColor()screen.setColor(180,180,200)end\nfunction offColor()screen.setColor(35,30,30)end\nfunction onTick()x=input.getNumber(1) y=input.getNumber(2) w=input.getNumber(3) h=input.getNumber(4)active=input.getBool(1)pulse=input.getBool(2)end\nfunction onDraw()local value=0 local active=active local pulse=pulse function kept()return value end\nif hit(x+1,w,y+1,h)and active then if pulse then value=value+1 end onColor() else offColor() end screen.drawText(x+1+1,y+1,\"Label1\")\nif hit(x+7,w,y+7,h)and active then if pulse then value=value+7 end onColor() else offColor() end screen.drawText(x+7+1,y+7,\"Label7\")\nif hit(x+13,w,y+13,h)and active then if pulse then value=value+13 end onColor() else offColor() end screen.drawText(x+13+1,y+13,\"Label13\")\nscreen.drawText(0,0,value) end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F4-callback-init-call",
+    "source": "value=0 s0=property.getNumber(\"g0\") s1=property.getNumber(\"g1\") s2=property.getNumber(\"g2\") s3=property.getNumber(\"g3\") s4=property.getNumber(\"g4\") s5=property.getNumber(\"g5\") s6=property.getNumber(\"g6\") s7=property.getNumber(\"g7\") s8=property.getNumber(\"g8\") s9=property.getNumber(\"g9\") s10=property.getNumber(\"g10\") s11=property.getNumber(\"g11\") s12=property.getNumber(\"g12\") s13=property.getNumber(\"g13\") s14=property.getNumber(\"g14\") s15=property.getNumber(\"g15\") s16=property.getNumber(\"g16\") s17=property.getNumber(\"g17\") s18=property.getNumber(\"g18\") s19=property.getNumber(\"g19\") s20=property.getNumber(\"g20\") s21=property.getNumber(\"g21\") s22=property.getNumber(\"g22\") s23=property.getNumber(\"g23\") s24=property.getNumber(\"g24\") s25=property.getNumber(\"g25\") s26=property.getNumber(\"g26\") s27=property.getNumber(\"g27\") s28=property.getNumber(\"g28\") s29=property.getNumber(\"g29\") s30=property.getNumber(\"g30\") s31=property.getNumber(\"g31\") s32=property.getNumber(\"g32\") s33=property.getNumber(\"g33\") s34=property.getNumber(\"g34\") s35=property.getNumber(\"g35\") s36=property.getNumber(\"g36\") s37=property.getNumber(\"g37\") s38=property.getNumber(\"g38\") s39=property.getNumber(\"g39\") s40=property.getNumber(\"g40\") s41=property.getNumber(\"g41\") s42=property.getNumber(\"g42\") s43=property.getNumber(\"g43\") s44=property.getNumber(\"g44\") s45=property.getNumber(\"g45\") s46=property.getNumber(\"g46\") s47=property.getNumber(\"g47\") s48=property.getNumber(\"g48\") s49=property.getNumber(\"g49\") s50=property.getNumber(\"g50\") s51=property.getNumber(\"g51\") s52=property.getNumber(\"g52\") s53=property.getNumber(\"g53\") s54=property.getNumber(\"g54\") function tickHelper(x)value=value+x value=value+x+1 value=value+x+2 end function drawHelper(x)screen.drawText(1,2,x)screen.drawText(2,3,x+1)screen.drawText(3,4,x+2)end tickHelper(10) function onTick()tickHelper(input.getNumber(1))output.setNumber(1,s0)output.setNumber(2,s1)output.setNumber(3,s2)output.setNumber(4,s3)output.setNumber(5,s4)output.setNumber(6,s5)output.setNumber(7,s6)output.setNumber(8,s7)output.setNumber(9,s8)output.setNumber(10,s9)output.setNumber(11,s10)output.setNumber(12,s11)output.setNumber(13,s12)output.setNumber(14,s13)output.setNumber(15,s14)output.setNumber(16,s15)output.setNumber(17,s16)output.setNumber(18,s17)output.setNumber(19,s18)output.setNumber(20,s19)output.setNumber(21,s20)output.setNumber(22,s21)output.setNumber(23,s22)output.setNumber(24,s23)output.setNumber(25,s24)output.setNumber(26,s25)output.setNumber(27,s26)output.setNumber(28,s27)output.setNumber(29,s28)output.setNumber(30,s29)output.setNumber(31,s30)output.setNumber(32,s31)output.setNumber(1,s32)output.setNumber(2,s33)output.setNumber(3,s34)output.setNumber(4,s35)output.setNumber(5,s36)output.setNumber(6,s37)output.setNumber(7,s38)output.setNumber(8,s39)output.setNumber(9,s40)output.setNumber(10,s41)output.setNumber(11,s42)output.setNumber(12,s43)output.setNumber(13,s44)output.setNumber(14,s45)output.setNumber(15,s46)output.setNumber(16,s47)output.setNumber(17,s48)output.setNumber(18,s49)output.setNumber(19,s50)output.setNumber(20,s51)output.setNumber(21,s52)output.setNumber(22,s53)output.setNumber(23,s54)output.setNumber(32,value)end function onDraw()drawHelper(2)drawHelper(3)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F5-screen-i64-default",
+    "source": "function onDraw()screen.drawText(0,0,9007199254740992)screen.drawText(0,5,9007199254740993)screen.drawText(0,10,9007199254740992)screen.drawText(0,15,9007199254740993)screen.drawText(0,20,9007199254740992)screen.drawText(0,25,9007199254740993)screen.drawText(0,30,9007199254740992)screen.drawText(0,35,9007199254740993)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onDraw();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F5-screen-i64-safe-exact",
+    "source": "function onDraw()screen.drawText(0,0,9007199254740992)screen.drawText(0,5,9007199254740993)screen.drawText(0,10,9007199254740992)screen.drawText(0,15,9007199254740993)screen.drawText(0,20,9007199254740992)screen.drawText(0,25,9007199254740993)screen.drawText(0,30,9007199254740992)screen.drawText(0,35,9007199254740993)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onDraw();return table.concat(trace,\",\")",
+    "options": {
+      "mode": "safe",
+      "numericMode": "exact"
+    }
+  },
+  {
+    "name": "F6-api-table-mutation",
+    "source": "count=0 function onDraw()screen.drawText=function(x,y,t)count=count+1 end screen[property.getText(\"fn\")](0,0,\"dynamic\")screen.drawText(0,0,\"a\")screen.drawText(0,1,\"b\")screen.drawText(0,2,\"c\")end function onTick()output.setNumber(1,count)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onDraw();onTick();return table.concat(trace,\",\")",
+    "options": {}
+  },
+  {
+    "name": "F6-property-function-mutation",
+    "source": "property.getNumber=function(k)return 7 end function onTick()output.setNumber(1,property.getNumber(\"X\"))end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();return table.concat(trace,\",\")",
+    "options": {
+      "property": {
+        "mode": "hardcode",
+        "numbers": {
+          "X": 42
+        }
+      }
+    }
+  },
+  {
+    "name": "F7-property-discarded-result",
+    "source": "property.getNumber(\"X\") function onTick()output.setNumber(1,1)end",
+    "setup": "trace={} screen={setColor=function(...)end,drawText=function(x,y,t)trace[#trace+1]=tostring(t)end} output={setNumber=function(c,v)trace[#trace+1]=type(v)==\"table\"and \"<table>\"or tostring(v)end,setBool=function(c,v)trace[#trace+1]=tostring(v)end} input={getNumber=function(c)return c end,getBool=function(c)return true end} property={getNumber=function(k)return 1 end,getBool=function(k)return true end,getText=function(k)return \"drawText\"end}",
+    "after": "onTick();return table.concat(trace,\",\")",
+    "options": {
+      "property": {
+        "mode": "hardcode",
+        "numbers": {
+          "X": 42
+        }
+      }
+    }
+  }
+]

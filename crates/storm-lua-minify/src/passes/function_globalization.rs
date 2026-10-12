@@ -301,6 +301,14 @@ pub fn globalize_function_locals(
     root: NodeId,
     minimum_frequency: u32,
 ) -> PassResult {
+    if super::has_unstructured_flow(ast, root) {
+        return PassResult {
+            root,
+            saved: Some(0),
+            details: None,
+        };
+    }
+
     let original_size = measure_size(ast, root);
     let source = clone_ast(ast);
     // Generated slots live in the global namespace.  If the user already owns
@@ -523,7 +531,7 @@ pub fn globalize_function_locals(
     let mut target = clone_ast(&source);
     let mut slot_symbols = HashMap::<usize, SymbolId>::new();
     for slot in 0..=max_slot {
-        slot_symbols.insert(slot, target.strings.intern(&format!("__fs{slot}")));
+        slot_symbols.insert(slot, target.strings.fresh(&format!("__fs{slot}")));
     }
     let rewrite = Rewrite {
         source: &source,

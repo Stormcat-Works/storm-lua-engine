@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use crate::pass::PassResult;
 use crate::scope_rename::measure_renamed_size;
 use storm_lua_analysis::effects::EffectAnalyzer;
-use storm_lua_analysis::resolver::{resolve, BindingId};
+use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::print::Printer;
 
@@ -44,14 +44,11 @@ fn measured(ast: &Ast, root: NodeId) -> usize {
     measure_renamed_size(ast, root)
 }
 
-fn expression_key(ast: &Ast, node: NodeId) -> String {
-    Printer::new(ast, false).expr_public(node)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn inspect(
     ast: &Ast,
     analyzer: &EffectAnalyzer<'_>,
+    resolution: &Resolution,
     numeric_initializers: &HashMap<BindingId, usize>,
     node: NodeId,
     inside_function: bool,
@@ -59,8 +56,9 @@ fn inspect(
     group_indexes: &mut HashMap<String, usize>,
 ) {
     if inside_function && matches!(ast.node(node), Node::Bin(..) | Node::Un(..)) {
-        let key = expression_key(ast, node);
-        if key.len() >= 3 {
+        let key = super::immutable_values::expression_key(ast, resolution, node);
+        let expression_size = Printer::new(ast, false).expr_public(node).len();
+        if expression_size >= 3 {
             let effect = analyzer.effects_for_expr(node);
             if !effect.calls
                 && !effect.ordered
@@ -94,8 +92,8 @@ fn inspect(
                 };
                 let group = &mut groups[index];
                 group.occurrences.push(node);
-                group.estimate = group.occurrences.len() as isize * (key.len() as isize - 1)
-                    - key.len() as isize
+                group.estimate = group.occurrences.len() as isize * (expression_size as isize - 1)
+                    - expression_size as isize
                     - 2;
             }
         }
@@ -104,6 +102,7 @@ fn inspect(
         inspect(
             ast,
             analyzer,
+            resolution,
             numeric_initializers,
             *body,
             true,
@@ -116,6 +115,7 @@ fn inspect(
         inspect(
             ast,
             analyzer,
+            resolution,
             numeric_initializers,
             child,
             inside_function,
@@ -242,6 +242,7 @@ pub fn synthesize_immutable_carriers_with_options(
         inspect(
             &source,
             &analyzer,
+            &res,
             &numeric_initializers,
             root,
             false,

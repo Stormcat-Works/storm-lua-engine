@@ -307,7 +307,10 @@ fn inspect_block(
         };
         for statement in occurrence_statements {
             if let Some(previous) = part.last().copied() {
-                let mut split = false;
+                let previous_effect = analyzer.effects_for_statement(statements[previous]);
+                let mut split = reads.iter().any(|bid| previous_effect.writes.contains(bid))
+                    || (!preserves_binding_values(ast, analyzer, statements[previous])
+                        && (previous_effect.calls || previous_effect.ordered));
                 for current in statements
                     .iter()
                     .take(statement)

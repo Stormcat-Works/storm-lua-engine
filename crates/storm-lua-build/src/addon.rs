@@ -2,7 +2,7 @@
 //!
 //! No Vehicle phase rules, output limit, property specialization, or minifier
 //! are applied. Server/world compatibility remains the host's responsibility.
-use crate::metadata::metadata;
+use crate::metadata::prepare;
 use crate::{lifeboat, public_api::ApiProjectCompileResult, source_map::generate_source_map};
 use serde::{Deserialize, Serialize};
 use storm_lua_analysis::{Diagnostic, LuaProject, Severity};
@@ -40,18 +40,18 @@ pub fn build_addon(project: &LuaProject, options: &AddonBuildOptions) -> ApiProj
             "Addon project exceeds build resources",
         )]);
     }
-    let mut prepared = project.clone();
-    for (name, source) in &mut prepared.modules {
-        match metadata(source, options.metadata_tag.as_deref()) {
-            Ok(value) => *source = value,
-            Err(error) => {
-                return failure(vec![
-                    Diagnostic::error("addon-build", error).with_module(name)
-                ])
-            }
+    let prepared = match prepare(project, options.metadata_tag.as_deref()) {
+        Ok(value) => value,
+        Err((name, error)) => {
+            return failure(vec![
+                Diagnostic::error("addon-build", error).with_module(name)
+            ])
         }
+    };
+    let mut link = lifeboat::link_lifeboat(&prepared.project);
+    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
+        return failure(vec![Diagnostic::error("addon-build", error)]);
     }
-    let link = lifeboat::link_lifeboat(&prepared);
     let Some(code) = link.linked_source.as_deref() else {
         return failure(link.diagnostics);
     };
@@ -177,7 +177,13 @@ mod tests {
     #[test]
     fn metadata_tag_does_not_strip_a_string_or_unrelated_comment() {
         let source = "local x=[==[storm-lua-studio\nhello\n]==]\n";
-        assert_eq!(metadata(source, Some("storm-lua-studio")).unwrap(), source);
+        assert_eq!(
+            prepare(&project(source), Some("storm-lua-studio"))
+                .unwrap()
+                .project
+                .modules["main"],
+            source
+        );
         assert!(serde_json::from_str::<AddonBuildOptions>("{\"minify\":true}").is_err());
     }
 

@@ -205,6 +205,19 @@ fn child_is_exact(ast: &Ast, parent: NodeId, key: &str, inherited: bool, exact_c
     }
 }
 
+fn table_key_nodes(ast: &Ast, node: NodeId) -> HashSet<NodeId> {
+    match ast.node(node) {
+        Node::Table(fields) => fields
+            .iter()
+            .filter_map(|field| match field {
+                storm_lua_syntax::TableField::KVar(key, _) => Some(*key),
+                _ => None,
+            })
+            .collect(),
+        _ => HashSet::new(),
+    }
+}
+
 fn visit_exact_uses(
     ast: &Ast,
     res: &Resolution,
@@ -243,13 +256,14 @@ fn visit_exact_uses(
         }
     }
     let exact_call = is_exact_call(ast, analyzer, id);
+    let table_keys = table_key_nodes(ast, id);
     storm_lua_syntax::ast_utils::for_each_child_key(ast, id, &mut |key, child| {
         visit_exact_uses(
             ast,
             res,
             analyzer,
             child,
-            child_is_exact(ast, id, key, exact, exact_call),
+            child_is_exact(ast, id, key, exact, exact_call) || table_keys.contains(&child),
             exact_bids,
             exact_functions,
         );
@@ -259,26 +273,42 @@ fn visit_exact_uses(
 fn propagate_exact_definitions(
     ast: &Ast,
     res: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
     definitions: &HashMap<BindingId, Vec<NodeId>>,
     exact_bids: &mut HashSet<BindingId>,
+    exact_functions: &mut HashSet<BindingId>,
 ) {
     loop {
-        let mut changed = false;
-        let current = exact_bids.iter().copied().collect::<Vec<_>>();
-        for bid in current {
+        let previous = (exact_bids.len(), exact_functions.len());
+        for bid in exact_bids.iter().copied().collect::<Vec<_>>() {
             for expression in definitions.get(&bid).into_iter().flatten() {
-                storm_lua_syntax::ast_utils::walk(ast, *expression, &mut |id| {
-                    if matches!(ast.node(id), Node::Name(_)) {
-                        if let Some(input_bid) = res.node_bid.get(id as usize).copied().flatten() {
-                            if exact_bids.insert(input_bid) {
-                                changed = true;
-                            }
-                        }
-                    }
-                });
+                visit_exact_uses(
+                    ast,
+                    res,
+                    analyzer,
+                    *expression,
+                    true,
+                    exact_bids,
+                    exact_functions,
+                );
             }
         }
-        if !changed {
+        // Exact consumers can reach a function through an intermediate binding.
+        // Protect the function's local computations and their external inputs too.
+        for bid in exact_functions.iter().copied().collect::<Vec<_>>() {
+            if let Some(function) = res.binding(bid).function_node {
+                visit_exact_uses(
+                    ast,
+                    res,
+                    analyzer,
+                    function,
+                    true,
+                    exact_bids,
+                    exact_functions,
+                );
+            }
+        }
+        if previous == (exact_bids.len(), exact_functions.len()) {
             break;
         }
     }
@@ -289,11 +319,13 @@ struct RewriteContext<'a> {
     res: &'a Resolution,
     analyzer: &'a EffectAnalyzer<'a>,
     exact_bids: &'a HashSet<BindingId>,
+    exact_function_nodes: HashSet<NodeId>,
     tolerance: NumericTolerance,
     shortened: usize,
 }
 
 fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact: bool) -> NodeId {
+    let exact = exact || context.exact_function_nodes.contains(&id);
     if let Node::Num(raw) = context.source.node(id) {
         if !exact {
             let value = num_val(raw);
@@ -350,6 +382,7 @@ fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact
 
     let node = context.source.node(id).clone();
     let exact_call = is_exact_call(context.source, context.analyzer, id);
+    let table_keys = table_key_nodes(context.source, id);
     let rewritten = match node {
         Node::Assign(vs, es) => {
             let new_vs = vs
@@ -426,7 +459,8 @@ fn rewrite(target: &mut Ast, context: &mut RewriteContext<'_>, id: NodeId, exact
                     target,
                     context,
                     child,
-                    child_is_exact(context.source, id, key, exact, exact_call),
+                    child_is_exact(context.source, id, key, exact, exact_call)
+                        || table_keys.contains(&child),
                 )
             });
             mapped
@@ -465,7 +499,14 @@ pub fn shorten_numeric_literals_with_options(
         &mut exact_bids,
         &mut exact_functions,
     );
-    propagate_exact_definitions(ast, &res, &definitions, &mut exact_bids);
+    propagate_exact_definitions(
+        ast,
+        &res,
+        &analyzer,
+        &definitions,
+        &mut exact_bids,
+        &mut exact_functions,
+    );
 
     let source_nodes = ast.nodes.clone();
     let mut source = storm_lua_syntax::ast_utils::inherit_ast(ast);
@@ -477,6 +518,10 @@ pub fn shorten_numeric_literals_with_options(
         res: &source_res,
         analyzer: &source_analyzer,
         exact_bids: &exact_bids,
+        exact_function_nodes: exact_functions
+            .iter()
+            .filter_map(|bid| res.binding(*bid).function_node)
+            .collect(),
         tolerance,
         shortened: 0,
     };

@@ -176,7 +176,8 @@ fn diagnostics_for(
         {
             return;
         }
-        let field = storm_lua_syntax::numeric::decode_lua_string(key);
+        let field = storm_lua_syntax::numeric::decode_lua_string(key)
+            .unwrap_or_else(|| format!("[non-UTF-8 key: {key}]"));
         if field != "log" {
             result.push(Diagnostic { code: codes::SW_UNAVAILABLE_GLOBAL, severity,
                 message: format!("debug.{field} is absent; scripts can use debug.log only. Host debugging uses the SDK debugger API."),

@@ -73,6 +73,11 @@ fn numeric_boolean_consumer(ast: &Ast, res: &Resolution, id: NodeId, bid: u32) -
     let Node::Num(lrv) = ast.node(*lr) else {
         return None;
     };
+    if storm_lua_syntax::numeric::integer_literal_value(lrv).is_none()
+        || storm_lua_syntax::numeric::integer_literal_value(rv).is_none()
+    {
+        return None;
+    }
     let yes = num(lrv);
     let no = num(rv);
     if yes == 1.0 && no == 0.0 {

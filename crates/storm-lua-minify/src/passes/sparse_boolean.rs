@@ -471,7 +471,7 @@ fn collect_alpha_symbols(
         }
     }
     bids.into_iter()
-        .map(|bid| (bid, target.strings.intern(&format!("__i999_{bid}"))))
+        .map(|bid| (bid, target.strings.fresh(&format!("__i999_{bid}"))))
         .collect()
 }
 
@@ -885,7 +885,7 @@ pub fn sparse_boolean_decode_scalarization(
         let mut names = param_symbols.clone();
         while names.len() < call_args.len() {
             let index = names.len();
-            names.push(target.strings.intern(&format!("__drop{index}")));
+            names.push(target.strings.fresh(&format!("__drop{index}")));
         }
         let local = target.push(Node::Local(names, call_args.clone()));
         target
@@ -966,11 +966,11 @@ pub fn sparse_boolean_decode_scalarization(
     let mut current_names = HashMap::new();
     let mut pulse_names = HashMap::new();
     for k in &needed {
-        new_names.insert(*k, target.strings.intern(&format!("__new{k}")));
-        current_names.insert(*k, target.strings.intern(&format!("__cur{k}")));
+        new_names.insert(*k, target.strings.fresh(&format!("__new{k}")));
+        current_names.insert(*k, target.strings.fresh(&format!("__cur{k}")));
     }
     for k in &pulse_static {
-        pulse_names.insert(*k, target.strings.intern(&format!("__pulse{k}")));
+        pulse_names.insert(*k, target.strings.fresh(&format!("__pulse{k}")));
     }
     let mut values = Vec::new();
     for k in &needed {

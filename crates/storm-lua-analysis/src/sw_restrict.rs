@@ -85,7 +85,7 @@ fn bind_key(ast: &Ast, target: NodeId) -> Option<BindKey> {
             if let (Node::Name(bsym), Node::Str(raw)) = (ast.node(*base), ast.node(*key)) {
                 Some(BindKey::Field(
                     ast.strings.get(*bsym).to_string(),
-                    decode_lua_string(raw),
+                    decode_lua_string(raw)?,
                 ))
             } else {
                 None

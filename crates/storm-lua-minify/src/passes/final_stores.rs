@@ -311,6 +311,14 @@ pub fn eliminate_overwritten_assignments_with_options(
     root: NodeId,
     aggressive: bool,
 ) -> PassResult {
+    if super::has_unstructured_flow(ast, root) {
+        return PassResult {
+            root,
+            saved: Some(0),
+            details: None,
+        };
+    }
+
     let before = measure_size(ast, root);
     let original_nodes = ast.nodes.clone();
     let mut source = storm_lua_syntax::ast_utils::inherit_ast(ast);

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "source": "return string.format(\"%01000000000d\",1)",
+    "mode": "safe"
+  },
+  "address_space_limit_bytes": 268435456,
+  "returncode": -6,
+  "stdout": "",
+  "stderr": "memory allocation of 999999999 bytes failed\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+  "elapsed_seconds": 0.08214351200149395
+}

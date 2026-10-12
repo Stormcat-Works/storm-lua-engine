@@ -1,0 +1,44 @@
+[
+  {
+    "depth": 100,
+    "bytes": 208,
+    "rc": 0,
+    "stdout": "{\"generated\":{\"ok\":true,\"values\":[{\"int\":\"1\"}]},\"original\":{\"ok\":true,\"values\":[{\"int\":\"1\"}]},\"result\":{\"assumptions\":{\"finiteNumbers\":true,\"integerFloatSubtypeMayChange\":true,\"numericMode\":\"tolerant\",\"numericTolerance\":{\"abs\":1e-6,\"rel\":1e-6}},\"baseline\":207,\"code\":\"return ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))\",\"ok\":true,\"original\":208,\"propertyMode\":\"runtime\",\"propertyReadsHardcoded\":0,\"saved\":0,\"search\":{\"attempted\":1,\"beamWidth\":null,\"candidateSizes\":[{\"layout\":\"source\",\"size\":208,\"structural\":\"target:source\"}],\"candidates\":1,\"checkpoints\":1,\"coreVariants\":1,\"layout\":\"source\",\"mode\":\"satisficing\",\"parseRejected\":0,\"semanticRejected\":0,\"stage\":\"source\",\"stoppedEarly\":true,\"structural\":\"target:source\",\"structuralExplored\":0,\"structuralVariants\":0,\"targetMet\":true,\"targetSize\":8192},\"size\":208,\"zeroCostNewlines\":0},\"seconds",
+    "stderr": ""
+  },
+  {
+    "depth": 200,
+    "bytes": 408,
+    "rc": 0,
+    "stdout": "{\"generated\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"original\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"result\":{\"assumptions\":{\"finiteNumbers\":true,\"integerFloatSubtypeMayChange\":true,\"numericMode\":\"tolerant\",\"numericTolerance\":{\"abs\":1e-6,\"rel\":1e-6}},\"baseline\":407,\"code\":\"return ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))\",\"ok\":true,\"original\":408,\"propertyMode\":\"runtime\",\"propertyReadsHardcoded\":0,\"saved\":0,\"search\":{\"attempted\":1,\"beamWidth\":null,\"candidateSizes\":[{\"layout\":\"source\",\"size\":408,\"struc",
+    "stderr": ""
+  },
+  {
+    "depth": 400,
+    "bytes": 808,
+    "rc": 0,
+    "stdout": "{\"generated\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"original\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"result\":{\"assumptions\":{\"finiteNumbers\":true,\"integerFloatSubtypeMayChange\":true,\"numericMode\":\"tolerant\",\"numericTolerance\":{\"abs\":1e-6,\"rel\":1e-6}},\"baseline\":807,\"code\":\"return ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+    "stderr": ""
+  },
+  {
+    "depth": 800,
+    "bytes": 1608,
+    "rc": 0,
+    "stdout": "{\"generated\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"original\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"result\":{\"assumptions\":{\"finiteNumbers\":true,\"integerFloatSubtypeMayChange\":true,\"numericMode\":\"tolerant\",\"numericTolerance\":{\"abs\":1e-6,\"rel\":1e-6}},\"baseline\":1607,\"code\":\"return ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((",
+    "stderr": ""
+  },
+  {
+    "depth": 1600,
+    "bytes": 3208,
+    "rc": 0,
+    "stdout": "{\"generated\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"original\":{\"error\":\"syntax error: audit:1: too many C levels (limit is 200) in main function near '('\",\"ok\":false},\"result\":{\"assumptions\":{\"finiteNumbers\":true,\"integerFloatSubtypeMayChange\":true,\"numericMode\":\"tolerant\",\"numericTolerance\":{\"abs\":1e-6,\"rel\":1e-6}},\"baseline\":3207,\"code\":\"return ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((",
+    "stderr": ""
+  },
+  {
+    "depth": 3200,
+    "bytes": 6408,
+    "rc": -6,
+    "stdout": "",
+    "stderr": "\nthread 'main' (9) has overflowed its stack\nfatal runtime error: stack overflow, aborting\n"
+  }
+]

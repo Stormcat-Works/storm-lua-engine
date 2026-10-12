@@ -1,0 +1,7 @@
+ M crates/storm-lua-build/src/addon.rs
+ M crates/storm-lua-build/src/lib.rs
+A  crates/storm-lua-build/src/metadata.rs
+ M crates/storm-lua-build/src/public_api.rs
+ M docs/specs/source-loading.md
+ M packages/lua-engine/src/compiler-types.ts
+?? docs/verification/minify-review-20261012/

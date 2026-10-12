@@ -1,0 +1,14 @@
+{
+  "cases": 48,
+  "original_execution_errors": 0,
+  "scope": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5"
+  ],
+  "all_safe_exact_repros_differ": true,
+  "R6": "Independently reviewed stored subprocess exit and WASM exception evidence; no additional stack crash run needed.",
+  "caveat": "Raw smallest subtype-only differences are not independently actionable."
+}

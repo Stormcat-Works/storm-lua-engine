@@ -1,0 +1,671 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b62bc57..d23f156 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## Unreleased
++
++- `metadataTag`・`minify:false`・`sourceMap:true`を同時指定した通常/LifeBoatビルドがexact-copy検査に失敗する不具合を修正。空白化した範囲をコピー区間から除き、元のsourcesContentと残存コードの位置を保持する。Addonと標準mapも同じ除去範囲を使用し、metadataだけのmoduleでも元snapshotを保持する。
++
+ ## 0.3.1 — 2026-10-12
+ 
+ - コンパイルの解析・字句処理・候補評価・印字・Source Map生成で重複走査と割り当てを削減。Map有無で生成Lua、探索順、診断、Source Map v3とx_storm schema1の精度・理由を維持する。
+diff --git a/STATUS.md b/STATUS.md
+index d4021a3..ca6ec57 100644
+--- a/STATUS.md
++++ b/STATUS.md
+@@ -1,5 +1,9 @@
+ # Current status
+ 
++## metadataと詳細Source Mapの修正（2026-10-12、未公開）
++
++公開v0.3.1で`metadataTag`・`minify:false`・`sourceMap:true`を併用すると、空白化したmetadataに完全一致コピーを主張して失敗する。除去範囲を共通リンカーのコピー区間から除外し、通常/LifeBoat/Addon、標準/詳細mapを修正した。元snapshotと変更範囲外のbyte/UTF-16位置を保持する。[修正と検証](docs/verification/metadata-source-map-20261012.md)。公開済み0.3.1のタグ・配布物は固定されており、この修正は未公開。
++
+ ## v0.3.1 公開版の準備と検証（2026-10-12）
+ 
+ 最新性能ブランチ、Addon実行/非短縮build/metadata、採用済み743件の描画契約を統合した。条件分岐のpanic/trap、部分/大量反復名mapとWASMオプション拒否を修正。Native871、SDK30、実WASM87、Playground/CLI38、3ブラウザ各16例、独立tarball consumerと基本ゲートが成功した。[候補の検証・性能・成果物](docs/verification/release-candidate-0.3.1.md)。
+diff --git a/crates/storm-lua-build/src/addon.rs b/crates/storm-lua-build/src/addon.rs
+index f806546..2c40e99 100644
+--- a/crates/storm-lua-build/src/addon.rs
++++ b/crates/storm-lua-build/src/addon.rs
+@@ -2,7 +2,7 @@
+ //!
+ //! No Vehicle phase rules, output limit, property specialization, or minifier
+ //! are applied. Server/world compatibility remains the host's responsibility.
+-use crate::metadata::metadata;
++use crate::metadata::prepare;
+ use crate::{lifeboat, public_api::ApiProjectCompileResult, source_map::generate_source_map};
+ use serde::{Deserialize, Serialize};
+ use storm_lua_analysis::{Diagnostic, LuaProject, Severity};
+@@ -40,18 +40,18 @@ pub fn build_addon(project: &LuaProject, options: &AddonBuildOptions) -> ApiProj
+             "Addon project exceeds build resources",
+         )]);
+     }
+-    let mut prepared = project.clone();
+-    for (name, source) in &mut prepared.modules {
+-        match metadata(source, options.metadata_tag.as_deref()) {
+-            Ok(value) => *source = value,
+-            Err(error) => {
+-                return failure(vec![
+-                    Diagnostic::error("addon-build", error).with_module(name)
+-                ])
+-            }
++    let prepared = match prepare(project, options.metadata_tag.as_deref()) {
++        Ok(value) => value,
++        Err((name, error)) => {
++            return failure(vec![
++                Diagnostic::error("addon-build", error).with_module(name)
++            ])
+         }
++    };
++    let mut link = lifeboat::link_lifeboat(&prepared.project);
++    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
++        return failure(vec![Diagnostic::error("addon-build", error)]);
+     }
+-    let link = lifeboat::link_lifeboat(&prepared);
+     let Some(code) = link.linked_source.as_deref() else {
+         return failure(link.diagnostics);
+     };
+@@ -177,7 +177,13 @@ mod tests {
+     #[test]
+     fn metadata_tag_does_not_strip_a_string_or_unrelated_comment() {
+         let source = "local x=[==[storm-lua-studio\nhello\n]==]\n";
+-        assert_eq!(metadata(source, Some("storm-lua-studio")).unwrap(), source);
++        assert_eq!(
++            prepare(&project(source), Some("storm-lua-studio"))
++                .unwrap()
++                .project
++                .modules["main"],
++            source
++        );
+         assert!(serde_json::from_str::<AddonBuildOptions>("{\"minify\":true}").is_err());
+     }
+ 
+diff --git a/crates/storm-lua-build/src/lib.rs b/crates/storm-lua-build/src/lib.rs
+index b53005f..2bbcbfc 100644
+--- a/crates/storm-lua-build/src/lib.rs
++++ b/crates/storm-lua-build/src/lib.rs
+@@ -29,3 +29,6 @@ mod optimized_map_tests;
+ mod canonical_map;
+ 
+ mod map_settings;
++
++#[cfg(test)]
++mod metadata_map_tests;
+diff --git a/crates/storm-lua-build/src/lifeboat.rs b/crates/storm-lua-build/src/lifeboat.rs
+index 0a8bf6e..80c16f1 100644
+--- a/crates/storm-lua-build/src/lifeboat.rs
++++ b/crates/storm-lua-build/src/lifeboat.rs
+@@ -1,11 +1,10 @@
+ //! LifeBoat-style include-once game builds and explicit comment directives.
+ //! Language syntax comes from the shared lexer/parser. No script is executed here.
+-use crate::link::{LinkResult, LinkedRange};
++use crate::link::{exclude_blanked_ranges, LinkResult, LinkedRange};
+ use std::collections::{BTreeMap, BTreeSet};
+ use std::ops::Range;
+ use storm_lua_analysis::resolver::{resolve, BindingKind};
+ use storm_lua_analysis::{Diagnostic, LuaProject};
+-use storm_lua_syntax::source_position::LineIndex;
+ use storm_lua_syntax::source_tools::string_bytes;
+ use storm_lua_syntax::{parse_source_with_positions, Ast, Lexer, Node, NodeId, TokenKind};
+ 
+@@ -429,78 +428,6 @@ pub fn link_lifeboat(project: &LuaProject) -> LinkResult {
+     run().unwrap_or_else(failure)
+ }
+ 
+-// Edits blank bytes without moving offsets. Subtract their explicitly recorded
+-// intervals from original slices; never infer provenance by comparing strings.
+-fn exclude_blanked_ranges(
+-    project: &LuaProject,
+-    code: &str,
+-    ranges: Vec<LinkedRange>,
+-    mut removed: Vec<Range<usize>>,
+-) -> Result<Vec<LinkedRange>, String> {
+-    removed.sort_by_key(|span| span.start);
+-    let mut merged: Vec<Range<usize>> = Vec::new();
+-    for span in removed {
+-        if let Some(last) = merged.last_mut() {
+-            if span.start <= last.end {
+-                last.end = last.end.max(span.end);
+-                continue;
+-            }
+-        }
+-        merged.push(span);
+-    }
+-    let output_index = LineIndex::new(code);
+-    let mut originals = BTreeMap::new();
+-    let mut retained = Vec::new();
+-    for range in ranges {
+-        if !originals.contains_key(&range.module) {
+-            let text = crate::source_map::source_text(project, &range.module)
+-                .ok_or("LB source snapshot missing")?;
+-            originals.insert(range.module.clone(), LineIndex::new(text));
+-        }
+-        let original = &originals[&range.module];
+-        let mut append = |start: usize, end: usize| -> Result<(), String> {
+-            if start >= end {
+-                return Ok(());
+-            }
+-            let source_start_byte = range.source_start_byte + start - range.output_start_byte;
+-            let output_start_line = output_index
+-                .byte_position(start)
+-                .ok_or("LB start boundary invalid")?
+-                .0;
+-            let output_end_line = output_index
+-                .byte_position(end)
+-                .ok_or("LB end boundary invalid")?
+-                .0
+-                - u32::from(code.as_bytes()[end - 1] == b'\n');
+-            let source_start_line = original
+-                .byte_position(source_start_byte)
+-                .ok_or("LB original boundary invalid")?
+-                .0;
+-            retained.push(LinkedRange {
+-                output_start_line,
+-                output_end_line,
+-                module: range.module.clone(),
+-                source_start_line,
+-                output_start_byte: start,
+-                output_end_byte: end,
+-                source_start_byte,
+-            });
+-            Ok(())
+-        };
+-        let mut cursor = range.output_start_byte;
+-        let first = merged.partition_point(|span| span.end <= cursor);
+-        for span in &merged[first..] {
+-            if span.start >= range.output_end_byte {
+-                break;
+-            }
+-            append(cursor, span.start.min(range.output_end_byte))?;
+-            cursor = cursor.max(span.end).min(range.output_end_byte);
+-        }
+-        append(cursor, range.output_end_byte)?;
+-    }
+-    Ok(retained)
+-}
+-
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff --git a/crates/storm-lua-build/src/link.rs b/crates/storm-lua-build/src/link.rs
+index f25372f..4bd49f0 100644
+--- a/crates/storm-lua-build/src/link.rs
++++ b/crates/storm-lua-build/src/link.rs
+@@ -17,12 +17,14 @@
+ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+ pub use storm_lua_analysis::structure::{analyze_structure, StructuralAnalysis};
+ 
++use std::ops::Range;
+ use storm_lua_analysis::diagnostic::Diagnostic;
+ use storm_lua_analysis::project::{AmbientMember, AmbientModuleKey, LuaProject, ModuleAnalysis};
+ use storm_lua_analysis::require_scan::RequireSite;
+ use storm_lua_syntax::ast::{Ast, Node, NodeId};
+ use storm_lua_syntax::lexer::Lexer;
+ use storm_lua_syntax::numeric::quote_lua;
++use storm_lua_syntax::source_position::LineIndex;
+ 
+ /// Verbatim generated/original byte correspondence, with a coarse line projection.
+ /// `output_start_line..=output_end_line`（1-based, 両端含む）の各行 L は、
+@@ -96,6 +98,78 @@ pub fn lookup_source_byte(
+     Some((range, source_byte))
+ }
+ 
++// Edits blank bytes without moving offsets. Subtract their explicitly recorded
++// intervals from original slices; never infer provenance by comparing strings.
++pub(crate) fn exclude_blanked_ranges(
++    project: &LuaProject,
++    code: &str,
++    ranges: Vec<LinkedRange>,
++    mut removed: Vec<Range<usize>>,
++) -> Result<Vec<LinkedRange>, String> {
++    removed.sort_by_key(|span| span.start);
++    let mut merged: Vec<Range<usize>> = Vec::new();
++    for span in removed {
++        if let Some(last) = merged.last_mut() {
++            if span.start <= last.end {
++                last.end = last.end.max(span.end);
++                continue;
++            }
++        }
++        merged.push(span);
++    }
++    let output_index = LineIndex::new(code);
++    let mut originals = BTreeMap::new();
++    let mut retained = Vec::new();
++    for range in ranges {
++        if !originals.contains_key(&range.module) {
++            let text = crate::source_map::source_text(project, &range.module)
++                .ok_or("linked source snapshot missing")?;
++            originals.insert(range.module.clone(), LineIndex::new(text));
++        }
++        let original = &originals[&range.module];
++        let mut append = |start: usize, end: usize| -> Result<(), String> {
++            if start >= end {
++                return Ok(());
++            }
++            let source_start_byte = range.source_start_byte + start - range.output_start_byte;
++            let output_start_line = output_index
++                .byte_position(start)
++                .ok_or("linked start boundary invalid")?
++                .0;
++            let output_end_line = output_index
++                .byte_position(end)
++                .ok_or("linked end boundary invalid")?
++                .0
++                - u32::from(code.as_bytes()[end - 1] == b'\n');
++            let source_start_line = original
++                .byte_position(source_start_byte)
++                .ok_or("linked original boundary invalid")?
++                .0;
++            retained.push(LinkedRange {
++                output_start_line,
++                output_end_line,
++                module: range.module.clone(),
++                source_start_line,
++                output_start_byte: start,
++                output_end_byte: end,
++                source_start_byte,
++            });
++            Ok(())
++        };
++        let mut cursor = range.output_start_byte;
++        let first = merged.partition_point(|span| span.end <= cursor);
++        for span in &merged[first..] {
++            if span.start >= range.output_end_byte {
++                break;
++            }
++            append(cursor, span.start.min(range.output_end_byte))?;
++            cursor = cursor.max(span.end).min(range.output_end_byte);
++        }
++        append(cursor, range.output_end_byte)?;
++    }
++    Ok(retained)
++}
++
+ /// モジュール本体の展開形（設計 §10 実装ノート3）。
+ enum Shape {
+     /// return が無い（トップレベルに Return が一つも無い）。require 結果は `true`。
+diff --git a/crates/storm-lua-build/src/metadata.rs b/crates/storm-lua-build/src/metadata.rs
+index 1492e3d..fd92769 100644
+--- a/crates/storm-lua-build/src/metadata.rs
++++ b/crates/storm-lua-build/src/metadata.rs
+@@ -1,16 +1,17 @@
+ //! Leading tagged metadata removal, shared by both build profiles.
++use crate::link::{exclude_blanked_ranges, LinkResult};
++use std::{borrow::Cow, collections::BTreeMap, ops::Range};
++use storm_lua_analysis::LuaProject;
+ use storm_lua_syntax::Lexer;
+ 
+-pub(crate) fn metadata(source: &str, tag: Option<&str>) -> Result<String, String> {
+-    let Some(tag) = tag else {
+-        return Ok(source.into());
+-    };
++fn metadata(source: &str, tag: &str) -> Result<(String, Vec<Range<usize>>), String> {
+     if tag.is_empty() || tag.len() > 128 || tag.contains(['\r', '\n']) {
+         return Err("metadataTag must be a single non-empty line of at most 128 bytes".into());
+     }
+     let mut lexer = Lexer::new(source).with_comment_capture();
+     lexer.all().map_err(|e| e.to_string())?;
+     let mut bytes = source.as_bytes().to_vec();
++    let mut removed = Vec::new();
+     for comment in lexer.comments() {
+         if !comment.long
+             || !source[..comment.start]
+@@ -31,11 +32,88 @@ pub(crate) fn metadata(source: &str, tag: Option<&str>) -> Result<String, String
+         if content.lines().next().map(str::trim) != Some(tag) {
+             continue;
+         }
++        removed.push(comment.start..comment.end);
+         for byte in &mut bytes[comment.start..comment.end] {
+             if !matches!(*byte, b'\r' | b'\n') {
+                 *byte = b' ';
+             }
+         }
+     }
+-    String::from_utf8(bytes).map_err(|e| e.to_string())
++    String::from_utf8(bytes)
++        .map(|source| (source, removed))
++        .map_err(|e| e.to_string())
++}
++
++/// Blanked source and the explicit original intervals removed before linking.
++pub(crate) struct PreparedMetadata<'a> {
++    pub project: Cow<'a, LuaProject>,
++    original: &'a LuaProject,
++    removed: BTreeMap<String, Vec<Range<usize>>>,
++}
++
++pub(crate) fn prepare<'a>(
++    project: &'a LuaProject,
++    tag: Option<&str>,
++) -> Result<PreparedMetadata<'a>, (String, String)> {
++    let Some(tag) = tag else {
++        return Ok(PreparedMetadata {
++            project: Cow::Borrowed(project),
++            original: project,
++            removed: BTreeMap::new(),
++        });
++    };
++    let mut prepared = project.clone();
++    let mut removed = BTreeMap::new();
++    for (name, source) in &mut prepared.modules {
++        let (text, spans) = metadata(source, tag).map_err(|e| (name.clone(), e))?;
++        *source = text;
++        if !spans.is_empty() {
++            removed.insert(name.clone(), spans);
++        }
++    }
++    Ok(PreparedMetadata {
++        project: Cow::Owned(prepared),
++        original: project,
++        removed,
++    })
++}
++
++impl PreparedMetadata<'_> {
++    /// Translate recorded metadata edits through the linker and remove their copy claims.
++    /// No snapshot replacement or inference from string equality is involved.
++    pub fn exclude_removed_ranges(&self, link: &mut LinkResult) -> Result<(), String> {
++        if self.removed.is_empty() {
++            return Ok(());
++        }
++        let Some(code) = link.linked_source.as_deref() else {
++            return Ok(());
++        };
++        let mut removed = Vec::new();
++        for range in &link.ranges {
++            if let Some(spans) = self.removed.get(&range.module) {
++                let source_end =
++                    range.source_start_byte + range.output_end_byte - range.output_start_byte;
++                for span in spans {
++                    let start = span.start.max(range.source_start_byte);
++                    let end = span.end.min(source_end);
++                    if start < end {
++                        removed.push(
++                            range.output_start_byte + start - range.source_start_byte
++                                ..range.output_start_byte + end - range.source_start_byte,
++                        );
++                    }
++                }
++            }
++        }
++        if removed.is_empty() {
++            return Ok(());
++        }
++        link.ranges = exclude_blanked_ranges(
++            self.original,
++            code,
++            std::mem::take(&mut link.ranges),
++            removed,
++        )?;
++        Ok(())
++    }
+ }
+diff --git a/crates/storm-lua-build/src/public_api.rs b/crates/storm-lua-build/src/public_api.rs
+index 61ad2f7..31c4ac5 100644
+--- a/crates/storm-lua-build/src/public_api.rs
++++ b/crates/storm-lua-build/src/public_api.rs
+@@ -932,7 +932,7 @@ pub fn compile_project(
+         Ok(value) => value,
+         Err(error) => return ApiProjectCompileResult::structural_failure(error),
+     };
+-    let structural = analyze_structure(&prepared);
++    let structural = analyze_structure(&prepared.project);
+     if structural.has_blocking_error(project) {
+         return ApiProjectCompileResult::structural_failure(structural.diagnostics);
+     }
+@@ -958,7 +958,10 @@ pub fn compile_project(
+         diagnostics.extend(restrictions);
+         return ApiProjectCompileResult::structural_failure(diagnostics);
+     }
+-    let mut link = crate::link::link_analyzed_project(&prepared, structural);
++    let mut link = crate::link::link_analyzed_project(&prepared.project, structural);
++    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
++        return ApiProjectCompileResult::compile_failure(error);
++    }
+     link.diagnostics.extend(restrictions);
+     #[expect(
+         clippy::expect_used,
+@@ -1033,22 +1036,9 @@ pub fn compile_project(
+ fn prepare_metadata<'a>(
+     project: &'a LuaProject,
+     tag: Option<&str>,
+-) -> Result<std::borrow::Cow<'a, LuaProject>, Vec<Diagnostic>> {
+-    if tag.is_none() {
+-        return Ok(std::borrow::Cow::Borrowed(project));
+-    }
+-    let mut prepared = project.clone();
+-    for (name, source) in &mut prepared.modules {
+-        match crate::metadata::metadata(source, tag) {
+-            Ok(value) => *source = value,
+-            Err(error) => {
+-                return Err(vec![
+-                    Diagnostic::error("build-metadata", error).with_module(name)
+-                ])
+-            }
+-        }
+-    }
+-    Ok(std::borrow::Cow::Owned(prepared))
++) -> Result<crate::metadata::PreparedMetadata<'a>, Vec<Diagnostic>> {
++    crate::metadata::prepare(project, tag)
++        .map_err(|(name, error)| vec![Diagnostic::error("build-metadata", error).with_module(name)])
+ }
+ 
+ /// LB include-once build. Separate from the existing return-valued static linker.
+@@ -1064,7 +1054,10 @@ pub fn compile_lifeboat(
+         Ok(value) => value,
+         Err(error) => return ApiProjectCompileResult::structural_failure(error),
+     };
+-    let link = crate::lifeboat::link_lifeboat(&prepared);
++    let mut link = crate::lifeboat::link_lifeboat(&prepared.project);
++    if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
++        return ApiProjectCompileResult::compile_failure(error);
++    }
+     let Some(source) = link.linked_source.as_deref() else {
+         return ApiProjectCompileResult::structural_failure(link.diagnostics);
+     };
+@@ -1605,7 +1598,7 @@ mod shared_project_analysis_tests {
+             Ok(value) => value,
+             Err(error) => return ApiProjectCompileResult::structural_failure(error),
+         };
+-        let structural = analyze_structure(&prepared);
++        let structural = analyze_structure(&prepared.project);
+         let written_globals = collect_written_global_names(structural.modules.values());
+         for (key, analysis) in &structural.modules {
+             link.diagnostics
+@@ -1871,19 +1864,28 @@ mod shared_public_source_tests {
+             ambient: BTreeMap::new(),
+         };
+         for minify in [false, true] {
+-            let result = compile_lifeboat(
+-                &p,
+-                &ApiProjectCompileOptions {
+-                    minify: Some(minify),
+-                    metadata_tag: Some("studio-test".into()),
+-                    ..Default::default()
+-                },
+-            );
+-            assert!(result.ok, "{:?}", result.diagnostics);
+-            let code = result.code.unwrap();
+-            assert!(!code.contains("simulator"));
+-            assert!(!code.contains("studio-test"));
+-            assert!(!code.contains("missing-development-only"));
++            for source_map in [false, true] {
++                let result = compile_lifeboat(
++                    &p,
++                    &ApiProjectCompileOptions {
++                        minify: Some(minify),
++                        compile: ApiCompileOptions {
++                            source_map: Some(source_map),
++                            ..Default::default()
++                        },
++                        metadata_tag: Some("studio-test".into()),
++                    },
++                );
++                assert!(result.ok, "{:?}", result.diagnostics);
++                let code = result.code.unwrap();
++                assert!(!code.contains("simulator"));
++                assert!(!code.contains("studio-test"));
++                assert!(!code.contains("missing-development-only"));
++                if source_map {
++                    crate::optimized_source_map::validate(&code, result.map.as_ref().unwrap())
++                        .unwrap();
++                }
++            }
+         }
+     }
+ 
+diff --git a/crates/storm-lua-build/src/source_map.rs b/crates/storm-lua-build/src/source_map.rs
+index 1b1bce6..b757e1a 100644
+--- a/crates/storm-lua-build/src/source_map.rs
++++ b/crates/storm-lua-build/src/source_map.rs
+@@ -58,10 +58,15 @@ pub fn generate_source_map(project: &LuaProject, link: &LinkResult) -> Option<St
+     let generated_index = LineIndex::new(generated);
+     let mut builder = SourceMapBuilder::new(None);
+     let mut sources = BTreeMap::new();
+-    for range in &link.ranges {
+-        sources.entry(range.module.as_str()).or_insert_with(|| {
+-            let text = source_text(project, &range.module).expect("linked source snapshot");
+-            let id = builder.add_source(&module_key_to_path(&range.module));
++    for key in link
++        .ranges
++        .iter()
++        .map(|range| &range.module)
++        .chain(&link.used_modules)
++    {
++        sources.entry(key.as_str()).or_insert_with(|| {
++            let text = source_text(project, key).expect("linked source snapshot");
++            let id = builder.add_source(&module_key_to_path(key));
+             builder.set_source_contents(id, Some(text));
+             (id, LineIndex::new(text))
+         });
+diff --git a/docs/specs/source-loading.md b/docs/specs/source-loading.md
+index 1108e28..6c5e4a1 100644
+--- a/docs/specs/source-loading.md
++++ b/docs/specs/source-loading.md
+@@ -58,3 +58,5 @@ Source inspection is limited to 2 MiB, 200,000 lexical tokens and bounded syntax
+ ## Tagged metadata in project builds
+ 
+ `ProjectCompileOptions.metadataTag` removes only a leading long comment whose first content line matches the tag. It preserves UTF-8 byte positions and newlines; Source Map sourcesContent contains the original input. Normal, LifeBoat and Addon builds share this operation. Without metadataTag the normal build avoids preprocessing and project cloning. Development-only sections are stripped by the LifeBoat/Addon linker only.
++
++Metadata blanking records the original byte intervals and excludes them from the linker’s verbatim-copy ranges before diagnostics and either map format are projected. Standard Source Map anchors in these intervals are unmapped; requested detailed maps describe the generated whitespace as Synthetic without copied spans. Remaining code keeps its exact original byte/UTF-16 positions. Even a used module containing only removed metadata retains its original sourcesContent. Validation continues to reject mismatched exact-copy attribution.
+diff --git a/packages/lua-engine/tests/wasm/compiler.test.mjs b/packages/lua-engine/tests/wasm/compiler.test.mjs
+index ab846d7..3b4e1aa 100644
+--- a/packages/lua-engine/tests/wasm/compiler.test.mjs
++++ b/packages/lua-engine/tests/wasm/compiler.test.mjs
+@@ -1,6 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { readFile } from 'node:fs/promises';
+ import test from 'node:test';
++import {TraceMap, originalPositionFor} from '@jridgewell/trace-mapping';
+ import { loadCompiler } from '../../dist/compiler.js';
+ 
+ const wasmBinary = new Uint8Array(await readFile(new URL('../../dist/compiler-wasm/compiler_bg.wasm', import.meta.url)));
+@@ -168,3 +169,104 @@ test('nested conditional calls complete in both map modes', async () => {
+   assert.equal(plain.ok,true);assert.equal(mapped.ok,true);
+   assert.equal(plain.code,mapped.code);compiler.validateSourceMap(mapped.code,mapped.map);
+ });
++
++
++function metadataPosition(code, token) {
++  const prefix=code.slice(0,code.indexOf(token));
++  return {line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1};
++}
++function metadataSnapshots(map, project) {
++  for(const [name,source] of Object.entries(project.modules)) {
++    assert.equal(map.sourcesContent[map.sources.indexOf(name.replaceAll('.','/')+'.lua')],source);
++  }
++}
++function metadataToken(map, code, project, module, token) {
++  const actual=originalPositionFor(new TraceMap(map),metadataPosition(code,token));
++  assert.equal(actual.source,module.replaceAll('.','/')+'.lua');
++  const expected=metadataPosition(project.modules[module],token);
++  assert.deepEqual({line:actual.line,column:actual.column},expected);
++}
++
++test('non-minified metadata builds keep exact remaining positions and unmapped removed bytes', () => {
++  for(const source of [
++    '--[[stormmin-metadata\nprivate development note\n]]\nfunction onTick()output.setNumber(1,3)end',
++    ' \t--[==[stormmin-metadata\r\n雪😀\r\n]==]\r\nfunction onTick()output.setNumber(1,3)end',
++    '--[[stormmin-metadata\n雪😀]]function onTick()output.setNumber(1,3)end',
++  ]) {
++    const project={entry:'main',modules:{main:source}};
++    for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
++      for(const sourceMap of [false,true]) {
++        const result=build(project,{metadataTag:'stormmin-metadata',minify:false,sourceMap});
++        assert.equal(result.ok,true,JSON.stringify(result));
++        const map=JSON.parse(result.map);metadataSnapshots(map,project);
++        metadataToken(map,result.code,project,'main','output.setNumber');
++        const start=result.code.indexOf('function onTick')-Buffer.byteLength(source.slice(0,source.indexOf('function onTick')))+source.indexOf('--[');
++        const prefix=Buffer.from(result.code).subarray(0,start).toString('utf8');
++        const point={line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1};
++        assert.equal(originalPositionFor(new TraceMap(map),point).source,null);
++        if(sourceMap) {
++          const data=compiler.validateSourceMap(result.code,result.map);
++          const removed=data.mappings.find(m=>m.start<=start && start<m.end);
++          assert.equal(removed.copied,null);
++          assert.equal(data.origins[removed.origin].kind,'synthetic');
++        }
++      }
++    }
++  }
++});
++
++test('metadata maps retain each module snapshot including fully blanked bodies in both minify modes', () => {
++  const project={entry:'main',modules:{
++    main:'--[[stormmin-metadata\nmain note\n]]\nrequire("empty");require("lib");function onTick()output.setNumber(1,value())end',
++    lib:'--[=[stormmin-metadata\n雪😀]=]function value()return 3 end',
++    empty:'--[[stormmin-metadata\nempty note\n]]',
++  }};
++  for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
++    for(const minify of [false,true]) {
++      const plain=build(project,{metadataTag:'stormmin-metadata',minify,sourceMap:false});
++      const mapped=build(project,{metadataTag:'stormmin-metadata',minify,sourceMap:true});
++      assert.equal(plain.ok,true,JSON.stringify(plain));assert.equal(mapped.ok,true,JSON.stringify(mapped));
++      assert.equal(plain.code,mapped.code);
++      const map=JSON.parse(mapped.map);metadataSnapshots(map,project);compiler.validateSourceMap(mapped.code,mapped.map);
++      if(!minify) {
++        metadataSnapshots(JSON.parse(plain.map),project);
++        metadataToken(map,mapped.code,project,'main','output.setNumber');
++        metadataToken(map,mapped.code,project,'lib','function value');
++      }
++    }
++    const empty={entry:'main',modules:{main:project.modules.empty}};
++    for(const sourceMap of [false,true]) {
++      const result=build(empty,{metadataTag:'stormmin-metadata',minify:false,sourceMap});
++      assert.equal(result.ok,true,JSON.stringify(result));metadataSnapshots(JSON.parse(result.map),empty);
++      if(sourceMap) assert.ok(compiler.validateSourceMap(result.code,result.map).mappings.every(m=>m.copied===null));
++    }
++  }
++});
++
++test('Addon metadata map excludes blanked text and preserves following UTF16 columns', () => {
++  const project={entry:'main',modules:{main:'--[[stormmin-metadata\n雪😀]]function onCreate()g_savedata.value=3 end'}};
++  const result=compiler.buildAddon(project,{metadataTag:'stormmin-metadata'});
++  assert.equal(result.ok,true,JSON.stringify(result));const map=JSON.parse(result.map);metadataSnapshots(map,project);
++  metadataToken(map,result.code,project,'main','g_savedata');
++  const start=result.code.indexOf('function onCreate')-Buffer.byteLength(project.modules.main.slice(0,project.modules.main.indexOf('function onCreate')));
++  const prefix=Buffer.from(result.code).subarray(0,start).toString('utf8');
++  assert.equal(originalPositionFor(new TraceMap(map),{line:prefix.split('\n').length,column:prefix.length-prefix.lastIndexOf('\n')-1}).source,null);
++  const empty={entry:'main',modules:{main:'--[[stormmin-metadata\nempty note\n]]'}};
++  const blank=compiler.buildAddon(empty,{metadataTag:'stormmin-metadata'});
++  assert.equal(blank.ok,true,JSON.stringify(blank));metadataSnapshots(JSON.parse(blank.map),empty);
++});
++
++
++test('metadata detailed maps validate identity targets and conservative minification', () => {
++  for(const source of [
++    '--[[stormmin-metadata\nnote\n]]\nfunction onTick()output.setNumber(1,3)end',
++    '--[[stormmin-metadata\n雪😀\n]]\nlocal _ENV=_ENV;function onTick()output.setNumber(1,3)end',
++  ]) {
++    for(const build of [compiler.build.bind(compiler),compiler.buildLifeboat.bind(compiler)]) {
++      const project={entry:'main',modules:{main:source}};
++      const result=build(project,{metadataTag:'stormmin-metadata',minify:true,sourceMap:true,targetSize:8192});
++      assert.equal(result.ok,true,JSON.stringify(result));compiler.validateSourceMap(result.code,result.map);
++      metadataSnapshots(JSON.parse(result.map),project);
++    }
++  }
++});

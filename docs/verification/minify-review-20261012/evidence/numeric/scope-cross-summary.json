@@ -1,0 +1,22 @@
+{
+  "cases": 30,
+  "scope_findings_challenged": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8"
+  ],
+  "float_input_getNumber": true,
+  "onDraw_output_calls": false,
+  "results_match_scope_report": true,
+  "notes": [
+    "Independent Lua VM runner confirmed all reported mode reachability.",
+    "All input.getNumber values deliberately produced as float i*3.0.",
+    "S5 source uses no output API from onDraw.",
+    "This supplements root actual game-profile WASM execution, not a substitute."
+  ]
+}

@@ -1,0 +1,13 @@
+ M CHANGELOG.md
+ M STATUS.md
+ M crates/storm-lua-build/src/addon.rs
+ M crates/storm-lua-build/src/lib.rs
+ M crates/storm-lua-build/src/lifeboat.rs
+ M crates/storm-lua-build/src/link.rs
+ M crates/storm-lua-build/src/metadata.rs
+ M crates/storm-lua-build/src/public_api.rs
+ M crates/storm-lua-build/src/source_map.rs
+ M docs/specs/source-loading.md
+ M packages/lua-engine/tests/wasm/compiler.test.mjs
+?? crates/storm-lua-build/src/metadata_map_tests.rs
+?? docs/verification/metadata-source-map-20261012.md

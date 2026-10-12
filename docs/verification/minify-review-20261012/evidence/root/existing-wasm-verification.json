@@ -1,0 +1,53 @@
+{
+  "sourceManifestEntries": 372,
+  "mismatches": [],
+  "artifacts": [
+    {
+      "path": "local-validation/metadata-source-map/stormcat-works-storm-lua-engine-0.3.1.tgz",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "path": "packages/lua-engine/dist/compiler-wasm/compiler_bg.wasm",
+      "exists": true,
+      "matches": true
+    },
+    {
+      "path": "local-validation/metadata-source-map/source-snapshot.tar.gz",
+      "exists": true,
+      "matches": true
+    }
+  ],
+  "runtimeAndCompilerPackageAssetChecks": [
+    {
+      "path": "dist/compiler-wasm/compiler_bg.wasm",
+      "bytes": 2732292,
+      "sha256": "da412ddd757aa54e4c2b1ac83e1819ee99a9806db2d6708d7f2e99ae48f33f25",
+      "matchesVerifiedPackage": true
+    },
+    {
+      "path": "dist/wasm/storm_lua_wasm.wasm",
+      "bytes": 905988,
+      "sha256": "1ed6c0dd35eb587ba89020f64c7a5c097a6bb18a46dde61aa68b5e3625cdd6c7",
+      "matchesVerifiedPackage": true
+    },
+    {
+      "path": "dist/wasm/screen.wasm",
+      "bytes": 85282,
+      "sha256": "9999c6e04db98a1e2d0e3a0d1b101080c5355d6f6959acb8e1bb9c62ba229bd8",
+      "matchesVerifiedPackage": true
+    },
+    {
+      "path": "dist/compiler.js",
+      "bytes": 2180,
+      "sha256": "58fcf097129417aef21b880d090533a063433c4f0b2fa6b6b1e50ddab6f68016",
+      "matchesVerifiedPackage": true
+    },
+    {
+      "path": "dist/runtime.js",
+      "bytes": 10209,
+      "sha256": "29d98f10bade8eb0e01955e31e657debfb93158bebbf34f608e55c10f828b9fe",
+      "matchesVerifiedPackage": true
+    }
+  ]
+}

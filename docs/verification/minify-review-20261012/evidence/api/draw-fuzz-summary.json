@@ -1,0 +1,3774 @@
+{
+  "executions": 627,
+  "matching": 501,
+  "differences": 126,
+  "difference_groups": {
+    "existing_string_byte_corruption": 120,
+    "screen_loop_i64": 6
+  },
+  "total_compile_seconds": 13.03541516,
+  "cases": [
+    {
+      "name": "fuzz-0-linear-drawText-4-records",
+      "equal": false,
+      "elapsed_s": 0.001867319,
+      "size": 127
+    },
+    {
+      "name": "fuzz-0-linear-drawText-4-screen",
+      "equal": false,
+      "elapsed_s": 0.000184244,
+      "size": 127
+    },
+    {
+      "name": "fuzz-0-linear-drawText-4-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000135287,
+      "size": 127
+    },
+    {
+      "name": "fuzz-0-linear-drawText-4-motifs",
+      "equal": false,
+      "elapsed_s": 0.000192848,
+      "size": 127
+    },
+    {
+      "name": "fuzz-0-linear-drawText-4-compile",
+      "equal": false,
+      "elapsed_s": 0.005767047,
+      "size": 89
+    },
+    {
+      "name": "fuzz-1-periodic-drawText-4-records",
+      "equal": false,
+      "elapsed_s": 0.001217207,
+      "size": 124
+    },
+    {
+      "name": "fuzz-1-periodic-drawText-4-screen",
+      "equal": false,
+      "elapsed_s": 0.000153104,
+      "size": 124
+    },
+    {
+      "name": "fuzz-1-periodic-drawText-4-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000122572,
+      "size": 124
+    },
+    {
+      "name": "fuzz-1-periodic-drawText-4-motifs",
+      "equal": false,
+      "elapsed_s": 0.000201493,
+      "size": 124
+    },
+    {
+      "name": "fuzz-1-periodic-drawText-4-compile",
+      "equal": false,
+      "elapsed_s": 0.005488693,
+      "size": 86
+    },
+    {
+      "name": "fuzz-2-translations-drawText-8-records",
+      "equal": false,
+      "elapsed_s": 0.003313446,
+      "size": 201
+    },
+    {
+      "name": "fuzz-2-translations-drawText-8-screen",
+      "equal": false,
+      "elapsed_s": 0.000199654,
+      "size": 330
+    },
+    {
+      "name": "fuzz-2-translations-drawText-8-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000180795,
+      "size": 346
+    },
+    {
+      "name": "fuzz-2-translations-drawText-8-motifs",
+      "equal": false,
+      "elapsed_s": 0.000292248,
+      "size": 256
+    },
+    {
+      "name": "fuzz-2-translations-drawText-8-compile",
+      "equal": false,
+      "elapsed_s": 0.005997947,
+      "size": 152
+    },
+    {
+      "name": "fuzz-3-repeat-drawLine-64-records",
+      "equal": true,
+      "elapsed_s": 0.300774466,
+      "size": 90
+    },
+    {
+      "name": "fuzz-3-repeat-drawLine-64-screen",
+      "equal": true,
+      "elapsed_s": 0.007976291,
+      "size": 2946
+    },
+    {
+      "name": "fuzz-3-repeat-drawLine-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000674874,
+      "size": 334
+    },
+    {
+      "name": "fuzz-3-repeat-drawLine-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003462341,
+      "size": 202
+    },
+    {
+      "name": "fuzz-3-repeat-drawLine-64-compile",
+      "equal": true,
+      "elapsed_s": 0.014685501,
+      "size": 118
+    },
+    {
+      "name": "fuzz-4-random-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.00425062,
+      "size": 207
+    },
+    {
+      "name": "fuzz-4-random-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.0002382,
+      "size": 253
+    },
+    {
+      "name": "fuzz-4-random-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000237908,
+      "size": 253
+    },
+    {
+      "name": "fuzz-4-random-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000284469,
+      "size": 253
+    },
+    {
+      "name": "fuzz-4-random-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.018446825,
+      "size": 138
+    },
+    {
+      "name": "fuzz-5-linear-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.050585027,
+      "size": 73
+    },
+    {
+      "name": "fuzz-5-linear-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.000266786,
+      "size": 169
+    },
+    {
+      "name": "fuzz-5-linear-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000255441,
+      "size": 169
+    },
+    {
+      "name": "fuzz-5-linear-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000766214,
+      "size": 686
+    },
+    {
+      "name": "fuzz-5-linear-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.006139267,
+      "size": 73
+    },
+    {
+      "name": "fuzz-6-repeat-drawLine-48-records",
+      "equal": true,
+      "elapsed_s": 0.176464518,
+      "size": 90
+    },
+    {
+      "name": "fuzz-6-repeat-drawLine-48-screen",
+      "equal": true,
+      "elapsed_s": 0.004396286,
+      "size": 2202
+    },
+    {
+      "name": "fuzz-6-repeat-drawLine-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000536125,
+      "size": 334
+    },
+    {
+      "name": "fuzz-6-repeat-drawLine-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002725262,
+      "size": 190
+    },
+    {
+      "name": "fuzz-6-repeat-drawLine-48-compile",
+      "equal": true,
+      "elapsed_s": 0.013002398,
+      "size": 118
+    },
+    {
+      "name": "fuzz-7-periodic-drawLine-90-records",
+      "equal": true,
+      "elapsed_s": 0.335012016,
+      "size": 200
+    },
+    {
+      "name": "fuzz-7-periodic-drawLine-90-screen",
+      "equal": true,
+      "elapsed_s": 0.019472758,
+      "size": 4188
+    },
+    {
+      "name": "fuzz-7-periodic-drawLine-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000897009,
+      "size": 324
+    },
+    {
+      "name": "fuzz-7-periodic-drawLine-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.00480229,
+      "size": 2808
+    },
+    {
+      "name": "fuzz-7-periodic-drawLine-90-compile",
+      "equal": true,
+      "elapsed_s": 0.019970435,
+      "size": 108
+    },
+    {
+      "name": "fuzz-8-periodic-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.139753128,
+      "size": 138
+    },
+    {
+      "name": "fuzz-8-periodic-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.010096166,
+      "size": 2470
+    },
+    {
+      "name": "fuzz-8-periodic-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00058041,
+      "size": 265
+    },
+    {
+      "name": "fuzz-8-periodic-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003792644,
+      "size": 1934
+    },
+    {
+      "name": "fuzz-8-periodic-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.013692635,
+      "size": 97
+    },
+    {
+      "name": "fuzz-9-periodic-drawText-90-records",
+      "equal": false,
+      "elapsed_s": 0.071499644,
+      "size": 425
+    },
+    {
+      "name": "fuzz-9-periodic-drawText-90-screen",
+      "equal": false,
+      "elapsed_s": 0.064397932,
+      "size": 3072
+    },
+    {
+      "name": "fuzz-9-periodic-drawText-90-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000927116,
+      "size": 1223
+    },
+    {
+      "name": "fuzz-9-periodic-drawText-90-motifs",
+      "equal": false,
+      "elapsed_s": 0.004805814,
+      "size": 3072
+    },
+    {
+      "name": "fuzz-9-periodic-drawText-90-compile",
+      "equal": false,
+      "elapsed_s": 0.024716968,
+      "size": 1029
+    },
+    {
+      "name": "fuzz-10-translations-drawRectF-48-records",
+      "equal": true,
+      "elapsed_s": 0.056234661,
+      "size": 150
+    },
+    {
+      "name": "fuzz-10-translations-drawRectF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.002840991,
+      "size": 1498
+    },
+    {
+      "name": "fuzz-10-translations-drawRectF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000571149,
+      "size": 325
+    },
+    {
+      "name": "fuzz-10-translations-drawRectF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002157793,
+      "size": 1567
+    },
+    {
+      "name": "fuzz-10-translations-drawRectF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011597231,
+      "size": 109
+    },
+    {
+      "name": "fuzz-11-periodic-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.010270065,
+      "size": 132
+    },
+    {
+      "name": "fuzz-11-periodic-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000252891,
+      "size": 378
+    },
+    {
+      "name": "fuzz-11-periodic-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000250266,
+      "size": 324
+    },
+    {
+      "name": "fuzz-11-periodic-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000286281,
+      "size": 239
+    },
+    {
+      "name": "fuzz-11-periodic-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004700258,
+      "size": 108
+    },
+    {
+      "name": "fuzz-12-periodic-drawLine-48-records",
+      "equal": true,
+      "elapsed_s": 0.099315162,
+      "size": 146
+    },
+    {
+      "name": "fuzz-12-periodic-drawLine-48-screen",
+      "equal": true,
+      "elapsed_s": 0.003972071,
+      "size": 2224
+    },
+    {
+      "name": "fuzz-12-periodic-drawLine-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000566233,
+      "size": 324
+    },
+    {
+      "name": "fuzz-12-periodic-drawLine-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002162763,
+      "size": 1464
+    },
+    {
+      "name": "fuzz-12-periodic-drawLine-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011338063,
+      "size": 108
+    },
+    {
+      "name": "fuzz-13-periodic-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.135094036,
+      "size": 138
+    },
+    {
+      "name": "fuzz-13-periodic-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.01000384,
+      "size": 2470
+    },
+    {
+      "name": "fuzz-13-periodic-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000618803,
+      "size": 265
+    },
+    {
+      "name": "fuzz-13-periodic-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.004811736,
+      "size": 1934
+    },
+    {
+      "name": "fuzz-13-periodic-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.013537795,
+      "size": 97
+    },
+    {
+      "name": "fuzz-14-translations-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.007234455,
+      "size": 134
+    },
+    {
+      "name": "fuzz-14-translations-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000191153,
+      "size": 262
+    },
+    {
+      "name": "fuzz-14-translations-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000203206,
+      "size": 324
+    },
+    {
+      "name": "fuzz-14-translations-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000301794,
+      "size": 247
+    },
+    {
+      "name": "fuzz-14-translations-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004417728,
+      "size": 108
+    },
+    {
+      "name": "fuzz-15-random-drawCircleF-48-records",
+      "equal": true,
+      "elapsed_s": 0.019031483,
+      "size": 394
+    },
+    {
+      "name": "fuzz-15-random-drawCircleF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.009243403,
+      "size": 1413
+    },
+    {
+      "name": "fuzz-15-random-drawCircleF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.009301162,
+      "size": 1413
+    },
+    {
+      "name": "fuzz-15-random-drawCircleF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002239975,
+      "size": 1413
+    },
+    {
+      "name": "fuzz-15-random-drawCircleF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.114280817,
+      "size": 376
+    },
+    {
+      "name": "fuzz-16-periodic-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.051007387,
+      "size": 145
+    },
+    {
+      "name": "fuzz-16-periodic-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.001698335,
+      "size": 1474
+    },
+    {
+      "name": "fuzz-16-periodic-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000414824,
+      "size": 324
+    },
+    {
+      "name": "fuzz-16-periodic-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001219532,
+      "size": 952
+    },
+    {
+      "name": "fuzz-16-periodic-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.008770838,
+      "size": 108
+    },
+    {
+      "name": "fuzz-17-linear-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.008256966,
+      "size": 76
+    },
+    {
+      "name": "fuzz-17-linear-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000182398,
+      "size": 196
+    },
+    {
+      "name": "fuzz-17-linear-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000207942,
+      "size": 196
+    },
+    {
+      "name": "fuzz-17-linear-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000288363,
+      "size": 245
+    },
+    {
+      "name": "fuzz-17-linear-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.00373635,
+      "size": 76
+    },
+    {
+      "name": "fuzz-18-linear-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.002603785,
+      "size": 76
+    },
+    {
+      "name": "fuzz-18-linear-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000117161,
+      "size": 196
+    },
+    {
+      "name": "fuzz-18-linear-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000120025,
+      "size": 196
+    },
+    {
+      "name": "fuzz-18-linear-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000178471,
+      "size": 129
+    },
+    {
+      "name": "fuzz-18-linear-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.002892426,
+      "size": 76
+    },
+    {
+      "name": "fuzz-19-linear-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.023157632,
+      "size": 73
+    },
+    {
+      "name": "fuzz-19-linear-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000231691,
+      "size": 169
+    },
+    {
+      "name": "fuzz-19-linear-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000215596,
+      "size": 169
+    },
+    {
+      "name": "fuzz-19-linear-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000500895,
+      "size": 462
+    },
+    {
+      "name": "fuzz-19-linear-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.004745947,
+      "size": 73
+    },
+    {
+      "name": "fuzz-20-random-drawLine-16-records",
+      "equal": true,
+      "elapsed_s": 0.006882155,
+      "size": 310
+    },
+    {
+      "name": "fuzz-20-random-drawLine-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000941452,
+      "size": 498
+    },
+    {
+      "name": "fuzz-20-random-drawLine-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000931047,
+      "size": 498
+    },
+    {
+      "name": "fuzz-20-random-drawLine-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000627744,
+      "size": 498
+    },
+    {
+      "name": "fuzz-20-random-drawLine-16-compile",
+      "equal": true,
+      "elapsed_s": 0.051468647,
+      "size": 292
+    },
+    {
+      "name": "fuzz-21-translations-drawCircleF-48-records",
+      "equal": true,
+      "elapsed_s": 0.047410553,
+      "size": 140
+    },
+    {
+      "name": "fuzz-21-translations-drawCircleF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.002780276,
+      "size": 1260
+    },
+    {
+      "name": "fuzz-21-translations-drawCircleF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000476065,
+      "size": 265
+    },
+    {
+      "name": "fuzz-21-translations-drawCircleF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002309937,
+      "size": 1480
+    },
+    {
+      "name": "fuzz-21-translations-drawCircleF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.012618149,
+      "size": 97
+    },
+    {
+      "name": "fuzz-22-linear-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.024720934,
+      "size": 73
+    },
+    {
+      "name": "fuzz-22-linear-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000230388,
+      "size": 169
+    },
+    {
+      "name": "fuzz-22-linear-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000195504,
+      "size": 169
+    },
+    {
+      "name": "fuzz-22-linear-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000519961,
+      "size": 462
+    },
+    {
+      "name": "fuzz-22-linear-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.004857061,
+      "size": 73
+    },
+    {
+      "name": "fuzz-23-periodic-drawText-24-records",
+      "equal": false,
+      "elapsed_s": 0.011737202,
+      "size": 293
+    },
+    {
+      "name": "fuzz-23-periodic-drawText-24-screen",
+      "equal": false,
+      "elapsed_s": 0.002356513,
+      "size": 757
+    },
+    {
+      "name": "fuzz-23-periodic-drawText-24-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000329402,
+      "size": 492
+    },
+    {
+      "name": "fuzz-23-periodic-drawText-24-motifs",
+      "equal": false,
+      "elapsed_s": 0.000856945,
+      "size": 757
+    },
+    {
+      "name": "fuzz-23-periodic-drawText-24-compile",
+      "equal": false,
+      "elapsed_s": 0.009026332,
+      "size": 298
+    },
+    {
+      "name": "fuzz-24-repeat-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.006153983,
+      "size": 90
+    },
+    {
+      "name": "fuzz-24-repeat-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000246231,
+      "size": 384
+    },
+    {
+      "name": "fuzz-24-repeat-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000223414,
+      "size": 334
+    },
+    {
+      "name": "fuzz-24-repeat-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000422632,
+      "size": 164
+    },
+    {
+      "name": "fuzz-24-repeat-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.00601058,
+      "size": 118
+    },
+    {
+      "name": "fuzz-25-repeat-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.029499252,
+      "size": 83
+    },
+    {
+      "name": "fuzz-25-repeat-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.000902455,
+      "size": 932
+    },
+    {
+      "name": "fuzz-25-repeat-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00029292,
+      "size": 272
+    },
+    {
+      "name": "fuzz-25-repeat-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000913081,
+      "size": 171
+    },
+    {
+      "name": "fuzz-25-repeat-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.006969053,
+      "size": 104
+    },
+    {
+      "name": "fuzz-26-random-drawLine-4-records",
+      "equal": true,
+      "elapsed_s": 0.001693529,
+      "size": 135
+    },
+    {
+      "name": "fuzz-26-random-drawLine-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000121538,
+      "size": 135
+    },
+    {
+      "name": "fuzz-26-random-drawLine-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 9.6111e-05,
+      "size": 135
+    },
+    {
+      "name": "fuzz-26-random-drawLine-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000197825,
+      "size": 135
+    },
+    {
+      "name": "fuzz-26-random-drawLine-4-compile",
+      "equal": true,
+      "elapsed_s": 0.006851768,
+      "size": 97
+    },
+    {
+      "name": "fuzz-27-random-drawText-64-records",
+      "equal": false,
+      "elapsed_s": 0.027585555,
+      "size": 425
+    },
+    {
+      "name": "fuzz-27-random-drawText-64-screen",
+      "equal": false,
+      "elapsed_s": 0.018349534,
+      "size": 1999
+    },
+    {
+      "name": "fuzz-27-random-drawText-64-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.019992814,
+      "size": 1999
+    },
+    {
+      "name": "fuzz-27-random-drawText-64-motifs",
+      "equal": false,
+      "elapsed_s": 0.003738958,
+      "size": 1999
+    },
+    {
+      "name": "fuzz-27-random-drawText-64-compile",
+      "equal": false,
+      "elapsed_s": 0.209819053,
+      "size": 402
+    },
+    {
+      "name": "fuzz-28-linear-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.399774368,
+      "size": 73
+    },
+    {
+      "name": "fuzz-28-linear-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.000533736,
+      "size": 169
+    },
+    {
+      "name": "fuzz-28-linear-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000513731,
+      "size": 169
+    },
+    {
+      "name": "fuzz-28-linear-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003618695,
+      "size": 1856
+    },
+    {
+      "name": "fuzz-28-linear-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.012651297,
+      "size": 73
+    },
+    {
+      "name": "fuzz-29-repeat-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.014033756,
+      "size": 83
+    },
+    {
+      "name": "fuzz-29-repeat-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000518136,
+      "size": 628
+    },
+    {
+      "name": "fuzz-29-repeat-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000245473,
+      "size": 272
+    },
+    {
+      "name": "fuzz-29-repeat-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000640578,
+      "size": 165
+    },
+    {
+      "name": "fuzz-29-repeat-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005821347,
+      "size": 104
+    },
+    {
+      "name": "fuzz-30-translations-drawCircleF-48-records",
+      "equal": true,
+      "elapsed_s": 0.052290988,
+      "size": 140
+    },
+    {
+      "name": "fuzz-30-translations-drawCircleF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.002720444,
+      "size": 1260
+    },
+    {
+      "name": "fuzz-30-translations-drawCircleF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000601247,
+      "size": 265
+    },
+    {
+      "name": "fuzz-30-translations-drawCircleF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.00209977,
+      "size": 1480
+    },
+    {
+      "name": "fuzz-30-translations-drawCircleF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.010380636,
+      "size": 97
+    },
+    {
+      "name": "fuzz-31-periodic-drawRectF-24-records",
+      "equal": true,
+      "elapsed_s": 0.033240433,
+      "size": 146
+    },
+    {
+      "name": "fuzz-31-periodic-drawRectF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.00098128,
+      "size": 1110
+    },
+    {
+      "name": "fuzz-31-periodic-drawRectF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000315512,
+      "size": 325
+    },
+    {
+      "name": "fuzz-31-periodic-drawRectF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000793626,
+      "size": 720
+    },
+    {
+      "name": "fuzz-31-periodic-drawRectF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.00715256,
+      "size": 109
+    },
+    {
+      "name": "fuzz-32-linear-drawText-8-records",
+      "equal": false,
+      "elapsed_s": 0.003605466,
+      "size": 196
+    },
+    {
+      "name": "fuzz-32-linear-drawText-8-screen",
+      "equal": false,
+      "elapsed_s": 0.000165639,
+      "size": 300
+    },
+    {
+      "name": "fuzz-32-linear-drawText-8-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000148196,
+      "size": 300
+    },
+    {
+      "name": "fuzz-32-linear-drawText-8-motifs",
+      "equal": false,
+      "elapsed_s": 0.00027973,
+      "size": 272
+    },
+    {
+      "name": "fuzz-32-linear-drawText-8-compile",
+      "equal": false,
+      "elapsed_s": 0.004475906,
+      "size": 154
+    },
+    {
+      "name": "fuzz-33-repeat-drawRectF-48-records",
+      "equal": true,
+      "elapsed_s": 0.166702309,
+      "size": 91
+    },
+    {
+      "name": "fuzz-33-repeat-drawRectF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.003878524,
+      "size": 2214
+    },
+    {
+      "name": "fuzz-33-repeat-drawRectF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00057589,
+      "size": 335
+    },
+    {
+      "name": "fuzz-33-repeat-drawRectF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002266702,
+      "size": 194
+    },
+    {
+      "name": "fuzz-33-repeat-drawRectF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011770991,
+      "size": 119
+    },
+    {
+      "name": "fuzz-34-linear-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.008008963,
+      "size": 76
+    },
+    {
+      "name": "fuzz-34-linear-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000153163,
+      "size": 196
+    },
+    {
+      "name": "fuzz-34-linear-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000207123,
+      "size": 196
+    },
+    {
+      "name": "fuzz-34-linear-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000287823,
+      "size": 245
+    },
+    {
+      "name": "fuzz-34-linear-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.003815601,
+      "size": 76
+    },
+    {
+      "name": "fuzz-35-translations-drawLine-8-records",
+      "equal": true,
+      "elapsed_s": 0.009553255,
+      "size": 133
+    },
+    {
+      "name": "fuzz-35-translations-drawLine-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000266525,
+      "size": 259
+    },
+    {
+      "name": "fuzz-35-translations-drawLine-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000288489,
+      "size": 323
+    },
+    {
+      "name": "fuzz-35-translations-drawLine-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000410105,
+      "size": 239
+    },
+    {
+      "name": "fuzz-35-translations-drawLine-8-compile",
+      "equal": true,
+      "elapsed_s": 0.00463575,
+      "size": 107
+    },
+    {
+      "name": "fuzz-36-repeat-drawText-90-records",
+      "equal": false,
+      "elapsed_s": 0.148284276,
+      "size": 328
+    },
+    {
+      "name": "fuzz-36-repeat-drawText-90-screen",
+      "equal": false,
+      "elapsed_s": 0.065457315,
+      "size": 2902
+    },
+    {
+      "name": "fuzz-36-repeat-drawText-90-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000876369,
+      "size": 1236
+    },
+    {
+      "name": "fuzz-36-repeat-drawText-90-motifs",
+      "equal": false,
+      "elapsed_s": 0.010846467,
+      "size": 2022
+    },
+    {
+      "name": "fuzz-36-repeat-drawText-90-compile",
+      "equal": false,
+      "elapsed_s": 0.024374732,
+      "size": 1042
+    },
+    {
+      "name": "fuzz-37-random-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.001836346,
+      "size": 141
+    },
+    {
+      "name": "fuzz-37-random-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000126963,
+      "size": 141
+    },
+    {
+      "name": "fuzz-37-random-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000113384,
+      "size": 141
+    },
+    {
+      "name": "fuzz-37-random-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000192606,
+      "size": 141
+    },
+    {
+      "name": "fuzz-37-random-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.006890292,
+      "size": 100
+    },
+    {
+      "name": "fuzz-38-random-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.001816268,
+      "size": 143
+    },
+    {
+      "name": "fuzz-38-random-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000116484,
+      "size": 143
+    },
+    {
+      "name": "fuzz-38-random-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000109974,
+      "size": 143
+    },
+    {
+      "name": "fuzz-38-random-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000200909,
+      "size": 143
+    },
+    {
+      "name": "fuzz-38-random-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.00729586,
+      "size": 102
+    },
+    {
+      "name": "fuzz-39-linear-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.008041709,
+      "size": 72
+    },
+    {
+      "name": "fuzz-39-linear-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000156502,
+      "size": 168
+    },
+    {
+      "name": "fuzz-39-linear-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000171031,
+      "size": 168
+    },
+    {
+      "name": "fuzz-39-linear-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000290857,
+      "size": 238
+    },
+    {
+      "name": "fuzz-39-linear-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.003346612,
+      "size": 72
+    },
+    {
+      "name": "fuzz-40-random-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.009197153,
+      "size": 298
+    },
+    {
+      "name": "fuzz-40-random-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.001835269,
+      "size": 719
+    },
+    {
+      "name": "fuzz-40-random-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00193761,
+      "size": 719
+    },
+    {
+      "name": "fuzz-40-random-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.00085104,
+      "size": 719
+    },
+    {
+      "name": "fuzz-40-random-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.040739824,
+      "size": 280
+    },
+    {
+      "name": "fuzz-41-repeat-drawLine-64-records",
+      "equal": true,
+      "elapsed_s": 0.311073863,
+      "size": 90
+    },
+    {
+      "name": "fuzz-41-repeat-drawLine-64-screen",
+      "equal": true,
+      "elapsed_s": 0.008805546,
+      "size": 2946
+    },
+    {
+      "name": "fuzz-41-repeat-drawLine-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000881803,
+      "size": 334
+    },
+    {
+      "name": "fuzz-41-repeat-drawLine-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.004150128,
+      "size": 202
+    },
+    {
+      "name": "fuzz-41-repeat-drawLine-64-compile",
+      "equal": true,
+      "elapsed_s": 0.016002535,
+      "size": 118
+    },
+    {
+      "name": "fuzz-42-translations-drawLine-8-records",
+      "equal": true,
+      "elapsed_s": 0.00744678,
+      "size": 133
+    },
+    {
+      "name": "fuzz-42-translations-drawLine-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000188575,
+      "size": 259
+    },
+    {
+      "name": "fuzz-42-translations-drawLine-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000189541,
+      "size": 323
+    },
+    {
+      "name": "fuzz-42-translations-drawLine-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000282555,
+      "size": 239
+    },
+    {
+      "name": "fuzz-42-translations-drawLine-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004675224,
+      "size": 107
+    },
+    {
+      "name": "fuzz-43-periodic-drawCircleF-48-records",
+      "equal": true,
+      "elapsed_s": 0.080045412,
+      "size": 138
+    },
+    {
+      "name": "fuzz-43-periodic-drawCircleF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.005409428,
+      "size": 1830
+    },
+    {
+      "name": "fuzz-43-periodic-drawCircleF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000495735,
+      "size": 265
+    },
+    {
+      "name": "fuzz-43-periodic-drawCircleF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002101574,
+      "size": 1438
+    },
+    {
+      "name": "fuzz-43-periodic-drawCircleF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.010390082,
+      "size": 97
+    },
+    {
+      "name": "fuzz-44-repeat-drawCircleF-90-records",
+      "equal": true,
+      "elapsed_s": 0.436638486,
+      "size": 83
+    },
+    {
+      "name": "fuzz-44-repeat-drawCircleF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.016833449,
+      "size": 3466
+    },
+    {
+      "name": "fuzz-44-repeat-drawCircleF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000758058,
+      "size": 272
+    },
+    {
+      "name": "fuzz-44-repeat-drawCircleF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.005273746,
+      "size": 273
+    },
+    {
+      "name": "fuzz-44-repeat-drawCircleF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.018271013,
+      "size": 104
+    },
+    {
+      "name": "fuzz-45-translations-drawLine-16-records",
+      "equal": true,
+      "elapsed_s": 0.014429058,
+      "size": 153
+    },
+    {
+      "name": "fuzz-45-translations-drawLine-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000432544,
+      "size": 565
+    },
+    {
+      "name": "fuzz-45-translations-drawLine-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000263691,
+      "size": 324
+    },
+    {
+      "name": "fuzz-45-translations-drawLine-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000528093,
+      "size": 495
+    },
+    {
+      "name": "fuzz-45-translations-drawLine-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005867351,
+      "size": 108
+    },
+    {
+      "name": "fuzz-46-linear-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.054289408,
+      "size": 73
+    },
+    {
+      "name": "fuzz-46-linear-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.000275076,
+      "size": 169
+    },
+    {
+      "name": "fuzz-46-linear-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000253029,
+      "size": 169
+    },
+    {
+      "name": "fuzz-46-linear-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000815214,
+      "size": 686
+    },
+    {
+      "name": "fuzz-46-linear-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.006090765,
+      "size": 73
+    },
+    {
+      "name": "fuzz-47-random-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.006852523,
+      "size": 267
+    },
+    {
+      "name": "fuzz-47-random-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.001419047,
+      "size": 488
+    },
+    {
+      "name": "fuzz-47-random-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000941751,
+      "size": 488
+    },
+    {
+      "name": "fuzz-47-random-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000569202,
+      "size": 488
+    },
+    {
+      "name": "fuzz-47-random-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.044470228,
+      "size": 237
+    },
+    {
+      "name": "fuzz-48-translations-drawLine-4-records",
+      "equal": true,
+      "elapsed_s": 0.003596643,
+      "size": 75
+    },
+    {
+      "name": "fuzz-48-translations-drawLine-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000193044,
+      "size": 195
+    },
+    {
+      "name": "fuzz-48-translations-drawLine-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000158954,
+      "size": 195
+    },
+    {
+      "name": "fuzz-48-translations-drawLine-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.0002916,
+      "size": 119
+    },
+    {
+      "name": "fuzz-48-translations-drawLine-4-compile",
+      "equal": true,
+      "elapsed_s": 0.004558852,
+      "size": 75
+    },
+    {
+      "name": "fuzz-49-repeat-drawText-48-records",
+      "equal": false,
+      "elapsed_s": 0.053410525,
+      "size": 286
+    },
+    {
+      "name": "fuzz-49-repeat-drawText-48-screen",
+      "equal": false,
+      "elapsed_s": 0.01170212,
+      "size": 1543
+    },
+    {
+      "name": "fuzz-49-repeat-drawText-48-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.00055979,
+      "size": 779
+    },
+    {
+      "name": "fuzz-49-repeat-drawText-48-motifs",
+      "equal": false,
+      "elapsed_s": 0.004878952,
+      "size": 1317
+    },
+    {
+      "name": "fuzz-49-repeat-drawText-48-compile",
+      "equal": false,
+      "elapsed_s": 0.014585981,
+      "size": 585
+    },
+    {
+      "name": "fuzz-50-translations-drawRectF-32-records",
+      "equal": true,
+      "elapsed_s": 0.030486999,
+      "size": 170
+    },
+    {
+      "name": "fuzz-50-translations-drawRectF-32-screen",
+      "equal": true,
+      "elapsed_s": 0.001266368,
+      "size": 1006
+    },
+    {
+      "name": "fuzz-50-translations-drawRectF-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000402028,
+      "size": 325
+    },
+    {
+      "name": "fuzz-50-translations-drawRectF-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.00122772,
+      "size": 1039
+    },
+    {
+      "name": "fuzz-50-translations-drawRectF-32-compile",
+      "equal": true,
+      "elapsed_s": 0.008799605,
+      "size": 109
+    },
+    {
+      "name": "fuzz-51-periodic-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.135132163,
+      "size": 138
+    },
+    {
+      "name": "fuzz-51-periodic-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.010022466,
+      "size": 2470
+    },
+    {
+      "name": "fuzz-51-periodic-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00058707,
+      "size": 265
+    },
+    {
+      "name": "fuzz-51-periodic-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003439888,
+      "size": 1934
+    },
+    {
+      "name": "fuzz-51-periodic-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.0128779,
+      "size": 97
+    },
+    {
+      "name": "fuzz-52-translations-drawLine-48-records",
+      "equal": true,
+      "elapsed_s": 0.057723677,
+      "size": 149
+    },
+    {
+      "name": "fuzz-52-translations-drawLine-48-screen",
+      "equal": true,
+      "elapsed_s": 0.00283371,
+      "size": 1490
+    },
+    {
+      "name": "fuzz-52-translations-drawLine-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000565684,
+      "size": 324
+    },
+    {
+      "name": "fuzz-52-translations-drawLine-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002159846,
+      "size": 1519
+    },
+    {
+      "name": "fuzz-52-translations-drawLine-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011501192,
+      "size": 108
+    },
+    {
+      "name": "fuzz-53-repeat-drawRectF-90-records",
+      "equal": true,
+      "elapsed_s": 0.553236004,
+      "size": 91
+    },
+    {
+      "name": "fuzz-53-repeat-drawRectF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.019232588,
+      "size": 4140
+    },
+    {
+      "name": "fuzz-53-repeat-drawRectF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000954718,
+      "size": 335
+    },
+    {
+      "name": "fuzz-53-repeat-drawRectF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.006172873,
+      "size": 280
+    },
+    {
+      "name": "fuzz-53-repeat-drawRectF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.020553865,
+      "size": 119
+    },
+    {
+      "name": "fuzz-54-linear-drawText-90-records",
+      "equal": false,
+      "elapsed_s": 0.201693702,
+      "size": 315
+    },
+    {
+      "name": "fuzz-54-linear-drawText-90-screen",
+      "equal": false,
+      "elapsed_s": 0.000839678,
+      "size": 1185
+    },
+    {
+      "name": "fuzz-54-linear-drawText-90-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000859298,
+      "size": 1185
+    },
+    {
+      "name": "fuzz-54-linear-drawText-90-motifs",
+      "equal": false,
+      "elapsed_s": 0.004756253,
+      "size": 3003
+    },
+    {
+      "name": "fuzz-54-linear-drawText-90-compile",
+      "equal": false,
+      "elapsed_s": 0.025209094,
+      "size": 1039
+    },
+    {
+      "name": "fuzz-55-random-drawText-16-records",
+      "equal": false,
+      "elapsed_s": 0.004831392,
+      "size": 279
+    },
+    {
+      "name": "fuzz-55-random-drawText-16-screen",
+      "equal": false,
+      "elapsed_s": 0.000828149,
+      "size": 611
+    },
+    {
+      "name": "fuzz-55-random-drawText-16-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000830953,
+      "size": 611
+    },
+    {
+      "name": "fuzz-55-random-drawText-16-motifs",
+      "equal": false,
+      "elapsed_s": 0.000589473,
+      "size": 611
+    },
+    {
+      "name": "fuzz-55-random-drawText-16-compile",
+      "equal": false,
+      "elapsed_s": 0.03699123,
+      "size": 256
+    },
+    {
+      "name": "fuzz-56-translations-drawCircleF-32-records",
+      "equal": true,
+      "elapsed_s": 0.02519344,
+      "size": 166
+    },
+    {
+      "name": "fuzz-56-translations-drawCircleF-32-screen",
+      "equal": true,
+      "elapsed_s": 0.001184919,
+      "size": 854
+    },
+    {
+      "name": "fuzz-56-translations-drawCircleF-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000399876,
+      "size": 265
+    },
+    {
+      "name": "fuzz-56-translations-drawCircleF-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.0011934,
+      "size": 984
+    },
+    {
+      "name": "fuzz-56-translations-drawCircleF-32-compile",
+      "equal": true,
+      "elapsed_s": 0.008900216,
+      "size": 97
+    },
+    {
+      "name": "fuzz-57-repeat-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.040145098,
+      "size": 83
+    },
+    {
+      "name": "fuzz-57-repeat-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.001385604,
+      "size": 932
+    },
+    {
+      "name": "fuzz-57-repeat-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000449436,
+      "size": 272
+    },
+    {
+      "name": "fuzz-57-repeat-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.001077032,
+      "size": 171
+    },
+    {
+      "name": "fuzz-57-repeat-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.00708719,
+      "size": 104
+    },
+    {
+      "name": "fuzz-58-periodic-drawLine-48-records",
+      "equal": true,
+      "elapsed_s": 0.101253896,
+      "size": 146
+    },
+    {
+      "name": "fuzz-58-periodic-drawLine-48-screen",
+      "equal": true,
+      "elapsed_s": 0.003987426,
+      "size": 2224
+    },
+    {
+      "name": "fuzz-58-periodic-drawLine-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000528874,
+      "size": 324
+    },
+    {
+      "name": "fuzz-58-periodic-drawLine-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002236783,
+      "size": 1464
+    },
+    {
+      "name": "fuzz-58-periodic-drawLine-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011730599,
+      "size": 108
+    },
+    {
+      "name": "fuzz-59-repeat-drawText-8-records",
+      "equal": false,
+      "elapsed_s": 0.00384126,
+      "size": 193
+    },
+    {
+      "name": "fuzz-59-repeat-drawText-8-screen",
+      "equal": false,
+      "elapsed_s": 0.000278723,
+      "size": 275
+    },
+    {
+      "name": "fuzz-59-repeat-drawText-8-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000202153,
+      "size": 370
+    },
+    {
+      "name": "fuzz-59-repeat-drawText-8-motifs",
+      "equal": false,
+      "elapsed_s": 0.000283625,
+      "size": 275
+    },
+    {
+      "name": "fuzz-59-repeat-drawText-8-compile",
+      "equal": false,
+      "elapsed_s": 0.006297136,
+      "size": 176
+    },
+    {
+      "name": "fuzz-60-periodic-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.016474793,
+      "size": 137
+    },
+    {
+      "name": "fuzz-60-periodic-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000778472,
+      "size": 581
+    },
+    {
+      "name": "fuzz-60-periodic-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000242167,
+      "size": 265
+    },
+    {
+      "name": "fuzz-60-periodic-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000528636,
+      "size": 458
+    },
+    {
+      "name": "fuzz-60-periodic-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005923116,
+      "size": 97
+    },
+    {
+      "name": "fuzz-61-linear-drawCircleF-90-records",
+      "equal": true,
+      "elapsed_s": 0.73625051,
+      "size": 73
+    },
+    {
+      "name": "fuzz-61-linear-drawCircleF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.000706093,
+      "size": 169
+    },
+    {
+      "name": "fuzz-61-linear-drawCircleF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000690546,
+      "size": 169
+    },
+    {
+      "name": "fuzz-61-linear-drawCircleF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.004969692,
+      "size": 2636
+    },
+    {
+      "name": "fuzz-61-linear-drawCircleF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.018034847,
+      "size": 73
+    },
+    {
+      "name": "fuzz-62-periodic-drawText-24-records",
+      "equal": false,
+      "elapsed_s": 0.012914372,
+      "size": 293
+    },
+    {
+      "name": "fuzz-62-periodic-drawText-24-screen",
+      "equal": false,
+      "elapsed_s": 0.002682895,
+      "size": 757
+    },
+    {
+      "name": "fuzz-62-periodic-drawText-24-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000356861,
+      "size": 492
+    },
+    {
+      "name": "fuzz-62-periodic-drawText-24-motifs",
+      "equal": false,
+      "elapsed_s": 0.000819097,
+      "size": 757
+    },
+    {
+      "name": "fuzz-62-periodic-drawText-24-compile",
+      "equal": false,
+      "elapsed_s": 0.008775523,
+      "size": 298
+    },
+    {
+      "name": "fuzz-63-random-drawText-32-records",
+      "equal": false,
+      "elapsed_s": 0.010416706,
+      "size": 328
+    },
+    {
+      "name": "fuzz-63-random-drawText-32-screen",
+      "equal": false,
+      "elapsed_s": 0.003522327,
+      "size": 1095
+    },
+    {
+      "name": "fuzz-63-random-drawText-32-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.003879021,
+      "size": 1095
+    },
+    {
+      "name": "fuzz-63-random-drawText-32-motifs",
+      "equal": false,
+      "elapsed_s": 0.001279317,
+      "size": 1095
+    },
+    {
+      "name": "fuzz-63-random-drawText-32-compile",
+      "equal": false,
+      "elapsed_s": 0.092690154,
+      "size": 305
+    },
+    {
+      "name": "fuzz-64-periodic-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.007130486,
+      "size": 129
+    },
+    {
+      "name": "fuzz-64-periodic-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000267045,
+      "size": 275
+    },
+    {
+      "name": "fuzz-64-periodic-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000185259,
+      "size": 264
+    },
+    {
+      "name": "fuzz-64-periodic-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000261967,
+      "size": 234
+    },
+    {
+      "name": "fuzz-64-periodic-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004524843,
+      "size": 96
+    },
+    {
+      "name": "fuzz-65-random-drawText-4-records",
+      "equal": true,
+      "elapsed_s": 0.0015313,
+      "size": 171
+    },
+    {
+      "name": "fuzz-65-random-drawText-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000141331,
+      "size": 171
+    },
+    {
+      "name": "fuzz-65-random-drawText-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000123991,
+      "size": 171
+    },
+    {
+      "name": "fuzz-65-random-drawText-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000223576,
+      "size": 171
+    },
+    {
+      "name": "fuzz-65-random-drawText-4-compile",
+      "equal": true,
+      "elapsed_s": 0.006291905,
+      "size": 133
+    },
+    {
+      "name": "fuzz-66-repeat-drawRectF-90-records",
+      "equal": true,
+      "elapsed_s": 0.563912163,
+      "size": 91
+    },
+    {
+      "name": "fuzz-66-repeat-drawRectF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.01857691,
+      "size": 4140
+    },
+    {
+      "name": "fuzz-66-repeat-drawRectF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00085675,
+      "size": 335
+    },
+    {
+      "name": "fuzz-66-repeat-drawRectF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.005537695,
+      "size": 280
+    },
+    {
+      "name": "fuzz-66-repeat-drawRectF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.019064745,
+      "size": 119
+    },
+    {
+      "name": "fuzz-67-random-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.027418675,
+      "size": 460
+    },
+    {
+      "name": "fuzz-67-random-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.018794296,
+      "size": 1885
+    },
+    {
+      "name": "fuzz-67-random-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.019226585,
+      "size": 1885
+    },
+    {
+      "name": "fuzz-67-random-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003589453,
+      "size": 1885
+    },
+    {
+      "name": "fuzz-67-random-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.186020592,
+      "size": 442
+    },
+    {
+      "name": "fuzz-68-linear-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.00254446,
+      "size": 76
+    },
+    {
+      "name": "fuzz-68-linear-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000117354,
+      "size": 196
+    },
+    {
+      "name": "fuzz-68-linear-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000118454,
+      "size": 196
+    },
+    {
+      "name": "fuzz-68-linear-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000176503,
+      "size": 129
+    },
+    {
+      "name": "fuzz-68-linear-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.002910137,
+      "size": 76
+    },
+    {
+      "name": "fuzz-69-repeat-drawCircleF-90-records",
+      "equal": true,
+      "elapsed_s": 0.422034949,
+      "size": 83
+    },
+    {
+      "name": "fuzz-69-repeat-drawCircleF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.016703293,
+      "size": 3466
+    },
+    {
+      "name": "fuzz-69-repeat-drawCircleF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000770574,
+      "size": 272
+    },
+    {
+      "name": "fuzz-69-repeat-drawCircleF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.005214297,
+      "size": 273
+    },
+    {
+      "name": "fuzz-69-repeat-drawCircleF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.017400789,
+      "size": 104
+    },
+    {
+      "name": "fuzz-70-linear-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.007723691,
+      "size": 72
+    },
+    {
+      "name": "fuzz-70-linear-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.00014767,
+      "size": 168
+    },
+    {
+      "name": "fuzz-70-linear-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000133117,
+      "size": 168
+    },
+    {
+      "name": "fuzz-70-linear-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000264026,
+      "size": 238
+    },
+    {
+      "name": "fuzz-70-linear-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.003277323,
+      "size": 72
+    },
+    {
+      "name": "fuzz-71-repeat-drawRectF-64-records",
+      "equal": true,
+      "elapsed_s": 0.294628005,
+      "size": 91
+    },
+    {
+      "name": "fuzz-71-repeat-drawRectF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.007792096,
+      "size": 2962
+    },
+    {
+      "name": "fuzz-71-repeat-drawRectF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000664706,
+      "size": 335
+    },
+    {
+      "name": "fuzz-71-repeat-drawRectF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003542125,
+      "size": 206
+    },
+    {
+      "name": "fuzz-71-repeat-drawRectF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.014828241,
+      "size": 119
+    },
+    {
+      "name": "fuzz-72-random-drawText-32-records",
+      "equal": false,
+      "elapsed_s": 0.011776589,
+      "size": 326
+    },
+    {
+      "name": "fuzz-72-random-drawText-32-screen",
+      "equal": false,
+      "elapsed_s": 0.003575179,
+      "size": 1062
+    },
+    {
+      "name": "fuzz-72-random-drawText-32-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.003689293,
+      "size": 1062
+    },
+    {
+      "name": "fuzz-72-random-drawText-32-motifs",
+      "equal": false,
+      "elapsed_s": 0.001368181,
+      "size": 1062
+    },
+    {
+      "name": "fuzz-72-random-drawText-32-compile",
+      "equal": false,
+      "elapsed_s": 0.087968499,
+      "size": 303
+    },
+    {
+      "name": "fuzz-73-translations-drawText-16-records",
+      "equal": false,
+      "elapsed_s": 0.006223555,
+      "size": 270
+    },
+    {
+      "name": "fuzz-73-translations-drawText-16-screen",
+      "equal": false,
+      "elapsed_s": 0.000425925,
+      "size": 646
+    },
+    {
+      "name": "fuzz-73-translations-drawText-16-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.00026339,
+      "size": 410
+    },
+    {
+      "name": "fuzz-73-translations-drawText-16-motifs",
+      "equal": false,
+      "elapsed_s": 0.000572358,
+      "size": 511
+    },
+    {
+      "name": "fuzz-73-translations-drawText-16-compile",
+      "equal": false,
+      "elapsed_s": 0.007129641,
+      "size": 216
+    },
+    {
+      "name": "fuzz-74-linear-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.007904343,
+      "size": 76
+    },
+    {
+      "name": "fuzz-74-linear-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000176524,
+      "size": 196
+    },
+    {
+      "name": "fuzz-74-linear-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000141596,
+      "size": 196
+    },
+    {
+      "name": "fuzz-74-linear-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000293365,
+      "size": 245
+    },
+    {
+      "name": "fuzz-74-linear-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.003670025,
+      "size": 76
+    },
+    {
+      "name": "fuzz-75-translations-drawRectF-90-records",
+      "equal": true,
+      "elapsed_s": 0.125069235,
+      "size": 151
+    },
+    {
+      "name": "fuzz-75-translations-drawRectF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.012834096,
+      "size": 2845
+    },
+    {
+      "name": "fuzz-75-translations-drawRectF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000877244,
+      "size": 325
+    },
+    {
+      "name": "fuzz-75-translations-drawRectF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.004771328,
+      "size": 3073
+    },
+    {
+      "name": "fuzz-75-translations-drawRectF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.018582145,
+      "size": 109
+    },
+    {
+      "name": "fuzz-76-random-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.00393787,
+      "size": 244
+    },
+    {
+      "name": "fuzz-76-random-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000261394,
+      "size": 265
+    },
+    {
+      "name": "fuzz-76-random-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000257234,
+      "size": 265
+    },
+    {
+      "name": "fuzz-76-random-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000314339,
+      "size": 265
+    },
+    {
+      "name": "fuzz-76-random-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.017412913,
+      "size": 164
+    },
+    {
+      "name": "fuzz-77-linear-drawLine-64-records",
+      "equal": true,
+      "elapsed_s": 0.449607212,
+      "size": 76
+    },
+    {
+      "name": "fuzz-77-linear-drawLine-64-screen",
+      "equal": true,
+      "elapsed_s": 0.000594313,
+      "size": 196
+    },
+    {
+      "name": "fuzz-77-linear-drawLine-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000572408,
+      "size": 196
+    },
+    {
+      "name": "fuzz-77-linear-drawLine-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003538877,
+      "size": 1895
+    },
+    {
+      "name": "fuzz-77-linear-drawLine-64-compile",
+      "equal": true,
+      "elapsed_s": 0.013418389,
+      "size": 76
+    },
+    {
+      "name": "fuzz-78-translations-drawRectF-16-records",
+      "equal": true,
+      "elapsed_s": 0.014182047,
+      "size": 154
+    },
+    {
+      "name": "fuzz-78-translations-drawRectF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000397529,
+      "size": 568
+    },
+    {
+      "name": "fuzz-78-translations-drawRectF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00027557,
+      "size": 325
+    },
+    {
+      "name": "fuzz-78-translations-drawRectF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000533189,
+      "size": 511
+    },
+    {
+      "name": "fuzz-78-translations-drawRectF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005804183,
+      "size": 109
+    },
+    {
+      "name": "fuzz-79-translations-drawLine-8-records",
+      "equal": true,
+      "elapsed_s": 0.007132123,
+      "size": 133
+    },
+    {
+      "name": "fuzz-79-translations-drawLine-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000184451,
+      "size": 259
+    },
+    {
+      "name": "fuzz-79-translations-drawLine-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000207407,
+      "size": 323
+    },
+    {
+      "name": "fuzz-79-translations-drawLine-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000279253,
+      "size": 239
+    },
+    {
+      "name": "fuzz-79-translations-drawLine-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004467614,
+      "size": 107
+    },
+    {
+      "name": "fuzz-80-random-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.004396694,
+      "size": 245
+    },
+    {
+      "name": "fuzz-80-random-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000270155,
+      "size": 266
+    },
+    {
+      "name": "fuzz-80-random-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000242958,
+      "size": 266
+    },
+    {
+      "name": "fuzz-80-random-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000328894,
+      "size": 266
+    },
+    {
+      "name": "fuzz-80-random-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.018423428,
+      "size": 165
+    },
+    {
+      "name": "fuzz-81-periodic-drawCircleF-24-records",
+      "equal": true,
+      "elapsed_s": 0.026071787,
+      "size": 137
+    },
+    {
+      "name": "fuzz-81-periodic-drawCircleF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.001393721,
+      "size": 890
+    },
+    {
+      "name": "fuzz-81-periodic-drawCircleF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000305153,
+      "size": 265
+    },
+    {
+      "name": "fuzz-81-periodic-drawCircleF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000785667,
+      "size": 694
+    },
+    {
+      "name": "fuzz-81-periodic-drawCircleF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.006503672,
+      "size": 97
+    },
+    {
+      "name": "fuzz-82-random-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.012594764,
+      "size": 391
+    },
+    {
+      "name": "fuzz-82-random-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.003852934,
+      "size": 966
+    },
+    {
+      "name": "fuzz-82-random-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00403621,
+      "size": 966
+    },
+    {
+      "name": "fuzz-82-random-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001290415,
+      "size": 966
+    },
+    {
+      "name": "fuzz-82-random-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.063954749,
+      "size": 373
+    },
+    {
+      "name": "fuzz-83-random-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.001713213,
+      "size": 142
+    },
+    {
+      "name": "fuzz-83-random-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000111998,
+      "size": 142
+    },
+    {
+      "name": "fuzz-83-random-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000110233,
+      "size": 142
+    },
+    {
+      "name": "fuzz-83-random-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.00019365,
+      "size": 142
+    },
+    {
+      "name": "fuzz-83-random-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.006657837,
+      "size": 101
+    },
+    {
+      "name": "fuzz-84-random-drawText-8-records",
+      "equal": true,
+      "elapsed_s": 0.00311558,
+      "size": 275
+    },
+    {
+      "name": "fuzz-84-random-drawText-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000222872,
+      "size": 300
+    },
+    {
+      "name": "fuzz-84-random-drawText-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000235787,
+      "size": 300
+    },
+    {
+      "name": "fuzz-84-random-drawText-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.00029976,
+      "size": 300
+    },
+    {
+      "name": "fuzz-84-random-drawText-8-compile",
+      "equal": true,
+      "elapsed_s": 0.013521848,
+      "size": 206
+    },
+    {
+      "name": "fuzz-85-periodic-drawRectF-48-records",
+      "equal": true,
+      "elapsed_s": 0.097218316,
+      "size": 147
+    },
+    {
+      "name": "fuzz-85-periodic-drawRectF-48-screen",
+      "equal": true,
+      "elapsed_s": 0.003956988,
+      "size": 2236
+    },
+    {
+      "name": "fuzz-85-periodic-drawRectF-48-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000507805,
+      "size": 325
+    },
+    {
+      "name": "fuzz-85-periodic-drawRectF-48-motifs",
+      "equal": true,
+      "elapsed_s": 0.002149975,
+      "size": 1512
+    },
+    {
+      "name": "fuzz-85-periodic-drawRectF-48-compile",
+      "equal": true,
+      "elapsed_s": 0.011339045,
+      "size": 109
+    },
+    {
+      "name": "fuzz-86-linear-drawText-24-records",
+      "equal": false,
+      "elapsed_s": 0.015882973,
+      "size": 249
+    },
+    {
+      "name": "fuzz-86-linear-drawText-24-screen",
+      "equal": false,
+      "elapsed_s": 0.000307732,
+      "size": 504
+    },
+    {
+      "name": "fuzz-86-linear-drawText-24-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000289029,
+      "size": 504
+    },
+    {
+      "name": "fuzz-86-linear-drawText-24-motifs",
+      "equal": false,
+      "elapsed_s": 0.000792019,
+      "size": 827
+    },
+    {
+      "name": "fuzz-86-linear-drawText-24-compile",
+      "equal": false,
+      "elapsed_s": 0.008263748,
+      "size": 358
+    },
+    {
+      "name": "fuzz-87-linear-drawRectF-16-records",
+      "equal": true,
+      "elapsed_s": 0.02491022,
+      "size": 77
+    },
+    {
+      "name": "fuzz-87-linear-drawRectF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000233006,
+      "size": 197
+    },
+    {
+      "name": "fuzz-87-linear-drawRectF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000209457,
+      "size": 197
+    },
+    {
+      "name": "fuzz-87-linear-drawRectF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000535562,
+      "size": 477
+    },
+    {
+      "name": "fuzz-87-linear-drawRectF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005032743,
+      "size": 77
+    },
+    {
+      "name": "fuzz-88-random-drawRectF-8-records",
+      "equal": true,
+      "elapsed_s": 0.003945819,
+      "size": 246
+    },
+    {
+      "name": "fuzz-88-random-drawRectF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000273047,
+      "size": 267
+    },
+    {
+      "name": "fuzz-88-random-drawRectF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00025703,
+      "size": 267
+    },
+    {
+      "name": "fuzz-88-random-drawRectF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000302956,
+      "size": 267
+    },
+    {
+      "name": "fuzz-88-random-drawRectF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.017807108,
+      "size": 166
+    },
+    {
+      "name": "fuzz-89-repeat-drawText-32-records",
+      "equal": false,
+      "elapsed_s": 0.024634764,
+      "size": 270
+    },
+    {
+      "name": "fuzz-89-repeat-drawText-32-screen",
+      "equal": false,
+      "elapsed_s": 0.004355516,
+      "size": 1054
+    },
+    {
+      "name": "fuzz-89-repeat-drawText-32-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000381746,
+      "size": 634
+    },
+    {
+      "name": "fuzz-89-repeat-drawText-32-motifs",
+      "equal": false,
+      "elapsed_s": 0.002408317,
+      "size": 909
+    },
+    {
+      "name": "fuzz-89-repeat-drawText-32-compile",
+      "equal": false,
+      "elapsed_s": 0.010921934,
+      "size": 440
+    },
+    {
+      "name": "fuzz-90-translations-drawCircleF-90-records",
+      "equal": true,
+      "elapsed_s": 0.107320861,
+      "size": 141
+    },
+    {
+      "name": "fuzz-90-translations-drawCircleF-90-screen",
+      "equal": true,
+      "elapsed_s": 0.011479027,
+      "size": 2387
+    },
+    {
+      "name": "fuzz-90-translations-drawCircleF-90-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000729295,
+      "size": 265
+    },
+    {
+      "name": "fuzz-90-translations-drawCircleF-90-motifs",
+      "equal": true,
+      "elapsed_s": 0.004610168,
+      "size": 2872
+    },
+    {
+      "name": "fuzz-90-translations-drawCircleF-90-compile",
+      "equal": true,
+      "elapsed_s": 0.016669826,
+      "size": 97
+    },
+    {
+      "name": "fuzz-91-repeat-drawRectF-24-records",
+      "equal": true,
+      "elapsed_s": 0.038065176,
+      "size": 91
+    },
+    {
+      "name": "fuzz-91-repeat-drawRectF-24-screen",
+      "equal": true,
+      "elapsed_s": 0.000957923,
+      "size": 1112
+    },
+    {
+      "name": "fuzz-91-repeat-drawRectF-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000322471,
+      "size": 335
+    },
+    {
+      "name": "fuzz-91-repeat-drawRectF-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000939676,
+      "size": 176
+    },
+    {
+      "name": "fuzz-91-repeat-drawRectF-24-compile",
+      "equal": true,
+      "elapsed_s": 0.007355905,
+      "size": 119
+    },
+    {
+      "name": "fuzz-92-periodic-drawText-32-records",
+      "equal": false,
+      "elapsed_s": 0.012934753,
+      "size": 309
+    },
+    {
+      "name": "fuzz-92-periodic-drawText-32-screen",
+      "equal": false,
+      "elapsed_s": 0.004405843,
+      "size": 1088
+    },
+    {
+      "name": "fuzz-92-periodic-drawText-32-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000400367,
+      "size": 631
+    },
+    {
+      "name": "fuzz-92-periodic-drawText-32-motifs",
+      "equal": false,
+      "elapsed_s": 0.00123046,
+      "size": 1088
+    },
+    {
+      "name": "fuzz-92-periodic-drawText-32-compile",
+      "equal": false,
+      "elapsed_s": 0.010759202,
+      "size": 437
+    },
+    {
+      "name": "fuzz-93-random-drawLine-16-records",
+      "equal": true,
+      "elapsed_s": 0.00633893,
+      "size": 310
+    },
+    {
+      "name": "fuzz-93-random-drawLine-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000915654,
+      "size": 501
+    },
+    {
+      "name": "fuzz-93-random-drawLine-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000911873,
+      "size": 501
+    },
+    {
+      "name": "fuzz-93-random-drawLine-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.000575274,
+      "size": 501
+    },
+    {
+      "name": "fuzz-93-random-drawLine-16-compile",
+      "equal": true,
+      "elapsed_s": 0.046570368,
+      "size": 292
+    },
+    {
+      "name": "fuzz-94-periodic-drawCircleF-32-records",
+      "equal": true,
+      "elapsed_s": 0.039021449,
+      "size": 137
+    },
+    {
+      "name": "fuzz-94-periodic-drawCircleF-32-screen",
+      "equal": true,
+      "elapsed_s": 0.002354883,
+      "size": 1202
+    },
+    {
+      "name": "fuzz-94-periodic-drawCircleF-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000359183,
+      "size": 265
+    },
+    {
+      "name": "fuzz-94-periodic-drawCircleF-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001144572,
+      "size": 942
+    },
+    {
+      "name": "fuzz-94-periodic-drawCircleF-32-compile",
+      "equal": true,
+      "elapsed_s": 0.007860548,
+      "size": 97
+    },
+    {
+      "name": "fuzz-95-repeat-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.005505378,
+      "size": 82
+    },
+    {
+      "name": "fuzz-95-repeat-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000207873,
+      "size": 324
+    },
+    {
+      "name": "fuzz-95-repeat-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00018674,
+      "size": 271
+    },
+    {
+      "name": "fuzz-95-repeat-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000378601,
+      "size": 159
+    },
+    {
+      "name": "fuzz-95-repeat-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004387423,
+      "size": 103
+    },
+    {
+      "name": "fuzz-96-periodic-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.007616002,
+      "size": 129
+    },
+    {
+      "name": "fuzz-96-periodic-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000261346,
+      "size": 275
+    },
+    {
+      "name": "fuzz-96-periodic-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000197115,
+      "size": 264
+    },
+    {
+      "name": "fuzz-96-periodic-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000281791,
+      "size": 234
+    },
+    {
+      "name": "fuzz-96-periodic-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004341176,
+      "size": 96
+    },
+    {
+      "name": "fuzz-97-repeat-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.075067336,
+      "size": 90
+    },
+    {
+      "name": "fuzz-97-repeat-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.001662159,
+      "size": 1468
+    },
+    {
+      "name": "fuzz-97-repeat-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000398813,
+      "size": 334
+    },
+    {
+      "name": "fuzz-97-repeat-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001406598,
+      "size": 178
+    },
+    {
+      "name": "fuzz-97-repeat-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.010104758,
+      "size": 118
+    },
+    {
+      "name": "fuzz-98-random-drawLine-4-records",
+      "equal": true,
+      "elapsed_s": 0.001977425,
+      "size": 137
+    },
+    {
+      "name": "fuzz-98-random-drawLine-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000187713,
+      "size": 137
+    },
+    {
+      "name": "fuzz-98-random-drawLine-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000150277,
+      "size": 137
+    },
+    {
+      "name": "fuzz-98-random-drawLine-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000289304,
+      "size": 137
+    },
+    {
+      "name": "fuzz-98-random-drawLine-4-compile",
+      "equal": true,
+      "elapsed_s": 0.00784398,
+      "size": 99
+    },
+    {
+      "name": "fuzz-99-translations-drawText-24-records",
+      "equal": false,
+      "elapsed_s": 0.011548263,
+      "size": 294
+    },
+    {
+      "name": "fuzz-99-translations-drawText-24-screen",
+      "equal": false,
+      "elapsed_s": 0.000748656,
+      "size": 1008
+    },
+    {
+      "name": "fuzz-99-translations-drawText-24-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000343816,
+      "size": 458
+    },
+    {
+      "name": "fuzz-99-translations-drawText-24-motifs",
+      "equal": false,
+      "elapsed_s": 0.000805089,
+      "size": 751
+    },
+    {
+      "name": "fuzz-99-translations-drawText-24-compile",
+      "equal": false,
+      "elapsed_s": 0.008986491,
+      "size": 264
+    },
+    {
+      "name": "fuzz-100-linear-drawRectF-64-records",
+      "equal": true,
+      "elapsed_s": 0.542441591,
+      "size": 77
+    },
+    {
+      "name": "fuzz-100-linear-drawRectF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.000604074,
+      "size": 197
+    },
+    {
+      "name": "fuzz-100-linear-drawRectF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.00058424,
+      "size": 197
+    },
+    {
+      "name": "fuzz-100-linear-drawRectF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.005501599,
+      "size": 1959
+    },
+    {
+      "name": "fuzz-100-linear-drawRectF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.015204141,
+      "size": 77
+    },
+    {
+      "name": "fuzz-101-linear-drawText-90-records",
+      "equal": false,
+      "elapsed_s": 0.229013293,
+      "size": 315
+    },
+    {
+      "name": "fuzz-101-linear-drawText-90-screen",
+      "equal": false,
+      "elapsed_s": 0.000902589,
+      "size": 1205
+    },
+    {
+      "name": "fuzz-101-linear-drawText-90-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.001047854,
+      "size": 1205
+    },
+    {
+      "name": "fuzz-101-linear-drawText-90-motifs",
+      "equal": false,
+      "elapsed_s": 0.005349856,
+      "size": 3023
+    },
+    {
+      "name": "fuzz-101-linear-drawText-90-compile",
+      "equal": false,
+      "elapsed_s": 0.024495324,
+      "size": 1059
+    },
+    {
+      "name": "fuzz-102-linear-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.11498164,
+      "size": 76
+    },
+    {
+      "name": "fuzz-102-linear-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.000391676,
+      "size": 196
+    },
+    {
+      "name": "fuzz-102-linear-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000374693,
+      "size": 196
+    },
+    {
+      "name": "fuzz-102-linear-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001236948,
+      "size": 918
+    },
+    {
+      "name": "fuzz-102-linear-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.008805299,
+      "size": 76
+    },
+    {
+      "name": "fuzz-103-linear-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.124531044,
+      "size": 76
+    },
+    {
+      "name": "fuzz-103-linear-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.000471788,
+      "size": 196
+    },
+    {
+      "name": "fuzz-103-linear-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000340254,
+      "size": 196
+    },
+    {
+      "name": "fuzz-103-linear-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001478943,
+      "size": 918
+    },
+    {
+      "name": "fuzz-103-linear-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.011877028,
+      "size": 76
+    },
+    {
+      "name": "fuzz-104-translations-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.079270045,
+      "size": 182
+    },
+    {
+      "name": "fuzz-104-translations-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.007542262,
+      "size": 1735
+    },
+    {
+      "name": "fuzz-104-translations-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000940597,
+      "size": 265
+    },
+    {
+      "name": "fuzz-104-translations-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.005320527,
+      "size": 1988
+    },
+    {
+      "name": "fuzz-104-translations-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.016749413,
+      "size": 97
+    },
+    {
+      "name": "fuzz-105-repeat-drawRectF-64-records",
+      "equal": true,
+      "elapsed_s": 0.359784252,
+      "size": 91
+    },
+    {
+      "name": "fuzz-105-repeat-drawRectF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.007964644,
+      "size": 2962
+    },
+    {
+      "name": "fuzz-105-repeat-drawRectF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000708774,
+      "size": 335
+    },
+    {
+      "name": "fuzz-105-repeat-drawRectF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003586267,
+      "size": 206
+    },
+    {
+      "name": "fuzz-105-repeat-drawRectF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.016944454,
+      "size": 119
+    },
+    {
+      "name": "fuzz-106-repeat-drawText-8-records",
+      "equal": false,
+      "elapsed_s": 0.003621196,
+      "size": 204
+    },
+    {
+      "name": "fuzz-106-repeat-drawText-8-screen",
+      "equal": false,
+      "elapsed_s": 0.000279025,
+      "size": 273
+    },
+    {
+      "name": "fuzz-106-repeat-drawText-8-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000240516,
+      "size": 368
+    },
+    {
+      "name": "fuzz-106-repeat-drawText-8-motifs",
+      "equal": false,
+      "elapsed_s": 0.000297253,
+      "size": 273
+    },
+    {
+      "name": "fuzz-106-repeat-drawText-8-compile",
+      "equal": false,
+      "elapsed_s": 0.005797889,
+      "size": 174
+    },
+    {
+      "name": "fuzz-107-repeat-drawCircleF-64-records",
+      "equal": true,
+      "elapsed_s": 0.234802466,
+      "size": 83
+    },
+    {
+      "name": "fuzz-107-repeat-drawCircleF-64-screen",
+      "equal": true,
+      "elapsed_s": 0.008384349,
+      "size": 2476
+    },
+    {
+      "name": "fuzz-107-repeat-drawCircleF-64-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000631483,
+      "size": 272
+    },
+    {
+      "name": "fuzz-107-repeat-drawCircleF-64-motifs",
+      "equal": true,
+      "elapsed_s": 0.003361245,
+      "size": 201
+    },
+    {
+      "name": "fuzz-107-repeat-drawCircleF-64-compile",
+      "equal": true,
+      "elapsed_s": 0.013792446,
+      "size": 104
+    },
+    {
+      "name": "fuzz-108-random-drawText-24-records",
+      "equal": false,
+      "elapsed_s": 0.008231113,
+      "size": 305
+    },
+    {
+      "name": "fuzz-108-random-drawText-24-screen",
+      "equal": false,
+      "elapsed_s": 0.00196257,
+      "size": 822
+    },
+    {
+      "name": "fuzz-108-random-drawText-24-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.002052736,
+      "size": 822
+    },
+    {
+      "name": "fuzz-108-random-drawText-24-motifs",
+      "equal": false,
+      "elapsed_s": 0.000916427,
+      "size": 822
+    },
+    {
+      "name": "fuzz-108-random-drawText-24-compile",
+      "equal": false,
+      "elapsed_s": 0.058179799,
+      "size": 282
+    },
+    {
+      "name": "fuzz-109-linear-drawCircleF-32-records",
+      "equal": true,
+      "elapsed_s": 0.092500294,
+      "size": 73
+    },
+    {
+      "name": "fuzz-109-linear-drawCircleF-32-screen",
+      "equal": true,
+      "elapsed_s": 0.00032372,
+      "size": 169
+    },
+    {
+      "name": "fuzz-109-linear-drawCircleF-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000297393,
+      "size": 169
+    },
+    {
+      "name": "fuzz-109-linear-drawCircleF-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001160973,
+      "size": 911
+    },
+    {
+      "name": "fuzz-109-linear-drawCircleF-32-compile",
+      "equal": true,
+      "elapsed_s": 0.007388777,
+      "size": 73
+    },
+    {
+      "name": "fuzz-110-random-drawLine-32-records",
+      "equal": true,
+      "elapsed_s": 0.012860574,
+      "size": 390
+    },
+    {
+      "name": "fuzz-110-random-drawLine-32-screen",
+      "equal": true,
+      "elapsed_s": 0.003972638,
+      "size": 965
+    },
+    {
+      "name": "fuzz-110-random-drawLine-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.004013073,
+      "size": 965
+    },
+    {
+      "name": "fuzz-110-random-drawLine-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001322519,
+      "size": 965
+    },
+    {
+      "name": "fuzz-110-random-drawLine-32-compile",
+      "equal": true,
+      "elapsed_s": 0.064199808,
+      "size": 372
+    },
+    {
+      "name": "fuzz-111-translations-drawCircleF-8-records",
+      "equal": true,
+      "elapsed_s": 0.005647169,
+      "size": 132
+    },
+    {
+      "name": "fuzz-111-translations-drawCircleF-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000164337,
+      "size": 230
+    },
+    {
+      "name": "fuzz-111-translations-drawCircleF-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000187024,
+      "size": 264
+    },
+    {
+      "name": "fuzz-111-translations-drawCircleF-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.00026208,
+      "size": 240
+    },
+    {
+      "name": "fuzz-111-translations-drawCircleF-8-compile",
+      "equal": true,
+      "elapsed_s": 0.003914851,
+      "size": 96
+    },
+    {
+      "name": "fuzz-112-repeat-drawLine-8-records",
+      "equal": true,
+      "elapsed_s": 0.005838678,
+      "size": 89
+    },
+    {
+      "name": "fuzz-112-repeat-drawLine-8-screen",
+      "equal": true,
+      "elapsed_s": 0.000201964,
+      "size": 382
+    },
+    {
+      "name": "fuzz-112-repeat-drawLine-8-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000276632,
+      "size": 333
+    },
+    {
+      "name": "fuzz-112-repeat-drawLine-8-motifs",
+      "equal": true,
+      "elapsed_s": 0.000398469,
+      "size": 160
+    },
+    {
+      "name": "fuzz-112-repeat-drawLine-8-compile",
+      "equal": true,
+      "elapsed_s": 0.004810087,
+      "size": 117
+    },
+    {
+      "name": "fuzz-113-translations-drawCircleF-32-records",
+      "equal": true,
+      "elapsed_s": 0.023559528,
+      "size": 166
+    },
+    {
+      "name": "fuzz-113-translations-drawCircleF-32-screen",
+      "equal": true,
+      "elapsed_s": 0.001121188,
+      "size": 854
+    },
+    {
+      "name": "fuzz-113-translations-drawCircleF-32-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000383341,
+      "size": 265
+    },
+    {
+      "name": "fuzz-113-translations-drawCircleF-32-motifs",
+      "equal": true,
+      "elapsed_s": 0.001154751,
+      "size": 984
+    },
+    {
+      "name": "fuzz-113-translations-drawCircleF-32-compile",
+      "equal": true,
+      "elapsed_s": 0.007633819,
+      "size": 97
+    },
+    {
+      "name": "fuzz-114-linear-drawText-90-records",
+      "equal": false,
+      "elapsed_s": 0.191430006,
+      "size": 315
+    },
+    {
+      "name": "fuzz-114-linear-drawText-90-screen",
+      "equal": false,
+      "elapsed_s": 0.000816734,
+      "size": 1118
+    },
+    {
+      "name": "fuzz-114-linear-drawText-90-screen-periodic",
+      "equal": false,
+      "elapsed_s": 0.000809787,
+      "size": 1118
+    },
+    {
+      "name": "fuzz-114-linear-drawText-90-motifs",
+      "equal": false,
+      "elapsed_s": 0.004758434,
+      "size": 2936
+    },
+    {
+      "name": "fuzz-114-linear-drawText-90-compile",
+      "equal": false,
+      "elapsed_s": 0.023702139,
+      "size": 972
+    },
+    {
+      "name": "fuzz-115-translations-drawLine-24-records",
+      "equal": true,
+      "elapsed_s": 0.024944779,
+      "size": 149
+    },
+    {
+      "name": "fuzz-115-translations-drawLine-24-screen",
+      "equal": true,
+      "elapsed_s": 0.000730423,
+      "size": 750
+    },
+    {
+      "name": "fuzz-115-translations-drawLine-24-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000313319,
+      "size": 324
+    },
+    {
+      "name": "fuzz-115-translations-drawLine-24-motifs",
+      "equal": true,
+      "elapsed_s": 0.000774192,
+      "size": 751
+    },
+    {
+      "name": "fuzz-115-translations-drawLine-24-compile",
+      "equal": true,
+      "elapsed_s": 0.007369787,
+      "size": 108
+    },
+    {
+      "name": "fuzz-116-linear-drawCircleF-16-records",
+      "equal": true,
+      "elapsed_s": 0.022809114,
+      "size": 73
+    },
+    {
+      "name": "fuzz-116-linear-drawCircleF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000219048,
+      "size": 169
+    },
+    {
+      "name": "fuzz-116-linear-drawCircleF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000191738,
+      "size": 169
+    },
+    {
+      "name": "fuzz-116-linear-drawCircleF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.00049982,
+      "size": 462
+    },
+    {
+      "name": "fuzz-116-linear-drawCircleF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.004756832,
+      "size": 73
+    },
+    {
+      "name": "fuzz-117-random-drawRectF-4-records",
+      "equal": true,
+      "elapsed_s": 0.001670339,
+      "size": 142
+    },
+    {
+      "name": "fuzz-117-random-drawRectF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.000127767,
+      "size": 142
+    },
+    {
+      "name": "fuzz-117-random-drawRectF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000104408,
+      "size": 142
+    },
+    {
+      "name": "fuzz-117-random-drawRectF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000201159,
+      "size": 142
+    },
+    {
+      "name": "fuzz-117-random-drawRectF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.006628214,
+      "size": 101
+    },
+    {
+      "name": "fuzz-118-repeat-drawRectF-16-records",
+      "equal": true,
+      "elapsed_s": 0.016939357,
+      "size": 91
+    },
+    {
+      "name": "fuzz-118-repeat-drawRectF-16-screen",
+      "equal": true,
+      "elapsed_s": 0.000520309,
+      "size": 748
+    },
+    {
+      "name": "fuzz-118-repeat-drawRectF-16-screen-periodic",
+      "equal": true,
+      "elapsed_s": 0.000244493,
+      "size": 335
+    },
+    {
+      "name": "fuzz-118-repeat-drawRectF-16-motifs",
+      "equal": true,
+      "elapsed_s": 0.00061242,
+      "size": 170
+    },
+    {
+      "name": "fuzz-118-repeat-drawRectF-16-compile",
+      "equal": true,
+      "elapsed_s": 0.005988462,
+      "size": 119
+    },
+    {
+      "name": "fuzz-119-translations-drawCircleF-4-records",
+      "equal": true,
+      "elapsed_s": 0.002254404,
+      "size": 72
+    },
+    {
+      "name": "fuzz-119-translations-drawCircleF-4-screen",
+      "equal": true,
+      "elapsed_s": 0.00011357,
+      "size": 122
+    },
+    {
+      "name": "fuzz-119-translations-drawCircleF-4-screen-periodic",
+      "equal": true,
+      "elapsed_s": 9.2968e-05,
+      "size": 122
+    },
+    {
+      "name": "fuzz-119-translations-drawCircleF-4-motifs",
+      "equal": true,
+      "elapsed_s": 0.000185138,
+      "size": 122
+    },
+    {
+      "name": "fuzz-119-translations-drawCircleF-4-compile",
+      "equal": true,
+      "elapsed_s": 0.007345081,
+      "size": 72
+    },
+    {
+      "name": "integer-9007199254740992-8-records-0",
+      "equal": true,
+      "elapsed_s": 0.00566637,
+      "size": 119
+    },
+    {
+      "name": "integer-9007199254740992-8-records-2",
+      "equal": true,
+      "elapsed_s": 0.005728259,
+      "size": 119
+    },
+    {
+      "name": "integer-9007199254740992-8-records-2",
+      "equal": true,
+      "elapsed_s": 0.005787182,
+      "size": 119
+    },
+    {
+      "name": "integer-9007199254740992-8-screen-0",
+      "equal": false,
+      "elapsed_s": 0.000177601,
+      "size": 124
+    },
+    {
+      "name": "integer-9007199254740992-8-screen-2",
+      "equal": false,
+      "elapsed_s": 0.000164548,
+      "size": 124
+    },
+    {
+      "name": "integer-9007199254740992-8-screen-2",
+      "equal": false,
+      "elapsed_s": 0.000140041,
+      "size": 124
+    },
+    {
+      "name": "integer-9007199254740992-8-compile-0",
+      "equal": false,
+      "elapsed_s": 0.004161618,
+      "size": 76
+    },
+    {
+      "name": "integer-9007199254740992-8-compile-2",
+      "equal": false,
+      "elapsed_s": 0.002488872,
+      "size": 76
+    },
+    {
+      "name": "integer-9007199254740992-8-compile-2",
+      "equal": false,
+      "elapsed_s": 0.000674688,
+      "size": 76
+    },
+    {
+      "name": "integer-9007199254740990-16-records-0",
+      "equal": true,
+      "elapsed_s": 0.007312013,
+      "size": 381
+    },
+    {
+      "name": "integer-9007199254740990-16-records-2",
+      "equal": true,
+      "elapsed_s": 0.007198893,
+      "size": 381
+    },
+    {
+      "name": "integer-9007199254740990-16-records-2",
+      "equal": true,
+      "elapsed_s": 0.00724815,
+      "size": 381
+    },
+    {
+      "name": "integer-9007199254740990-16-screen-0",
+      "equal": true,
+      "elapsed_s": 0.000216796,
+      "size": 151
+    },
+    {
+      "name": "integer-9007199254740990-16-screen-2",
+      "equal": true,
+      "elapsed_s": 0.000219244,
+      "size": 151
+    },
+    {
+      "name": "integer-9007199254740990-16-screen-2",
+      "equal": true,
+      "elapsed_s": 0.000224243,
+      "size": 151
+    },
+    {
+      "name": "integer-9007199254740990-16-compile-0",
+      "equal": true,
+      "elapsed_s": 0.005526838,
+      "size": 79
+    },
+    {
+      "name": "integer-9007199254740990-16-compile-2",
+      "equal": true,
+      "elapsed_s": 0.003637873,
+      "size": 79
+    },
+    {
+      "name": "integer-9007199254740990-16-compile-2",
+      "equal": true,
+      "elapsed_s": 0.000795638,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-records-0",
+      "equal": true,
+      "elapsed_s": 0.003460663,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-records-2",
+      "equal": true,
+      "elapsed_s": 0.003497788,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-records-2",
+      "equal": true,
+      "elapsed_s": 0.003708176,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-screen-0",
+      "equal": true,
+      "elapsed_s": 0.000134348,
+      "size": 127
+    },
+    {
+      "name": "integer-9223372036854775807-6-screen-2",
+      "equal": true,
+      "elapsed_s": 0.000145445,
+      "size": 127
+    },
+    {
+      "name": "integer-9223372036854775807-6-screen-2",
+      "equal": true,
+      "elapsed_s": 0.000117502,
+      "size": 127
+    },
+    {
+      "name": "integer-9223372036854775807-6-compile-0",
+      "equal": true,
+      "elapsed_s": 0.002993452,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-compile-2",
+      "equal": true,
+      "elapsed_s": 0.001794875,
+      "size": 79
+    },
+    {
+      "name": "integer-9223372036854775807-6-compile-2",
+      "equal": true,
+      "elapsed_s": 0.000515572,
+      "size": 79
+    }
+  ]
+}

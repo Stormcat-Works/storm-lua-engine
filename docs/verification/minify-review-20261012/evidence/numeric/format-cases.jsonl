@@ -1,0 +1,12 @@
+{"source": "return string.format(\"%018446744073709551615d\",1)", "mode": "default"}
+{"source": "return string.format(\"%018446744073709551615d\",1)", "mode": "safe"}
+{"source": "return string.format(\"%018446744073709551615d\",1)", "mode": "exact"}
+{"source": "return string.format(\"%01000000d\",1)", "mode": "default"}
+{"source": "return string.format(\"%01000000d\",1)", "mode": "safe"}
+{"source": "return string.format(\"%01000000d\",1)", "mode": "exact"}
+{"source": "return string.format(\"%010000000d\",1)", "mode": "default"}
+{"source": "return string.format(\"%010000000d\",1)", "mode": "safe"}
+{"source": "return string.format(\"%010000000d\",1)", "mode": "exact"}
+{"source": "return string.format(\"%03d\",1)", "mode": "default"}
+{"source": "return string.format(\"%03d\",1)", "mode": "safe"}
+{"source": "return string.format(\"%03d\",1)", "mode": "exact"}

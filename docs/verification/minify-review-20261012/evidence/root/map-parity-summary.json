@@ -1,0 +1,10 @@
+{
+  "seed": 15102026,
+  "cases": 500,
+  "compileCalls": 3000,
+  "sourceMapPairs": 1500,
+  "onOffDifferences": 0,
+  "panics": 0,
+  "compileFailures": 0,
+  "returncode": 0
+}

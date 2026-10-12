@@ -1,0 +1,40 @@
+✔ explicit compiler endpoint supports calls, diagnostics, concurrent IDs and clean disposal (82.613255ms)
+✔ dispose rejects pending work without owning or terminating the endpoint (1.023618ms)
+✔ compiler-only single-source entry produces deterministic Lua without executing it (55.686958ms)
+✔ multi-module build retains a readable source map or returns minification statistics (14.743396ms)
+✔ syntax and dependency errors return diagnostics without artifacts (0.475017ms)
+✔ retired passes are absent from metadata and rejected even in already-small code (1.534512ms)
+✔ Addon target is rejected rather than applying vehicle assumptions (0.923666ms)
+✔ property scanning and explicit specialization share the compiler implementation (3.473597ms)
+✔ ambiguous initialization fails explicitly (0.536786ms)
+✔ runtime analysis accepts host-resolved dynamic includes but preserves syntax diagnostics (8.315279ms)
+✔ variadic-only functions accepted by Lua are accepted by both compiler analysis and minification (7.3631ms)
+✔ compiled metadata keeps field presence, insertion order and nonfinite number values (16.225798ms)
+✔ large returned code and map strings are exact values rather than nested encoded payloads (6.797178ms)
+✔ Addon linking and metadata stripping preserve original snapshots without Vehicle rules (3.694062ms)
+✔ nested conditional calls complete in both map modes (12.570225ms)
+✔ non-minified metadata builds keep exact remaining positions and unmapped removed bytes (12.594924ms)
+✔ metadata maps retain each module snapshot including fully blanked bodies in both minify modes (30.020644ms)
+✔ Addon metadata map excludes blanked text and preserves following UTF16 columns (0.836927ms)
+✔ metadata detailed maps validate identity targets and conservative minification (6.563469ms)
+✔ optimized maps are opt-in, standard-decodable and independently fingerprinted (72.010065ms)
+✔ operator and end locations are fine tokens while parent expression reasons survive (5.987013ms)
+✔ identity target keeps a precise copy contract after Unicode and CRLF (4.130664ms)
+✔ inlined literal carries caller context without replacing its definition range (7.712992ms)
+✔ code, original snapshots, metadata and map-schema mismatches are rejected (7.635114ms)
+✔ original-file composition is preserved through optimized regular and LifeBoat builds (43.487649ms)
+✔ removal records distinguish discarded source syntax from runtime stop destinations (4.949285ms)
+✔ normalization and numerical approximation carry facts rather than fake exact copies (11.648849ms)
+✔ binary candidate continuation returns the same selected map as the direct compiler (63.1801ms)
+✔ host-owned compiler RPC also supports validated optimization maps (22.540593ms)
+✔ a fully removed source keeps its concrete reasons without false executable mappings (1.682816ms)
+✔ loop body keywords map to do rather than the loop starting keyword (3.092948ms)
+✔ large conservative lexical maps validate after repeated names are deserialized (12.785478ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 596.749714

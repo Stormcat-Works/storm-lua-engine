@@ -1,0 +1,1261 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling smallvec v1.16.1
+   Compiling cfg-if v1.0.5
+   Compiling rustc-hash v2.1.3
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling stable_deref_trait v1.2.1
+   Compiling itoa v1.0.18
+   Compiling libc v0.2.189
+   Compiling syn v3.0.6
+   Compiling parking_lot_core v0.9.12
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling num-traits v0.2.19
+   Compiling mlua-sys v0.6.8
+   Compiling parking_lot v0.12.5
+   Compiling bstr v1.13.1
+   Compiling either v1.18.0
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling icu_properties_data v2.3.0
+   Compiling version_check v0.9.5
+   Compiling icu_normalizer_data v2.3.0
+   Compiling utf8_iter v1.0.4
+   Compiling mlua v0.10.5
+   Compiling generic-array v0.14.7
+   Compiling typenum v1.20.1
+   Compiling radium v0.7.0
+   Compiling percent-encoding v2.3.2
+   Compiling serde_derive v1.0.229
+   Compiling synstructure v0.14.0
+   Compiling zerovec-derive v0.11.6
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.3
+   Compiling zerofrom v0.1.8
+   Compiling displaydoc v0.2.7
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling tap v1.0.1
+   Compiling storm-lua-spec v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-spec)
+   Compiling storm-lua-syntax v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-syntax)
+   Compiling bincode v1.3.3
+   Compiling tinystr v0.8.4
+   Compiling icu_locale_core v2.3.0
+   Compiling potential_utf v0.1.6
+   Compiling storm-lua-vm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-vm)
+   Compiling icu_collections v2.3.0
+   Compiling web-time v1.1.0
+   Compiling storm-screen-raster v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-screen-raster)
+   Compiling icu_provider v2.3.1
+   Compiling wyz v0.5.1
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling form_urlencoded v1.2.2
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling funty v2.0.0
+   Compiling storm-lua-analysis v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-analysis)
+   Compiling outref v0.5.2
+   Compiling uuid v1.26.1
+   Compiling vsimd v0.8.0
+   Compiling bitvec v1.1.1
+   Compiling idna_adapter v1.2.2
+   Compiling base64-simd v0.8.0
+   Compiling idna v1.1.0
+   Compiling storm-lua-minify v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-minify)
+   Compiling debugid v0.8.0
+   Compiling digest v0.10.7
+   Compiling unicode-id-start v1.5.0
+   Compiling data-encoding v2.11.1
+   Compiling url v2.5.8
+   Compiling if_chain v1.0.3
+   Compiling storm-lua-build v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-build)
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling storm-lua-addon v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-addon)
+   Compiling storm-lua-microcontroller v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-microcontroller)
+   Compiling storm-lua-conformance v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/conformance)
+   Compiling wasm-bindgen-shared v0.2.128
+   Compiling storm-lua-bridge v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-bridge)
+   Compiling sourcemap v9.3.2
+   Compiling bumpalo v3.20.3
+   Compiling wasm-bindgen v0.2.128
+   Compiling wasm-bindgen-macro-support v0.2.128
+   Compiling unicode-ident v1.0.26
+   Compiling slab v0.4.12
+   Compiling futures-core v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling pin-project-lite v0.2.17
+   Compiling once_cell v1.21.4
+   Compiling futures-util v0.3.34
+   Compiling storm-lua-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-wasm)
+   Compiling wasm-bindgen-macro v0.2.128
+   Compiling storm-screen-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-screen-wasm)
+   Compiling js-sys v0.3.105
+   Compiling serde-wasm-bindgen v0.6.5
+   Compiling storm-lua-compiler-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-compiler-wasm)
+   Compiling xtask v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/xtask)
+    Finished `test` profile [optimized] target(s) in 44.87s
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_addon-18a03086be21077c)
+
+running 8 tests
+test tests::ordinary_vm_still_fails_closed_after_lua_error ... ok
+test tests::non_function_callbacks_are_missing_and_false_results_are_ignored ... ok
+test tests::create_and_event_lua_errors_allow_later_callbacks ... ok
+test tests::source_syntax_error_still_restores_checkpoint ... ok
+test tests::source_lua_error_still_restores_savedata_and_calls_create ... ok
+test tests::tick_lua_error_retains_globals_and_delivers_events_and_destroy ... ok
+test tests::game_addon_base_globals_do_not_include_select ... ok
+test tests::resource_limits_and_host_failures_remain_terminal ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_analysis-fb691ce2a3241468)
+
+running 106 tests
+test ambient_scan::tests::assignment_to_member_is_reported ... ok
+test ambient_scan::tests::assignment_to_root_is_reported ... ok
+test ambient_scan::tests::assignment_via_funcstat_target_is_reported ... ok
+test ambient_scan::tests::dynamic_access_is_reported ... ok
+test ambient_scan::tests::empty_ambient_registry_short_circuits ... ok
+test ambient_scan::tests::environment_only_member_is_reported ... ok
+test ambient_scan::tests::module_member_can_be_used_freely_after_local_binding ... ok
+test ambient_scan::tests::multiple_usages_of_same_member_are_all_recorded ... ok
+test ambient_scan::tests::reference_inside_nested_function_is_detected ... ok
+test ambient_scan::tests::root_passed_as_argument_is_reported_as_escaping ... ok
+test ambient_scan::tests::root_used_as_bare_value_is_reported ... ok
+test ambient_scan::tests::static_member_access_is_recorded_as_usage ... ok
+test ambient_scan::tests::unknown_member_is_reported ... ok
+test ambient_scan::tests::unrelated_identifiers_are_not_flagged ... ok
+test diagnostic::tests::omits_module_and_range_when_absent ... ok
+test diagnostic::tests::serializes_full_shape_with_camel_case ... ok
+test diagnostic::tests::warning_severity_serializes_lowercase ... ok
+test effects::builtin_membership_tests::public_lists_remain_in_the_existing_order ... ok
+test effects::binding_query_tests::allocation_free_queries_preserve_occurrences_subroots_and_absent_bindings ... ok
+test effects::construction_reuse_tests::shared_child_occurrences_are_counted_without_including_unreachable_nodes ... ok
+test lint::tests::does_not_flag_global_written_before_read ... ok
+test effects::borrowed_builtin_tests::split_path_comparisons_preserve_exact_and_prefix_string_semantics ... ok
+test effects::builtin_membership_tests::exact_component_matches_cover_aliases_nested_paths_and_lookalikes ... ok
+test effects::construction_reuse_tests::fused_seeding_preserves_late_writes_shadowing_and_subroot_scope ... ok
+test lint::tests::does_not_exempt_underscore_prefixed_local ... ok
+test effects::summary_dependency_tests::summaries_of_multiple_independent_bodies_and_nested_blocks_stay_exact ... ok
+test lint::tests::does_not_flag_known_api_roots_or_callbacks ... ok
+test lint::tests::does_not_flag_known_unavailable_builtin_as_undefined_global ... ok
+test lint::tests::does_not_flag_local_that_is_read ... ok
+test effects::borrowed_builtin_tests::borrowed_classification_matches_allocating_effects_with_aliases_shadowing_and_summaries ... ok
+test lint::tests::does_not_flag_read_loop_variable ... ok
+test lint::tests::does_not_flag_read_parameter ... ok
+test lint::tests::does_not_flag_require_bound_name_as_undefined_global ... ok
+test lint::tests::does_not_flag_sibling_scopes_reusing_the_same_name ... ok
+test lint::tests::does_not_flag_unrelated_names_in_nested_scope ... ok
+test lint::tests::exempts_underscore_prefixed_parameter ... ok
+test lint::tests::exempts_underscore_prefixed_loop_variable ... ok
+test lint::tests::flags_local_never_read ... ok
+test lint::tests::flags_nested_block_shadowing_outer_local ... ok
+test lint::tests::flags_parameter_shadowed_by_same_scope_local ... ok
+test lint::tests::flags_loop_variable_shadowed_by_inner_local ... ok
+test lint::tests::flags_read_of_never_written_global ... ok
+test lint::tests::flags_unread_fornum_variable ... ok
+test lint::tests::flags_unread_forin_variable ... ok
+test lint::tests::flags_unread_parameter ... ok
+test lint::tests::flags_write_only_local_as_unused ... ok
+test lint::tests::global_written_in_another_module_is_not_undefined ... ok
+test lint::tests::reports_one_diagnostic_per_undefined_global_read_occurrence ... ok
+test lint::tests::still_flags_typo_of_a_known_builtin_name_as_undefined_global ... ok
+test project::tests::entry_not_found_when_missing_from_modules ... ok
+test project::tests::entry_present_does_not_report_entry_not_found ... ok
+test project::tests::invalid_module_key_is_reported_with_module_field ... ok
+test project::tests::module_key_grammar_accepts_valid_keys ... ok
+test project::tests::module_key_grammar_rejects_invalid_keys ... ok
+test project::tests::syntax_error_is_reported_per_module_and_other_modules_still_analyzed ... ok
+test effects::construction_reuse_tests::alias_order_and_function_fixpoints_match_original_construction ... ok
+test project::tests::valid_project_collects_module_analysis_for_every_module ... ok
+test property_scan::tests::counts_dynamic_keys ... ok
+test property_scan::tests::dedupes_repeated_keys ... ok
+test property_scan::tests::detects_get_text_keys ... ok
+test property_scan::tests::ignores_get_text_keys_in_comments_and_strings ... ok
+test property_scan::tests::ignores_keys_in_comments ... ok
+test property_scan::tests::detects_number_and_bool_keys_in_order ... ok
+test property_scan::tests::ignores_keys_in_string_literals ... ok
+test property_scan::tests::ignores_shadowed_local_property ... ok
+test property_scan::tests::parse_error_returns_not_ok ... ok
+test property_scan::tests::nested_call_depth_two_stays_dynamic ... ok
+test property_scan::tests::passthrough_non_literal_call_site_arg_stays_dynamic ... ok
+test property_scan::tests::passthrough_param_written_inside_fn_stays_dynamic ... ok
+test property_scan::tests::reassigned_local_key_stays_dynamic ... ok
+test property_scan::tests::resolves_constant_propagated_key ... ok
+test effects::borrowed_alias_propagation_tests::unchanged_aliases_preserve_eight_round_limit_order_and_decoded_members ... ok
+test property_scan::tests::resolves_transitively_propagated_key ... ok
+test require_scan::tests::detects_bare_statement_form_without_parens ... ok
+test property_scan::tests::resolves_two_param_function_passthrough ... ok
+test require_scan::tests::detects_binding_form_with_binding_name ... ok
+test require_scan::tests::detects_binding_form_with_key_and_position ... ok
+test require_scan::tests::detects_multiple_top_level_requires_in_order ... ok
+test require_scan::tests::does_not_flag_unrelated_calls_or_local_require_name ... ok
+test require_scan::tests::flags_assignment_of_require_result_as_not_statement ... ok
+test require_scan::tests::flags_dynamic_argument_in_bare_form ... ok
+test require_scan::tests::flags_dynamic_argument_in_binding_form ... ok
+test require_scan::tests::flags_method_chain_after_require_as_not_statement ... ok
+test require_scan::tests::flags_multi_value_local_as_not_statement ... ok
+test require_scan::tests::flags_require_inside_do_block_as_not_top_level ... ok
+test require_scan::tests::flags_require_inside_function_body_as_not_top_level ... ok
+test require_scan::tests::flags_require_inside_if_block_as_not_top_level ... ok
+test require_scan::tests::flags_require_inside_local_function_as_not_top_level ... ok
+test require_scan::tests::require_violations_are_errors ... ok
+test sw_restrict::tests::does_not_flag_input_inside_on_tick_funcstat_form ... ok
+test sw_restrict::tests::does_not_flag_output_inside_on_tick_assign_form ... ok
+test sw_restrict::tests::does_not_flag_reference_inside_function_reachable_from_on_tick ... ok
+test sw_restrict::tests::does_not_flag_reference_inside_nested_function_within_on_tick ... ok
+test sw_restrict::tests::does_not_flag_reference_reachable_via_local_function_and_local_form ... ok
+test sw_restrict::tests::does_not_flag_reference_reachable_via_table_field_call ... ok
+test sw_restrict::tests::does_not_flag_reference_reachable_via_two_hop_call ... ok
+test sw_restrict::tests::each_read_occurrence_is_reported ... ok
+test sw_restrict::tests::flags_input_reference_at_top_level ... ok
+test sw_restrict::tests::flags_output_reference_in_on_draw ... ok
+test sw_restrict::tests::flags_pcall_reference_as_warning ... ok
+test sw_restrict::tests::flags_reference_inside_function_never_called_from_on_tick ... ok
+test sw_restrict::tests::flags_reference_when_function_value_is_passed_around_instead_of_called_by_name ... ok
+test sw_restrict::tests::self_defined_global_of_same_name_is_not_flagged ... ok
+test sw_restrict::tests::severity_error_is_honored_for_compile_project_call_site ... ok
+test sw_restrict::tests::typo_global_is_not_flagged_by_sw_restrict ... ok
+test effects::summary_dependency_tests::dependent_summaries_keep_order_round_limit_cycles_and_initial_values ... ok
+
+test result: ok. 106 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_bridge-6a18a31578763371)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ownership.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/ownership-a9a11448737b0935)
+
+running 3 tests
+test handles_change_when_slots_are_reused_and_retired_handles_reject ... ok
+test upload_ownership_rejects_foreign_addresses_and_lengths ... ok
+test zero_value_can_be_success_and_must_use_separate_diagnostics ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_build-82dc7096fbc7f4cd)
+
+running 126 tests
+test addon::tests::dynamic_dependencies_and_bad_syntax_fail ... ok
+test addon::tests::metadata_tag_does_not_strip_a_string_or_unrelated_comment ... ok
+test addon::tests::metadata_and_development_includes_do_not_escape ... ok
+test analysis_tests::tests::ignore_cannot_suppress_a_severity_error_diagnostic ... ok
+test addon::tests::addon_globals_and_callbacks_are_not_vehicle_restricted ... ok
+test addon::tests::game_environment_is_not_silently_extended ... ok
+test analysis_tests::tests::ignore_does_not_suppress_a_different_code ... ok
+test analysis_tests::tests::ignore_does_not_suppress_a_different_line ... ok
+test analysis_tests::tests::ignore_suppresses_matching_code_on_the_same_line ... ok
+test analysis_tests::tests::ignore_suppresses_sw_unavailable_global_warning ... ok
+test addon::tests::vehicle_size_and_optimizer_are_not_applied ... ok
+test analysis_tests::tests::other_modules_are_still_analyzed_after_a_syntax_error ... ok
+test analysis_tests::tests::parity_holds_for_ambient_assigned ... ok
+test analysis_tests::tests::parity_holds_for_ambient_dynamic_access ... ok
+test analysis_tests::tests::parity_holds_for_ambient_root_escapes ... ok
+test analysis_tests::tests::parity_holds_for_environment_only_api ... ok
+test analysis_tests::tests::parity_holds_for_invalid_module_key ... ok
+test analysis_tests::tests::parity_holds_for_module_not_found ... ok
+test addon::tests::addon_select_availability_preserves_shadowing_and_explicit_probes ... ok
+test analysis_tests::tests::parity_holds_for_require_in_ambient ... ok
+test analysis_tests::tests::analyze_does_not_flag_input_output_used_only_inside_ontick ... ok
+test analysis_tests::tests::parity_holds_for_require_restriction_violations ... ok
+test analysis_tests::tests::parity_holds_for_reserved_ambient_root_module_key ... ok
+test analysis_tests::tests::unknown_storm_directive_covers_malformed_ignore_argument ... ok
+test analysis_tests::tests::parity_holds_for_unknown_ambient_member ... ok
+test analysis_tests::tests::analyze_reports_sw_unavailable_global_as_warning_and_stays_ok ... ok
+test analysis_tests::tests::unknown_storm_directive_is_reported_as_error ... ok
+test analysis_tests::tests::disabled_rules_cannot_suppress_error_severity ... ok
+test analysis_tests::tests::parity_holds_for_require_cycle ... ok
+test analysis_tests::tests::disabled_rules_suppresses_matching_warning_code ... ok
+test analysis_tests::tests::parity_holds_for_valid_project ... ok
+test analysis_tests::tests::valid_ambient_usage_has_no_diagnostics_and_link_parity_holds ... ok
+test lifeboat::tests::named_nested_and_pattern_sections_reach_a_fixed_point ... ok
+test link::tests::ambient_violation_blocks_linking ... ok
+test lifeboat::tests::dependency_cycles_and_conditional_includes_are_runtime_correct_shapes ... ok
+test link::tests::ambient_sibling_dependency_is_injected_via_closure ... ok
+test link::tests::bare_require_without_binding_is_dropped_on_reuse ... ok
+test link::tests::links_early_return_module_via_iife ... ok
+test link::tests::links_simple_binding_module_with_no_return ... ok
+test link::tests::links_tail_return_module ... ok
+test link::tests::module_key_colliding_with_ambient_root_is_reported ... ok
+test link::tests::module_not_found_is_reported ... ok
+test canonical_map::canonical_tests::structural_integrity_hole_is_not_confused_by_lookalike_keys_or_source_text ... ok
+test link::tests::require_cycle_is_reported_including_self_require ... ok
+test link::tests::require_in_ambient_source_is_reported ... ok
+test link::tests::reuses_module_result_on_second_require ... ok
+test link::tests::unreachable_module_syntax_error_is_reported_but_does_not_block_linking ... ok
+test link::tests::self_referencing_ambient_member_does_not_infinite_loop ... ok
+test link::tests::used_ambient_member_is_injected_and_unused_sibling_is_not ... ok
+test metadata_map_tests::addon_metadata_standard_map_excludes_changed_bytes_and_keeps_utf16_positions ... ok
+test link::tests::linked_range_round_trips_output_lines_to_source_lines ... ok
+test analysis_tests::tests::parity_holds_for_entry_not_found ... ok
+test analysis_tests::tests::syntax_error_is_reported_as_diagnostic_not_failure ... ok
+test lifeboat::tests::only_real_directives_are_removed_and_lines_preserved ... ok
+test link::tests::no_ambient_usage_means_nothing_is_injected ... ok
+test lua_pattern::tests::classes_quantifiers_captures_and_frontiers ... ok
+test optimized_map_tests::common_argument_decision_has_roles_and_observed_call_count ... ok
+test optimized_map_tests::completely_eliminated_program_keeps_source_disposition_and_standard_empty_map ... ok
+test optimized_map_tests::invalid_source_name_is_a_label_error_not_an_unknown_optimizer_pass ... ok
+test optimized_map_tests::linked_identity_early_exit_splits_copied_ranges_and_generated_glue ... ok
+test metadata_map_tests::non_minified_metadata_with_explicit_detailed_map_succeeds ... ok
+test optimized_map_tests::normalization_reason_is_retained_alongside_earlier_derivations ... ok
+test optimized_map_tests::inlined_leaf_keeps_its_definition_and_enclosing_call_context ... ok
+test analysis_tests::tests::analyze_reports_input_outside_ontick_as_warning ... ok
+test optimized_map_tests::empty_sources_lexical_paths_and_removed_lifeboat_sections_are_valid ... ok
+test optimized_map_tests::effective_numeric_defaults_are_not_misreported_as_one_shared_tolerance ... ok
+test canonical_map::canonical_tests::streamed_linked_map_matches_the_released_format_with_multiple_sources ... ok
+test metadata_map_tests::metadata_detailed_maps_support_identity_target_and_conservative_minification ... ok
+test optimized_map_tests::identity_target_returns_exact_copy_contract_not_just_a_coarse_group ... ok
+test optimized_map_tests::reformatting_map_json_preserves_fingerprint_validation ... ok
+test optimized_map_tests::removals_include_the_actual_elimination_checks_not_just_last_traversal ... ok
+test optimized_map_tests::recomputed_checksum_does_not_hide_structural_errors_or_disagreeing_maps ... ok
+test optimized_map_tests::retained_operator_and_function_end_have_exact_token_positions ... ok
+test optimized_map_tests::standard_map_and_versioned_extension_describe_the_same_generated_buffer ... ok
+test optimized_map_tests::same_filename_different_snapshots_keep_distinct_source_indices ... ok
+test optimized_source_map::compact_lexical_map_tests::compact_lexical_encoding_matches_materialized_provenance_exactly ... ok
+test canonical_map::canonical_tests::streamed_map_matches_value_encoding_including_unicode_reasons_and_identity ... ok
+test optimized_map_tests::explicit_removals_are_recorded_without_claiming_every_missing_token_is_dead ... ok
+test optimized_source_map::compact_lexical_map_tests::unknown_code_retains_standard_token_anchors ... ok
+test optimized_source_map::compact_lexical_map_tests::malformed_compact_ranges_are_rejected_without_indexing ... ok
+test optimized_map_tests::retained_helpers_do_not_invent_inline_contexts ... ok
+test optimized_source_map::direct_mapping_tests::vlq_matches_independent_library_at_coordinate_and_continuation_boundaries ... ok
+test optimized_map_tests::unicode_crlf_offsets_and_same_line_link_boundaries_keep_original_columns ... ok
+test optimized_source_map::contiguous_anchor_tests::contiguous_anchors_match_the_previous_ordered_set_and_source_contents ... ok
+test optimized_source_map::direct_mapping_tests::direct_delta_stream_matches_library_for_unknowns_names_and_sparse_lines ... ok
+test optimized_map_tests::same_length_wrong_code_and_edited_snapshots_or_metadata_are_rejected ... ok
+test public_api::shared_public_source_tests::malformed_metadata_tag_is_rejected_by_both_vehicle_build_paths ... ok
+test public_api::shared_public_source_tests::metadata_does_not_change_a_lua_string_or_untagged_comment ... ok
+test optimized_map_tests::renamed_bindings_keep_original_names_but_generated_helper_stays_unmapped ... ok
+test public_api::shared_public_source_tests::project_metadata_blanking_keeps_original_source_map_content ... ok
+test public_api::tests::compile_project_ok_false_when_reachable_module_has_error ... ok
+test public_api::tests::compile_project_reports_sw_unavailable_global_as_error_and_fails ... ok
+test public_api::tests::compile_project_ok_true_with_input_outside_ontick_in_unreachable_module ... ok
+test public_api::tests::exact_is_inferred_from_zero_tolerance ... ok
+test public_api::tests::compile_project_ok_true_with_syntax_error_in_unreachable_module ... ok
+test public_api::tests::compile_project_reports_input_outside_ontick_as_error_and_fails ... ok
+test public_api::tests::exact_safe_constant_folding_is_reported_as_enabled ... ok
+test public_api::tests::linked_diagnostics_compose_byte_columns_and_end_ranges_without_snapping_glue ... ok
+test public_api::tests::project_compile_minify_false_matches_linked_source_and_has_map ... ok
+test public_api::tests::project_compile_minify_true_remaps_hazard_diagnostic_to_source_module ... ok
+test public_api::tests::compile_project_succeeds_when_input_is_only_used_inside_ontick ... ok
+test public_api::tests::project_compile_structural_error_same_for_minify_true_and_false ... ok
+test public_api::tests::project_compile_structural_error_has_no_code_or_map_and_matches_analyze ... ok
+test public_api::tests::public_compile_syntax_error_is_reported_via_new_diagnostic_schema ... ok
+test public_api::tests::public_compile_hardcodes_property_get_text ... ok
+test public_api::tests::public_compile_hardcodes_properties_and_reports_metadata ... ok
+test source_map::tests::generated_glue_never_points_past_source_and_does_not_inherit_an_origin ... ok
+test public_api::tests::public_target_size_activates_satisficing_metadata ... ok
+test source_map::tests::generates_map_with_ambient_source_included ... ok
+test source_map::tests::generates_v3_shape_with_sources_and_contents ... ok
+test source_map::tests::multiline_return_body_has_exact_original_line_not_generated_prefix_line ... ok
+test source_map::tests::output_line_start_matches_the_exact_byte_origin ... ok
+test source_map::tests::returns_none_when_link_fails ... ok
+test source_map::tests::same_line_module_boundaries_and_generated_return_prefix_have_exact_columns ... ok
+test source_map::tests::token_columns_use_utf16_after_unicode_and_preserve_crlf_snapshots ... ok
+test public_api::tests::project_compile_minify_true_has_no_map_but_has_stats ... ok
+test public_api::tests::public_options_preserve_migration_beam_truncation_and_clamp ... ok
+test source_map::tests::lifeboat_blanked_unicode_sections_are_unmapped_but_retained_tokens_are_exact ... ok
+test optimized_map_tests::regular_and_lifeboat_projects_compose_source_ranges_before_encoding ... ok
+test public_api::shared_public_source_tests::lifeboat_metadata_and_simulator_section_are_removed_before_linking ... ok
+test optimized_source_map::borrowed_settings_tests::borrowed_settings_preserve_value_and_canonical_bytes_including_numeric_bits ... ok
+test metadata_map_tests::metadata_maps_keep_all_module_snapshots_even_when_a_body_is_fully_removed ... ok
+test optimized_source_map::compact_lexical_map_tests::large_lexical_maps_validate_after_names_are_deserialized ... ok
+test public_api::shared_project_analysis_tests::shared_structural_analysis_keeps_success_errors_reachability_and_ambient_order ... ok
+test public_api::shared_public_source_tests::single_parse_public_results_preserve_error_precedence_positions_and_all_map_fields ... ok
+test public_api::shared_project_analysis_tests::project_analysis_reuse_does_not_change_many_module_link_maps ... ok
+
+test result: ok. 126 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_compiler_wasm-453fe0f931c6663f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_conformance-69f0fcc9caa4cff3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/addon.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/addon-3d2e9b43121a46ae)
+
+running 7 tests
+test top_level_precedes_restore_and_on_create ... ok
+test synchronous_queries_preserve_tables_i64_bytes_and_trailing_nil ... ok
+test paused_initialization_restores_savedata_only_after_top_level_completes ... ok
+test matrix_composition_inverse_and_vector_operations ... ok
+test missing_services_and_bad_host_data_are_not_success_stubs ... ok
+test profiles_do_not_mix_namespaces_or_callback_contracts ... ok
+test menu_properties_logs_and_reload_checkpoint ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/catalog.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/catalog-66be8695237f4ef6)
+
+running 2 tests
+test addon_catalog_is_distinct_and_all_owned_functions_exist ... ok
+test every_catalog_entry_matches_its_implemented_profile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/command_wire.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/command_wire-25abbaded5c4b55f)
+
+running 3 tests
+test empty_batch_and_every_truncated_record_are_distinguished ... ok
+test unknown_opcode_reserved_bits_and_overflow_lengths_reject ... ok
+test many_empty_commands_have_a_separate_count_limit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/compiler.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/compiler-d0e8406e62675bcf)
+
+running 9 tests
+test compilation_does_not_execute_top_level_lua ... ok
+test malformed_public_finalization_input_is_a_diagnostic ... ok
+test vehicle_target_is_explicit_and_addon_is_not_silently_compiled ... ok
+test captured_property_snapshot_is_not_resampled_on_later_callbacks ... ok
+test captured_tick_input_is_not_reread_by_a_persistent_closure ... ok
+test retired_passes_are_rejected_by_the_public_engine_compiler ... ok
+test nested_conditional_call_lowering_preserves_all_branches ... ok
+test project_build_and_minify_preserve_real_vehicle_io_and_two_draws ... ok
+test target_checkpoints_and_full_search_preserve_real_io_and_draw_commands ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/debugger.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/debugger-8de6285393bf7b8d)
+
+running 8 tests
+test draw_resume_does_not_duplicate_the_prefix ... ok
+test debug_enabled_does_not_disable_instruction_limits ... ok
+test handles_are_scoped_to_vm_and_reset ... ok
+test step_over_skips_callee_and_out_returns_to_caller ... ok
+test watch_preserves_i64_nil_and_bytes_and_restores_execution_hook ... ok
+test inspect_continue_and_stale_handles ... ok
+test nil_local_shadows_global_in_watch ... ok
+test runaway_watch_is_bounded_and_main_continuation_survives ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/environments.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/environments-b26938fb229f8e1b)
+
+running 10 tests
+test debugger_does_not_require_script_visible_standard_debug_or_protected_calls ... ok
+test game_globals_are_absent_and_debug_has_exactly_log ... ok
+test builtin_rejections_match_single_source_projects_and_editing_diagnostics ... ok
+test host_overrides_are_explicit_preserved_on_reset_and_respected_by_compilation ... ok
+test extended_protected_calls_keep_names_and_behavior_under_every_search_route ... ok
+test dynamic_environment_values_and_functions_preserve_state_draws_and_literals ... ok
+test http_callback_is_kept_as_an_external_entry_point ... ok
+test protected_error_messages_keep_source_lines_after_lexical_minification ... ok
+test unassigned_external_globals_are_not_renamed_or_captured_by_short_names ... ok
+test nil_probes_and_local_shadowing_are_not_forbidden_names ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/foundation.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/foundation-d75d911545fb81f0)
+
+running 12 tests
+test abi_has_no_implicit_padding_or_f64_signal_fields ... ok
+test alpha_is_source_alpha_not_premultiplied_source_over ... ok
+test channels_reject_invalid_host_access ... ok
+test debug_payload_preserves_integer_and_string_domains ... ok
+test composite_rounds_only_at_the_boundary ... ok
+test bundled_font_is_complete_and_has_known_glyphs ... ok
+test opaque_replaces_and_transparent_preserves ... ok
+test property_bytes_and_missing_values_are_distinct ... ok
+test property_numbers_do_not_inherit_f32_quantization ... ok
+test wire_signed_zero_and_nonfinite_values_are_not_silently_normalized ... ok
+test lua_backend_has_binary64_arithmetic_and_integer64 ... ok
+test lua_callback_conversion_matches_the_wire_contract ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/http.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/http-0f5622999475a4ac)
+
+running 4 tests
+test oversized_aggregate_reply_does_not_consume_the_request ... ok
+test queue_limits_apply_to_inflight_requests_and_foreign_tokens_reject ... ok
+test vehicle_reply_waits_for_idle_and_keeps_the_token_when_busy ... ok
+test addon_reply_is_once_only_and_reload_invalidates_old_generation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lifeboat_build.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/lifeboat_build-58e2d230cb841484)
+
+running 5 tests
+test malformed_directives_missing_modules_and_dynamic_game_requires_are_explicit_errors ... ok
+test declaration_library_is_injected_but_environment_only_members_fail ... ok
+test ordinary_sections_and_pattern_counts_do_not_count_strings_or_comments ... ok
+test simulator_and_managed_sections_are_removed_without_minify ... ok
+test include_once_returns_nil_and_has_private_locals_even_with_cycles ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/log_locations.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/log_locations-825f9f83e1bfce4a)
+
+running 4 tests
+test addon_game_logs_keep_bytes_and_do_not_expose_debug_inspection ... ok
+test logs_before_suspension_and_failure_retain_original_call_sites ... ok
+test source_metadata_participates_in_the_bounded_log_buffer ... ok
+test named_chunks_aliases_wrappers_tick_draw_and_reset_keep_their_actual_lines ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/map_host.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/map_host-d951c1bd46239fbe)
+
+running 3 tests
+test invalid_provider_output_preserves_the_existing_prefix ... ok
+test map_palette_is_frame_local_and_binary_batches_preserve_the_slot ... ok
+test provider_receives_palette_and_map_order_without_changing_draw_color ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/raster.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/raster-d551b9f60c7cd6ca)
+
+running 4 tests
+test clear_is_replacement_and_frame_start_resets_white ... ok
+test errors_do_not_become_empty_successes ... ok
+test enormous_and_nonfinite_shapes_remain_bounded ... ok
+test accepted_screen_contract_matches_direct_and_lua_paths ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/runtime.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/runtime-149849ade90265e5)
+
+running 10 tests
+test drawing_calls_share_lua_state_but_not_composite_write_access ... ok
+test map_without_provider_is_an_error_not_an_ocean_fill ... ok
+test property_updates_do_not_rewrite_lua_locals_and_bytes_survive ... ok
+test output_retains_values_and_reset_restarts_lua ... ok
+test protected_calls_preserve_nil_results_and_errors ... ok
+test memory_budget_and_syntax_failure_are_explicit ... ok
+test random_streams_are_independent ... ok
+test top_level_properties_and_signal_boundaries_are_distinct ... ok
+test unsafe_libraries_and_string_dump_are_not_reachable ... ok
+test instruction_limits_cannot_be_caught_forever ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/source_maps.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/source_maps-e29a02d820b12499)
+
+running 2 tests
+test runtime_error_points_into_the_original_returned_function ... ok
+test original_library_and_caller_locations_survive_bundle_debugging ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sources.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/sources-cf155d87dd169baf)
+
+running 13 tests
+test invalid_module_names_and_bytecode_do_not_turn_into_empty_sources ... ok
+test addon_keeps_single_entry_lifecycle_with_named_requires_and_reload ... ok
+test include_once_shares_globals_but_not_locals_and_discards_returns ... ok
+test required_chunk_breakpoint_resumes_inside_same_coroutine ... ok
+test loader_cache_is_per_vm_not_per_source_provider ... ok
+test completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm ... ok
+test vehicle_replays_prefix_entry_suffix_with_independent_locals ... ok
+test loader_is_opt_in_and_cannot_conflict_with_host_bindings ... ok
+test failed_or_abandoned_load_does_not_enter_reset_program ... ok
+test nested_cycles_mark_before_execution_and_cache_logical_names ... ok
+test load_history_is_bounded_before_source_executes ... ok
+test source_failures_are_explicit_and_only_started_chunks_remain_cached ... ok
+test nested_require_never_resets_instruction_budget_or_escapes_memory_limits ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vehicle_controls.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/vehicle_controls-26a08ced36ac3b78)
+
+running 7 tests
+test controls_change_standard_properties_in_the_same_chunk_and_rebind_on_reset ... ok
+test game_and_conflicting_control_namespaces_are_rejected_without_replacing_builtins ... ok
+test runtime_analysis_keeps_syntax_and_environment_checks_without_static_require_rules ... ok
+test named_draw_suspension_preserves_single_invocation_and_real_source_line ... ok
+test input_controls_quantize_at_io_and_named_callbacks_do_not_replace_on_tick ... ok
+test valid_variadic_only_functions_match_the_runtime_after_minification ... ok
+test controls_have_explicit_argument_and_rust_owned_memory_budgets ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_microcontroller-f39bed598b4762a3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_minify-a3c3a4ba99226836)
+
+running 425 tests
+test pass_ids::tests::pass_record_names_has_no_duplicate_pairs ... ok
+test pass::tests::run_pass_fires_trace ... ok
+test pass::tests::run_pass_panics_on_empty_if ... ok
+test passes::available_expressions::tests::preserves_fresh_table_identity ... ok
+test passes::available_expressions::tests::rejects_mutable_table_field_reads ... ok
+test pass::tests::run_pass_saved_defaults_to_before_minus_after ... ok
+test passes::api_aliases::tests::aliases_root_when_that_layout_is_shorter ... ok
+test passes::available_expressions::tests::reuses_reaching_expression ... ok
+test pass_ids::tests::pass_record_names_have_unique_display_names ... ok
+test passes::api_aliases::tests::shadowed_api_root_is_not_aliased ... ok
+test pass_ids::tests::pass_record_names_ids_are_valid ... ok
+test passes::binding_rescaling::tests::rejects_bit_exact_route ... ok
+test orchestration::tests::all_produced_pass_record_names_resolve_to_pass_ids ... ok
+test passes::binding_rescaling::tests::requires_single_write_initializer ... ok
+test pass_ids::direct_membership_tests::membership_matches_ordered_registry_for_exact_names_and_invalid_variants ... ok
+test passes::api_aliases::tests::aliases_frequently_used_api_member ... ok
+test passes::boolean_numerics::tests::preserves_parenthesized_bit_expression ... ok
+test passes::binding_rescaling::tests::stores_binding_in_divided_units ... ok
+test passes::boolean_numerics::tests::rejects_reassigned_or_non_dominating_bindings ... ok
+test passes::callback_slots::tests::rejects_helpers_with_non_call_references ... ok
+test passes::captured_use::tests::hoists_a_single_use_before_unrelated_statements ... ok
+test passes::captured_use::tests::ignores_reads_inside_nested_functions ... ok
+test passes::captured_use::tests::rejects_throwing_intermediate_arithmetic ... ok
+test passes::captured_use::tests::rejects_unknown_calls_between_capture_and_use ... ok
+test passes::color_unpack::tests::expands_array_color_helper ... ok
+test passes::coefficient_carriers::tests::synthesizes_repeated_coefficient ... ok
+test passes::common_offsets::tests::calls_are_barriers_to_the_overwrite_proof ... ok
+test passes::common_offsets::tests::aggressive_mode_is_required ... ok
+test passes::common_offsets::tests::requires_overwrite_before_next_observation ... ok
+test passes::conditionals::tests::lowers_assignment_with_self_fallback ... ok
+test passes::conditionals::tests::lowers_elseif_assignment_chain_to_one_expression ... ok
+test passes::conditionals::tests::lowers_elseif_chain_with_effectful_conditions_in_order ... ok
+test passes::color_unpack::tests::keeps_helper_definition_for_function_value_reference ... ok
+test passes::conditionals::tests::lowers_if_else_returns_with_truthy_true_branch ... ok
+test passes::conditionals::tests::lowers_guard_return_tail_and_chains ... ok
+test passes::conditionals::tests::preserves_effectful_condition_evaluation ... ok
+test passes::conditionals::tests::lowers_same_call_with_one_truthy_argument ... ok
+test passes::conditionals::tests::preserves_effectful_conditions ... ok
+test passes::conditionals::tests::rejects_direct_multivalue_calls_in_either_branch ... ok
+test passes::conditionals::tests::nested_calls_refresh_analysis_after_child_lowering ... ok
+test passes::conditionals::tests::rejects_elseif_chain_with_falsy_nonfinal_value ... ok
+test passes::conditionals::tests::rejects_false_yes_value ... ok
+test passes::conditionals::tests::uses_inverted_form_when_only_false_branch_is_truthy ... ok
+test passes::conditionals::tests::rejects_multi_expression_returns ... ok
+test passes::decode_chains::tests::does_not_multiply_an_unsafe_product ... ok
+test passes::decode_chains::tests::folds_assignment_followed_by_quotient ... ok
+test passes::decode_chains::tests::fuses_same_binding_quotients ... ok
+test passes::boolean_numerics::tests::skips_when_consumer_uses_other_values ... ok
+test passes::boolean_numerics::tests::round_selects_smallest_candidate_by_size ... ok
+test passes::boolean_numerics::tests::specializes_direct_and_inverse_consumers ... ok
+test passes::conditionals::tests::rejects_elseif_chain_that_assigns_different_targets ... ok
+test passes::decode_chains::tests::stops_at_intervening_binding_reference ... ok
+test passes::destructive_results::tests::rejects_non_assignment_calls ... ok
+test passes::default_hoisting::tests::hoists_constant_defaults_before_definite_writes ... ok
+test passes::default_hoisting::tests::rejects_read_before_definite_write ... ok
+test passes::callback_slots::tests::slots_tick_and_draw_exclusive_helpers ... ok
+test passes::destructive_results::tests::globalizes_common_destructive_call_target ... ok
+test passes::common_offsets::tests::absorbs_repeated_offset_before_definite_overwrite ... ok
+test passes::draw_records::dictionary::tests::dictionary_data_and_decoder_have_distinct_origins_and_missing_data_stays_unknown ... ok
+test passes::default_hoisting::tests::rejects_throwing_condition ... ok
+test passes::destructive_results::tests::rejects_different_call_targets ... ok
+test passes::draw_records::encoding_tests::packed_radix_capacity_boundaries_roundtrip_without_overflow ... ok
+test passes::draw_records::dictionary::tests::grammar_preserves_percent_escapes_nested_markers_and_single_result ... ok
+test passes::draw_records::predictors::tests::predictors_reject_outliers_and_unsafe_integer_bounds ... ok
+test passes::draw_records::predictors::tests::finite_integer_predictors_cover_linear_grid_and_modular_series ... ok
+test passes::draw_records::rice::tests::bounded_stream_roundtrips_columns_and_padding ... ok
+test passes::draw_records::provenance::tests::missing_record_argument_stays_unknown_while_decoder_scaffolding_is_known ... ok
+test passes::draw_records::round3_tests::grouped_model_rejects_overflow_and_nondivisible_tails ... ok
+test passes::draw_records::provenance::tests::tracing_does_not_change_shared_decoder_syntax_or_its_selected_representation ... ok
+test passes::draw_records::provenance::tests::shared_decoder_separates_generated_code_from_encoded_source_values ... ok
+test passes::draw_records::predictors::fitting_parity::pruned_fitter_matches_reference_on_all_small_sequences ... ok
+test passes::draw_records::provenance::tests::source_definition_constants_survive_forwarding_wrapper_normalization ... ok
+test passes::draw_records::predictors::fitting_parity::pruned_fitter_preserves_ties_block_divisors_and_boundaries ... ok
+test passes::final_stores::tests::keeps_effectful_dead_value ... ok
+test passes::final_stores::tests::keeps_write_to_local_captured_by_nested_closure ... ok
+test passes::final_stores::tests::keeps_write_to_root_local_shared_across_callbacks ... ok
+test passes::final_stores::tests::preserves_persistent_global_at_callback_exit ... ok
+test passes::draw_records::round3_tests::shared_tuple_planner_refuses_mutation_and_dynamic_arguments ... ok
+test passes::final_stores::tests::removes_overwritten_local_assignment_inside_function ... ok
+test passes::draw_records::provenance::tests::helper_source_map_roundtrip_does_not_turn_synthetic_into_source ... ok
+test passes::function_globalization::tests::known_non_recursive_calls_can_still_globalize ... ok
+test passes::final_stores::tests::removes_self_assignment ... ok
+test passes::function_globalization::tests::threshold_retains_rare_local ... ok
+test passes::immutable_synthesis::tests::ignores_top_level_occurrences ... ok
+test passes::global_stores::tests::handles_more_bindings_than_ast_nodes ... ok
+test passes::immutable_synthesis::tests::requires_single_write_numeric_dependencies ... ok
+test passes::function_globalization::tests::recursive_function_locals_stay_local ... ok
+test passes::immutable_synthesis::tests::synthesizes_repeated_cross_function_expression ... ok
+test passes::immutable_values::tests::ignores_atomic_carriers ... ok
+test passes::immutable_values::tests::preserves_fresh_table_identity ... ok
+test passes::immutable_values::tests::respects_shadowed_bindings ... ok
+test passes::induction_values::tests::folds_only_integer_induction_variables ... ok
+test passes::induction_values::tests::handles_more_bindings_than_ast_nodes ... ok
+test passes::immutable_values::tests::reuses_stable_top_level_expression_in_function ... ok
+test passes::inline_functions::tests::preserves_function_definition_for_non_call_reference ... ok
+test passes::inline_functions::tests::folds_literal_user_call ... ok
+test passes::inline_functions::tests::specializes_common_literal_argument ... ok
+test passes::inline_functions::tests::specialization_does_not_bypass_numeric_folding_gate ... ok
+test passes::interval_shifting::tests::rejects_width_that_depends_on_lower ... ok
+test passes::api_aliases::trial_provenance_tests::alias_replay_preserves_shadowing_ties_unicode_and_incomplete_origins ... ok
+test passes::inline_functions::tests::fuses_one_use_tail_function ... ok
+test passes::interval_shifting::tests::shifts_two_sided_interval_to_zero_origin ... ok
+test passes::draw_records::round3_tests::shared_tuple_model_preserves_cross_argument_correlations ... ok
+test passes::interval_shifting::tests::requires_exactly_two_parameter_uses ... ok
+test passes::literal_folding::tests::boolean_short_circuit_coercion_uses_double_not ... ok
+test passes::literal_folding::tests::does_not_drop_effectful_zero_product ... ok
+test passes::api_aliases::trial_provenance_tests::map_output_is_retained_for_empty_alias_sets_and_repeated_member_candidates ... ok
+test passes::literal_folding::tests::exact_safe_folding_prunes_literal_control_flow_without_numeric_arithmetic ... ok
+test passes::literal_pool::expressions::tests::candidates_preserve_bits_and_do_not_treat_integers_as_floats ... ok
+test passes::literal_folding::tests::portable_safe_mode_keeps_libm_dependent_folds_at_runtime ... ok
+test passes::literal_pool::expressions::tests::hexadecimal_float_candidates_preserve_bits_and_subtype_marker ... ok
+test passes::locals::inline_tests::does_not_sink_across_control_flow ... ok
+test passes::locals::inline_tests::inlines_profitable_tiny_literal ... ok
+test passes::literal_folding::tests::exact_safe_folding_turns_literal_true_elseif_into_else ... ok
+test passes::locals::local_origin_tests::sinking_keeps_definition_use_and_unrelated_call_origins ... ok
+test passes::literal_folding::tests::folds_literals_and_truthiness ... ok
+test passes::locals::local_origin_tests::unknown_expression_child_is_not_recovered_from_its_known_parent ... ok
+test passes::locals::inline_tests::sinks_adjacent_single_use_local ... ok
+test passes::locals::tests::flattens_nonterminal_do_when_only_nested_scopes_are_observable ... ok
+test passes::locals::tests::keeps_nonterminal_do_when_direct_scope_or_control_flow_is_observable ... ok
+test passes::locals::tests::flattens_terminal_and_scope_independent_nonterminal_do_blocks ... ok
+test passes::locals::tests::preserves_unused_effectful_initializer ... ok
+test passes::locals::tests::removes_dead_local_chains_across_rounds ... ok
+test passes::locals::tests::removes_unused_movable_locals ... ok
+test passes::multiplicative_carriers::tests::ignores_reassigned_carrier ... ok
+test passes::multiplicative_carriers::tests::respects_shadowed_factor_bindings ... ok
+test passes::locals::local_origin_tests::sinking_remaps_surviving_slots_after_removing_first_binding ... ok
+test passes::locals::local_origin_tests::literal_substitution_distinguishes_shadowed_definitions ... ok
+test passes::multiplicative_carriers::tests::reuses_product_factor_subset ... ok
+test passes::multiplicative_carriers::tests::requires_a_remaining_factor ... ok
+test passes::numeric_literals::tests::exact_hex_canonicalization_is_shorter_and_subtype_safe ... ok
+test passes::numeric_literals::tests::preserves_bit_and_index_routes ... ok
+test passes::locals::local_origin_tests::chain_substitution_keeps_each_definition_and_use ... ok
+test passes::numeric_literals::tests::exact_binding_dataflow_is_transitive ... ok
+test passes::numeric_literals::tests::shortens_tolerant_non_integral_literals ... ok
+test passes::omit_arguments::tests::extra_actual_arguments_do_not_shift_or_change_output ... ok
+test passes::numeric_literals::tests::disabled_for_zero_tolerance ... ok
+test passes::omit_arguments::tests::omits_equivalent_default_literal ... ok
+test passes::omit_arguments::tests::direct_unconditional_call_argument_blocks_non_nil_omission ... ok
+test passes::output_loops::tests::rejects_effectful_values ... ok
+test passes::output_loops::tests::requires_channels_starting_at_one ... ok
+test passes::output_loops::tests::synthesizes_six_numeric_outputs ... ok
+test passes::parentheses::tests::keeps_parentheses_for_tables_in_method_call ... ok
+test passes::parentheses::tests::keeps_parentheses_for_functions_in_prefix_position ... ok
+test passes::parentheses::tests::keeps_outer_parenthesis_for_function_but_removes_inner ... ok
+test passes::locals::inline_tests::tiny_literal_respects_shadowed_bindings ... ok
+test passes::parentheses::tests::keeps_parentheses_for_tables_in_prefix_position ... ok
+test passes::parentheses::tests::removes_nested_redundant_parentheses ... ok
+test passes::parentheses::tests::removes_normal_redundant_parentheses ... ok
+test passes::property_reads::tests::hardcodes_known_property_get_text ... ok
+test passes::property_reads::tests::hardcodes_known_property_reads ... ok
+test passes::property_reads::tests::shadowed_property_is_not_hardcoded ... ok
+test passes::quotient_remainder::tests::fuses_adjacent_quotient_and_remainder ... ok
+test passes::quotient_remainder::tests::requires_adjacent_statements ... ok
+test passes::quotient_remainder::tests::safe_mode_does_not_fuse_quotient_remainder ... ok
+test passes::quotient_remainder::tests::requires_same_literal_divisor ... ok
+test passes::quotient_remainder::tests::supports_local_remainder_binding ... ok
+test passes::parentheses::tests::removes_parentheses_for_functions_in_normal_position ... ok
+test passes::root_globals::tests::globalizes_fully_initialized_root_locals ... ok
+test passes::root_globals::tests::preserves_nested_locals ... ok
+test passes::root_globals::tests::globalizes_root_local_functions ... ok
+test passes::property_reads::tests::no_text_values_leaves_get_text_untouched ... ok
+test passes::omit_arguments::tests::more_than_sixty_four_parameters_falls_back_without_shift_overflow ... ok
+test passes::scratch_coalescing::tests::coalesces_equal_parallel_scratch_definitions ... ok
+test passes::scratch_coalescing::tests::control_flow_is_a_barrier ... ok
+test passes::scratch_coalescing::tests::rejects_non_scratch_bindings ... ok
+test passes::scratch_coalescing::tests::supports_short_scratch_prefix ... ok
+test passes::radix_helpers::tests::synthesizes_three_pairs ... ok
+test passes::root_globals::tests::preserves_partial_or_uninitialized_locals ... ok
+test passes::screen_buttons::tests::outlines_three_buttons ... ok
+test passes::screen_call_factoring::tests::factors_profitable_repeated_color_call ... ok
+test passes::screen_loops::integer_periodic_tests::long_integer_sequences_keep_phase_edges_and_reject_one_outlier ... ok
+test passes::screen_loops::normalized_cost_tests::borrowed_loop_cost_matches_the_full_clone_normalizer ... ok
+test passes::screen_loops::tests::ordered_screen_calls_become_loop ... ok
+test passes::screen_loops::tests::periodic_coordinates_can_be_synthesized ... ok
+test passes::signed_factoring::tests::does_not_group_without_profit ... ok
+test passes::draw_records::round3_tests::prefix_records_cover_short_long_boundaries_and_wide_words ... ok
+test passes::signed_factoring::tests::does_not_reuse_persistent_global_as_carrier ... ok
+test passes::signed_factoring::tests::groups_with_multiple_signs ... ok
+test passes::signed_factoring::tests::groups_complex_expressions ... ok
+test passes::signed_factoring::tests::needs_aggressive_mode ... ok
+test passes::signed_factoring::tests::skips_safe_signed ... ok
+test passes::omit_arguments::tests::compact_normalization_matches_full_arena_with_shadowing_and_captures ... ok
+test passes::single_use_forwarding::tests::dynamic_global_access_disables_forwarding ... ok
+test passes::single_use_forwarding::tests::forwards_global_into_its_only_use_statement ... ok
+test passes::single_use_forwarding::tests::preserves_loop_carried_accumulation ... ok
+test passes::screen_loops::integer_periodic_tests::integer_rejection_matches_the_legacy_pair_search ... ok
+test passes::single_use_forwarding::tests::rejects_dependency_mutation_between_definition_and_use ... ok
+test passes::screen_call_factoring::provenance_trial_tests::cost_trials_replay_full_origins_for_exhaustive_greedy_and_no_op_choices ... ok
+test passes::single_use_forwarding::tests::rejects_multiple_use_statements ... ok
+test passes::split_sign::tests::keeps_sequence_when_positive_part_is_read_later ... ok
+test passes::sparse_boolean::tests::rejects_dynamic_sparse_table_uses ... ok
+test passes::split_sign::tests::removes_split_and_recomposition_sequence ... ok
+test passes::split_sign::tests::squared_rewrite_requires_aggressive_mode ... ok
+test passes::split_sign::tests::rewrites_squared_split_parts_through_abs ... ok
+test passes::tables::scalarization_tests::table_parameter_scalarization_rejects_effectful_table_literals ... ok
+test passes::tables::scalarization_tests::closed_namespace_becomes_scalar_bindings ... ok
+test passes::tables::scalarization_tests::immutable_table_accesses_are_folded ... ok
+test passes::tables::write_only_field_tests::global_table_initializer_target_is_not_escape ... ok
+test passes::temporary_globals::tests::packs_function_confined_globals ... ok
+test passes::wrapper_functions::tests::affine_wrappers_merge ... ok
+test passes::uniform_tables::tests::scalarizes_uniform_fill_and_preserves_outside_nil ... ok
+test passes::wrapper_functions::tests::translated_wrappers_merge ... ok
+test passes::wrapper_functions::provenance_trial_tests::wrapper_winner_replay_preserves_relations_with_multiple_candidates_and_missing_data ... ok
+test provenance_branch_tests::arithmetic_helper_pipeline_retains_locations_after_multiple_passes ... ok
+test provenance_branch_tests::filtered_parameter_names_remain_bound_to_original_declaration_offsets ... ok
+test provenance_branch_tests::constant_argument_filtering_preserves_live_parameters_and_implicit_nil ... ok
+test provenance_branch_tests::folded_builtin_literal_call_retains_missing_actual_data ... ok
+test provenance_branch_tests::folded_value_never_uses_a_known_parent_to_hide_a_missing_operand ... ok
+test provenance_branch_tests::literal_operator_alternatives_keep_all_emitted_inner_nodes ... ok
+test provenance_branch_tests::interval_shifting_conjunction_and_operand_orders_keep_origins ... ok
+test provenance_branch_tests::missing_common_argument_is_not_recovered_from_an_equal_argument_at_another_call ... ok
+test provenance_branch_tests::missing_scalarized_table_argument_data_remains_unknown ... ok
+test provenance_branch_tests::missing_reused_expression_operand_is_not_recovered_from_its_parent ... ok
+test provenance_branch_tests::no_dynamic_table_or_callback_operation_invents_static_source_mappings ... ok
+test provenance_branch_tests::namespace_alias_chains_quoted_keys_and_dead_store_variants_are_mapped ... ok
+test provenance_branch_tests::noneligible_local_declarations_keep_original_names_during_scratch_scan ... ok
+test provenance_branch_tests::shared_immutable_replacements_preserve_a_missing_use_operand ... ok
+test provenance_branch_tests::table_parameters_keep_missing_keys_preceding_and_following_parameters ... ok
+test provenance_branch_tests::signed_coefficients_and_multiple_product_orders_keep_origins ... ok
+test provenance_branch_tests::uniform_table_range_guards_keep_bound_and_read_origins ... ok
+test provenance_complete_tests::affine_wrapper_coefficients_retain_both_original_values ... ok
+test provenance_complete_tests::approximation_replacement_keeps_its_original_literal ... ok
+test provenance_complete_tests::available_expression_reference_keeps_use_and_reaching_definition ... ok
+test provenance_complete_tests::bit_test_modulus_and_boundary_keep_mask_and_comparison_sources ... ok
+test passes::draw_records::round3_tests::all_scalar_record_encodings_retain_data_origins_and_exact_replay ... ok
+test provenance_complete_tests::callback_slot_shared_name_keeps_both_original_function_identities ... ok
+test provenance_complete_tests::exact_fraction_encoding_has_complete_origins_without_value_change ... ok
+test provenance_complete_tests::generated_root_function_name_stays_synthetic_after_globalization ... ok
+test provenance_complete_tests::missing_pooled_literal_contributor_stays_unknown ... ok
+test provenance_complete_tests::missing_unit_progression_input_cannot_be_hidden_by_synthetic_loop_index ... ok
+test provenance_complete_tests::moved_else_default_is_not_attributed_to_the_true_branch ... ok
+test provenance_complete_tests::pooled_float_value_relates_distinct_original_occurrences ... ok
+test provenance_complete_tests::positive_term_operators_and_constants_have_explicit_input_ranges ... ok
+test provenance_complete_tests::reciprocal_does_not_recover_a_missing_multiplier_origin ... ok
+test provenance_complete_tests::reciprocal_representation_retains_the_multiplier_literal ... ok
+test provenance_complete_tests::reduced_fraction_keeps_both_operand_literals ... ok
+test provenance_complete_tests::rejected_literal_call_candidate_keeps_original_parentheses ... ok
+test provenance_complete_tests::rescaled_initializer_and_compensated_reads_keep_separate_origins ... ok
+test provenance_complete_tests::root_globalization_does_not_invent_a_missing_original_binding ... ok
+test provenance_complete_tests::screen_affine_columns_are_derived_but_loop_control_is_generated ... ok
+test provenance_complete_tests::screen_value_table_keeps_each_original_expression ... ok
+test provenance_complete_tests::translated_wrapper_calls_retain_their_actual_original_constants ... ok
+test provenance_pass_matrix::adjacent_local_declaration_packing ... ok
+test provenance_pass_matrix::affine_wrapper_merging ... ok
+test provenance_pass_matrix::api_alias_optimization ... ok
+test provenance_pass_matrix::available_expression_reuse ... ok
+test provenance_pass_matrix::binding_unit_rescaling ... ok
+test provenance_pass_matrix::callback_exclusive_function_slotting ... ok
+test provenance_pass_matrix::captured_single_use_hoisting ... ok
+test provenance_pass_matrix::closed_namespace_devirtualization ... ok
+test provenance_complete_tests::full_search_stays_complete_for_rejected_literal_call_and_hoisted_defaults ... ok
+test provenance_pass_matrix::closed_namespace_scalarization ... ok
+test provenance_pass_matrix::coefficient_carrier_synthesis ... ok
+test provenance_pass_matrix::closed_table_field_renaming ... ok
+test provenance_pass_matrix::color_unpack_specialization ... ok
+test provenance_pass_matrix::conditional_assignment_lowering ... ok
+test provenance_pass_matrix::conditional_call_lowering ... ok
+test provenance_pass_matrix::common_offset_absorption ... ok
+test provenance_pass_matrix::constant_argument_specialization ... ok
+test provenance_pass_matrix::conditional_return_lowering ... ok
+test provenance_pass_matrix::constant_folding ... ok
+test provenance_pass_matrix::dead_local_elimination ... ok
+test provenance_pass_matrix::constant_wrapper_merging ... ok
+test provenance_pass_matrix::destructive_radix_helper_synthesis ... ok
+test provenance_pass_matrix::destructive_radix_terminal_reuse ... ok
+test provenance_pass_matrix::destructive_result_globalization ... ok
+test provenance_pass_matrix::else_default_hoisting ... ok
+test provenance_pass_matrix::equal_scratch_value_coalescing ... ok
+test provenance_pass_matrix::equivalent_trailing_argument_omission ... ok
+test provenance_pass_matrix::expression_helper_inlining ... ok
+test provenance_pass_matrix::exact_numeric_literal_pooling ... ok
+test provenance_pass_matrix::final_dead_store_elimination ... ok
+test provenance_pass_matrix::function_local_globalization ... ok
+test provenance_pass_matrix::global_store_cleanup ... ok
+test provenance_pass_matrix::immutable_carrier_synthesis ... ok
+test provenance_pass_matrix::hybrid_function_local_globalization ... ok
+test provenance_pass_matrix::immutable_global_expression_reuse ... ok
+test provenance_pass_matrix::immutable_table_flattening ... ok
+test provenance_pass_matrix::integer_loop_call_folding ... ok
+test provenance_pass_matrix::interval_origin_shifting ... ok
+test provenance_pass_matrix::inventory_matches_every_registered_pass ... ok
+test provenance_pass_matrix::literal_call_folding ... ok
+test provenance_pass_matrix::multiplicative_carrier_reassociation ... ok
+test provenance_pass_matrix::numeric_literal_approximation ... ok
+test provenance_pass_matrix::one_use_expression_helper_reversal ... ok
+test provenance_pass_matrix::one_use_function_fusion ... ok
+test provenance_pass_matrix::numeric_boolean_bit_specialization ... ok
+test provenance_pass_matrix::ordered_screen_call_factoring ... ok
+test passes::draw_records::round3_tests::scalar_palettes_keep_float_bits_nil_strings_booleans_and_argument_count ... ok
+test provenance_pass_matrix::output_sequence_loop_synthesis ... ok
+test provenance_pass_matrix::ordered_screen_loop_synthesis ... ok
+test provenance_pass_matrix::quotient_chain_fusion ... ok
+test provenance_pass_matrix::quotient_remainder_fusion ... ok
+test provenance_pass_matrix::redundant_parentheses_elimination ... ok
+test provenance_pass_matrix::periodic_screen_loop_synthesis ... ok
+test provenance_pass_matrix::root_local_globalization ... ok
+test provenance_pass_matrix::scope_renaming ... ok
+test provenance_pass_matrix::repeated_draw_sequence_outlining ... ok
+test provenance_pass_matrix::signed_expression_factoring ... ok
+test provenance_pass_matrix::single_use_global_forwarding ... ok
+test provenance_pass_matrix::single_use_local_sinking ... ok
+test provenance_pass_matrix::screen_button_outlining ... ok
+test provenance_pass_matrix::split_sign_recomposition_elimination ... ok
+test provenance_pass_matrix::table_parameter_scalarization ... ok
+test provenance_pass_matrix::temporary_global_packing ... ok
+test provenance_pass_matrix::sparse_boolean_decode_scalarization ... ok
+test provenance_pass_matrix::terminal_scope_flattening ... ok
+test provenance_pass_matrix::tiny_literal_inlining ... ok
+test provenance_pass_matrix::uniform_table_fill_scalarization ... ok
+test provenance_pass_matrix::write_only_table_field_cleanup ... ok
+test provenance_pass_matrix::unwritten_global_nil_propagation ... ok
+test provenance_table_function_tests::closed_field_names_preserve_definition_and_each_access_after_renaming ... ok
+test provenance_table_function_tests::closed_method_definition_and_calls_retain_different_name_occurrences ... ok
+test provenance_table_function_tests::closed_quoted_field_becoming_identifier_preserves_quoted_source_range ... ok
+test provenance_table_function_tests::alpha_cloning_maps_shadowed_locals_to_distinct_declarations ... ok
+test provenance_branch_tests::unicode_crlf_prefix_does_not_change_any_registered_transformation ... ok
+test provenance_table_function_tests::immutable_fresh_reference_rejection_keeps_the_unchanged_table_origins ... ok
+test provenance_table_function_tests::field_rename_unknown_key_site_invalidates_only_the_container_fallback ... ok
+test provenance_table_function_tests::immutable_missing_key_nil_belongs_to_lookup_not_an_unrelated_literal ... ok
+test provenance_table_function_tests::immutable_nested_leaf_uses_definition_and_separate_access_positions ... ok
+test provenance_table_function_tests::immutable_leaf_with_lost_origin_stays_unknown_after_lookup_folding ... ok
+test provenance_table_function_tests::immutable_table_removal_shifts_surviving_local_names_to_the_correct_slot ... ok
+test provenance_table_function_tests::namespace_quoted_field_binding_keeps_literal_source_without_fake_identifier ... ok
+test provenance_table_function_tests::missing_quoted_key_is_not_filled_from_the_known_table_container ... ok
+test provenance_table_function_tests::namespace_removal_preserves_other_local_declaration_names ... ok
+test provenance_table_function_tests::namespace_scalar_targets_belong_to_each_original_field_not_equal_values ... ok
+test provenance_table_function_tests::namespace_unknown_named_field_does_not_become_known_from_its_value ... ok
+test provenance_table_function_tests::nonidentifier_quoted_field_remains_ineligible_without_an_output_change ... ok
+test provenance_table_function_tests::omitted_trailing_arguments_keep_call_parentheses_but_not_removed_values ... ok
+test provenance_table_function_tests::one_use_capture_safety_rejection_retains_original_source_positions ... ok
+test provenance_table_function_tests::one_use_clone_cannot_recover_lost_callee_expression_from_the_call_site ... ok
+test provenance_table_function_tests::one_use_statement_call_preserves_actual_argument_and_callee_body_ranges ... ok
+test provenance_table_function_tests::one_use_tail_assignment_keeps_original_destination_and_return_contributor ... ok
+test provenance_table_function_tests::one_use_tail_local_preserves_parameters_body_callsite_and_caller_binding ... ok
+test provenance_table_function_tests::quoted_field_origin_survives_json_roundtrip_and_does_not_claim_a_name ... ok
+test provenance_table_function_tests::signed_base_normalization_and_fresh_carrier_have_source_backed_operands ... ok
+test provenance_table_function_tests::signed_carrier_reads_keep_individual_original_expressions_and_base_definition ... ok
+test provenance_table_function_tests::signed_unknown_use_is_not_recovered_from_the_known_carrier_definition ... ok
+test provenance_tests::a_full_search_preserves_moved_definition_and_related_use_sites ... ok
+test provenance_tests::arithmetic_fold_maps_the_result_to_the_original_expression ... ok
+test provenance_tests::binary_worker_protocol_retains_tracked_metadata_and_validates_ranges ... ok
+test provenance_tests::every_registered_pass_has_an_explicit_audit_status ... ok
+test provenance_tests::expression_inlining_retains_definition_arguments_and_call_site_separately ... ok
+test provenance_tests::copy_through_paths_do_not_erase_an_untouched_program ... ok
+test provenance_tests::function_globalization_keeps_distinct_bindings_that_share_one_scratch_slot ... ok
+test provenance_tests::globalized_uninitialized_local_marks_only_inserted_nil_as_synthetic ... ok
+test provenance_table_function_tests::full_pipeline_tracking_keeps_text_and_missed_target_equal_after_table_and_function_passes ... ok
+test provenance_tests::hybrid_function_globalization_preserves_retained_and_converted_names ... ok
+test provenance_tests::induction_folding_retains_the_induction_name_instead_of_call_parent ... ok
+test provenance_tests::merging_locals_keeps_each_name_and_both_contributing_declarations ... ok
+test provenance_tests::full_pipeline_target_miss_and_untracked_search_keep_identical_candidates ... ok
+test provenance_tests::property_specialization_attributes_new_literals_to_the_call_site ... ok
+test provenance_tests::nil_field_cleanup_preserves_untouched_source_and_rebuilt_assignment ... ok
+test provenance_tests::removal_of_the_first_local_binding_moves_the_survivor_name_slot ... ok
+test provenance_tests::removing_one_declaration_does_not_invalidate_unrelated_statement_origins ... ok
+test provenance_tests::root_local_globalization_copies_function_binding_to_new_name_node ... ok
+test provenance_tests::scope_rename_preserves_each_original_name_occurrence ... ok
+test provenance_tests::removing_parentheses_retains_the_selected_child_origin ... ok
+test provenance_tests::source_early_exit_and_extended_lexical_route_return_matching_origins ... ok
+test provenance_tests::temporary_global_packing_preserves_each_original_storage_name ... ok
+test provenance_tests::unchanged_real_search_produces_complete_origins_without_changing_output ... ok
+test provenance_tests::worker_jobs_and_batches_roundtrip_without_metadata_affecting_selection ... ok
+test provenance_tests::synthesized_api_alias_definitions_are_not_claimed_as_original_lines ... ok
+test provenance_zero_tests::boolean_coercion_tracks_both_negations_to_the_original_boolean_expression ... ok
+test provenance_zero_tests::conditional_assignments_map_new_logical_operators_to_the_original_decision ... ok
+test provenance_zero_tests::conditional_calls_keep_operand_origins_separate_from_merged_control_flow ... ok
+test provenance_zero_tests::conditional_noop_traversals_do_not_erase_block_separator_origins ... ok
+test provenance_zero_tests::final_store_cleanup_keeps_branch_keywords_and_surviving_assignment ... ok
+test provenance_zero_tests::full_return_and_guard_chains_have_complete_derived_origins ... ok
+test provenance_zero_tests::generated_split_sign_square_expression_retains_original_expression ... ok
+test provenance_zero_tests::guard_return_lowering_retains_fallback_as_a_distinct_contributing_statement ... ok
+test provenance_zero_tests::immutable_reuse_does_not_invent_the_location_of_an_unknown_use ... ok
+test provenance_zero_tests::immutable_value_reuse_preserves_each_use_expression_and_its_definition ... ok
+test provenance_zero_tests::initialization_then_division_keeps_the_initial_value_and_following_divisor ... ok
+test provenance_zero_tests::insufficient_screen_run_retains_each_call_origin ... ok
+test provenance_zero_tests::missing_condition_origin_stays_unknown_in_a_known_lowered_branch ... ok
+test provenance_zero_tests::original_unknown_block_remains_unknown_after_screen_noop ... ok
+test provenance_zero_tests::partial_unread_assignment_removal_keeps_surviving_statement_and_rhs ... ok
+test provenance_zero_tests::quotient_chain_noop_preserves_all_original_statement_boundaries ... ok
+test provenance_zero_tests::quotient_chain_records_all_contributing_divisors_over_multiple_rounds ... ok
+test provenance_zero_tests::quotient_product_keeps_both_original_divisor_occurrences ... ok
+test provenance_zero_tests::quotient_product_with_an_unattributed_factor_remains_unknown ... ok
+test provenance_zero_tests::screen_loop_provenance_distinguishes_generated_control_and_source_arguments ... ok
+test provenance_zero_tests::screen_loop_scan_without_drawing_keeps_all_source_boundaries ... ok
+test provenance_zero_tests::split_sign_traversal_preserves_noop_and_deleted_sequence_boundaries ... ok
+test provenance_zero_tests::unchanged_assignments_and_separators_survive_unread_global_cleanup ... ok
+test provenance_zero_tests::unread_cleanup_does_not_restore_a_previous_unannotated_assignment ... ok
+test scope_rename::allocation_regression_tests::dense_name_conflicts_and_mapping_free_path_match_synthetic_reference ... ok
+test scope_rename::allocation_regression_tests::dense_name_conflicts_preserve_reuse_captures_and_long_names ... ok
+test scope_rename::allocation_regression_tests::tracked_cost_model_matches_the_real_rename_without_mutating_provenance ... ok
+test provenance_tests::target_continuation_carries_completed_origin_batches_without_recomputing ... ok
+test provenance_pass_matrix::ordered_draw_record_packing ... ok
+test scope_rename::borrowed_short_names_tests::short_name_plans_borrow_single_character_assignments_without_changing_source_names ... ok
+test scope_rename::borrowed_short_names_tests::borrowed_names_keep_the_complete_mixed_radix_order_and_owned_public_iterator ... ok
+test passes::scratch_coalescing::analysis_reuse_tests::earlier_changes_rebuild_analysis_before_later_blocks ... ok
+test scope_rename::cost_only_name_tests::cost_only_names_do_not_rename_fields_methods_labels_or_shadowed_declarations ... ok
+test search::identity_origin_tests::property_and_lexical_paths_are_not_mistaken_for_identity_copies ... ok
+test search::identity_origin_tests::source_sized_target_keeps_the_exact_identity_contract_and_validation ... ok
+test search::owned_lexical_candidate_tests::lexical_job_transfers_its_exact_buffers_and_preserves_verifier_decisions ... ok
+test search::phase7_serialization_tests::candidate_job_binary_roundtrip_preserves_result ... ok
+test search::phase7_serialization_tests::candidate_size_uses_the_public_utf16_billing_unit ... ok
+test search::phase7_serialization_tests::completed_single_job_target_miss_does_not_export_work_again ... ok
+test scope_rename::cost_only_name_tests::borrowed_rename_size_matches_materialized_ast_for_every_registered_fixture ... ok
+test search::phase7_serialization_tests::satisficing_checkpoint_budget_returns_best_so_far ... ok
+test search::phase7_serialization_tests::satisficing_full_fallback_reports_unmet_target ... ok
+test search::phase7_serialization_tests::satisficing_reaches_small_target_without_full_search ... ok
+test search::phase7_serialization_tests::satisficing_returns_source_when_input_already_meets_target ... ok
+test passes::scratch_coalescing::analysis_reuse_tests::repeated_block_analysis_matches_the_original_on_all_pass_fixture_states ... ok
+test search::phase7_serialization_tests::missed_target_resumes_canonical_jobs_without_repeating_evaluated_prefix ... ok
+test search::phase7_serialization_tests::target_source_checkpoint_reports_utf16_and_honors_property_transform ... ok
+test search::phase7_serialization_tests::target_reached_by_the_last_canonical_job_is_not_an_early_stop ... ok
+test passes::api_aliases::trial_provenance_tests::tracked_and_plain_candidates_match_the_prior_search_on_all_registered_pass_inputs ... ok
+test provenance_zero_tests::complete_zero_coverage_survives_real_search_and_target_fallback ... ok
+test search::shared_single_source_tests::inspected_error_and_conservative_paths_preserve_results_and_original_points ... ok
+test passes::draw_records::round3_tests::every_draw_portfolio_is_checked_instead_of_only_its_winning_candidate ... ok
+test search::phase7_serialization_tests::unmet_fast_target_retains_the_exhaustive_candidate_set ... ok
+test passes::single_use_forwarding::analysis_reuse_tests::repeated_block_analysis_matches_the_original_on_all_pass_fixture_states ... ok
+test passes::single_use_forwarding::analysis_reuse_tests::earlier_changes_rebuild_analysis_before_later_blocks ... ok
+test scope_rename::compact_capture_tests::ordered_capture_membership_matches_legacy_hashes_on_each_pass_fixture_and_rewrite ... ok
+test search::phase7_serialization_tests::target_miss_preserves_full_search_for_modes_and_property_specialization ... ok
+test scope_rename::borrowed_global_names_tests::borrowed_fixed_names_and_unique_local_sequence_match_the_owned_reference ... ok
+test passes::draw_records::round3_tests::grouped_words_replay_complete_groups_and_never_add_padding_calls ... ok
+test search::shared_single_source_tests::inspected_compilation_matches_the_original_entry_for_each_registered_pass_input ... ok
+test provenance_branch_tests::every_registered_fixture_is_also_checked_through_the_real_compiler ... ok
+
+test result: ok. 425 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_spec-52516f6d05e7bbff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_syntax-766dd673d8c91b9f)
+
+running 102 tests
+test ast::interner_registry_tests::borrowed_registry_queries_match_owned_snapshots_and_symbol_order ... ok
+test ast::interner_registry_tests::copy_on_write_detaches_only_when_a_new_identifier_is_inserted ... ok
+test ast_utils::operator_snapshot_tests::private_snapshot_never_normalizes_operator_spelling_or_reorders_children ... ok
+test dump::structural_snapshot_tests::raw_literals_field_spelling_and_aliasing_are_not_semantically_collapsed ... ok
+test dump::tests::quote_bytes_match_control_ascii_and_multibyte_text_without_normalization ... ok
+test explanation_tests::exact_copy_does_not_claim_normalized_literals_are_byte_identical ... ok
+test explanation_tests::repeated_rule_keeps_different_observed_decisions ... ok
+test explanation_tests::selected_empty_root_keeps_its_removals_without_emitting_a_fake_position ... ok
+test explanation_tests::copied_contexts_and_dispositions_remap_to_their_original_snapshot ... ok
+test explanation_tests::malformed_serialized_contexts_are_rejected_before_emission ... ok
+test dump::tests::streaming_dump_matches_the_frozen_recursive_format_for_all_nodes ... ok
+test dump::structural_snapshot_tests::direct_comparison_matches_dump_for_every_node_kind_and_raw_spelling ... ok
+test explanation_tests::failed_candidate_clone_does_not_change_base_reason_or_removal_records ... ok
+test lexer::borrowed_token_tests::lexical_failures_and_long_comment_delimiters_remain_explicit ... ok
+test lexer::tests::default_lexer_discards_all_comments ... ok
+test lexer::tests::capture_mode_ignores_long_bracket_comments ... ok
+test lexer::tests::numbers_match_js_regex ... ok
+test explanation_tests::syntax_keywords_belong_to_their_actual_token_not_another_keyword ... ok
+test lexer::tests::capture_mode_finds_storm_comment_mid_line_on_multiple_lines ... ok
+test lexer::borrowed_token_tests::borrowed_tokens_reference_source_and_match_owned_positions ... ok
+test lexer::tests::capture_mode_keeps_only_storm_comments_with_position ... ok
+test explanation_tests::rejected_block_rewrite_does_not_leak_disposition_history ... ok
+test node_arena::cow_tests::actual_mutations_detach_and_raw_writes_still_invalidate_only_the_candidate ... ok
+test node_arena::cow_tests::cow_storage_has_the_same_wire_shape_and_mutable_slice_contract ... ok
+test lexer::keyword_dispatch_tests::generated_dispatch_matches_the_ordered_registry_and_token_boundaries ... ok
+test node_arena::cow_tests::read_only_candidates_and_no_op_rewrites_do_not_copy_arena_buffers ... ok
+test numeric::borrowed_quote_tests::borrowed_quotes_match_the_original_owned_encoder_for_controls_and_unicode ... ok
+test numeric::tests::decode_string_basic ... ok
+test numeric::tests::hex_num_val_strict ... ok
+test numeric::tests::num_val_basic ... ok
+test numeric::tests::qstr_basic ... ok
+test numeric::tests::qstr_control_and_separators ... ok
+test deferred_origin::tests::long_tail_is_shared_before_observation_and_dropped_without_recursive_stack ... ok
+test numeric::tests::quote_borrowing_preserves_escape_and_malformed_boundaries ... ok
+test numeric::tests::qstr_uses_long_brackets_only_when_strictly_shorter_and_safe ... ok
+test ast_utils::leaf_snapshot_tests::leaf_elision_preserves_visit_order_mutable_parent_callbacks_and_exact_origins ... ok
+test numeric::tests::quote_shape_matches_large_generated_payloads ... ok
+test numeric::tests::normalize_basic ... ok
+test deferred_origin::tests::persistent_tail_matches_every_eager_action_and_observed_snapshot ... ok
+test numeric::tests::integer_exponent_fast_path_preserves_old_selection ... ok
+test parser::conditional_origin_tests::conditional_source_tracking_uses_the_same_parse_and_complete_origins ... ok
+test parser::identifier_tests::rejects_non_names_at_identifier_positions ... ok
+test parser::position_tests::nested_function_and_if_positions_are_accurate ... ok
+test parser::diagnostic_point_tests::line_only_positions_equal_full_positions_without_collecting_unused_ranges ... ok
+test parser::position_tests::parse_source_is_unaffected ... ok
+test parser::position_tests::side_table_covers_every_node_in_nested_program ... ok
+test parser::position_tests::statement_and_operator_positions_are_accurate_at_line_start_and_mid_line ... ok
+test parser::position_tests::top_level_statement_positions_span_multiple_lines ... ok
+test parser::position_tests::unknown_node_id_returns_none ... ok
+test parser::provenance_span_tests::each_occurrence_of_a_shared_symbol_has_its_own_span ... ok
+test parser::provenance_span_tests::expression_spans_cover_operands_not_just_operator_points ... ok
+test parser::provenance_span_tests::declarations_parameters_fields_and_methods_have_named_slots ... ok
+test deferred_origin::direct_action_tests::direct_actions_and_compressed_runs_match_the_eager_mutation_sequence ... ok
+test parser::provenance_span_tests::tracking_does_not_change_ast_or_default_printer_and_is_opt_in ... ok
+test parser::provenance_span_tests::unicode_crlf_function_and_empty_blocks_stay_on_real_boundaries ... ok
+test parser::source_token_storage_tests::lexical_errors_still_precede_syntax_errors_and_have_the_same_message ... ok
+test parser::source_token_storage_tests::range_tokens_reproduce_owned_lexer_spelling_kind_and_positions ... ok
+test parser::source_token_storage_tests::parser_remains_owned_after_caller_drops_or_edits_input ... ok
+test parser::variadic_parameter_tests::variadic_only_parameters_consume_the_closing_parenthesis ... ok
+test print::borrowed_emission_tests::unchanged_identifier_number_and_string_fragments_borrow_the_immutable_ast ... ok
+test print::emission_tests::normalized_literals_and_omitted_nil_have_honest_generated_ranges ... ok
+test print::emission_tests::every_explicit_name_slot_maps_to_its_own_original_identifier ... ok
+test print::emission_tests::same_spelling_at_different_positions_is_not_resolved_by_text_search ... ok
+test print::borrowed_emission_tests::decoded_members_and_quotes_outlive_temporary_spelling_choices ... ok
+test print::emission_tests::untracked_fragments_allocate_no_emission_vectors ... ok
+test print::emission_tests::recording_positions_keeps_exact_bytes_and_newline_count ... ok
+test print::plain_name_dispatch_tests::byte_validation_keeps_unicode_rejection_and_exact_keyword_rules ... ok
+test print::streamed_lexical_tests::streamed_token_verification_preserves_fallbacks_lines_and_copy_origins ... ok
+test print::streamed_lexical_tests::lexical_fast_guard_covers_operator_and_literal_pair_retokenization ... ok
+test print::token_baseline_size_tests::token_baseline_length_and_bytes_match_previous_materialized_stream ... ok
+test provenance::owned_reason_tests::owned_derivation_preserves_repeated_relation_and_fact_history ... ok
+test provenance::owned_reason_tests::uniquely_owned_reason_buffer_is_not_copied_on_every_append ... ok
+test provenance::tests::a_known_rewrite_is_derived_from_the_entire_old_expression ... ok
+test provenance::tests::a_mutated_slot_is_unknown_instead_of_inheriting_its_parent_mapping ... ok
+test provenance::deferred_final_tests::deferred_final_snapshot_is_exact_and_independent_of_later_arena_changes ... ok
+test provenance::tests::an_empty_inherited_arena_does_not_inherit_origin_by_node_number ... ok
+test provenance::repeated_lexical_name_tests::repeated_spelling_shares_storage_but_not_origin_identity_or_source_range ... ok
+test provenance::tests::copying_an_unknown_source_clears_any_old_destination_origin ... ok
+test provenance::tests::clone_rollback_and_slot_reuse_keep_separate_lifetimes ... ok
+test numeric::small_integer_format_tests::integer_shortcut_matches_independent_float_digit_formatting ... ok
+test origin_slots::tests::a_single_edit_preserves_unmodified_pages_and_the_original_snapshot ... ok
+test provenance::tests::copying_between_arenas_imports_snapshots_instead_of_aliasing_equal_ids ... ok
+test provenance::tests::lexical_emission_retains_each_copied_token_and_leaves_gaps_unmapped ... ok
+test provenance::tests::serde_round_trip_retains_provenance_and_rejects_damaged_ranges ... ok
+test provenance::unique_lexical_origin_tests::unique_copy_ranges_match_the_generic_interner_including_gaps ... ok
+test source_position::tests::unicode_crlf_and_eof_coordinates_are_not_interchangeable ... ok
+test source_position::tests::invalid_coordinates_are_rejected_instead_of_snapping ... ok
+test source_tools::lossless_tests::shared_inspection_preserves_integers_and_bytes_without_running_expressions ... ok
+test source_tools::tests::conditional_and_unknown_expressions_are_not_executed_or_treated_as_zero ... ok
+test provenance::tests::synthetic_and_unknown_are_distinct_without_invented_originals ... ok
+test source_tools::tests::exact_bytes_and_escapes_are_not_a_json_approximation ... ok
+test provenance::tests::tracked_and_plain_ast_compare_equal_but_origins_are_optional ... ok
+test source_position::utf16_length_tests::ascii_fast_path_and_unicode_fallback_match_code_units_exactly ... ok
+test source_tools::tests::real_comments_and_multiline_calls_have_exact_spans ... ok
+test source_position::cursor_tests::cursor_matches_random_access_for_forward_reverse_repeated_and_rejected_offsets ... ok
+test numeric::integer_single_scan_tests::one_pass_integer_validation_keeps_signs_overflow_hex_and_invalid_input_exact ... ok
+test numeric::tests::quote_shape_matches_legacy_ascii_pairs_and_unicode ... ok
+test node_arena::batch_relation_tests::ordered_batches_match_scalar_relations_for_shared_and_independent_snapshots ... ok
+test origin_slots::tests::page_boundaries_push_reuse_and_flat_wire_match_the_previous_vector ... ok
+test numeric::tests::shared_fraction_digits_match_independent_legacy_candidates ... ok
+test node_arena::ordered_relation_union_tests::transitive_unions_keep_order_roles_duplicates_and_foreign_source_identity ... ok
+test node_arena::relation_prefix_tests::shared_and_equal_prefixes_keep_the_exact_order_roles_and_reason_counts ... ok
+
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.65s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_vm-536a9b3ae5228443)
+
+running 2 tests
+test logging::tests::locations_do_not_require_the_debugger_feature_or_line_hooks ... ok
+test logging::tests::native_host_call_has_no_invented_lua_location ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_wasm-9fc04b5f8bb67405)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_wasm-c3d3a7d3895c6842)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_screen_raster-5fb8d36c4705ea85)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_screen_wasm-e07a151a8a454746)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/xtask-3b6c89c008bff393)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_addon
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_analysis
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_build
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_compiler_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_conformance
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_microcontroller
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_minify
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_spec
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_syntax
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_vm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_lua_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_screen_raster
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests storm_screen_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

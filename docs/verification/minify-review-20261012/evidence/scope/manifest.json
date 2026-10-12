@@ -1,0 +1,212 @@
+{
+  "revision": "5a168d63eda82c898af4dcc72f8c2c3f9a178e51",
+  "files": [
+    {
+      "path": "crates/storm-lua-minify/src/passes/tables.rs",
+      "bytes": 62657,
+      "sha256": "86ea9e0c63b4058ecb6b36e477a9961298fbed7bb6fc14ce06940de1c00f31de"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/root_globals.rs",
+      "bytes": 6328,
+      "sha256": "2bf0f4d4cc64398f433929f128797423f72b749cb514686b7697d899033dacbb"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/function_globalization.rs",
+      "bytes": 20430,
+      "sha256": "92dcbe480b82f0df0144699dfa1913a775b52ebebdfd2b2aa5ef2233335da1c3"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/immutable_values.rs",
+      "bytes": 18922,
+      "sha256": "8028e98a11e118ae98c79baffa814d2ebd4d61ec9db797556c460a9134ad22ef"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/immutable_synthesis.rs",
+      "bytes": 11239,
+      "sha256": "c20646fd9156efa580c742d73182865bd1d75d0f3b9a22277ea1f297f5b7cda4"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/destructive_results.rs",
+      "bytes": 15740,
+      "sha256": "0c3b34711c013a966f149572dc676b9e13ed33e16a314f94d8424f1c6d854dc9"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/final_stores.rs",
+      "bytes": 15894,
+      "sha256": "9184c17aace4722c860db8a38ec42ea99abc7cae64d703fc5c60c60e1dd68346"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/single_use_forwarding.rs",
+      "bytes": 22726,
+      "sha256": "5c40a22c5dc814fe14c02abe7dc89ad3c403be8a63e740b295b77c3e6fc2e0c3"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/print.rs",
+      "bytes": 59945,
+      "sha256": "f868bbd0ee10f2a2aa9853c8c9ee764c2ffe8c33d84fa692f1adc0c7929e8129"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/node_arena.rs",
+      "bytes": 56570,
+      "sha256": "c2ec7cbdfbcc66ef2eb2a4088d49671e2b5462eb8b60f339197df182d2204d6f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/locals.rs",
+      "bytes": 34401,
+      "sha256": "cfe07cd0f53c3351d6404d1f12c1aaf50855d156843adc628b7bde80e776b68d"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "Cargo.lock",
+      "bytes": 13278,
+      "sha256": "b83ef365e5cec5ca2c47dfefd2fc6bf0bdb3558830ea4d8ed60bd5c1a3aa917c"
+    },
+    {
+      "path": "Cargo.toml.template",
+      "bytes": 323,
+      "sha256": "d5e40ff018cf9124e420ef0ec231c46f90c3dee0724ebf99d4e9686fe8bb5012"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2247,
+      "sha256": "5a57e1ff9aebdb8e4ae48f6e081ebde47fd1bebb3ae5e0e64b835b2a36a7fb66"
+    },
+    {
+      "path": "benchmark.py",
+      "bytes": 980,
+      "sha256": "6f43553cbce08a3739b3d97972615156149a8543964962bc9182fc100eda2c77"
+    },
+    {
+      "path": "benchmark_missing.py",
+      "bytes": 997,
+      "sha256": "15858d67750a7aa399363b4d1062d4e5fdb2bf85134f05dbbe04969b0902d919"
+    },
+    {
+      "path": "closed-fields-matrix.jsonl",
+      "bytes": 40054,
+      "sha256": "fc5dfc66896ca38f6789cb66435645b675a1370de4c49368dc211785ff3823c8"
+    },
+    {
+      "path": "closed_fields_matrix.py",
+      "bytes": 2689,
+      "sha256": "41058dda9089d3d4f10d95220fd64a8fc3120f28c27a6e0c33f32f6cc6135eb0"
+    },
+    {
+      "path": "corpus-summary.json",
+      "bytes": 1244,
+      "sha256": "c1a794f94b23badb920ce2c272d8bd6557af46b443b3dd23dfe19f2cb031a79e"
+    },
+    {
+      "path": "extra-probes.jsonl",
+      "bytes": 6834,
+      "sha256": "f82973fdb112500a685a7f847c2d33518ca22cea02b0460568df3343bc6b2171"
+    },
+    {
+      "path": "findings-matrix.jsonl",
+      "bytes": 29746,
+      "sha256": "ebf8ee74534078c732dadc070dda30d5493a6f8340c528b2468bfdbf7e7bc4a5"
+    },
+    {
+      "path": "harness.rs",
+      "bytes": 5099,
+      "sha256": "a10301e09ab02f2dcc3c3c0f428a867023414c6d53416ce351ac59f005b9f41a"
+    },
+    {
+      "path": "immutable-funcstat.jsonl",
+      "bytes": 1888,
+      "sha256": "968f8cdd10bf69a6b519760147005eebb1c8abfe1e1d5ef4e9f5ecae18e9e07e"
+    },
+    {
+      "path": "immutable-synthesis-shadow.jsonl",
+      "bytes": 5538,
+      "sha256": "37b69de64b872813c80ac9e3bce65b3503cac75fe13a8027887121861b31d8db"
+    },
+    {
+      "path": "local-sink-minimal.jsonl",
+      "bytes": 2385,
+      "sha256": "b042492981201ec350092b1d8995420608f4ada063bc6621113e2b7a75a02ab1"
+    },
+    {
+      "path": "local-sink-origin-matrix.jsonl",
+      "bytes": 14116,
+      "sha256": "db5f6a821a32385d181f598ea4a3b4347ccf0abe575a83dee9ce1222d7568c6d"
+    },
+    {
+      "path": "local-sink-table-index.jsonl",
+      "bytes": 3922,
+      "sha256": "771a5878aa76332fb596d37f21dfd811cbff91f57c2d2acd0c3040cbc0f51706"
+    },
+    {
+      "path": "namespace-toggle-isolation.jsonl",
+      "bytes": 40168,
+      "sha256": "46a8eed07ccdff69c97e2edc1b1789db26c95af48a3fad0ec53be3fa0c4c9030"
+    },
+    {
+      "path": "nested-alias-toggle-isolation.jsonl",
+      "bytes": 33328,
+      "sha256": "167c2cc84fa7c6c43cd987e61c983aef2fa3cfac8e39d1f031cdc4b91d7d11b4"
+    },
+    {
+      "path": "root-collision-tick-only.jsonl",
+      "bytes": 3233,
+      "sha256": "aa4fd6b50221bb5ed2d8b22da8f066836f0a541ad72afc66613816d38020bbe5"
+    },
+    {
+      "path": "scope-review.md",
+      "bytes": 16844,
+      "sha256": "0b74ffc08ea7e98961f998190902d08771df86c51a315de741146ddc4c20221f"
+    },
+    {
+      "path": "structured-corpus.jsonl",
+      "bytes": 399721,
+      "sha256": "2dd6e24d9a50fab1d14c138c745864fae5b331231f6fb9fa631335651cd8faf0"
+    },
+    {
+      "path": "structured_corpus.py",
+      "bytes": 4937,
+      "sha256": "e64e0d5d127b53781b13dba59a222bd8ca51bec6acb6fd8d95def89b7e6df45f"
+    },
+    {
+      "path": "table-flatten-missing-release-timing.jsonl",
+      "bytes": 6829,
+      "sha256": "c6209e571402b32140f100532ee20ccd70157b0e4ff1b3105f1224029bf0d4e4"
+    },
+    {
+      "path": "table-flatten-missing-timing.jsonl",
+      "bytes": 6866,
+      "sha256": "9477d52a71138a2339b2fb2c768ea307cdd7bd0ecd0de65adb704467f6213d4d"
+    },
+    {
+      "path": "table-flatten-release-timing.jsonl",
+      "bytes": 6751,
+      "sha256": "b58002e005b50b5b17f35e5fbc46191963d99ac8ac2dcdc1de9adf74e0e3b2c3"
+    },
+    {
+      "path": "table-flatten-timing.jsonl",
+      "bytes": 6800,
+      "sha256": "86d2abb5b394277bdceae5863f9ffa4e85a024984680ece73996dfad52cee49d"
+    },
+    {
+      "path": "target-probes.jsonl",
+      "bytes": 49655,
+      "sha256": "ed6d3e416bf8db3e54ed73a6d6039197717d6e8c41d8a42a9e1f8d6c3d054482"
+    },
+    {
+      "path": "target-probes2.jsonl",
+      "bytes": 50313,
+      "sha256": "d71bb40a7df42e50dd8b5448749976cb7f2f1ac2dae319f449165c184bd4dbb0"
+    },
+    {
+      "path": "target-probes3.jsonl",
+      "bytes": 6592,
+      "sha256": "9be378730861f029a19fe42ab5aa686b4a7a91b8dd6b69f0be5cb3865a20d5f8"
+    },
+    {
+      "path": "verify_findings.py",
+      "bytes": 2269,
+      "sha256": "959700086a6c7beedc0036fda99fc4bb675ecf18044af2e6a09011865d88d0b2"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "filesystem": "ext4",
+  "source_hashes_reverified": true,
+  "root_available_bytes": 5947932672,
+  "minimum_required_bytes": 4294967296,
+  "artifacts_recreated_from_saved_sources": true,
+  "temporary_build_cache_required_for_resume": false
+}

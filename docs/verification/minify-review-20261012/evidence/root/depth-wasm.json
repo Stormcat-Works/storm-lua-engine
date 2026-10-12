@@ -1,0 +1,79 @@
+[
+  {
+    "depth": 100,
+    "bytes": 208,
+    "inspectSource": {
+      "ok": true,
+      "error": null
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 200,
+    "bytes": 408,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 400,
+    "bytes": 808,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 800,
+    "bytes": 1608,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 1600,
+    "bytes": 3208,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 3200,
+    "bytes": 6408,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "ok": true
+    }
+  },
+  {
+    "depth": 6400,
+    "bytes": 12808,
+    "inspectSource": {
+      "ok": false,
+      "error": "source nesting exceeds inspection limit"
+    },
+    "minify": {
+      "error": "RangeError: Maximum call stack size exceeded"
+    }
+  }
+]

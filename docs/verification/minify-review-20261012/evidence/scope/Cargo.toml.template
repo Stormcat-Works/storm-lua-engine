@@ -1,0 +1,9 @@
+[package]
+name = "minify-scope-audit"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+storm-lua-minify = {path="REVIEWED_CHECKOUT/crates/storm-lua-minify"}
+storm-lua-syntax = {path="REVIEWED_CHECKOUT/crates/storm-lua-syntax"}
+mlua={version="=0.10.5",default-features=false,features=["lua53","vendored"]}
+serde_json="1.0"

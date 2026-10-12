@@ -1,0 +1,324 @@
+diff --git a/crates/storm-lua-build/src/addon.rs b/crates/storm-lua-build/src/addon.rs
+index 66af774..782c2b2 100644
+--- a/crates/storm-lua-build/src/addon.rs
++++ b/crates/storm-lua-build/src/addon.rs
+@@ -2,12 +2,13 @@
+ //!
+ //! No Vehicle phase rules, output limit, property specialization, or minifier
+ //! are applied. Server/world compatibility remains the host's responsibility.
++use crate::metadata::metadata;
+ use crate::{lifeboat, public_api::ApiProjectCompileResult, source_map::generate_source_map};
+ use serde::{Deserialize, Serialize};
+ use std::collections::HashSet;
+ use storm_lua_analysis::{Diagnostic, LuaProject, Severity};
+ use storm_lua_spec::environment::EnvironmentProfile;
+-use storm_lua_syntax::{parse_source_with_positions, Lexer};
++use storm_lua_syntax::parse_source_with_positions;
+ 
+ /// Explicitly non-minifying options. Unknown fields are rejected.
+ #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+@@ -27,45 +28,6 @@ fn failure(diagnostics: Vec<Diagnostic>) -> ApiProjectCompileResult {
+         ..Default::default()
+     }
+ }
+-fn metadata(source: &str, tag: Option<&str>) -> Result<String, String> {
+-    let Some(tag) = tag else {
+-        return Ok(source.into());
+-    };
+-    if tag.is_empty() || tag.len() > 128 || tag.contains(['\r', '\n']) {
+-        return Err("metadataTag must be a single non-empty line of at most 128 bytes".into());
+-    }
+-    let mut lexer = Lexer::new(source).with_comment_capture();
+-    lexer.all().map_err(|e| e.to_string())?;
+-    let mut bytes = source.as_bytes().to_vec();
+-    for comment in lexer.comments() {
+-        if !comment.long
+-            || !source[..comment.start]
+-                .trim_start_matches('\u{feff}')
+-                .trim()
+-                .is_empty()
+-        {
+-            continue;
+-        }
+-        let raw = &source[comment.start..comment.end];
+-        let Some(tail) = raw.strip_prefix("--[") else {
+-            continue;
+-        };
+-        let level = tail.bytes().take_while(|b| *b == b'=').count();
+-        let Some(content) = tail.get(level..).and_then(|s| s.strip_prefix('[')) else {
+-            continue;
+-        };
+-        if content.lines().next().map(str::trim) != Some(tag) {
+-            continue;
+-        }
+-        for byte in &mut bytes[comment.start..comment.end] {
+-            if !matches!(*byte, b'\r' | b'\n') {
+-                *byte = b' ';
+-            }
+-        }
+-    }
+-    String::from_utf8(bytes).map_err(|e| e.to_string())
+-}
+-
+ /// Link literal include-once dependencies to one readable Addon script.
+ /// Return values are discarded as specified by the Engine development loader.
+ /// Success means syntactically valid linked Lua, not complete game-world emulation.
+diff --git a/crates/storm-lua-build/src/lib.rs b/crates/storm-lua-build/src/lib.rs
+index 84858a1..6779413 100644
+--- a/crates/storm-lua-build/src/lib.rs
++++ b/crates/storm-lua-build/src/lib.rs
+@@ -7,6 +7,7 @@ mod lifeboat_ambient;
+ #[doc(hidden)]
+ pub mod link;
+ mod lua_pattern;
++mod metadata;
+ pub mod public_api;
+ #[doc(hidden)]
+ pub mod source_map;
+diff --git a/crates/storm-lua-build/src/metadata.rs b/crates/storm-lua-build/src/metadata.rs
+new file mode 100644
+index 0000000..1492e3d
+--- /dev/null
++++ b/crates/storm-lua-build/src/metadata.rs
+@@ -0,0 +1,41 @@
++//! Leading tagged metadata removal, shared by both build profiles.
++use storm_lua_syntax::Lexer;
++
++pub(crate) fn metadata(source: &str, tag: Option<&str>) -> Result<String, String> {
++    let Some(tag) = tag else {
++        return Ok(source.into());
++    };
++    if tag.is_empty() || tag.len() > 128 || tag.contains(['\r', '\n']) {
++        return Err("metadataTag must be a single non-empty line of at most 128 bytes".into());
++    }
++    let mut lexer = Lexer::new(source).with_comment_capture();
++    lexer.all().map_err(|e| e.to_string())?;
++    let mut bytes = source.as_bytes().to_vec();
++    for comment in lexer.comments() {
++        if !comment.long
++            || !source[..comment.start]
++                .trim_start_matches('\u{feff}')
++                .trim()
++                .is_empty()
++        {
++            continue;
++        }
++        let raw = &source[comment.start..comment.end];
++        let Some(tail) = raw.strip_prefix("--[") else {
++            continue;
++        };
++        let level = tail.bytes().take_while(|b| *b == b'=').count();
++        let Some(content) = tail.get(level..).and_then(|s| s.strip_prefix('[')) else {
++            continue;
++        };
++        if content.lines().next().map(str::trim) != Some(tag) {
++            continue;
++        }
++        for byte in &mut bytes[comment.start..comment.end] {
++            if !matches!(*byte, b'\r' | b'\n') {
++                *byte = b' ';
++            }
++        }
++    }
++    String::from_utf8(bytes).map_err(|e| e.to_string())
++}
+diff --git a/crates/storm-lua-build/src/public_api.rs b/crates/storm-lua-build/src/public_api.rs
+index 714f359..3917655 100644
+--- a/crates/storm-lua-build/src/public_api.rs
++++ b/crates/storm-lua-build/src/public_api.rs
+@@ -633,6 +633,9 @@ pub struct ApiProjectCompileOptions {
+     pub compile: ApiCompileOptions,
+     /// `false` = リンクのみ（可読出力 + Source Map）。既定 `true`（設計 §6）。
+     pub minify: Option<bool>,
++    /// Exact first-line marker in a leading Lua long comment to remove.
++    /// Blanking preserves byte and line offsets; source maps retain original input.
++    pub metadata_tag: Option<String>,
+ }
+ 
+ /// `compileProject()` の結果（設計 §6）。エラー時は `code`/`map` を返さない。
+@@ -823,7 +826,11 @@ pub fn compile_project(
+             )])
+         }
+     };
+-    let mut link = link_project(project);
++    let prepared = match prepare_metadata(project, options.metadata_tag.as_deref()) {
++        Ok(value) => value,
++        Err(error) => return ApiProjectCompileResult::structural_failure(error),
++    };
++    let mut link = link_project(&prepared);
+     if link.linked_source.is_none() {
+         // `link_project` が到達可能モジュールの error（またはモジュール無しのプロジェクト
+         // 全体診断）を検出済み。到達不能モジュールの error だけが残るケースはここには来ない
+@@ -836,7 +843,7 @@ pub fn compile_project(
+     // 構造解析を行う（`analyze()` は warning として同じ検出を行うため、severity だけが
+     // 両者の違いになる）。診断は到達可否を問わず全モジュール分を追加する（`analyze` との
+     // パリティ維持）。
+-    let structural = analyze_structure(project);
++    let structural = analyze_structure(&prepared);
+     let written_globals = collect_written_global_names(structural.modules.values());
+     for (key, analysis) in &structural.modules {
+         link.diagnostics
+@@ -898,6 +905,27 @@ pub fn compile_project(
+     )
+ }
+ 
++fn prepare_metadata<'a>(
++    project: &'a LuaProject,
++    tag: Option<&str>,
++) -> Result<std::borrow::Cow<'a, LuaProject>, Vec<Diagnostic>> {
++    if tag.is_none() {
++        return Ok(std::borrow::Cow::Borrowed(project));
++    }
++    let mut prepared = project.clone();
++    for (name, source) in &mut prepared.modules {
++        match crate::metadata::metadata(source, tag) {
++            Ok(value) => *source = value,
++            Err(error) => {
++                return Err(vec![
++                    Diagnostic::error("build-metadata", error).with_module(name)
++                ])
++            }
++        }
++    }
++    Ok(std::borrow::Cow::Owned(prepared))
++}
++
+ /// LB include-once build. Separate from the existing return-valued static linker.
+ pub fn compile_lifeboat(
+     project: &LuaProject,
+@@ -907,7 +935,11 @@ pub fn compile_lifeboat(
+         Ok(value) => value,
+         Err(error) => return ApiProjectCompileResult::compile_failure(error),
+     };
+-    let link = crate::lifeboat::link_lifeboat(project);
++    let prepared = match prepare_metadata(project, options.metadata_tag.as_deref()) {
++        Ok(value) => value,
++        Err(error) => return ApiProjectCompileResult::structural_failure(error),
++    };
++    let link = crate::lifeboat::link_lifeboat(&prepared);
+     let Some(source) = link.linked_source.as_deref() else {
+         return ApiProjectCompileResult::structural_failure(link.diagnostics);
+     };
+@@ -1338,4 +1370,96 @@ mod tests {
+         assert!(!result.ok);
+         assert!(result.code.is_none());
+     }
++    #[test]
++    fn project_metadata_blanking_keeps_original_source_map_content() {
++        let source = "--[==[studio-test\n{\"label\":\"速度\"}\n]==]\nfunction onTick() output.setNumber(1,42) end";
++        let project = LuaProject {
++            entry: "main".into(),
++            modules: BTreeMap::from([("main".into(), source.into())]),
++            ambient: BTreeMap::new(),
++        };
++        for build in [compile_project, compile_lifeboat] {
++            let result = build(
++                &project,
++                &ApiProjectCompileOptions {
++                    minify: Some(false),
++                    metadata_tag: Some("studio-test".into()),
++                    ..Default::default()
++                },
++            );
++            assert!(result.ok, "{:?}", result.diagnostics);
++            assert!(!result.code.as_ref().unwrap().contains("studio-test"));
++            assert!(result.code.as_ref().unwrap().contains("output.setNumber"));
++            let map: serde_json::Value =
++                serde_json::from_str(result.map.as_ref().unwrap()).unwrap();
++            assert_eq!(map["sourcesContent"][0], source);
++        }
++    }
++
++    #[test]
++    fn metadata_does_not_change_a_lua_string_or_untagged_comment() {
++        let source = "-- ordinary comment\nlocal text=[==[studio-test\nsecret-in-string\n]==]\nfunction onTick() output.setNumber(1,#text) end";
++        let p = LuaProject {
++            entry: "main".into(),
++            modules: BTreeMap::from([("main".into(), source.into())]),
++            ambient: BTreeMap::new(),
++        };
++        let result = compile_project(
++            &p,
++            &ApiProjectCompileOptions {
++                minify: Some(false),
++                metadata_tag: Some("studio-test".into()),
++                ..Default::default()
++            },
++        );
++        assert!(result.ok, "{:?}", result.diagnostics);
++        assert!(result.code.unwrap().contains("secret-in-string"));
++    }
++
++    #[test]
++    fn lifeboat_metadata_and_simulator_section_are_removed_before_linking() {
++        let source = "--[==[studio-test\n{}\n]==]\n---@section __LB_SIMULATOR_ONLY__\nrequire('missing-development-only')\nsimulator:setProperty('a',1)\n---@endsection\nfunction onTick() output.setNumber(1,1) end";
++        let p = LuaProject {
++            entry: "main".into(),
++            modules: BTreeMap::from([("main".into(), source.into())]),
++            ambient: BTreeMap::new(),
++        };
++        for minify in [false, true] {
++            let result = compile_lifeboat(
++                &p,
++                &ApiProjectCompileOptions {
++                    minify: Some(minify),
++                    metadata_tag: Some("studio-test".into()),
++                    ..Default::default()
++                },
++            );
++            assert!(result.ok, "{:?}", result.diagnostics);
++            let code = result.code.unwrap();
++            assert!(!code.contains("simulator"));
++            assert!(!code.contains("studio-test"));
++            assert!(!code.contains("missing-development-only"));
++        }
++    }
++
++    #[test]
++    fn malformed_metadata_tag_is_rejected_by_both_vehicle_build_paths() {
++        let p = LuaProject {
++            entry: "main".into(),
++            modules: BTreeMap::from([("main".into(), "function onTick() end".into())]),
++            ambient: BTreeMap::new(),
++        };
++        for build in [compile_project, compile_lifeboat] {
++            let result = build(
++                &p,
++                &ApiProjectCompileOptions {
++                    minify: Some(false),
++                    metadata_tag: Some("bad\ntag".into()),
++                    ..Default::default()
++                },
++            );
++            assert!(!result.ok);
++            assert!(result.code.is_none());
++            assert!(result.map.is_none());
++        }
++    }
+ }
+diff --git a/docs/specs/source-loading.md b/docs/specs/source-loading.md
+index 1e1a8b3..89156e6 100644
+--- a/docs/specs/source-loading.md
++++ b/docs/specs/source-loading.md
+@@ -53,3 +53,8 @@ buildLifeboat creates include-once loaders with private chunk locals and shared
+ Real section/endsection comments support EXACT (default), PATTERN using bounded Lua pattern matching, instance thresholds and named/nested regions. Strings and ordinary comments do not count as code references. __LB_SIMULATOR_ONLY__ and explicit Storm Code managed setup blocks are removed before resolving game dependencies, independently of minification. Offsets/newlines are preserved during removal and non-minified code uses the existing link source map; no optimization source map is provided. Pattern/depth/module/size budgets fail visibly rather than silently keep or delete ambiguous sections.
+ 
+ Source inspection is limited to 2 MiB, 200,000 lexical tokens and bounded syntax/literal nesting. It exposes exact i64 strings, binary64 bits and byte strings. It is opt-in and does not change default optimization parsing or search settings.
++
++
++## Tagged metadata in project builds (additive, not yet released)
++
++ProjectCompileOptions.metadataTag removes only a leading long comment whose first content line exactly matches the given tag. The shared lexer supplies the comment ranges; embedded strings and unrelated comments are not removed. The operation preserves UTF-8 byte positions and newlines for the linker, and Source Map sourcesContent remains the original input. Both ordinary return-valued builds and LifeBoat include-once builds use the same metadata routine as Addon builds. The default without metadataTag retains the earlier behavior and does not clone the project for preprocessing. Development-only LifeBoat sections are still removed only by the LifeBoat/Addon linker, not by the normal static module linker.
+diff --git a/packages/lua-engine/src/compiler-types.ts b/packages/lua-engine/src/compiler-types.ts
+index 1dffa38..a4fef40 100644
+--- a/packages/lua-engine/src/compiler-types.ts
++++ b/packages/lua-engine/src/compiler-types.ts
+@@ -163,6 +163,8 @@ export interface AnalyzeResult {
+ export interface ProjectCompileOptions extends CompileOptions {
+   /** false = link only (readable output + Source Map). Default true. */
+   minify?: boolean;
++  /** Remove only leading long comments with this exact first-line metadata marker. */
++  metadataTag?: string;
+ }
+ export interface ProjectCompileResult {
+   assumptions?: CompilerAssumptions;

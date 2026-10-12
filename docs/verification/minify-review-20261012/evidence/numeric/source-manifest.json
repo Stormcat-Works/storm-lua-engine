@@ -1,0 +1,55 @@
+{
+  "reviewed_commit": "5a168d63eda82c898af4dcc72f8c2c3f9a178e51",
+  "reviewed_version": "0.3.1",
+  "product_files_modified_by_review": false,
+  "source_files": {
+    "crates/storm-lua-minify/src/passes/literal_folding.rs": {
+      "bytes": 55211,
+      "sha256": "1e7de7a9a0df0dff4c5baa054b7b43d435c9bd4192d4ab7b1bdf1f5981ea91af"
+    },
+    "crates/storm-lua-minify/src/passes/numeric_literals.rs": {
+      "bytes": 19764,
+      "sha256": "a4e08e0a806cef21dbb4e1aedb04eeb2af06850f09c4308cf7e4f9608c69df32"
+    },
+    "crates/storm-lua-minify/src/passes/boolean_numerics.rs": {
+      "bytes": 15685,
+      "sha256": "c6957b14cab23eaf28467fc8992465eb828c7384e7c02d54878a1e162d469880"
+    },
+    "crates/storm-lua-minify/src/passes/induction_values.rs": {
+      "bytes": 7770,
+      "sha256": "8ac289c813d0e824b906bdf0f1ab51a740378876ec0cf3b96026925922d3d237"
+    },
+    "crates/storm-lua-minify/src/passes/signed_factoring.rs": {
+      "bytes": 25614,
+      "sha256": "422c3536a3ec6813167a77ba89fc8905e38560d11043cdb01d7a280f783ef87a"
+    },
+    "crates/storm-lua-minify/src/passes/split_sign.rs": {
+      "bytes": 14775,
+      "sha256": "c0049644ce9ba800fcfd4c5b0a520dbe6abe7e224206c8e8432af16dbe2035c8"
+    },
+    "crates/storm-lua-minify/src/passes/multiplicative_carriers.rs": {
+      "bytes": 12403,
+      "sha256": "456b14c0dffe4172ef1769c9c7addcabbd0198e4ecce9d1e641295dd0d9ba8b7"
+    },
+    "crates/storm-lua-minify/src/passes/coefficient_carriers.rs": {
+      "bytes": 17122,
+      "sha256": "c0fa694b04b50a4ccd0055854579210a52b40063763b07d4f3c595a81c0a1d31"
+    },
+    "crates/storm-lua-minify/src/passes/common_offsets.rs": {
+      "bytes": 19180,
+      "sha256": "359cb90b8a0010b66ef1371b172e1bb6292760ca22fa5e331a00594889d9c3f2"
+    },
+    "crates/storm-lua-minify/src/passes/quotient_remainder.rs": {
+      "bytes": 8106,
+      "sha256": "92af92ef827f2f8ecda138293ade25c036a1b419189917cb5d1775d97fa9b5f0"
+    },
+    "crates/storm-lua-minify/src/passes/literal_pool.rs": {
+      "bytes": 7890,
+      "sha256": "d0f667a7e2987b8578fdc0ae5b24b561250886291c96fd1b038acce35c4950a5"
+    },
+    "crates/storm-lua-minify/src/passes/literal_pool/expressions.rs": {
+      "bytes": 10068,
+      "sha256": "e28cf51c053d737decf9b37af4310ea28aa204fa3b5bc5771f577f4de6df71a0"
+    }
+  }
+}

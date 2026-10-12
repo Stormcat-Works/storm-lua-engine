@@ -1,0 +1,8 @@
+{
+  "cases": 63,
+  "equalExcludingTimingFields": true,
+  "excludedFields": [
+    "seconds",
+    "elapsedMs"
+  ]
+}

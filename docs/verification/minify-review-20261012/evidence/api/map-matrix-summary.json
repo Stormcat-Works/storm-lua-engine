@@ -1,0 +1,7019 @@
+{
+  "executions": 210,
+  "pairs": 105,
+  "valid_maps": 98,
+  "failed_compile_pairs": 7,
+  "parity_or_validation_failures": [],
+  "cases": [
+    {
+      "name": "F1-api-name-collision-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00420105,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007964156,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003780118,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007231126,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003597842,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.006964709,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003874258,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007361078,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000178608,
+      "map_validation": null,
+      "code_length": 147,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 147,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001140296,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 147,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 147,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004227292,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007049253,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002234692,
+      "map_validation": null,
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-api-name-collision-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005639461,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 103,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 103,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 127,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.008409719,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.015897755,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00858281,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.015991188,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.008342513,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.015562504,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.008682375,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.016111876,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000248109,
+      "map_validation": null,
+      "code_length": 462,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 462,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001176013,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 462,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 462,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.008323522,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.015576644,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004210388,
+      "map_validation": null,
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-color-name-collision-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011405668,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 174,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 174,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 269,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005939627,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011660432,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.006241437,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.012077699,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.006048534,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011718701,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.006373759,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.012335078,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000226063,
+      "map_validation": null,
+      "code_length": 472,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 472,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001134155,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 472,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 472,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005993577,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011915668,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003882342,
+      "map_validation": null,
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-output-name-collision-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.009524806,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 165,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 165,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 176,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003882626,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.006840132,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003958677,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007027984,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003779642,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.006976949,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00403581,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007474918,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000201061,
+      "map_validation": null,
+      "code_length": 459,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 459,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001029201,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 459,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 459,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003864127,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.006930751,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00236696,
+      "map_validation": null,
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F1-screen-name-collision-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005242857,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 82,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 82,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 82,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.028730066,
+      "map_validation": null,
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.036711232,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.019660535,
+      "map_validation": null,
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.0373001,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.019285565,
+      "map_validation": null,
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.036598469,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.019987761,
+      "map_validation": null,
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.037451765,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000412636,
+      "map_validation": null,
+      "code_length": 811,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 811,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001643979,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 811,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 811,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.019208668,
+      "map_validation": null,
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.03597974,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 433,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 433,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 490,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.012477153,
+      "map_validation": null,
+      "code_length": 534,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 534,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 629,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F2-button-eager-value-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.030611427,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 534,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 534,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 629,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.033227663,
+      "map_validation": null,
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.052290119,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.021804063,
+      "map_validation": null,
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.03955943,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.034744793,
+      "map_validation": null,
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.05338074,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.035566022,
+      "map_validation": null,
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "checkpoints": 6,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.056111804,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "checkpoints": 6,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.0004958,
+      "map_validation": null,
+      "code_length": 878,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 878,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001669675,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 878,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 878,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.034163296,
+      "map_validation": null,
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.052831782,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 460,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 460,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 466,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 517,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 523,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.021765651,
+      "map_validation": null,
+      "code_length": 565,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 565,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 577,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 660,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 672,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F3-button-local-capture-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.044527707,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 565,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 565,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 577,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 660,
+            "structural": "optimized:function-global"
+          },
+          {
+            "layout": "none",
+            "size": 672,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:function-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.074054251,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.121163033,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.074703819,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.122125642,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.07088951,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.127782453,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.076332639,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.12069671,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.001178953,
+      "map_validation": null,
+      "code_length": 3236,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 3236,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.003813156,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 3236,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 3236,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.070183277,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.115252543,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.048758341,
+      "map_validation": null,
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F4-callback-init-call-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.094026501,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 1039,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 1039,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 2792,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004353375,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.00726107,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004452297,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007162963,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004306707,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.006946007,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004507214,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007356389,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000176088,
+      "map_validation": null,
+      "code_length": 322,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 322,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.000941566,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 322,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 322,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.004192862,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.007069515,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002547772,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-default-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005183648,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002672338,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.00523333,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002673368,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005299427,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002586579,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005255052,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002737916,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005877748,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000218306,
+      "map_validation": null,
+      "code_length": 322,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 322,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001009306,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 322,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 322,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002638195,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005313998,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002598924,
+      "map_validation": null,
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F5-screen-i64-safe-exact-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005390037,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 76,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 76,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 76,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005764771,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011398594,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005943872,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011469316,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005882003,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011287866,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.006151179,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.01170373,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000189809,
+      "map_validation": null,
+      "code_length": 240,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 240,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.000977637,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 240,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 240,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.005819224,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.011331267,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003488302,
+      "map_validation": null,
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-api-table-mutation-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.008695094,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 183,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "joint-api",
+            "size": 183,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "none",
+            "size": 222,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "joint-api",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002297924,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.004481936,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00225594,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.004567013,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002229443,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.004555049,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002346576,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.004640932,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "checkpoints": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00018829,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "target:property"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:property",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.002274938,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "target:property"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:property",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00216852,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.004526388,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.001432997,
+      "map_validation": null,
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F6-property-function-mutation-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.003627257,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 85,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 85,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 85,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:locals",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "F7-property-discarded-result-config0-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.001496483,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config0-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.001674649,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config1-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.001530558,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config1-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.001650747,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config2-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.001578752,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config2-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.001639648,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config3-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.000101058,
+      "map_validation": null,
+      "code_length": 62,
+      "error": "satisficing checkpoint failed reparse validation",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config3-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.00013828,
+      "map_validation": null,
+      "code_length": 62,
+      "error": "satisficing checkpoint failed reparse validation",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config4-mapFalse",
+      "ok": false,
+      "elapsed_s": 7.8922e-05,
+      "map_validation": null,
+      "code_length": 62,
+      "error": "satisficing checkpoint failed reparse validation",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config4-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.00014767,
+      "map_validation": null,
+      "code_length": 62,
+      "error": "satisficing checkpoint failed reparse validation",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config5-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.001502649,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config5-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.001602444,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config6-mapFalse",
+      "ok": false,
+      "elapsed_s": 0.000901055,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "F7-property-discarded-result-config6-mapTrue",
+      "ok": false,
+      "elapsed_s": 0.001002904,
+      "map_validation": null,
+      "code_length": 81,
+      "error": "No semantically valid optimization candidate survived verification.",
+      "search": null
+    },
+    {
+      "name": "unicode-basic-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003051474,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005131585,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.002125246,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.003972419,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 2,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          }
+        ],
+        "candidates": 2,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 1,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003100582,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005262092,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "fast",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003279689,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "checkpoints": 6,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "unicode-basic-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005277906,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "checkpoints": 6,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "full-search",
+        "stoppedEarly": false,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "unicode-basic-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000104078,
+      "map_validation": null,
+      "code_length": 67,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 69,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "unicode-basic-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.000747428,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 67,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "source",
+            "size": 69,
+            "structural": "target:source"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 1,
+        "layout": "source",
+        "mode": "satisficing",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "source",
+        "stoppedEarly": true,
+        "structural": "target:source",
+        "structuralExplored": 0,
+        "structuralVariants": 0,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "unicode-basic-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.003318895,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.005225793,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.001756828,
+      "map_validation": null,
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "unicode-basic-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.003652693,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 48,
+      "error": null,
+      "search": {
+        "attempted": 4,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "none",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "joint-api",
+            "size": 49,
+            "structural": "optimized:root-global"
+          },
+          {
+            "layout": "none",
+            "size": 55,
+            "structural": "optimized:locals"
+          },
+          {
+            "layout": "joint-api",
+            "size": 55,
+            "structural": "optimized:locals"
+          }
+        ],
+        "candidates": 4,
+        "coreVariants": 1,
+        "layout": "none",
+        "mode": "exhaustive",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "optimized:root-global",
+        "structuralExplored": 2,
+        "structuralVariants": 8
+      }
+    },
+    {
+      "name": "extended-lexical-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000126024,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001427555,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000118308,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001458701,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000119167,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.00143052,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000139072,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "extended-lexical-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001495787,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "extended-lexical-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000118018,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "extended-lexical-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001444815,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "extended-lexical-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000118429,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001428028,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000128174,
+      "map_validation": null,
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "extended-lexical-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001460324,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 57,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 57,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config0-mapFalse",
+      "ok": true,
+      "elapsed_s": 9.6626e-05,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config0-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001411827,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config1-mapFalse",
+      "ok": true,
+      "elapsed_s": 9.8782e-05,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config1-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001421611,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 1,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config2-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.00010409,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config2-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001414548,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": 16,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config3-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000100513,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "env-lexical-config3-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001441667,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": false,
+        "targetSize": 0
+      }
+    },
+    {
+      "name": "env-lexical-config4-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000124517,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "env-lexical-config4-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.0014637,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "checkpoints": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "stage": "lexical",
+        "stoppedEarly": false,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1,
+        "targetMet": true,
+        "targetSize": 8192
+      }
+    },
+    {
+      "name": "env-lexical-config5-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000108998,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config5-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001401227,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config6-mapFalse",
+      "ok": true,
+      "elapsed_s": 0.000119609,
+      "map_validation": null,
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    },
+    {
+      "name": "env-lexical-config6-mapTrue",
+      "ok": true,
+      "elapsed_s": 0.001429306,
+      "map_validation": {
+        "Ok": "valid"
+      },
+      "code_length": 64,
+      "error": null,
+      "search": {
+        "attempted": 1,
+        "beamWidth": null,
+        "candidateSizes": [
+          {
+            "layout": "tokens",
+            "size": 64,
+            "structural": "lexical"
+          }
+        ],
+        "candidates": 1,
+        "coreVariants": 0,
+        "layout": "tokens",
+        "mode": "lexical",
+        "parseRejected": 0,
+        "semanticRejected": 0,
+        "structural": "lexical",
+        "structuralExplored": 1,
+        "structuralVariants": 1
+      }
+    }
+  ]
+}

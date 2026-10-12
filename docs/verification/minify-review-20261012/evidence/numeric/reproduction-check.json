@@ -1,0 +1,20 @@
+{
+  "portable_reproduction": "passed",
+  "cases": 160,
+  "comparison_fields": [
+    "source",
+    "mode",
+    "request",
+    "expected",
+    "actual",
+    "output",
+    "panic",
+    "compile_error"
+  ],
+  "excluded_diagnostic_fields": [
+    "elapsed_ms",
+    "passes"
+  ],
+  "cargo_profile": "dev;debug=0;incremental=0",
+  "product_source_changes": false
+}

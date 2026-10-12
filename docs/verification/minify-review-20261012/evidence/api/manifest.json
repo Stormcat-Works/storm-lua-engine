@@ -1,0 +1,84 @@
+{
+  "files": [
+    {
+      "path": "Cargo.lock",
+      "bytes": 25634,
+      "sha256": "ab1137103f7a4186764aa55a8195e5d7c5e9f7b62aa9702b814837805d34adf0"
+    },
+    {
+      "path": "cases.jsonl",
+      "bytes": 14838,
+      "sha256": "1b49f00ef1dabae25b1436337a1333d4cb716195ec29ddcfe94b5ca2259e73f0"
+    },
+    {
+      "path": "cross-scope-cases.jsonl",
+      "bytes": 3922,
+      "sha256": "cd76d6324dc846661f9c6105c24be98f4304e1588bc4fe623f7f94b0c6677f82"
+    },
+    {
+      "path": "cross-scope-results.jsonl",
+      "bytes": 15698,
+      "sha256": "64ebbecf98fab1f8765290a76bb147006b10cf27111ddb52cdef247db2cadac3"
+    },
+    {
+      "path": "draw-fuzz-summary.json",
+      "bytes": 87844,
+      "sha256": "898ff678232d4a2e56452b30681c339003ab0b9b96fd8cc36b78c4a5d44ccf75"
+    },
+    {
+      "path": "draw-fuzz.py",
+      "bytes": 2183,
+      "sha256": "8bf5d278ae531d54edfa5951188ac007e9bb80f1dd7fe151ae1c8c47d1ec9f26"
+    },
+    {
+      "path": "findings.md",
+      "bytes": 14935,
+      "sha256": "76c64ea6fe8624d2a4044667ea20f88e71b7989fa23febbdda294919158bade3"
+    },
+    {
+      "path": "harness.rs",
+      "bytes": 2510,
+      "sha256": "fde7cd03f2d192bc640762008d071c40563095ce376190193bfbb5a75c595690"
+    },
+    {
+      "path": "map-matrix-summary.json",
+      "bytes": 177207,
+      "sha256": "517fa2e98130f6d1f4e806935b7444cc41144d30e4f9c40c2916cb0a3a5db88c"
+    },
+    {
+      "path": "map-matrix.py",
+      "bytes": 978,
+      "sha256": "c0bc31cb72bf05569e235cf9809a235ba08e74b2bc851f7d10b7fe1e40007f35"
+    },
+    {
+      "path": "perf-colors.jsonl",
+      "bytes": 19481,
+      "sha256": "c1f82723df4e218759cabea9389d47e1cb46bde88efbd2c9ee05858fc8834e6e"
+    },
+    {
+      "path": "perf-release-summary.json",
+      "bytes": 2256,
+      "sha256": "0dd88a9107cdc872b7cb8fe03b9f13868ef63ce487227cbeb119b82763c5194b"
+    },
+    {
+      "path": "reproduction-check.json",
+      "bytes": 409,
+      "sha256": "d9e30890e322b9ae68242e4eaea8872bcc4c009e0bfeb2cf4c5627c590a897d4"
+    },
+    {
+      "path": "results.jsonl",
+      "bytes": 33647,
+      "sha256": "2087b29b9d61875d5e507a6e2af951e36082f16128d5c0a6e822bea990aab73a"
+    },
+    {
+      "path": "run.py",
+      "bytes": 1884,
+      "sha256": "43a6672593df648c68875cc064434698ec2d69f82c2b60c5fe507d0a64f6a6ef"
+    },
+    {
+      "path": "source-manifest.json",
+      "bytes": 2646,
+      "sha256": "9ffc9c41e86b48dafaa4a26225cbbb2de8f01182fdea27567cb4d03165848378"
+    }
+  ]
+}

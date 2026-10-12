@@ -1,0 +1,19 @@
+{
+  "seed": 20261012,
+  "requests": 14440,
+  "responses": 14440,
+  "validOriginalExecutions": 8802,
+  "mismatches": 1521,
+  "mismatchesByFamily": {
+    "byte-escape": 768,
+    "unicode-escape": 42,
+    "long-string-newline": 144,
+    "z-whitespace": 6,
+    "hex-literal": 27,
+    "line-comment": 4,
+    "generated-expression": 530
+  },
+  "returncode": 0,
+  "seconds": 3.7725815220037475,
+  "stderr": ""
+}

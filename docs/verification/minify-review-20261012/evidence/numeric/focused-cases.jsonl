@@ -1,0 +1,160 @@
+{"id": "int-div-panic", "source": "return 0x8000000000000000//-1", "mode": "default"}
+{"id": "int-div-panic", "source": "return 0x8000000000000000//-1", "mode": "safe"}
+{"id": "int-div-panic", "source": "return 0x8000000000000000//-1", "mode": "exact"}
+{"id": "int-div-panic", "source": "return 0x8000000000000000//-1", "mode": "safe_exact"}
+{"id": "int-mod-panic", "source": "return 0x8000000000000000%-1", "mode": "default"}
+{"id": "int-mod-panic", "source": "return 0x8000000000000000%-1", "mode": "safe"}
+{"id": "int-mod-panic", "source": "return 0x8000000000000000%-1", "mode": "exact"}
+{"id": "int-mod-panic", "source": "return 0x8000000000000000%-1", "mode": "safe_exact"}
+{"id": "negative-divisor", "source": "return 5//-2,5%-2", "mode": "default"}
+{"id": "negative-divisor", "source": "return 5//-2,5%-2", "mode": "safe"}
+{"id": "negative-divisor", "source": "return 5//-2,5%-2", "mode": "exact"}
+{"id": "negative-divisor", "source": "return 5//-2,5%-2", "mode": "safe_exact"}
+{"id": "float-mod-positive", "source": "return 1.0%1e20", "mode": "default"}
+{"id": "float-mod-positive", "source": "return 1.0%1e20", "mode": "safe"}
+{"id": "float-mod-positive", "source": "return 1.0%1e20", "mode": "exact"}
+{"id": "float-mod-positive", "source": "return 1.0%1e20", "mode": "safe_exact"}
+{"id": "float-mod-negative", "source": "return 1.0%-1e20", "mode": "default"}
+{"id": "float-mod-negative", "source": "return 1.0%-1e20", "mode": "safe"}
+{"id": "float-mod-negative", "source": "return 1.0%-1e20", "mode": "exact"}
+{"id": "float-mod-negative", "source": "return 1.0%-1e20", "mode": "safe_exact"}
+{"id": "shift-large", "source": "return 1<<64", "mode": "default"}
+{"id": "shift-large", "source": "return 1<<64", "mode": "safe"}
+{"id": "shift-large", "source": "return 1<<64", "mode": "exact"}
+{"id": "shift-large", "source": "return 1<<64", "mode": "safe_exact"}
+{"id": "shift-negative", "source": "return 4>>-1", "mode": "default"}
+{"id": "shift-negative", "source": "return 4>>-1", "mode": "safe"}
+{"id": "shift-negative", "source": "return 4>>-1", "mode": "exact"}
+{"id": "shift-negative", "source": "return 4>>-1", "mode": "safe_exact"}
+{"id": "unary-bit-32", "source": "return ~4294967296.0", "mode": "default"}
+{"id": "unary-bit-32", "source": "return ~4294967296.0", "mode": "safe"}
+{"id": "unary-bit-32", "source": "return ~4294967296.0", "mode": "exact"}
+{"id": "unary-bit-32", "source": "return ~4294967296.0", "mode": "safe_exact"}
+{"id": "unary-bit-fractional", "source": "return ~1.5", "mode": "default"}
+{"id": "unary-bit-fractional", "source": "return ~1.5", "mode": "safe"}
+{"id": "unary-bit-fractional", "source": "return ~1.5", "mode": "exact"}
+{"id": "unary-bit-fractional", "source": "return ~1.5", "mode": "safe_exact"}
+{"id": "integer-compare", "source": "return 9007199254740993>9007199254740992", "mode": "default"}
+{"id": "integer-compare", "source": "return 9007199254740993>9007199254740992", "mode": "safe"}
+{"id": "integer-compare", "source": "return 9007199254740993>9007199254740992", "mode": "exact"}
+{"id": "integer-compare", "source": "return 9007199254740993>9007199254740992", "mode": "safe_exact"}
+{"id": "mixed-integer-equality", "source": "return 9007199254740993==9007199254740992.0", "mode": "default"}
+{"id": "mixed-integer-equality", "source": "return 9007199254740993==9007199254740992.0", "mode": "safe"}
+{"id": "mixed-integer-equality", "source": "return 9007199254740993==9007199254740992.0", "mode": "exact"}
+{"id": "mixed-integer-equality", "source": "return 9007199254740993==9007199254740992.0", "mode": "safe_exact"}
+{"id": "integer-math", "source": "return math.abs(9007199254740993)", "mode": "default"}
+{"id": "integer-math", "source": "return math.abs(9007199254740993)", "mode": "safe"}
+{"id": "integer-math", "source": "return math.abs(9007199254740993)", "mode": "exact"}
+{"id": "integer-math", "source": "return math.abs(9007199254740993)", "mode": "safe_exact"}
+{"id": "coercion-bool", "source": "return true+1", "mode": "default"}
+{"id": "coercion-bool", "source": "return true+1", "mode": "safe"}
+{"id": "coercion-bool", "source": "return true+1", "mode": "exact"}
+{"id": "coercion-bool", "source": "return true+1", "mode": "safe_exact"}
+{"id": "coercion-nil", "source": "return nil-1", "mode": "default"}
+{"id": "coercion-nil", "source": "return nil-1", "mode": "safe"}
+{"id": "coercion-nil", "source": "return nil-1", "mode": "exact"}
+{"id": "coercion-nil", "source": "return nil-1", "mode": "safe_exact"}
+{"id": "coercion-comparison", "source": "return \"10\"<2", "mode": "default"}
+{"id": "coercion-comparison", "source": "return \"10\"<2", "mode": "safe"}
+{"id": "coercion-comparison", "source": "return \"10\"<2", "mode": "exact"}
+{"id": "coercion-comparison", "source": "return \"10\"<2", "mode": "safe_exact"}
+{"id": "coercion-math-min", "source": "return math.min(\"2\",\"10\")", "mode": "default"}
+{"id": "coercion-math-min", "source": "return math.min(\"2\",\"10\")", "mode": "safe"}
+{"id": "coercion-math-min", "source": "return math.min(\"2\",\"10\")", "mode": "exact"}
+{"id": "coercion-math-min", "source": "return math.min(\"2\",\"10\")", "mode": "safe_exact"}
+{"id": "coercion-math-floor", "source": "return math.floor(true)", "mode": "default"}
+{"id": "coercion-math-floor", "source": "return math.floor(true)", "mode": "safe"}
+{"id": "coercion-math-floor", "source": "return math.floor(true)", "mode": "exact"}
+{"id": "coercion-math-floor", "source": "return math.floor(true)", "mode": "safe_exact"}
+{"id": "concat-float", "source": "return 1.0 .. \"x\"", "mode": "default"}
+{"id": "concat-float", "source": "return 1.0 .. \"x\"", "mode": "safe"}
+{"id": "concat-float", "source": "return 1.0 .. \"x\"", "mode": "exact"}
+{"id": "concat-float", "source": "return 1.0 .. \"x\"", "mode": "safe_exact"}
+{"id": "identity-string", "source": "local x=\"3\" return x*1", "mode": "default"}
+{"id": "identity-string", "source": "local x=\"3\" return x*1", "mode": "safe"}
+{"id": "identity-string", "source": "local x=\"3\" return x*1", "mode": "exact"}
+{"id": "identity-string", "source": "local x=\"3\" return x*1", "mode": "safe_exact"}
+{"id": "identity-bool", "source": "local x=false return x+0", "mode": "default"}
+{"id": "identity-bool", "source": "local x=false return x+0", "mode": "safe"}
+{"id": "identity-bool", "source": "local x=false return x+0", "mode": "exact"}
+{"id": "identity-bool", "source": "local x=false return x+0", "mode": "safe_exact"}
+{"id": "folded-subtype", "source": "return math.type(1/1)", "mode": "default"}
+{"id": "folded-subtype", "source": "return math.type(1/1)", "mode": "safe"}
+{"id": "folded-subtype", "source": "return math.type(1/1)", "mode": "exact"}
+{"id": "folded-subtype", "source": "return math.type(1/1)", "mode": "safe_exact"}
+{"id": "folded-negative-zero", "source": "return 1/-0.0", "mode": "default"}
+{"id": "folded-negative-zero", "source": "return 1/-0.0", "mode": "safe"}
+{"id": "folded-negative-zero", "source": "return 1/-0.0", "mode": "exact"}
+{"id": "folded-negative-zero", "source": "return 1/-0.0", "mode": "safe_exact"}
+{"id": "quotient-overflow", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "default"}
+{"id": "quotient-overflow", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "safe"}
+{"id": "quotient-overflow", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "exact"}
+{"id": "quotient-overflow", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "safe_exact"}
+{"id": "signed-stale", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "default"}
+{"id": "signed-stale", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "safe"}
+{"id": "signed-stale", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "exact"}
+{"id": "signed-stale", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "safe_exact"}
+{"id": "split-effects", "source": "local n=0 local function f() n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f() return r,n", "mode": "default"}
+{"id": "split-effects", "source": "local n=0 local function f() n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f() return r,n", "mode": "safe"}
+{"id": "split-effects", "source": "local n=0 local function f() n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f() return r,n", "mode": "exact"}
+{"id": "split-effects", "source": "local n=0 local function f() n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f() return r,n", "mode": "safe_exact"}
+{"id": "split-changing-operand", "source": "local n=0 local function f() n=n+1 return 4-n*3 end local r=math.max(f(),0)^2-math.min(f(),0)^2 return r,n", "mode": "default"}
+{"id": "split-changing-operand", "source": "local n=0 local function f() n=n+1 return 4-n*3 end local r=math.max(f(),0)^2-math.min(f(),0)^2 return r,n", "mode": "safe"}
+{"id": "split-changing-operand", "source": "local n=0 local function f() n=n+1 return 4-n*3 end local r=math.max(f(),0)^2-math.min(f(),0)^2 return r,n", "mode": "exact"}
+{"id": "split-changing-operand", "source": "local n=0 local function f() n=n+1 return 4-n*3 end local r=math.max(f(),0)^2-math.min(f(),0)^2 return r,n", "mode": "safe_exact"}
+{"id": "split-capture", "source": "local p=99 local function f(x) p=math.max(x,0) x=math.min(x,0) x=p+x return x end local x=f(5) return x,p", "mode": "default"}
+{"id": "split-capture", "source": "local p=99 local function f(x) p=math.max(x,0) x=math.min(x,0) x=p+x return x end local x=f(5) return x,p", "mode": "safe"}
+{"id": "split-capture", "source": "local p=99 local function f(x) p=math.max(x,0) x=math.min(x,0) x=p+x return x end local x=f(5) return x,p", "mode": "exact"}
+{"id": "split-capture", "source": "local p=99 local function f(x) p=math.max(x,0) x=math.min(x,0) x=p+x return x end local x=f(5) return x,p", "mode": "safe_exact"}
+{"id": "split-overflow", "source": "local x=4000000000 local r=math.max(x,0)^2-math.min(x,0)^2 return r", "mode": "default"}
+{"id": "split-overflow", "source": "local x=4000000000 local r=math.max(x,0)^2-math.min(x,0)^2 return r", "mode": "safe"}
+{"id": "split-overflow", "source": "local x=4000000000 local r=math.max(x,0)^2-math.min(x,0)^2 return r", "mode": "exact"}
+{"id": "split-overflow", "source": "local x=4000000000 local r=math.max(x,0)^2-math.min(x,0)^2 return r", "mode": "safe_exact"}
+{"id": "induction-subtype", "source": "for i=1.0,1.0 do return math.type(math.floor(i)),math.type(i) end", "mode": "default"}
+{"id": "induction-subtype", "source": "for i=1.0,1.0 do return math.type(math.floor(i)),math.type(i) end", "mode": "safe"}
+{"id": "induction-subtype", "source": "for i=1.0,1.0 do return math.type(math.floor(i)),math.type(i) end", "mode": "exact"}
+{"id": "induction-subtype", "source": "for i=1.0,1.0 do return math.type(math.floor(i)),math.type(i) end", "mode": "safe_exact"}
+{"id": "boolean-subtype", "source": "local x=3 local bit=x&1>0 return math.type(bit and 1.0 or 0.0)", "mode": "default"}
+{"id": "boolean-subtype", "source": "local x=3 local bit=x&1>0 return math.type(bit and 1.0 or 0.0)", "mode": "safe"}
+{"id": "boolean-subtype", "source": "local x=3 local bit=x&1>0 return math.type(bit and 1.0 or 0.0)", "mode": "exact"}
+{"id": "boolean-subtype", "source": "local x=3 local bit=x&1>0 return math.type(bit and 1.0 or 0.0)", "mode": "safe_exact"}
+{"id": "format-panic", "source": "return string.format(\"%018446744073709551615d\",1)", "mode": "default"}
+{"id": "format-panic", "source": "return string.format(\"%018446744073709551615d\",1)", "mode": "safe"}
+{"id": "format-panic", "source": "return string.format(\"%018446744073709551615d\",1)", "mode": "exact"}
+{"id": "format-panic", "source": "return string.format(\"%018446744073709551615d\",1)", "mode": "safe_exact"}
+{"id": "product-carrier", "source": "tau=4000000000*4000000000 function onTick()local x=input.getNumber(1)output.setNumber(1,x*4000000000*4000000000)output.setNumber(2,tau)end", "mode": "default", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "product-carrier", "source": "tau=4000000000*4000000000 function onTick()local x=input.getNumber(1)output.setNumber(1,x*4000000000*4000000000)output.setNumber(2,tau)end", "mode": "safe", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "product-carrier", "source": "tau=4000000000*4000000000 function onTick()local x=input.getNumber(1)output.setNumber(1,x*4000000000*4000000000)output.setNumber(2,tau)end", "mode": "exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "product-carrier", "source": "tau=4000000000*4000000000 function onTick()local x=input.getNumber(1)output.setNumber(1,x*4000000000*4000000000)output.setNumber(2,tau)end", "mode": "safe_exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "coefficient-carrier", "source": "k=4000000000 function onTick()local x=input.getNumber(1)local a=x*k*4000000000 local b=x*k*4000000000 output.setNumber(1,a)output.setNumber(2,b)output.setNumber(3,k)end", "mode": "default", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "coefficient-carrier", "source": "k=4000000000 function onTick()local x=input.getNumber(1)local a=x*k*4000000000 local b=x*k*4000000000 output.setNumber(1,a)output.setNumber(2,b)output.setNumber(3,k)end", "mode": "safe", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "coefficient-carrier", "source": "k=4000000000 function onTick()local x=input.getNumber(1)local a=x*k*4000000000 local b=x*k*4000000000 output.setNumber(1,a)output.setNumber(2,b)output.setNumber(3,k)end", "mode": "exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "coefficient-carrier", "source": "k=4000000000 function onTick()local x=input.getNumber(1)local a=x*k*4000000000 local b=x*k*4000000000 output.setNumber(1,a)output.setNumber(2,b)output.setNumber(3,k)end", "mode": "safe_exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "approx-table-key", "source": "local t={[1.23456789012345]=7}function onTick()output.setNumber(1,t[property.getNumber(\"x\")])end", "mode": "default", "setup": "property={getNumber=function()return 1.23456789012345 end};output={setNumber=function(_,v)result=v end}", "run": "onTick() return result"}
+{"id": "approx-table-key", "source": "local t={[1.23456789012345]=7}function onTick()output.setNumber(1,t[property.getNumber(\"x\")])end", "mode": "safe", "setup": "property={getNumber=function()return 1.23456789012345 end};output={setNumber=function(_,v)result=v end}", "run": "onTick() return result"}
+{"id": "approx-table-key", "source": "local t={[1.23456789012345]=7}function onTick()output.setNumber(1,t[property.getNumber(\"x\")])end", "mode": "exact", "setup": "property={getNumber=function()return 1.23456789012345 end};output={setNumber=function(_,v)result=v end}", "run": "onTick() return result"}
+{"id": "approx-table-key", "source": "local t={[1.23456789012345]=7}function onTick()output.setNumber(1,t[property.getNumber(\"x\")])end", "mode": "safe_exact", "setup": "property={getNumber=function()return 1.23456789012345 end};output={setNumber=function(_,v)result=v end}", "run": "onTick() return result"}
+{"id": "approx-function-return", "source": "local function f(x)if x>0 then return 1.23456789012345 else return 2 end end function onTick()output.setNumber(1,string.unpack(\"d\",string.pack(\"d\",f(input.getNumber(1)))))end", "mode": "default", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "approx-function-return", "source": "local function f(x)if x>0 then return 1.23456789012345 else return 2 end end function onTick()output.setNumber(1,string.unpack(\"d\",string.pack(\"d\",f(input.getNumber(1)))))end", "mode": "safe", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "approx-function-return", "source": "local function f(x)if x>0 then return 1.23456789012345 else return 2 end end function onTick()output.setNumber(1,string.unpack(\"d\",string.pack(\"d\",f(input.getNumber(1)))))end", "mode": "exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "approx-function-return", "source": "local function f(x)if x>0 then return 1.23456789012345 else return 2 end end function onTick()output.setNumber(1,string.unpack(\"d\",string.pack(\"d\",f(input.getNumber(1)))))end", "mode": "safe_exact", "setup": "input={getNumber=function()return 1.0 end};output={setNumber=function(k,v)results[k]=v end};results={}", "run": "onTick() return results[1],results[2],results[3]"}
+{"id": "approx-table-key-isolated", "source": "local t={[1.23456789012345]=7}return t[1.23456789012345]", "mode": "default", "only": ["numeric-literal-approximation"]}
+{"id": "approx-table-key-isolated", "source": "local t={[1.23456789012345]=7}return t[1.23456789012345]", "mode": "safe", "only": ["numeric-literal-approximation"]}
+{"id": "approx-table-key-isolated", "source": "local t={[1.23456789012345]=7}return t[1.23456789012345]", "mode": "exact", "only": ["numeric-literal-approximation"]}
+{"id": "approx-table-key-isolated", "source": "local t={[1.23456789012345]=7}return t[1.23456789012345]", "mode": "safe_exact", "only": ["numeric-literal-approximation"]}
+{"id": "signed-stale-isolated", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "default", "only": ["signed-expression-factoring", "scope-renaming"]}
+{"id": "signed-stale-isolated", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "safe", "only": ["signed-expression-factoring", "scope-renaming"]}
+{"id": "signed-stale-isolated", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "exact", "only": ["signed-expression-factoring", "scope-renaming"]}
+{"id": "signed-stale-isolated", "source": "local x=1 local a,b,c x=x*12345 a=x*12345 b=x*12345 c=x*12345 return x,a,b,c", "mode": "safe_exact", "only": ["signed-expression-factoring", "scope-renaming"]}
+{"id": "split-effect-isolated", "source": "local n=0 local function f()n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f()return r,n", "mode": "default", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-effect-isolated", "source": "local n=0 local function f()n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f()return r,n", "mode": "safe", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-effect-isolated", "source": "local n=0 local function f()n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f()return r,n", "mode": "exact", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-effect-isolated", "source": "local n=0 local function f()n=n+1 return n end local x=2 local r=math.max(x,0)^2*f()-math.min(x,0)^2*f()return r,n", "mode": "safe_exact", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-capture-isolated", "source": "local p=99 local function f(x)p=math.max(x,0)x=math.min(x,0)x=p+x return x end local x=f(5)return x,p", "mode": "default", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-capture-isolated", "source": "local p=99 local function f(x)p=math.max(x,0)x=math.min(x,0)x=p+x return x end local x=f(5)return x,p", "mode": "safe", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-capture-isolated", "source": "local p=99 local function f(x)p=math.max(x,0)x=math.min(x,0)x=p+x return x end local x=f(5)return x,p", "mode": "exact", "only": ["split-sign-recomposition-elimination"]}
+{"id": "split-capture-isolated", "source": "local p=99 local function f(x)p=math.max(x,0)x=math.min(x,0)x=p+x return x end local x=f(5)return x,p", "mode": "safe_exact", "only": ["split-sign-recomposition-elimination"]}
+{"id": "quotient-isolated", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "default", "only": ["quotient-remainder-fusion"]}
+{"id": "quotient-isolated", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "safe", "only": ["quotient-remainder-fusion"]}
+{"id": "quotient-isolated", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "exact", "only": ["quotient-remainder-fusion"]}
+{"id": "quotient-isolated", "source": "local x=0x8000000000000000 local r=x%10 x=(x-r)/10 return x,r", "mode": "safe_exact", "only": ["quotient-remainder-fusion"]}

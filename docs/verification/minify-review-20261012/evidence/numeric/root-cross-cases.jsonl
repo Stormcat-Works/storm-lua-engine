@@ -1,0 +1,48 @@
+{"id": "R1-bytes", "source": "return \"\\255\", \"\\xFF\", \"\\u{1F600}\"", "mode": "default"}
+{"id": "R1-bytes", "source": "return \"\\255\", \"\\xFF\", \"\\u{1F600}\"", "mode": "safe"}
+{"id": "R1-bytes", "source": "return \"\\255\", \"\\xFF\", \"\\u{1F600}\"", "mode": "exact"}
+{"id": "R1-bytes", "source": "return \"\\255\", \"\\xFF\", \"\\u{1F600}\"", "mode": "safe_exact"}
+{"id": "R1-z", "source": "return \"a\\z\u3000b\"", "mode": "default"}
+{"id": "R1-z", "source": "return \"a\\z\u3000b\"", "mode": "safe"}
+{"id": "R1-z", "source": "return \"a\\z\u3000b\"", "mode": "exact"}
+{"id": "R1-z", "source": "return \"a\\z\u3000b\"", "mode": "safe_exact"}
+{"id": "R2-crlf", "source": "return [[a\r\nb]]", "mode": "default"}
+{"id": "R2-crlf", "source": "return [[a\r\nb]]", "mode": "safe"}
+{"id": "R2-crlf", "source": "return [[a\r\nb]]", "mode": "exact"}
+{"id": "R2-crlf", "source": "return [[a\r\nb]]", "mode": "safe_exact"}
+{"id": "R2-lfcr-opening", "source": "return [[\n\rb]]", "mode": "default"}
+{"id": "R2-lfcr-opening", "source": "return [[\n\rb]]", "mode": "safe"}
+{"id": "R2-lfcr-opening", "source": "return [[\n\rb]]", "mode": "exact"}
+{"id": "R2-lfcr-opening", "source": "return [[\n\rb]]", "mode": "safe_exact"}
+{"id": "R2-escaped-lfcr", "source": "return \"a\\\n\rb\"", "mode": "default"}
+{"id": "R2-escaped-lfcr", "source": "return \"a\\\n\rb\"", "mode": "safe"}
+{"id": "R2-escaped-lfcr", "source": "return \"a\\\n\rb\"", "mode": "exact"}
+{"id": "R2-escaped-lfcr", "source": "return \"a\\\n\rb\"", "mode": "safe_exact"}
+{"id": "R3-comment-cr", "source": "-- comment\rreturn 42", "mode": "default"}
+{"id": "R3-comment-cr", "source": "-- comment\rreturn 42", "mode": "safe"}
+{"id": "R3-comment-cr", "source": "-- comment\rreturn 42", "mode": "exact"}
+{"id": "R3-comment-cr", "source": "-- comment\rreturn 42", "mode": "safe_exact"}
+{"id": "R4-tail-dot", "source": "return 0x1.", "mode": "default"}
+{"id": "R4-tail-dot", "source": "return 0x1.", "mode": "safe"}
+{"id": "R4-tail-dot", "source": "return 0x1.", "mode": "exact"}
+{"id": "R4-tail-dot", "source": "return 0x1.", "mode": "safe_exact"}
+{"id": "R4-integer-wrap", "source": "return 0x10000000000000000", "mode": "default"}
+{"id": "R4-integer-wrap", "source": "return 0x10000000000000000", "mode": "safe"}
+{"id": "R4-integer-wrap", "source": "return 0x10000000000000000", "mode": "exact"}
+{"id": "R4-integer-wrap", "source": "return 0x10000000000000000", "mode": "safe_exact"}
+{"id": "R4-large-exp", "source": "return 0x.8p1024", "mode": "default"}
+{"id": "R4-large-exp", "source": "return 0x.8p1024", "mode": "safe"}
+{"id": "R4-large-exp", "source": "return 0x.8p1024", "mode": "exact"}
+{"id": "R4-large-exp", "source": "return 0x.8p1024", "mode": "safe_exact"}
+{"id": "R4-small-exp", "source": "return 0x2p-1075", "mode": "default"}
+{"id": "R4-small-exp", "source": "return 0x2p-1075", "mode": "safe"}
+{"id": "R4-small-exp", "source": "return 0x2p-1075", "mode": "exact"}
+{"id": "R4-small-exp", "source": "return 0x2p-1075", "mode": "safe_exact"}
+{"id": "R4-round", "source": "return 0x1.0000000000000800001p0", "mode": "default"}
+{"id": "R4-round", "source": "return 0x1.0000000000000800001p0", "mode": "safe"}
+{"id": "R4-round", "source": "return 0x1.0000000000000800001p0", "mode": "exact"}
+{"id": "R4-round", "source": "return 0x1.0000000000000800001p0", "mode": "safe_exact"}
+{"id": "R5-precedence", "source": "return 2/1e999", "mode": "default"}
+{"id": "R5-precedence", "source": "return 2/1e999", "mode": "safe"}
+{"id": "R5-precedence", "source": "return 2/1e999", "mode": "exact"}
+{"id": "R5-precedence", "source": "return 2/1e999", "mode": "safe_exact"}

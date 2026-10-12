@@ -1,0 +1,1868 @@
+{
+  "schemaVersion": 1,
+  "baseRevision": "5a168d63eda82c898af4dcc72f8c2c3f9a178e51",
+  "dirty": true,
+  "sha256": "791f8f43eec3436567b0690642b9ada4eaec7a5c1be455721c06b14b4c58cfb9",
+  "files": [
+    {
+      "path": ".cargo/config.toml",
+      "bytes": 41,
+      "sha256": "783fdc447abb5b8f8b5652157aa9ede64da640813fa89679c29c5251c8e0cbe6"
+    },
+    {
+      "path": ".gitattributes",
+      "bytes": 207,
+      "sha256": "3b787c160e637d539bee5a3baa52e457885e6fba64d7559f9bc8305ca4c008f2"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 4352,
+      "sha256": "b54a705e80b3b753bda08624cb528d20351f2c69dd6da372b3416e9468ab1833"
+    },
+    {
+      "path": ".github/workflows/publish.yml",
+      "bytes": 5671,
+      "sha256": "38d96e8bb5caff5f5a52e78cb2ae5f6b4c4c0ef8115f9c5d35ccf66d0b75e943"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 95,
+      "sha256": "4cb7e4d376bddf94b816af5b787623ac730f6fc4fc4de94873478f72b860d68c"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 3572,
+      "sha256": "d56060f83d51278f5a47ec500a749a1914b0341c08faf6fd48fd71d7295a5674"
+    },
+    {
+      "path": "Cargo.lock",
+      "bytes": 26714,
+      "sha256": "b0b2df95a25dd1036b0df41a29b2727b4c78a6adbb385dc45d8a8d661530e124"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 1850,
+      "sha256": "ae6c8a073bbc42b597b54149343a7fcf9e0c4594f8d2942b4920c4f7877100fb"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1084,
+      "sha256": "b0735f49d26fff2cad2dda534fab65927dea04875ddcf186a09e38b0bb8b44cc"
+    },
+    {
+      "path": "MEMORY.md",
+      "bytes": 436,
+      "sha256": "1a1ba465e67d3980e451a3783062687afcfc115b1069b60743fb2ca0e55ba019"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 3112,
+      "sha256": "426520c037749bcb4343f3aa0fd4a76dd753a01f98e6a3cfdb493c5e65cb7d01"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 2790,
+      "sha256": "7b04276599eab3b1e434b39cb25377b77bdf488762808d9f4d5f13ca94e05f55"
+    },
+    {
+      "path": "about.hbs",
+      "bytes": 590,
+      "sha256": "429d6e039a6ff5b2f80b856d959807d237672b8417a09fd533f714b95660ca75"
+    },
+    {
+      "path": "about.toml",
+      "bytes": 95,
+      "sha256": "f8317badf34bb5d9fb336914a95b0c7efccdb8cdb8193441357ae0ec29faad49"
+    },
+    {
+      "path": "app/.gitignore",
+      "bytes": 89,
+      "sha256": "23ef823e41c8df151285309cdf07337e75b3f1e60f6cc01a8c773e2d6fadabe1"
+    },
+    {
+      "path": "app/.npmrc",
+      "bytes": 19,
+      "sha256": "0ed44e7d606cd7a9eba915a10f13a13a09ea85e4b2bb4415bb0c481dbdcded51"
+    },
+    {
+      "path": "app/AGENTS.md",
+      "bytes": 727,
+      "sha256": "c3f98278a8395cf67b86fc771aa8a7602f521ec46580fc126b2b00609214615a"
+    },
+    {
+      "path": "app/README.md",
+      "bytes": 10814,
+      "sha256": "16a65f203aaec821b41a3c7e82b1a1d858ea73824c7d17ea828754666b786907"
+    },
+    {
+      "path": "app/cli/index.ts",
+      "bytes": 4662,
+      "sha256": "b1a3cb82e709927bad7b6e58a580a7ab5d4e3282f39699eb8b2bc0d66449f59a"
+    },
+    {
+      "path": "app/cli/init.ts",
+      "bytes": 767,
+      "sha256": "0d7d56648700022bd53948f5443825f0ef68123e84a8b794d797e922bd52e9c4"
+    },
+    {
+      "path": "app/package-lock.json",
+      "bytes": 88309,
+      "sha256": "5b5bbfb259e8221212b60e5ba6e79e28be5e35ae9f62ce4d6809928030183422"
+    },
+    {
+      "path": "app/package.json",
+      "bytes": 1079,
+      "sha256": "42a62bc1acf31b4bbc7951f0c911e35a9127efeab27b86a0b1587af36904163b"
+    },
+    {
+      "path": "app/scripts/build-site.mjs",
+      "bytes": 1583,
+      "sha256": "c69595c4e243785a923d9acfcd6e3b09737c1cc9cd55351e334ae771af2649d7"
+    },
+    {
+      "path": "app/scripts/cloudflare-build.sh",
+      "bytes": 1948,
+      "sha256": "1a84a46870e9dd6e5bc918c435ded0009f61ebd1ca541fa7f38377004c9982b8"
+    },
+    {
+      "path": "app/scripts/prepare-sdk.mjs",
+      "bytes": 1472,
+      "sha256": "7fa78ee4f0d65d06e64ec9eed5da066cdf27a157ca85e07d126e29bb1b8983de"
+    },
+    {
+      "path": "app/scripts/source-map-browser.mjs",
+      "bytes": 18229,
+      "sha256": "938080f9eeb85f5bc3a4ee2ab4bbae34cf7473bd578b880fc9a148dc06ba62ea"
+    },
+    {
+      "path": "app/scripts/test-browser.mjs",
+      "bytes": 10328,
+      "sha256": "cd7e96be057e0c3e4ab3488e6f139594086f1d6dba7c5d8b4f0a76e72caad3c6"
+    },
+    {
+      "path": "app/shared/mapped-execution.ts",
+      "bytes": 5808,
+      "sha256": "6b01306aab6f17e820673ecbd42a9e1ab1139bb4639fd0ea60733e5c38905140"
+    },
+    {
+      "path": "app/shared/project.ts",
+      "bytes": 4378,
+      "sha256": "b022fe0ec816b082cd60593dd76043ee1564d2c1021f93df9a1e9c00d50f7b38"
+    },
+    {
+      "path": "app/shared/recipes.ts",
+      "bytes": 17388,
+      "sha256": "4c463271249d1adcb7aed63f4e966dc8061637b8a3437670d83bb76fb99d01ab"
+    },
+    {
+      "path": "app/shared/session.ts",
+      "bytes": 18029,
+      "sha256": "92d8f9824a38749987085ebd09343d54608db6a1e7b6892d899af8f7622d34c1"
+    },
+    {
+      "path": "app/shared/source-map.ts",
+      "bytes": 9635,
+      "sha256": "b648e1387342536f9d5a50547abca30d6b8053093f76f62a21e20f273d14265b"
+    },
+    {
+      "path": "app/shared/wire.ts",
+      "bytes": 2677,
+      "sha256": "d246c64c68bbad0557194941b6c217995f88b17830b53dae5435f88ab74a8f3e"
+    },
+    {
+      "path": "app/shared/workspace.ts",
+      "bytes": 4554,
+      "sha256": "51996c56c8f785dd7ce8b52fbc0b639d9931fa7078019b57113eba601ab6e60f"
+    },
+    {
+      "path": "app/tests/cli.test.ts",
+      "bytes": 1391,
+      "sha256": "f5d6f85cea3ae1c418d667b6ec8923421a2c2939e2390d45a35888511da74430"
+    },
+    {
+      "path": "app/tests/delivery.test.ts",
+      "bytes": 1855,
+      "sha256": "ce550833446b94e3dbcc8cd24fc7a352d8a6f37da54c66f315aaa70370068388"
+    },
+    {
+      "path": "app/tests/recipes.test.ts",
+      "bytes": 4529,
+      "sha256": "70f6631357b0eb0695a27674729570fd59a1e457fe797e23fcc73ea91bd3bd5b"
+    },
+    {
+      "path": "app/tests/source-map.test.ts",
+      "bytes": 13033,
+      "sha256": "6f5ecd6937d10b11dff798ba7454aced5593895486566f8b312671da52bf25f3"
+    },
+    {
+      "path": "app/tests/workspace.test.ts",
+      "bytes": 3825,
+      "sha256": "2c6f8117310126c6f477ad1c632acaae36baa352cdd15c400e73df27b4c95d74"
+    },
+    {
+      "path": "app/tsconfig.json",
+      "bytes": 469,
+      "sha256": "8c0c6dde69e4e451c2c7e2226e0517126d6df25dc9d21fe0f5b1aed0185addd2"
+    },
+    {
+      "path": "app/vite.config.ts",
+      "bytes": 372,
+      "sha256": "5ce5cb11b0f9d95aa1f06e951c9d8a7c5c1840c6391a5d11930bb4e9ccab2be5"
+    },
+    {
+      "path": "app/web/compiler.worker.ts",
+      "bytes": 589,
+      "sha256": "d072454b14f6af1646029e62847ab4c7496453a5ccbfadfd1bc521e2c987e919"
+    },
+    {
+      "path": "app/web/index.html",
+      "bytes": 10968,
+      "sha256": "01d397ac29624f1b5129d4b77e086ab327384334fad229ae02d5cf45e20f3eee"
+    },
+    {
+      "path": "app/web/main.ts",
+      "bytes": 24446,
+      "sha256": "92c341008da99ef0d75e75718a3e7553b5f08cbe303a74ecfab188486329b79f"
+    },
+    {
+      "path": "app/web/map-panel.ts",
+      "bytes": 19757,
+      "sha256": "19be83bea6c8380dc34d06cbebfda8f9a813d9d32079eec2e625a46d0a6e9142"
+    },
+    {
+      "path": "app/web/map-selection.ts",
+      "bytes": 2057,
+      "sha256": "36d2548e0ad4b036f01e6f6bc9cab3c2a843f2e825f9b3849274ada8691c1d57"
+    },
+    {
+      "path": "app/web/runtime.worker.ts",
+      "bytes": 1002,
+      "sha256": "02fe12f042190c1cbfe715fa8a0d8a44bf073cb486c638c7fb61701a2f9d8583"
+    },
+    {
+      "path": "app/web/storage.ts",
+      "bytes": 1664,
+      "sha256": "8dacc4588b000de478ad354992a3dd4bb46fa327659f69875fef3585deaa4512"
+    },
+    {
+      "path": "app/web/style.css",
+      "bytes": 15317,
+      "sha256": "8922fec58247520cfc1ce3c0e70178d988c6afed1f91377c806a1f39d53be0db"
+    },
+    {
+      "path": "app/worker.ts",
+      "bytes": 1330,
+      "sha256": "dad3ac6fcdd27e3a0ce41d134245af2442a549d0b5dd1a0ba671391494994eb1"
+    },
+    {
+      "path": "app/wrangler.jsonc",
+      "bytes": 754,
+      "sha256": "128cda70ddb08c24d7ae789a027da24e5649fea2fa4658dd5b72dc059f7b75e9"
+    },
+    {
+      "path": "conformance/Cargo.toml",
+      "bytes": 729,
+      "sha256": "bc7cdd609b039d80098a25a4f8e6f53128052675367eac167856a11fec8b9486"
+    },
+    {
+      "path": "conformance/examples/addon_host.rs",
+      "bytes": 3190,
+      "sha256": "c1a24202fe4462589bce669ca09094c328a916e69e584a25665ac6cba98a32fb"
+    },
+    {
+      "path": "conformance/examples/benchmark.rs",
+      "bytes": 2414,
+      "sha256": "3a61f3d5f08067aa289307e7c35bd3a5646bffbdbb755592c9116b98465ccdad"
+    },
+    {
+      "path": "conformance/examples/compiler.rs",
+      "bytes": 2209,
+      "sha256": "e28b940e911b38e977d2bb0ac8f494e211ec137ca828b8ea0d9bf8256a921c0e"
+    },
+    {
+      "path": "conformance/examples/differential.rs",
+      "bytes": 1652,
+      "sha256": "f0620b65487e6e74f75b8f9ccb9995a7de29a87c988edeb695ae9c4129ff7a79"
+    },
+    {
+      "path": "conformance/examples/lua_backend.rs",
+      "bytes": 1664,
+      "sha256": "ba903129019f1c2b9cf847cfef0fdf324a9c4ab4a37a7474da9676581819daaf"
+    },
+    {
+      "path": "conformance/examples/microcontroller.rs",
+      "bytes": 1246,
+      "sha256": "ad523e0abb30a4ebaf649e53012fcbdacd69b9e7bd7cefc22791fdc366a5a391"
+    },
+    {
+      "path": "conformance/examples/minify_origins.rs",
+      "bytes": 4634,
+      "sha256": "3a8e5d297fd64a9c46cc8b8716ad40288b8cde83030913add010715a83362b5f"
+    },
+    {
+      "path": "conformance/src/lib.rs",
+      "bytes": 110,
+      "sha256": "d3ae3bca8aad4b64ac266948fb82dc6d0581ccec02530f4285bc1da03eba29eb"
+    },
+    {
+      "path": "conformance/tests/addon.rs",
+      "bytes": 8244,
+      "sha256": "c1c85c245bef5b105726b9937ed7164b9734b98bc28f2d54e370ecde7786c4e2"
+    },
+    {
+      "path": "conformance/tests/catalog.rs",
+      "bytes": 2321,
+      "sha256": "17a94606ce47a309e8a20e40d0cce8649093449ad9bf1e86f00f34655bc43025"
+    },
+    {
+      "path": "conformance/tests/command_wire.rs",
+      "bytes": 1170,
+      "sha256": "a63579ffc93c94eb3e657c1388c3dee2bfb7748bf91ec6d29bc8f8da82696cb5"
+    },
+    {
+      "path": "conformance/tests/compiler.rs",
+      "bytes": 14770,
+      "sha256": "7dfabf3858ac66cd8374ab71d71989a28153f20f66839a274149b8d4f84895fe"
+    },
+    {
+      "path": "conformance/tests/debugger.rs",
+      "bytes": 6587,
+      "sha256": "17a108bb1a7888146b9037ec13e0687733ca4905f1f4b1ce73b0612004d6b06e"
+    },
+    {
+      "path": "conformance/tests/environments.rs",
+      "bytes": 13877,
+      "sha256": "e14347fefae9597a3e9edb02d1362137067ff859cac90b25733c12e9963afd21"
+    },
+    {
+      "path": "conformance/tests/foundation.rs",
+      "bytes": 5010,
+      "sha256": "450b0b7ab79811a1a3ba5999189ac875f3bbe95600934b70bd3b603e5255af05"
+    },
+    {
+      "path": "conformance/tests/http.rs",
+      "bytes": 3480,
+      "sha256": "d16a2fad79f32377c471c78081692e111eb8d484bcc16f699be5194b30fa8413"
+    },
+    {
+      "path": "conformance/tests/lifeboat_build.rs",
+      "bytes": 4502,
+      "sha256": "31499719a7df14764a6b3894a27f4755948ef51a549e2964551f9a98df5a35cb"
+    },
+    {
+      "path": "conformance/tests/log_locations.rs",
+      "bytes": 4335,
+      "sha256": "0d449479e2cadc790dfad90491b22ab94b00e3b6ddaa989b1efe2fafa938c76c"
+    },
+    {
+      "path": "conformance/tests/map_host.rs",
+      "bytes": 3403,
+      "sha256": "cb187bedb880b53f3c4887fa970d75e917b80558568f34b5b7baaf02a638cf56"
+    },
+    {
+      "path": "conformance/tests/raster.rs",
+      "bytes": 4870,
+      "sha256": "5caaced5e2ace0c152d675a576ce55ea4f6aed0c1b0091cf7018cbdb59a24070"
+    },
+    {
+      "path": "conformance/tests/runtime.rs",
+      "bytes": 6953,
+      "sha256": "92ed96051bc0d7a277007583f4ebf34a6ebce243dd95d7b3eea1c84a1518ad3d"
+    },
+    {
+      "path": "conformance/tests/source_maps.rs",
+      "bytes": 5110,
+      "sha256": "7e974b91edaf164d29b67c258d1ec7c72e79765e8de7a115ed29b5ddaaa66c7d"
+    },
+    {
+      "path": "conformance/tests/sources.rs",
+      "bytes": 14456,
+      "sha256": "132df8c5cabdec5c980e1c6ae3fa44ad2f63e90c493d31379d6821c8169283dc"
+    },
+    {
+      "path": "conformance/tests/support/assertions.rs",
+      "bytes": 400,
+      "sha256": "c5f2f26c669a56961614339382ff546272575001f8bfdad168fab5f5fbb21b53"
+    },
+    {
+      "path": "conformance/tests/support/mod.rs",
+      "bytes": 4200,
+      "sha256": "d6ceb3344b4202a56795ade29b0fd4b840858b21b525b5f62a39a7f525ab0e05"
+    },
+    {
+      "path": "conformance/tests/vehicle_controls.rs",
+      "bytes": 7312,
+      "sha256": "2a8929dba2964074cf5013426b0246b3b3e3b0008dffe97e2296c6c5e7682545"
+    },
+    {
+      "path": "crates/storm-lua-addon/Cargo.toml",
+      "bytes": 457,
+      "sha256": "7bfd61f4b129d0edb9b2796d9227e64abe449835db7a766a8831d50f13489f2f"
+    },
+    {
+      "path": "crates/storm-lua-addon/src/bindings.rs",
+      "bytes": 3681,
+      "sha256": "7cbfa6e6ad32cf35d6328fd33bf84ab199ec2551d13606939f6f0dd85ee0e60e"
+    },
+    {
+      "path": "crates/storm-lua-addon/src/debugger.rs",
+      "bytes": 2035,
+      "sha256": "d2dffa28bd2be628af678cff50993fcbe8242b1770d6fe2d53f7e992b50746e0"
+    },
+    {
+      "path": "crates/storm-lua-addon/src/lib.rs",
+      "bytes": 15411,
+      "sha256": "25ec6ca2822b72cecde7d93fb75d73f00f4480d9520f81290facb06253d72fba"
+    },
+    {
+      "path": "crates/storm-lua-addon/src/matrix.rs",
+      "bytes": 5269,
+      "sha256": "405d14fcb7ac40180c49ba6ec4070192943c17d0adfa640222cd2d0d5bc73ea8"
+    },
+    {
+      "path": "crates/storm-lua-addon/src/tests.rs",
+      "bytes": 7109,
+      "sha256": "4667d29a6626e9c36a9ddd9f162f4fe793add87f3e528f4a6bac62ae40495964"
+    },
+    {
+      "path": "crates/storm-lua-analysis/Cargo.toml",
+      "bytes": 457,
+      "sha256": "9a29208fe4cb16bbd3a2737797ba37721be4d93c0cea41cb2b916b586262a799"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/ambient_scan.rs",
+      "bytes": 13486,
+      "sha256": "50dddb56d5998afdf50122afd6e892a3aaa68dc401ad466b645956f53c335821"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/analyze.rs",
+      "bytes": 9994,
+      "sha256": "6fc69a620ff9159f1a77dbd81606aff5e1a8bcfe9e4d1ada8124fc76ec4a9a94"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/diagnostic.rs",
+      "bytes": 11220,
+      "sha256": "b93c51203530344bb1750768858cbe0a427d019d1c789e67eacd3ac3ac17dc45"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/effects.rs",
+      "bytes": 65340,
+      "sha256": "b6cde5bf6b24b8d14d6c09d8e89306f2b83b9ea6380e0cefa3516a510c350dee"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/environment_checks.rs",
+      "bytes": 7058,
+      "sha256": "88156685d81d45db6f7bed98500d398d9ef6206a15f8467db92fbbc757a39fbe"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/lib.rs",
+      "bytes": 1211,
+      "sha256": "abb2feba58d79842a252dfef4a20c637edd798e11c3da00939dfd9a4a5416aa0"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/lint.rs",
+      "bytes": 19953,
+      "sha256": "36df38d14cc10a6a42c3ab8111d3fab9ea1b62863069a261a964b9d38fd07980"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/project.rs",
+      "bytes": 15687,
+      "sha256": "d27499b094d1e349b9893557e122be79955ba0390b4ad880b00af8de3d5ec0db"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/property_scan.rs",
+      "bytes": 15903,
+      "sha256": "b32d3ea1c7f640c5452aa749046f5e8d67f9e17141f8004c789162974ccdb38b"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/require_scan.rs",
+      "bytes": 16958,
+      "sha256": "8454f774241f55c25605b8dca0a38bba9ad1ae0dd9a9f082bba137351039e1b1"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/resolve_dump.rs",
+      "bytes": 15490,
+      "sha256": "4bdefc39295516c6795167788ee279c9cb4ee52d205e9372c38f35ed74ef9048"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/resolver.rs",
+      "bytes": 16587,
+      "sha256": "50282dd90f505152b072ccbf8652064e10365c25c9f94420f95d069b68c28f79"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/structure.rs",
+      "bytes": 8047,
+      "sha256": "646ec4f8a2837aba36a99d003ecfae8fc52caee01463f9b97acba4274cef11d3"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/sw_restrict.rs",
+      "bytes": 24268,
+      "sha256": "21207149a94f8d536968685063671d0b6008b3b2bfea6752488e52f68482c77f"
+    },
+    {
+      "path": "crates/storm-lua-bridge/Cargo.toml",
+      "bytes": 318,
+      "sha256": "21abecf05f0f192833343e923c441c34cd2b3f759a187342295e071df105c596"
+    },
+    {
+      "path": "crates/storm-lua-bridge/src/lib.rs",
+      "bytes": 12569,
+      "sha256": "1975019791b5a6f0709a79aa11f6546ca9e25cc48a5af629eb46d0491495deb2"
+    },
+    {
+      "path": "crates/storm-lua-bridge/tests/ownership.rs",
+      "bytes": 1444,
+      "sha256": "32f0c7c87c4a49b34117c1d81c669093247f04ebc1c8f2fc09b86e07a3fc49a2"
+    },
+    {
+      "path": "crates/storm-lua-build/Cargo.toml",
+      "bytes": 534,
+      "sha256": "e52d096a837fb6fdef68ef731d74c20c6573bc6a9a4cf34d3b3b7736dcd57ef8"
+    },
+    {
+      "path": "crates/storm-lua-build/build.rs",
+      "bytes": 2571,
+      "sha256": "f40904fd43f79e73a69e25a4583e2554c797eb8b1f51e30b7f5da95a940875a2"
+    },
+    {
+      "path": "crates/storm-lua-build/src/addon.rs",
+      "bytes": 8266,
+      "sha256": "2a39a13869e36acb0d34ba6ce29a0f263fcd15d504f6148f2e01d68199cfa462"
+    },
+    {
+      "path": "crates/storm-lua-build/src/analysis_tests.rs",
+      "bytes": 13539,
+      "sha256": "26cc4d836bb49470e2d93a7202910932084350ae9b7dff19eecf3e58e4fa44f6"
+    },
+    {
+      "path": "crates/storm-lua-build/src/canonical_map.rs",
+      "bytes": 23074,
+      "sha256": "9259b6afedee8346c01277aab2ac1408559c8e2e30241458825366c601cd4acc"
+    },
+    {
+      "path": "crates/storm-lua-build/src/lib.rs",
+      "bytes": 738,
+      "sha256": "f9949bcfe356a1ea756a2a1fcc9b10dc7494ea69d0d8c431e115051a0931ad51"
+    },
+    {
+      "path": "crates/storm-lua-build/src/lifeboat.rs",
+      "bytes": 17994,
+      "sha256": "7965dae81ea528aef2f57da689855cd0174053b481bf1d8c44da6db9de38db32"
+    },
+    {
+      "path": "crates/storm-lua-build/src/lifeboat_ambient.rs",
+      "bytes": 3903,
+      "sha256": "780195a724d6da8bba9a9e6fc03fb03b74b376995376d76ae344dee4794a1951"
+    },
+    {
+      "path": "crates/storm-lua-build/src/link.rs",
+      "bytes": 43007,
+      "sha256": "7ded8a9b45bb7717078a7650056c98865e66057cac48e9b0b8faf9f4a9c3625d"
+    },
+    {
+      "path": "crates/storm-lua-build/src/lua_pattern.rs",
+      "bytes": 11619,
+      "sha256": "59c34f26130c27d2f8652d93eae839809d98162c1914c4b1aaf53b0cabd7365d"
+    },
+    {
+      "path": "crates/storm-lua-build/src/map_composition.rs",
+      "bytes": 10288,
+      "sha256": "92ae4315ae4a8a922d95f6713579fac81c15431039f1fe0242031f8bf0c237a0"
+    },
+    {
+      "path": "crates/storm-lua-build/src/map_settings.rs",
+      "bytes": 6135,
+      "sha256": "57d1f008f9b9f7f0c1dc6e64fa847d0d4ff7ee8dc4af4520d89b6e3d3c96b42b"
+    },
+    {
+      "path": "crates/storm-lua-build/src/metadata.rs",
+      "bytes": 4226,
+      "sha256": "8c12d2bb809cfc754d2144a78b9824a4d605b9b14e5df6ebb03ddd1b51be49a6"
+    },
+    {
+      "path": "crates/storm-lua-build/src/metadata_map_tests.rs",
+      "bytes": 9716,
+      "sha256": "87a6a90ace77cf5436457d284841f9d3eeead95e8d72683ccb143c5d9ee58400"
+    },
+    {
+      "path": "crates/storm-lua-build/src/optimized_map_tests.rs",
+      "bytes": 26567,
+      "sha256": "45e0d5c0d3f45f06416c497abb194c63eeb208b93dbdfbf5ca1c3592f3d34bf7"
+    },
+    {
+      "path": "crates/storm-lua-build/src/optimized_source_map.rs",
+      "bytes": 53711,
+      "sha256": "57042388baebdebb194a08859bc4d2712d52ea3a2e28dd8676a71b3513ee9608"
+    },
+    {
+      "path": "crates/storm-lua-build/src/public_api.rs",
+      "bytes": 80435,
+      "sha256": "501935c67b0843387d88cf3b2490d3fae67a65faad8947b38b8ce7d54115495f"
+    },
+    {
+      "path": "crates/storm-lua-build/src/source_map.rs",
+      "bytes": 19634,
+      "sha256": "306b5afed8d7f7962e2851689ad8a7d7f266a18bf50b996d3cf7a63a9eed1de7"
+    },
+    {
+      "path": "crates/storm-lua-compiler-wasm/Cargo.toml",
+      "bytes": 576,
+      "sha256": "2e89ef264b00e8675cf0820bbbf123c6755bd75705e705411792a1a82143b18b"
+    },
+    {
+      "path": "crates/storm-lua-compiler-wasm/src/lib.rs",
+      "bytes": 14514,
+      "sha256": "a4f150f47b5d96aa98572c048b6762778051e042a5f6ce4f58ed0021ff18cb3a"
+    },
+    {
+      "path": "crates/storm-lua-microcontroller/Cargo.toml",
+      "bytes": 425,
+      "sha256": "496bf2c954d850f9f16aa6031746475d92979ef55013090be684f1b78e685395"
+    },
+    {
+      "path": "crates/storm-lua-microcontroller/src/bindings.rs",
+      "bytes": 10783,
+      "sha256": "ce82464bc686f1282485a8dc1768f943bbfa89d4a3474f8aa3361565f0935f04"
+    },
+    {
+      "path": "crates/storm-lua-microcontroller/src/controls.rs",
+      "bytes": 6411,
+      "sha256": "70aaec501b750f7b8ec933be24b469a5aa9023109a75ff692663c2039e525382"
+    },
+    {
+      "path": "crates/storm-lua-microcontroller/src/debugger.rs",
+      "bytes": 2073,
+      "sha256": "523a4f46e34fcb01ed0b44454faf97e9b5e922e7d9653247098483c90a074337"
+    },
+    {
+      "path": "crates/storm-lua-microcontroller/src/lib.rs",
+      "bytes": 14879,
+      "sha256": "4d4fd37859fbd723728cef987345ec1a65c44b6821954937b1f5aa3405605272"
+    },
+    {
+      "path": "crates/storm-lua-minify/Cargo.toml",
+      "bytes": 551,
+      "sha256": "4b1460072da0e270a9aeff4da2819845437672b3c6e04a3496354b4c8dc1ce9d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/config.rs",
+      "bytes": 8183,
+      "sha256": "377968fddebc6119daf4feadd961a298f8e67917719ac1fdc336e485035150af"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/lib.rs",
+      "bytes": 803,
+      "sha256": "df8e5d3794c9bc5f7d08dd02277131ffd2110bed5f0c48e56bd8d8558718acf5"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/orchestration.rs",
+      "bytes": 15881,
+      "sha256": "57f12f9420c297764be24bdaaedbb0bb21f1be8cff386ef3baaf8ccc6e0ccac8"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/pass.rs",
+      "bytes": 8179,
+      "sha256": "c40cb595aa1932beb3361e3c5e111d3cb70261baacd2005c20469f3a78f40d9f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/pass_ids.rs",
+      "bytes": 11846,
+      "sha256": "c0dc0eacccbfea0365ed459c17fc5ac45790cd1a92eb33ccdc311a4ef4b521c7"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/adjacent_locals.rs",
+      "bytes": 5473,
+      "sha256": "5f254413986d1ef359b221eecc78dee4c8adfdf34c516e193b1880180b65625d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/api_aliases.rs",
+      "bytes": 22426,
+      "sha256": "9eb1828f168daa58ce37c10b56385a0a89d44383a7ad03f9c05ed810ae99cf92"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/available_expressions.rs",
+      "bytes": 17714,
+      "sha256": "63a5d6478e15cf27fb4fb6064812e18b48b26358c90bd03a8774f369fe474f73"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/binding_rescaling.rs",
+      "bytes": 16607,
+      "sha256": "efbbab019c5b33862a60f1c0b5041a6a9a6444eaece3e70ccfd4d3f843ae62a0"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/boolean_numerics.rs",
+      "bytes": 15685,
+      "sha256": "c6957b14cab23eaf28467fc8992465eb828c7384e7c02d54878a1e162d469880"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/callback_slots.rs",
+      "bytes": 15558,
+      "sha256": "31498a5f709b2653a6ebe8e7863aef3d2bf8e7c764c7649f6645636e0910d205"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/captured_use.rs",
+      "bytes": 10638,
+      "sha256": "1d4b6277517aa41761e3213a2780b1e53388090743363ff6480b0c58f2cf7f4a"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/closed_fields.rs",
+      "bytes": 29245,
+      "sha256": "9a848af6da2cfb9cdc9666f7f250280567cd7e5dad059ec819c3536b7c96be96"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/coefficient_carriers.rs",
+      "bytes": 17122,
+      "sha256": "c0fa694b04b50a4ccd0055854579210a52b40063763b07d4f3c595a81c0a1d31"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/color_unpack.rs",
+      "bytes": 14969,
+      "sha256": "0908f790ed02a21c48ab5ae970709793f65829da642d58d7531021f9a5e4eb79"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/common_offsets.rs",
+      "bytes": 19180,
+      "sha256": "359cb90b8a0010b66ef1371b172e1bb6292760ca22fa5e331a00594889d9c3f2"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/conditionals.rs",
+      "bytes": 27629,
+      "sha256": "c7b52e2030e61b5b9b5f8e192a6ceac74cb7a06fb7f01e4393113673ca5ceda3"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/decode_chains.rs",
+      "bytes": 11139,
+      "sha256": "ffbf3b6cf43ef7ff71a314331575c582bdd7bb77e0091ddb34af0fd647a28833"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/default_hoisting.rs",
+      "bytes": 8709,
+      "sha256": "d96cf144b537cfab99bba48a7383f7e44d1c5ae3140833c2a1b28ba22c11b160"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/destructive_results.rs",
+      "bytes": 15740,
+      "sha256": "0c3b34711c013a966f149572dc676b9e13ed33e16a314f94d8424f1c6d854dc9"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records.rs",
+      "bytes": 53355,
+      "sha256": "d68cd92316790ba75c78dde116d67f4e011503536a4931c35a69bab5c82875dd"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/dictionary.rs",
+      "bytes": 8082,
+      "sha256": "e21fd8642ff2c1ce713b8dca684b7c8eab66a4daef7879ea68de77334142d43a"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/encoding.rs",
+      "bytes": 13943,
+      "sha256": "e4641b541683d69d4635430a607df9455942b4a7850b3520e04a682a38f0864f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/grouped.rs",
+      "bytes": 5342,
+      "sha256": "0e6c36d3d43e0b6081cba2c4915ff6fdfd81a1b0c68e96a0f8497e86fedb9aa0"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/palette.rs",
+      "bytes": 2507,
+      "sha256": "51b19a89d791e51f1ae29c07449e847e684e1c6566cacd603cd2c7dbeb70b733"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/predictors.rs",
+      "bytes": 12743,
+      "sha256": "be0618afa0cf980657e1bd36000d4199cf416232350373cbef1225ef3f1ffae0"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/prefix.rs",
+      "bytes": 3703,
+      "sha256": "9f3d94ad080f07c6658d66fe8d253250e1ff33ccc778b3451c44877a33a1928a"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/provenance.rs",
+      "bytes": 16605,
+      "sha256": "c64c0584466aae00c438b0c7700439a6aef8d4a1c8d4fad3586650d4442719fd"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/regular.rs",
+      "bytes": 10158,
+      "sha256": "48cfacd8906c05af46c0aee31e0ab5c9c136b0a7be92ebeadf0d3678c17e4f5a"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/rice.rs",
+      "bytes": 10225,
+      "sha256": "b73a4c3fb8f5c57fd0a32f85e21c0ba58afb365a7442bbaa0eea67025ee9de8d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/round3_tests.rs",
+      "bytes": 14777,
+      "sha256": "b5ca0b333e9a5cee13f10575c8e3db973772dfa21c257d88fd1979924ae9b445"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/shared.rs",
+      "bytes": 15155,
+      "sha256": "e1d117428ebfec1ff2c8013ee6a3b72d64951ad79c010d06e538106518ac8d8d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records/translated.rs",
+      "bytes": 3988,
+      "sha256": "654289541bc05c1df21eb7d8c6a181865f12673551c4c4893b270ded3746437f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_sequences.rs",
+      "bytes": 10457,
+      "sha256": "4198a6695740da749df5780559c32c9d3c5ed5fddbe28c61a560f9ec3cab567d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/final_stores.rs",
+      "bytes": 15894,
+      "sha256": "9184c17aace4722c860db8a38ec42ea99abc7cae64d703fc5c60c60e1dd68346"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/function_globalization.rs",
+      "bytes": 20430,
+      "sha256": "92dcbe480b82f0df0144699dfa1913a775b52ebebdfd2b2aa5ef2233335da1c3"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/global_stores.rs",
+      "bytes": 26903,
+      "sha256": "dfc888d2f6c8962515f73e5e91234436b1983fe1cd35d780bc3254700799dac2"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/immutable_synthesis.rs",
+      "bytes": 11239,
+      "sha256": "c20646fd9156efa580c742d73182865bd1d75d0f3b9a22277ea1f297f5b7cda4"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/immutable_values.rs",
+      "bytes": 18922,
+      "sha256": "8028e98a11e118ae98c79baffa814d2ebd4d61ec9db797556c460a9134ad22ef"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/induction_values.rs",
+      "bytes": 7770,
+      "sha256": "8ac289c813d0e824b906bdf0f1ab51a740378876ec0cf3b96026925922d3d237"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/inline_functions.rs",
+      "bytes": 59632,
+      "sha256": "5c237aed04ea0b16eee650c4586b623cdb8020c0d2e7eea69a7e13f8b13dd491"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/interval_shifting.rs",
+      "bytes": 12864,
+      "sha256": "ba70a9bfa57817f11f041645f4b5f7939b0d54a97e5e166fc5b654fd47a316ee"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/literal_folding.rs",
+      "bytes": 55211,
+      "sha256": "1e7de7a9a0df0dff4c5baa054b7b43d435c9bd4192d4ab7b1bdf1f5981ea91af"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/literal_pool.rs",
+      "bytes": 7890,
+      "sha256": "d0f667a7e2987b8578fdc0ae5b24b561250886291c96fd1b038acce35c4950a5"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/literal_pool/expressions.rs",
+      "bytes": 10068,
+      "sha256": "e28cf51c053d737decf9b37af4310ea28aa204fa3b5bc5771f577f4de6df71a0"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/locals.rs",
+      "bytes": 34401,
+      "sha256": "cfe07cd0f53c3351d6404d1f12c1aaf50855d156843adc628b7bde80e776b68d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/mod.rs",
+      "bytes": 1507,
+      "sha256": "418007ec06aad6dd3a3860ccfac8c334c8ee7991d762fa66c6d99baa5c6ab623"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/multiplicative_carriers.rs",
+      "bytes": 12403,
+      "sha256": "456b14c0dffe4172ef1769c9c7addcabbd0198e4ecce9d1e641295dd0d9ba8b7"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/namespace_functions.rs",
+      "bytes": 23717,
+      "sha256": "9fd548678215fa392da5c4f3fa0f5d6768ed9b3e2c020cad74634eaf377eb0d1"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/numeric_literals.rs",
+      "bytes": 19764,
+      "sha256": "a4e08e0a806cef21dbb4e1aedb04eeb2af06850f09c4308cf7e4f9608c69df32"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/omit_arguments.rs",
+      "bytes": 12986,
+      "sha256": "d8ae7b6683dc889e33662528937be4f0265de50b1957830d4da69b2ae900c5d4"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/origins.rs",
+      "bytes": 1839,
+      "sha256": "35c0a1aad26797b76b77223d34c026eef2ae3c8ff51b2adec20c57f607f8cf1d"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/output_loops.rs",
+      "bytes": 12220,
+      "sha256": "1e73d747d8f19e27f5d97528072ffad4ecd1e4126de58269c2f0d565a3968861"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/parentheses.rs",
+      "bytes": 6351,
+      "sha256": "76c64521c9d24d0a2b6328221fdcb028253e7f49d7161709f372f54dc3756e25"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/property_reads.rs",
+      "bytes": 5635,
+      "sha256": "9ed0f8411d4a9c6a4cabb10897247b36272deba0f96f6bea3bd8bb001c7317bf"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/quotient_remainder.rs",
+      "bytes": 8106,
+      "sha256": "92af92ef827f2f8ecda138293ade25c036a1b419189917cb5d1775d97fa9b5f0"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/radix_helpers.rs",
+      "bytes": 25048,
+      "sha256": "c22b8d812cf855a219732e7f53e1512a311152d78b5c2e6175763f179c4b229e"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/root_globals.rs",
+      "bytes": 6328,
+      "sha256": "2bf0f4d4cc64398f433929f128797423f72b749cb514686b7697d899033dacbb"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/scratch_coalescing.rs",
+      "bytes": 18841,
+      "sha256": "8361f8e80645c5371526b5a7b4845f4b2d241a2e7c0c1e971142ee573992103f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_buttons.rs",
+      "bytes": 20055,
+      "sha256": "418929828f7d6ded64ba12634356ba520345be9f630731c2e6b7110336c6223e"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_call_factoring.rs",
+      "bytes": 14356,
+      "sha256": "3d6907455ed543360df103600b5fbae46e8d92c8cac818b51bab3d69d466b3d8"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_loops.rs",
+      "bytes": 39410,
+      "sha256": "e6a93f67727b64c70b50da236971f5f372fe3f7cfc644b5daf80b8f9729233c6"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/signed_factoring.rs",
+      "bytes": 25614,
+      "sha256": "422c3536a3ec6813167a77ba89fc8905e38560d11043cdb01d7a280f783ef87a"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/single_use_forwarding.rs",
+      "bytes": 22726,
+      "sha256": "5c40a22c5dc814fe14c02abe7dc89ad3c403be8a63e740b295b77c3e6fc2e0c3"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/sparse_boolean.rs",
+      "bytes": 40735,
+      "sha256": "05904bf7a614977d5f351b2824e7c79c4affe1881f5ab6d8b297376cd1f33738"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/split_sign.rs",
+      "bytes": 14775,
+      "sha256": "c0049644ce9ba800fcfd4c5b0a520dbe6abe7e224206c8e8432af16dbe2035c8"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/tables.rs",
+      "bytes": 62657,
+      "sha256": "86ea9e0c63b4058ecb6b36e477a9961298fbed7bb6fc14ce06940de1c00f31de"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/temporary_globals.rs",
+      "bytes": 18105,
+      "sha256": "d2584cdedc9bf190cfc09c46a8892e8068936047397a07ac87c968c2ecbd1383"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/uniform_tables.rs",
+      "bytes": 20222,
+      "sha256": "67d9f13d9a07b363b42d49eae7da4692c9b30019df55fbdd0bec1647afb19c44"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/wrapper_functions.rs",
+      "bytes": 23994,
+      "sha256": "f25df23f6543e3825f4873f538c5dd5d9ecd47c42465d956f7d00d3498f403c7"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_audit_support.rs",
+      "bytes": 1541,
+      "sha256": "7529163797fbb8999601c475e16faf46b39354f3beaffbe2519e4ed99dc6d33e"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_branch_tests.rs",
+      "bytes": 13957,
+      "sha256": "d86d80556c84c35cca61942c77777238bc65e6aea78c495c4d6ca20e25fc7a70"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_complete_tests.rs",
+      "bytes": 17530,
+      "sha256": "c72177265e74eaa66ecd2e166ecc410b5c909bee8982b91edc88745ff49b6cc5"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_pass_matrix.rs",
+      "bytes": 28114,
+      "sha256": "1b9ec38f0906acb04bb1ecbf0e6d27f2e81835aaa7b0eb74d278133f586c7d90"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_table_function_tests.rs",
+      "bytes": 21476,
+      "sha256": "8899d869c7a3c0f3e75162aaa67423a8d60e59aa6a25dd8a821f18d585944d54"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_tests.rs",
+      "bytes": 27327,
+      "sha256": "8ff39c83cc87457110ee47d66ff9d75c754e4e79d3863fd08dfec9a4ce368226"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/provenance_zero_tests.rs",
+      "bytes": 24152,
+      "sha256": "0e5291b41186c3c8b8d82271ea7b7181c20756808ca945b9fc20253b50f8d73f"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/scope_rename.rs",
+      "bytes": 43043,
+      "sha256": "e470dffac855c5125dd3486c81b9f2b4774cceae1e96219bf603088740538954"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/search.rs",
+      "bytes": 89559,
+      "sha256": "e171582ee49f63775f4da4b1be7aa10cd0492ad32e1ddb0081c3d66c77c830da"
+    },
+    {
+      "path": "crates/storm-lua-spec/Cargo.toml",
+      "bytes": 301,
+      "sha256": "1dcf95e5684dbc080ba66eb9a500ae5407780ae38375b112685455d4959650f2"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/abi.rs",
+      "bytes": 2848,
+      "sha256": "27dc85527db0fbff99b6582bb35a98fecb232cc94dec25c30f2b2269bf2f27db"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/addon.rs",
+      "bytes": 1618,
+      "sha256": "75f1da690261686f9588d50b88c8e620fb2a74414a0d97750b0f4b3e67cb0578"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/catalog.rs",
+      "bytes": 7103,
+      "sha256": "a66a9d28cbc8fe81d6ab33ebabb2884ec85155b5027d398598df693e2e795c67"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/command_wire.rs",
+      "bytes": 4102,
+      "sha256": "eeca9f533f9150e8867fe0f6cfbf763a7df8e09a133dea77e70718e0e84ce4ad"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/draw.rs",
+      "bytes": 5593,
+      "sha256": "6582595f8cae3f4abc108d2cce897dba9df2c2b92c969786606759acdc5b9f63"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/environment.rs",
+      "bytes": 3090,
+      "sha256": "f0b9069e50b30a659510bdb1fb57c7f0f34cf772991e60c75dee2979bbccb5b6"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/http.rs",
+      "bytes": 6101,
+      "sha256": "66f5846a9cc486cd7d38f425bb99caddc8fd9c2703afe992cd896465830f3aca"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/io.rs",
+      "bytes": 2180,
+      "sha256": "7cfdd0e7900324470312f5170ec6823c6481cd5875fe2478c2cf11619e71dfcc"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/lib.rs",
+      "bytes": 633,
+      "sha256": "26f58ef0ba716e2e08cc582d71804f37f1ae72d4d1368dacdf40683945abf968"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/map.rs",
+      "bytes": 2523,
+      "sha256": "6f1379ebf00807180b0f15fdcfe9c15a88added5a89682c6bf0d7522c1c29665"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/property.rs",
+      "bytes": 2035,
+      "sha256": "1d1f43b59f6d0f68bec6fcb9f2ee0f7bf9af00474be85990c099ca027c2abd04"
+    },
+    {
+      "path": "crates/storm-lua-spec/src/screen.rs",
+      "bytes": 1256,
+      "sha256": "1d7ce863da303e033032e087da8bdb52e9698339bec3ad7357b9f3d8c003804f"
+    },
+    {
+      "path": "crates/storm-lua-syntax/Cargo.toml",
+      "bytes": 376,
+      "sha256": "cca296c10c8877584ab201e72ebf4c8521a0bcfc0ed7b57ef3757c327d4766de"
+    },
+    {
+      "path": "crates/storm-lua-syntax/examples/source_emissions.rs",
+      "bytes": 1723,
+      "sha256": "54891f008eba8d6fea20ad0d3cbca9d947091a0269bca18e923fc78946c8626d"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/ast.rs",
+      "bytes": 16954,
+      "sha256": "a6b69050c8ba941d8bf75a8cd5f0db8d49382addf4140c69034881665d85632f"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/ast_utils.rs",
+      "bytes": 21020,
+      "sha256": "e60699d4c62a5c9f7380d4b3553786c2e52c24a28805b9230e7e993c766287bb"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/deferred_origin.rs",
+      "bytes": 13487,
+      "sha256": "9966ce1684bc3d9884b5163140664a08f2711e45b017c708b7dd256413dbd471"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/dump.rs",
+      "bytes": 24825,
+      "sha256": "74c6d2e9909dfbf42c0e585857e1fa2d227bbe26141d158bd2facb83e59c2343"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/explanation.rs",
+      "bytes": 9817,
+      "sha256": "4aba7e46ad84fa490762c69071d6c4f68e6fdeb6cccc663ba5727bbcb93cb2c9"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/explanation_tests.rs",
+      "bytes": 8745,
+      "sha256": "7444b2304c0f059fc3192aae3a14fa9b4106fe3d8601b0866ccae1e0b07c8345"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/lexer.rs",
+      "bytes": 27484,
+      "sha256": "b9005f85e92122e750251ad13d517cca8694084c85fdae52242b55a548b4a857"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/lib.rs",
+      "bytes": 951,
+      "sha256": "0315ad3dd20be96fa90a93e9db39bf039bed859e51c7be5139c680eba965c116"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/node_arena.rs",
+      "bytes": 56570,
+      "sha256": "c2ec7cbdfbcc66ef2eb2a4088d49671e2b5462eb8b60f339197df182d2204d6f"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/numeric.rs",
+      "bytes": 52637,
+      "sha256": "316e4fd4f9546a183f54b838c7727ad653fdd4f79beab06a20e5e286399b83b7"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/origin_slots.rs",
+      "bytes": 5839,
+      "sha256": "bb9e3f836d44e736c5d51f9dfc14712982370cc7dc97856cc90beadfc62aa763"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/parser.rs",
+      "bytes": 51375,
+      "sha256": "f72090082ea02e506d509ea5fd7df05826f639a5e3e141a659759f47adcc66db"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/print.rs",
+      "bytes": 59945,
+      "sha256": "f868bbd0ee10f2a2aa9853c8c9ee764c2ffe8c33d84fa692f1adc0c7929e8129"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/provenance.rs",
+      "bytes": 63006,
+      "sha256": "9915a0794c00cfa68fffa895e34abdc2e8cc10704791377255f90ecfd2b29c99"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/size.rs",
+      "bytes": 20108,
+      "sha256": "4dcb6ae6bf616765ee5f8cbb931ab99112a17ce5549c2133ab79e27a969aebe7"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/source_position.rs",
+      "bytes": 9451,
+      "sha256": "ac5300554dbae3ca3b5caae5d4fbe1dc9a5a8fa158f6cf94ebce1e0fca86aaa1"
+    },
+    {
+      "path": "crates/storm-lua-syntax/src/source_tools.rs",
+      "bytes": 17773,
+      "sha256": "c18cf6feed9c6a40175cb36ea81d744c83adb34b3ae715d9d4c476a519408b75"
+    },
+    {
+      "path": "crates/storm-lua-vm/Cargo.toml",
+      "bytes": 388,
+      "sha256": "214b2d2abf4ef2e7092f6390dd3813ce8c5fb73de0e3537e03e777b4b84f4f2c"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/backend_support.rs",
+      "bytes": 3830,
+      "sha256": "9379799465b87e74ec48b0a9e6179dfd1524d0dd78582081f41623c8d614b2c8"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/bindings.rs",
+      "bytes": 4844,
+      "sha256": "59bd2d0e66d15ee4767eb94866f3625aff0280d34f9fac3299c3414e6f952bfb"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/debug.rs",
+      "bytes": 14288,
+      "sha256": "b5feddbd574793eb57960909f9cc92052917d476bfcd7262a7ba180a86fcecfe"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/lib.rs",
+      "bytes": 2423,
+      "sha256": "1e723175ad9de1df324b2814120ff20df897572f1a56f182b3c87a9f96a61563"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/logging.rs",
+      "bytes": 7083,
+      "sha256": "8357b7a6d3b8db4d4e8c7e9720c0b3b21e9cad96b2f7518f485031e19e644a12"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/require.lua",
+      "bytes": 339,
+      "sha256": "59dc9583932d5b5dc3801ebd2aa493af1bbb13b346b1087fdab3bf22dece8cc7"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/runner.rs",
+      "bytes": 17654,
+      "sha256": "ca7918650e3b8a4746510b44a14f40211e74617bbf73d2f79ace0322b2b1e441"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/sandbox.rs",
+      "bytes": 5146,
+      "sha256": "1b4666c549ea1b4ef6e5309d08ad83bf1428470ff16de6d72664ba18fdf832b5"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/source.rs",
+      "bytes": 6809,
+      "sha256": "ef7bf6176de4c5007bea504edb98e1608eb4139584a1ba778d739cacab6ebd65"
+    },
+    {
+      "path": "crates/storm-lua-vm/src/value.rs",
+      "bytes": 8093,
+      "sha256": "6a5bb67c4ebc761a819e08823959fc1fe541c3ba3b8b288d612c0a473fedcf13"
+    },
+    {
+      "path": "crates/storm-lua-wasm/Cargo.toml",
+      "bytes": 740,
+      "sha256": "06c85ff04bee6a76498364f705ce226eaa8197851ea42a3e229fdd557ed0401d"
+    },
+    {
+      "path": "crates/storm-lua-wasm/build.rs",
+      "bytes": 207,
+      "sha256": "6765fbcb215bccc9cfb510e14187dcf73063642123649970dbaf8f47e723f899"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/codec.rs",
+      "bytes": 3977,
+      "sha256": "0b9d68f0a5919c2ae8c44e0e2459bacd2765a8482cbb9230902870850cd1630a"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/debug_adapter.rs",
+      "bytes": 3717,
+      "sha256": "809253d2830119b572d479aa9c1a3b0c4ce4d5d75b65e88f9ab7838af8493303"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/host.rs",
+      "bytes": 3444,
+      "sha256": "850495e007b07df2fd518efd7687b700e6d586d7183861e597ef4f0031fe80e6"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/lib.rs",
+      "bytes": 11242,
+      "sha256": "36887f9e5e508a29bdba55d1358bed4b1aae1f1104274154efe2c17044b60e74"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/main.rs",
+      "bytes": 186,
+      "sha256": "41ee843ed1f69aa9d853636e5a1f75674bd582dc1b85d704e17558034dc52b16"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/script.rs",
+      "bytes": 4854,
+      "sha256": "97f48825b64d8250bb04a8e17ae2b73e0ffb008b0a2a3f58b39f35a9df881e79"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/services.rs",
+      "bytes": 13037,
+      "sha256": "bc8c28234d56667c3054ad30a7ecc3b640362ac4a22c76ad1483dc13ccf15694"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/session.rs",
+      "bytes": 10564,
+      "sha256": "d666326394f0e1281d1043441b823baae909b986eb1e84d8dfea773227c15251"
+    },
+    {
+      "path": "crates/storm-lua-wasm/src/value_codec.rs",
+      "bytes": 4587,
+      "sha256": "0ec56398b5c14cf95136714f47194f3ce2b228f66e897ed95c5ea321a5dda62c"
+    },
+    {
+      "path": "crates/storm-screen-raster/Cargo.toml",
+      "bytes": 320,
+      "sha256": "3193c7d1fa8b9796e664eb9f3b65694e8aab9a28cb4aec8d1bd803a5c31d08d8"
+    },
+    {
+      "path": "crates/storm-screen-raster/src/blend.rs",
+      "bytes": 847,
+      "sha256": "55f0df4db4c617ec1232af5dbe05c68f5dd4e1146e7c04dc62f86194887a9e8e"
+    },
+    {
+      "path": "crates/storm-screen-raster/src/font.rs",
+      "bytes": 1235,
+      "sha256": "b9ba419c4cd5797470ac4ba911deb1de8dacd176495f689f5c586cc00a1bcdb6"
+    },
+    {
+      "path": "crates/storm-screen-raster/src/font/data.rs",
+      "bytes": 3557,
+      "sha256": "9a0ed36eff89c88aae91b959059c794254df8d7bc91ae363a5daf92f30d497af"
+    },
+    {
+      "path": "crates/storm-screen-raster/src/lib.rs",
+      "bytes": 188,
+      "sha256": "6f99739ac6c1f870c79b66a769305e30e08910b7aaf75a00d6fa7a2bcb7ba63f"
+    },
+    {
+      "path": "crates/storm-screen-raster/src/raster.rs",
+      "bytes": 22187,
+      "sha256": "a2dd30224c595d0e282b291ec1422d3d3190ef5579df4b982183791606ea639d"
+    },
+    {
+      "path": "crates/storm-screen-wasm/Cargo.toml",
+      "bytes": 435,
+      "sha256": "d3c3d492fe60e8eb1510fcaa3b1ce991b69ee35677b2c893632b560e6b494ad8"
+    },
+    {
+      "path": "crates/storm-screen-wasm/src/adapter.rs",
+      "bytes": 2547,
+      "sha256": "66cd44207470abcc60158bc82bed11e5b13cd50d6610b2b6782e3ad02abdb6e9"
+    },
+    {
+      "path": "crates/storm-screen-wasm/src/lib.rs",
+      "bytes": 3426,
+      "sha256": "f7aca1ec05f552545fbafd43bf24bef2843632d47e439e1c2fbfd99ba275c5bc"
+    },
+    {
+      "path": "data/fonts/README.md",
+      "bytes": 1198,
+      "sha256": "e76cbeb71b031e2cae41e1b854aa1ed7fb28bf11d1ad39d4f72b8349f8bf48f9"
+    },
+    {
+      "path": "data/fonts/tiny-4x5.json",
+      "bytes": 11244,
+      "sha256": "5a33d126e3415e9d9f33d3390f32f907897cb159d74bca1ab7a40eb1e109b7bb"
+    },
+    {
+      "path": "examples/README.md",
+      "bytes": 3559,
+      "sha256": "43d111fef802184c82a464dea15fd161be74abc37fbe222e7020e1aeb87afa61"
+    },
+    {
+      "path": "examples/browser/index.html",
+      "bytes": 1322,
+      "sha256": "13d066bacd92cfabd9b5cdbeb7407d1db4bc6b66145a9259177dff9de86777c7"
+    },
+    {
+      "path": "examples/browser/main.js",
+      "bytes": 993,
+      "sha256": "b01a0f7e22170ea6a012d533d4bad4d9fd617588e7d350d3d34074bed2c64655"
+    },
+    {
+      "path": "examples/browser/runtime-worker.js",
+      "bytes": 853,
+      "sha256": "e87725ba4556b893e8b111e78c9054bad62694ce49e0b42c3bf02a4e3cff071c"
+    },
+    {
+      "path": "examples/consumer/log-locations.mjs",
+      "bytes": 1101,
+      "sha256": "fb26d1a210df8531a299afcaae5867ff421a4eee4dc9e5628ef7e57850707684"
+    },
+    {
+      "path": "examples/consumer/node.mjs",
+      "bytes": 5464,
+      "sha256": "fe0dee5ebec7a1598cd71bd0cfb43ebeda89d405c8ef17c1d6b3e9d22cb2f9fe"
+    },
+    {
+      "path": "examples/consumer/optimized-source-map.mjs",
+      "bytes": 5166,
+      "sha256": "53624cff12dde16698adb2eb9be8ea3003ae4d68c009c4a525e871adffb050fd"
+    },
+    {
+      "path": "examples/consumer/source-loading.mjs",
+      "bytes": 1525,
+      "sha256": "d3650a3faf95a8028ff6d9e686a7f2a2c3dfb61a7c49debca6d2e8099b77b15d"
+    },
+    {
+      "path": "examples/consumer/source-map.mjs",
+      "bytes": 6113,
+      "sha256": "9642ef9d1c66e59517bbcd725c5ba7819a7280f077df017d65ea58bcc5e6c086"
+    },
+    {
+      "path": "examples/native-foundation.rs",
+      "bytes": 466,
+      "sha256": "036cb770daeedd097c1c62b2538d8c6cc7056842b7c0a98191671b1e1b414200"
+    },
+    {
+      "path": "fixtures/abi-v1.json",
+      "bytes": 247,
+      "sha256": "be154018984a6f47671c261a4c52a817bfb2908d51094546706af0d177354129"
+    },
+    {
+      "path": "fixtures/addon-api-catalog.json",
+      "bytes": 1249,
+      "sha256": "aae4e626b8706d4ea8d2a907741d2583d6ab6013b32b01d0a32aea3da6e748ca"
+    },
+    {
+      "path": "fixtures/api-catalog.json",
+      "bytes": 6513,
+      "sha256": "ccc5aaa1aa0481b01b3fba7e23c1d58da27927490b85bc08dc5563b78f905041"
+    },
+    {
+      "path": "fixtures/bench/control.lua",
+      "bytes": 221,
+      "sha256": "34b87b4724bd6660678c39748c2b14472dc4c120f0807630d51a3f3fb6127d32"
+    },
+    {
+      "path": "fixtures/bench/draw.lua",
+      "bytes": 185,
+      "sha256": "65c78e0c59c103172377b3a02031aadbdc94f8a7c8b94fd7cdbff010a14ed432"
+    },
+    {
+      "path": "fixtures/environment-catalog.json",
+      "bytes": 1034,
+      "sha256": "c05f77b582369ef3a32b5de53d900849e90fff897b6cf5c50054102c69d8ae68"
+    },
+    {
+      "path": "fixtures/screen/README.md",
+      "bytes": 1898,
+      "sha256": "27f60af4eaf393e25576bbb0ad9dc4a90d8638000190c42458f28ec6c9a61c76"
+    },
+    {
+      "path": "fixtures/screen/cases-v1.json",
+      "bytes": 946149,
+      "sha256": "1cc7432f16e16594a57b4ffdd98d6ca82b0aaac405010e0aa12738d1e565b29f"
+    },
+    {
+      "path": "fixtures/screen/manifest.json",
+      "bytes": 298,
+      "sha256": "7dc22b46b6a27206d941448ee70901151a33b36b08e27786c6e618c3a82f5b0a"
+    },
+    {
+      "path": "licenses/screen-components-MIT.txt",
+      "bytes": 1070,
+      "sha256": "7122fa1a29c09c326cbacae1af145d9a3ec8b6f9f65e05d4f11f9cd2b38cfb42"
+    },
+    {
+      "path": "packages/lua-engine/LICENSE",
+      "bytes": 1084,
+      "sha256": "b0735f49d26fff2cad2dda534fab65927dea04875ddcf186a09e38b0bb8b44cc"
+    },
+    {
+      "path": "packages/lua-engine/README.md",
+      "bytes": 6902,
+      "sha256": "c990e8584aafe3d327ba424bfd7b8728d80933a9761afe912cdc687fe8f233b4"
+    },
+    {
+      "path": "packages/lua-engine/RUST_STD_LICENSES.html",
+      "bytes": 279302,
+      "sha256": "0a65bb747c49c7bb816cbc7188319bd6e4e8d08091c1190b8a3c0971c47968ed"
+    },
+    {
+      "path": "packages/lua-engine/SCREEN_COMPONENTS_LICENSE",
+      "bytes": 1070,
+      "sha256": "7122fa1a29c09c326cbacae1af145d9a3ec8b6f9f65e05d4f11f9cd2b38cfb42"
+    },
+    {
+      "path": "packages/lua-engine/THIRD_PARTY_LICENSES.txt",
+      "bytes": 85211,
+      "sha256": "a9753a4e51a64e3b3efc1a15325a4dd03e2bc68a977f37aa9c6baba649b09a2f"
+    },
+    {
+      "path": "packages/lua-engine/TOOLCHAIN_LICENSES.txt",
+      "bytes": 163465,
+      "sha256": "55449f71ca355dc05b9f2c031399d8b556b8f636be7e8570962bcd1dd28c69f6"
+    },
+    {
+      "path": "packages/lua-engine/package-lock.json",
+      "bytes": 3400,
+      "sha256": "ff5ecea952431ae022cd01ce9c48b1fa3933453792add7604df672f7a9119361"
+    },
+    {
+      "path": "packages/lua-engine/package.json",
+      "bytes": 2442,
+      "sha256": "c3296a5cf8c0a2324073b236573057dd6ea8514b8be9ea12fc6283949c7191ce"
+    },
+    {
+      "path": "packages/lua-engine/src/addon.ts",
+      "bytes": 3454,
+      "sha256": "dccc951aebcbd33bdf46f04fb901365c6f9908b9ae418694bb324b2d82180d78"
+    },
+    {
+      "path": "packages/lua-engine/src/bridge.ts",
+      "bytes": 5759,
+      "sha256": "15518eb684c49f843d1f15e535ead7a631b5baf63d7c2f7c84cf09a788a89ab5"
+    },
+    {
+      "path": "packages/lua-engine/src/canvas.ts",
+      "bytes": 985,
+      "sha256": "09f936374daac32d472c5c9b3f51c93ebd55a4920745f613e3fce5eeaa6cdaab"
+    },
+    {
+      "path": "packages/lua-engine/src/catalog.ts",
+      "bytes": 8721,
+      "sha256": "bceb8bc7de0556636233cddacb3348a2d43452d455bed33444ee4cea0f8b55a6"
+    },
+    {
+      "path": "packages/lua-engine/src/commands.ts",
+      "bytes": 4306,
+      "sha256": "48ba06b896e54fc8d7e919c039f2a05603a64df449ad0a434d5a60e9d7a82666"
+    },
+    {
+      "path": "packages/lua-engine/src/compiler-types.ts",
+      "bytes": 7852,
+      "sha256": "299446ee7a572d7992c14312e3144c9fb29f5b0a10a0f0c974ee8c26cddc72aa"
+    },
+    {
+      "path": "packages/lua-engine/src/compiler-worker.ts",
+      "bytes": 7808,
+      "sha256": "995f734fd2e06a22427c7806e9c174b43ba0d5233a45d311203f034cff3664d3"
+    },
+    {
+      "path": "packages/lua-engine/src/compiler.ts",
+      "bytes": 5582,
+      "sha256": "e4404b34528b4760c337bcaccbe51e0f8689abd27ed6482c776ffa1b8b9c7f0a"
+    },
+    {
+      "path": "packages/lua-engine/src/debug.ts",
+      "bytes": 3507,
+      "sha256": "8bb45e2f3b163eb9abbfc09bf09032ecbafa0cc615ecf1a2f299702469d03908"
+    },
+    {
+      "path": "packages/lua-engine/src/environment-catalog.ts",
+      "bytes": 1117,
+      "sha256": "b16319d10a8a3ecc30074e95001b2d23731c94e25bdd8babc53dc9541f210386"
+    },
+    {
+      "path": "packages/lua-engine/src/environment.ts",
+      "bytes": 2612,
+      "sha256": "916eaaae2a8ccd56b84604d66b8e6f63276a2f9809857b021440fa7f74cbf623"
+    },
+    {
+      "path": "packages/lua-engine/src/frame.ts",
+      "bytes": 1537,
+      "sha256": "b3494e9dbf860539df71b0b3bb9826f5bd8635f3d1396ad1a0a4b7ca8e21a5ee"
+    },
+    {
+      "path": "packages/lua-engine/src/generated.ts",
+      "bytes": 379,
+      "sha256": "eb34d082b058d576d99a1ed633433185c6e1c98181db0eb70633294cb97d78db"
+    },
+    {
+      "path": "packages/lua-engine/src/host.ts",
+      "bytes": 5678,
+      "sha256": "13c29633d8ab7f5bc0c05b7db3457f749601507e70e45d7ae8a1b9f3122767ec"
+    },
+    {
+      "path": "packages/lua-engine/src/index.ts",
+      "bytes": 1493,
+      "sha256": "6ac39cd660403191ad92158b588f00a75e8bc5209ab52f9e6470404880ff4362"
+    },
+    {
+      "path": "packages/lua-engine/src/optimization-map-types.ts",
+      "bytes": 3589,
+      "sha256": "ce787303d48ca90498ab93ef675d2258f36da2c6017d3bce1c97bdb5815fea38"
+    },
+    {
+      "path": "packages/lua-engine/src/properties.ts",
+      "bytes": 4118,
+      "sha256": "9f280f05709ea41678ce706df084a0001c268862ed449a5360b96033007a78fe"
+    },
+    {
+      "path": "packages/lua-engine/src/raster.ts",
+      "bytes": 2435,
+      "sha256": "af66ef0bab4ec4875d33875286491475ee09372830c4cb1e22c2844102b87669"
+    },
+    {
+      "path": "packages/lua-engine/src/raw.ts",
+      "bytes": 3053,
+      "sha256": "24d22b491a04e6bb5c9519831ea117ffee68cbf0977645415243c49b827671ab"
+    },
+    {
+      "path": "packages/lua-engine/src/runtime.ts",
+      "bytes": 10294,
+      "sha256": "8e0625402e5dd57d65fc51d1229567621d034f29fd9b3f272e77094015d562b0"
+    },
+    {
+      "path": "packages/lua-engine/src/script.ts",
+      "bytes": 8871,
+      "sha256": "b99549f2d5ea879942d62c3dc3ca9bd3cab5d312a737fc64be085b672d28b13c"
+    },
+    {
+      "path": "packages/lua-engine/src/source.ts",
+      "bytes": 764,
+      "sha256": "3383d6f7a223e3d38fea04e2cbe0dec96ccf2334055e090c0d6df27926d8b020"
+    },
+    {
+      "path": "packages/lua-engine/src/values.ts",
+      "bytes": 8922,
+      "sha256": "d36734e5d0f755c5ce7765b816deae244337f42341002d4aabf14a6afe555b38"
+    },
+    {
+      "path": "packages/lua-engine/tests/build-paths.test.mjs",
+      "bytes": 2202,
+      "sha256": "118d30b4b2b7f554aa49f17fa034d7215efb7137a42d17b73ed033f4b75aaf50"
+    },
+    {
+      "path": "packages/lua-engine/tests/codec.test.mjs",
+      "bytes": 2450,
+      "sha256": "ffd2652bba29c75bfa57435519205b5fbebe0c781db2b7cadcf57a7fd52e7484"
+    },
+    {
+      "path": "packages/lua-engine/tests/log-records.test.mjs",
+      "bytes": 1090,
+      "sha256": "b247e70260d595d0f3ba671e4d758b6ddf4e06532cc0f4e55004da2135ef9842"
+    },
+    {
+      "path": "packages/lua-engine/tests/package-content.test.mjs",
+      "bytes": 3343,
+      "sha256": "1c27cd36c66afdc6a2ffb301b000dd30ecc6c9c15657e89306ce2c7abb4ec08e"
+    },
+    {
+      "path": "packages/lua-engine/tests/raw.test.mjs",
+      "bytes": 2573,
+      "sha256": "b62cd2866b36a22dd4fc3a7c62d0e7a489931d1f50e984c8dc1b6864337599e1"
+    },
+    {
+      "path": "packages/lua-engine/tests/types/compiler.ts",
+      "bytes": 1511,
+      "sha256": "19f217a351a685492c196d4666731ffd65455cb35b6f3d3f47294b006cd44af9"
+    },
+    {
+      "path": "packages/lua-engine/tests/types/profiles.ts",
+      "bytes": 2148,
+      "sha256": "ee7417aea22446ba027a01ed22d0de69858cb6678e040a941074321cc1bc534f"
+    },
+    {
+      "path": "packages/lua-engine/tests/values.test.mjs",
+      "bytes": 2725,
+      "sha256": "0fab4b56496fa59d9ee22a83220d3b150a94791d4c69f04b7c8e7ca4564cbeb2"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/compiler-provenance.test.mjs",
+      "bytes": 6699,
+      "sha256": "efbc23f749768233208f8a0212059973219f98a14fb21e4c824e823a1f2bfc5b"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/compiler-worker.test.mjs",
+      "bytes": 2232,
+      "sha256": "8a49b8ec98cf66d2ea83c1d253125829beff4cd1af66bc4a005e4324ff3976ef"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/compiler.test.mjs",
+      "bytes": 15795,
+      "sha256": "9a7322618c8a4056b83fee5de3745a10c2a2b0f5cc994904c34d708c526ab431"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/engine.test.mjs",
+      "bytes": 8476,
+      "sha256": "c37f169a68ac78cb594087a733abae893a8b7c752ce228e74805cf88516128f3"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/environments.test.mjs",
+      "bytes": 7273,
+      "sha256": "20f514b8cfca82cb5dda0aa73f1df6cb23593047f7556381aba5001cec11008b"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/host.test.mjs",
+      "bytes": 6591,
+      "sha256": "7d39a789fea2b90bd77c137b0c11b57651fcb66fb6676eb064638cc2f8d2a11c"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/log-locations.test.mjs",
+      "bytes": 3839,
+      "sha256": "f4017096557c692ef4f003578e1a29e0d683b086fdfe817fb860904f254c0853"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/optimization-map.test.mjs",
+      "bytes": 11916,
+      "sha256": "d4ea06af79b0b0318ae8b684a369df8f2fb55096e6b612766d50f8291621aa23"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/source-map.test.mjs",
+      "bytes": 6086,
+      "sha256": "4785d7319d0ee7b1f0358c61015c3df453b97e2f50b47d0325b1c780cdfbe088"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/source-tools.test.mjs",
+      "bytes": 2347,
+      "sha256": "23ec989b371dafe0a945bb8593096131d859a1509b2422225159137b1c7f68d0"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/sources.test.mjs",
+      "bytes": 7074,
+      "sha256": "f977b48db9c0c403262c63e14e349df68f0c8fd35a78e08d6e3f14303829a798"
+    },
+    {
+      "path": "packages/lua-engine/tests/wasm/vehicle-controls.test.mjs",
+      "bytes": 5600,
+      "sha256": "07e7eb08cc7865bf5402f3be47dc76b1a4e912536d9920cf7719e49bbf4dd039"
+    },
+    {
+      "path": "packages/lua-engine/tsconfig.consumer.json",
+      "bytes": 164,
+      "sha256": "a8d137078d7f2ff7b87ad757c759733eb49a57ef6165b7cf5e91bc522c9bcc50"
+    },
+    {
+      "path": "packages/lua-engine/tsconfig.json",
+      "bytes": 538,
+      "sha256": "f52278a67da5309e3a34812919aec8ec3f2eb85e4de53478e899d460b672a9a2"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "bytes": 86,
+      "sha256": "24a5037a8f0a264369ef37bb46e019ade6c524beaead1c28f77a429f856a066b"
+    },
+    {
+      "path": "tools/architecture.json",
+      "bytes": 3045,
+      "sha256": "a0e2383f6453178af427fd43311920224ee348ecef12cdd7f0f8789e768370e5"
+    },
+    {
+      "path": "tools/bench-wasm.mjs",
+      "bytes": 1705,
+      "sha256": "26acb7a222b2cae607cbe39f258ed047e8ec6f44430b8e465f7cabad113766a5"
+    },
+    {
+      "path": "tools/build-compiler.mjs",
+      "bytes": 1966,
+      "sha256": "39409829fe09280ed0880ca524530e7a93933cdf2bc19863606472ca137cefb4"
+    },
+    {
+      "path": "tools/build-paths.mjs",
+      "bytes": 1221,
+      "sha256": "03036ed3e9d6417790f1cf85ebf5e33fe22e755af69bd4cc5f4c8064b53948fe"
+    },
+    {
+      "path": "tools/build-wasm.mjs",
+      "bytes": 3931,
+      "sha256": "3951e229d9e15b791f54b0d3c0b04064f423708b592f6b941c6f76d73d91996a"
+    },
+    {
+      "path": "tools/check-artifacts.mjs",
+      "bytes": 2682,
+      "sha256": "c0686a84e0d8948821503ce5b7945ae940a6b9c2fae7c05f77d7f9e3c99b984c"
+    },
+    {
+      "path": "tools/check-package.mjs",
+      "bytes": 3309,
+      "sha256": "bd6979aeebb9779154980536d19ae61dc614f68a2458f179ebc3849f72bb458d"
+    },
+    {
+      "path": "tools/check_repository.py",
+      "bytes": 4551,
+      "sha256": "1b864956ac3213c34e0c93efddb81faedbd97d275d1a5fbb9f4d5c0c485fdc73"
+    },
+    {
+      "path": "tools/check_screen_fixtures.py",
+      "bytes": 4568,
+      "sha256": "5fe7c670f1436a5e44e6a5968839a8f821575f8573eb4501fa4947eefd2d8068"
+    },
+    {
+      "path": "tools/fixture-commands.mjs",
+      "bytes": 2702,
+      "sha256": "240004f0f50d9f94142e3586856055cfd6923f0167666b69560887eaf0bd4b26"
+    },
+    {
+      "path": "tools/generate-font.py",
+      "bytes": 3368,
+      "sha256": "fe8308f84e24a78d53536a5ae199abeb1f002c893c1e1a596c481674dab241b7"
+    },
+    {
+      "path": "tools/generate-toolchain-licenses.py",
+      "bytes": 4702,
+      "sha256": "7fa2b46b2520b6bfb0c89527cb8890b45a713935190648080b1d3c3f3f03b063"
+    },
+    {
+      "path": "tools/host-library.js",
+      "bytes": 1791,
+      "sha256": "b35fb10d551d3f286e95166f44adddb39f2c5e53d4bdb085f570e7b40cc140d1"
+    },
+    {
+      "path": "tools/host-smoke.mjs",
+      "bytes": 4975,
+      "sha256": "6a0178783969dd7226dfd153cac0ef474ca0e2516f8af422029294f7a64f60a8"
+    },
+    {
+      "path": "tools/release/verify-publication.mjs",
+      "bytes": 10211,
+      "sha256": "d39635da496241ec13d9d80d56729977288de8bd2d22a34ee5c79bdfeabaecdc"
+    },
+    {
+      "path": "tools/release/verify-publication.test.mjs",
+      "bytes": 3569,
+      "sha256": "743f73875d8e713a2a73cc4ec4dc80578bc022ee9705b209c49a7b23e4a0c230"
+    },
+    {
+      "path": "tools/test-browser.mjs",
+      "bytes": 5992,
+      "sha256": "f0ee6ddd4e020281eade7d139aedb0ad10b946fa1e6b83782e7f1f587ba7ce9a"
+    },
+    {
+      "path": "tools/test-compiler-browser.mjs",
+      "bytes": 6078,
+      "sha256": "fecf3a54b46faae7762bd70ad3bf2c8437be974d57b6da6fbbe4cff96227d7c3"
+    },
+    {
+      "path": "tools/test-package.mjs",
+      "bytes": 5783,
+      "sha256": "5984dc9dd4237c9b20e0d7cd0a71864d494a15fdb3918dbf486e364ed5e73c9b"
+    },
+    {
+      "path": "tools/test-wasm.mjs",
+      "bytes": 1154,
+      "sha256": "6ffb02c674d8c98c071ba94f42020b4d4a97d52f643dd8affb694a8b56cdbb30"
+    },
+    {
+      "path": "tools/tests/test_screen_fixtures.py",
+      "bytes": 3048,
+      "sha256": "01f9f0d00d2432d9b844ad094d9b2ef36faeb9ac3eb0fdbce710a945200dcf10"
+    },
+    {
+      "path": "tools/tests/test_tools.py",
+      "bytes": 3277,
+      "sha256": "125118db1db1571d5091779533f33903e8e011b3235b850e8c7b6c5d7e49dc51"
+    },
+    {
+      "path": "tools/toolchain-licenses.json",
+      "bytes": 15561,
+      "sha256": "2874ebd4a531f9121c5ccd413837fb3a179e76cbf2e2e94600f169f91e9abeaf"
+    },
+    {
+      "path": "tools/wasm-exports.json",
+      "bytes": 1113,
+      "sha256": "ec26bc0523c352b79bc843de11a09dbce164b9021862c4737b7ee80d30245879"
+    },
+    {
+      "path": "xtask/Cargo.toml",
+      "bytes": 239,
+      "sha256": "1c3724398c5c3e7ad6e725b1edb277419da53b7f020786560a59b14cc0cb25de"
+    },
+    {
+      "path": "xtask/src/main.rs",
+      "bytes": 4567,
+      "sha256": "e61588db99582978ff922a48a30b09346d5a4dde4d22c6b4a1aa88169d9736fe"
+    }
+  ]
+}

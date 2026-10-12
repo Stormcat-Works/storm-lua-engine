@@ -1,0 +1,16 @@
+{
+  "portable_release_replay": {
+    "cases": 12,
+    "generated_code_identical": true,
+    "original_observations_identical": true,
+    "compile_status_identical": true,
+    "observed_differences_reproduced": 12
+  },
+  "independent_scope_checks": {
+    "cases": 8,
+    "S4_default_exact_wrong": true,
+    "S7_default_exact_wrong": true,
+    "safe_exact_correct": true,
+    "pass_disabled_correct": true
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "total": 480,
+  "actual": 480,
+  "rc": 0,
+  "counts": {
+    "default": 120,
+    "exact": 120,
+    "safe": 120,
+    "rename": 120
+  },
+  "errors": [
+    [
+      "namespace-mutual",
+      "default",
+      5
+    ],
+    [
+      "namespace-mutual",
+      "exact",
+      5
+    ],
+    [
+      "namespace-mutual",
+      "safe",
+      5
+    ]
+  ],
+  "differences": [
+    [
+      "root-global-shadow",
+      "default",
+      5
+    ],
+    [
+      "root-global-shadow",
+      "exact",
+      5
+    ],
+    [
+      "root-global-shadow",
+      "safe",
+      5
+    ],
+    [
+      "param-capture",
+      "default",
+      5
+    ],
+    [
+      "param-capture",
+      "exact",
+      5
+    ],
+    [
+      "param-capture",
+      "safe",
+      5
+    ],
+    [
+      "forward-goto",
+      "default",
+      5
+    ],
+    [
+      "forward-goto",
+      "exact",
+      5
+    ],
+    [
+      "forward-goto",
+      "safe",
+      5
+    ],
+    [
+      "root-function-alias",
+      "default",
+      5
+    ],
+    [
+      "root-function-alias",
+      "exact",
+      5
+    ],
+    [
+      "local-carrier-shadow",
+      "default",
+      5
+    ],
+    [
+      "local-carrier-shadow",
+      "exact",
+      5
+    ],
+    [
+      "local-carrier-shadow",
+      "safe",
+      5
+    ]
+  ]
+}

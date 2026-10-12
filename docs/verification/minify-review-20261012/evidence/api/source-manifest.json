@@ -1,0 +1,75 @@
+{
+  "base_commit": "5a168d63eda82c898af4dcc72f8c2c3f9a178e51",
+  "files": [
+    {
+      "path": "crates/storm-lua-minify/src/search.rs",
+      "bytes": 89559,
+      "sha256": "e171582ee49f63775f4da4b1be7aa10cd0492ad32e1ddb0081c3d66c77c830da"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/config.rs",
+      "bytes": 8183,
+      "sha256": "377968fddebc6119daf4feadd961a298f8e67917719ac1fdc336e485035150af"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/orchestration.rs",
+      "bytes": 15881,
+      "sha256": "57f12f9420c297764be24bdaaedbb0bb21f1be8cff386ef3baaf8ccc6e0ccac8"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/api_aliases.rs",
+      "bytes": 22426,
+      "sha256": "9eb1828f168daa58ce37c10b56385a0a89d44383a7ad03f9c05ed810ae99cf92"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/property_reads.rs",
+      "bytes": 5635,
+      "sha256": "9ed0f8411d4a9c6a4cabb10897247b36272deba0f96f6bea3bd8bb001c7317bf"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/callback_slots.rs",
+      "bytes": 15558,
+      "sha256": "31498a5f709b2653a6ebe8e7863aef3d2bf8e7c764c7649f6645636e0910d205"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_buttons.rs",
+      "bytes": 20055,
+      "sha256": "418929828f7d6ded64ba12634356ba520345be9f630731c2e6b7110336c6223e"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_call_factoring.rs",
+      "bytes": 14356,
+      "sha256": "3d6907455ed543360df103600b5fbae46e8d92c8cac818b51bab3d69d466b3d8"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/screen_loops.rs",
+      "bytes": 39410,
+      "sha256": "e6a93f67727b64c70b50da236971f5f372fe3f7cfc644b5daf80b8f9729233c6"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/output_loops.rs",
+      "bytes": 12220,
+      "sha256": "1e73d747d8f19e27f5d97528072ffad4ecd1e4126de58269c2f0d565a3968861"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_records.rs",
+      "bytes": 53355,
+      "sha256": "d68cd92316790ba75c78dde116d67f4e011503536a4931c35a69bab5c82875dd"
+    },
+    {
+      "path": "crates/storm-lua-minify/src/passes/draw_sequences.rs",
+      "bytes": 10457,
+      "sha256": "4198a6695740da749df5780559c32c9d3c5ed5fddbe28c61a560f9ec3cab567d"
+    },
+    {
+      "path": "crates/storm-lua-analysis/src/effects.rs",
+      "bytes": 65340,
+      "sha256": "b6cde5bf6b24b8d14d6c09d8e89306f2b83b9ea6380e0cefa3516a510c350dee"
+    },
+    {
+      "path": "crates/storm-lua-build/src/public_api.rs",
+      "bytes": 80435,
+      "sha256": "501935c67b0843387d88cf3b2490d3fae67a65faad8947b38b8ce7d54115495f"
+    }
+  ]
+}

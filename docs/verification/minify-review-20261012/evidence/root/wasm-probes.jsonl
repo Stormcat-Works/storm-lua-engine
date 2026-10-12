@@ -1,0 +1,30 @@
+{"name":"byte-escape","source":"return \"\\xFF\"","options":{"sourceMap":false},"ok":true,"code":"return\"ÿ\"","mapProduced":false}
+{"name":"byte-escape","source":"return \"\\xFF\"","options":{"sourceMap":true},"ok":true,"code":"return\"ÿ\"","mapProduced":true}
+{"name":"unicode-escape","source":"return \"\\u{1F600}\"","options":{"sourceMap":false},"ok":true,"code":"return\"\\\\u{1F600}\"","mapProduced":false}
+{"name":"unicode-escape","source":"return \"\\u{1F600}\"","options":{"sourceMap":true},"ok":true,"code":"return\"\\\\u{1F600}\"","mapProduced":true}
+{"name":"long-crlf","source":"return [[a\r\nb]]","options":{"sourceMap":false},"ok":true,"code":"return\"a\\r\\nb\"","mapProduced":false}
+{"name":"long-crlf","source":"return [[a\r\nb]]","options":{"sourceMap":true},"ok":true,"code":"return\"a\\r\\nb\"","mapProduced":true}
+{"name":"line-comment-cr","source":"-- comment\rreturn 42","options":{"environment":"extended","sourceMap":false},"ok":true,"code":"\r","diagnostics":[{"code":"conservative-minification","severity":"warning","message":"Token-preserving minification only: extended Lua error handling and host semantics require token-preserving compilation. Names, literals, globals, token line positions and evaluation order are unchanged; property specialization and AST passes are not applied."}],"mapProduced":false}
+{"name":"line-comment-cr","source":"-- comment\rreturn 42","options":{"environment":"extended","sourceMap":true},"ok":true,"code":"\r","diagnostics":[{"code":"conservative-minification","severity":"warning","message":"Token-preserving minification only: extended Lua error handling and host semantics require token-preserving compilation. Names, literals, globals, token line positions and evaluation order are unchanged; property specialization and AST passes are not applied."}],"mapProduced":true}
+{"name":"hex-dot","source":"return 0x1.","options":{"mode":"safe","numericMode":"exact","sourceMap":false},"ok":true,"code":"return\n0/0","mapProduced":false}
+{"name":"hex-dot","source":"return 0x1.","options":{"mode":"safe","numericMode":"exact","sourceMap":true},"ok":true,"code":"return\n0/0","mapProduced":true}
+{"name":"hex-wrap","source":"return 0x10000000000000000","options":{"mode":"safe","numericMode":"exact","sourceMap":false},"ok":true,"code":"return\n0x1p64","mapProduced":false}
+{"name":"hex-wrap","source":"return 0x10000000000000000","options":{"mode":"safe","numericMode":"exact","sourceMap":true},"ok":true,"code":"return\n0x1p64","mapProduced":true}
+{"name":"inf-precedence","source":"return 2/1e999","options":{"mode":"safe","numericMode":"exact","sourceMap":false},"ok":true,"code":"return\n2/1/0","mapProduced":false}
+{"name":"inf-precedence","source":"return 2/1e999","options":{"mode":"safe","numericMode":"exact","sourceMap":true},"ok":true,"code":"return\n2/1/0","mapProduced":true}
+{"name":"negative-idiv","source":"return 5//-2","options":{"sourceMap":false},"ok":true,"code":"return-2","mapProduced":false}
+{"name":"negative-idiv","source":"return 5//-2","options":{"sourceMap":true},"ok":true,"code":"return-2","mapProduced":true}
+{"name":"negative-mod","source":"return 5%-2","options":{"sourceMap":false},"ok":true,"code":"return\n1","mapProduced":false}
+{"name":"negative-mod","source":"return 5%-2","options":{"sourceMap":true},"ok":true,"code":"return\n1","mapProduced":true}
+{"name":"shift64","source":"return 1<<64","options":{"sourceMap":false},"ok":true,"code":"return\n1","mapProduced":false}
+{"name":"shift64","source":"return 1<<64","options":{"sourceMap":true},"ok":true,"code":"return\n1","mapProduced":true}
+{"name":"shift-negative","source":"return 4>>-1","options":{"sourceMap":false},"ok":true,"code":"return\n0","mapProduced":false}
+{"name":"shift-negative","source":"return 4>>-1","options":{"sourceMap":true},"ok":true,"code":"return\n0","mapProduced":true}
+{"name":"goto","source":"function onTick()local x x=1 goto done x=2 ::done:: output.setNumber(1,x)end","options":{"sourceMap":false},"ok":true,"code":"function onTick()goto done::done::output.setNumber(1,2)end","mapProduced":false}
+{"name":"goto","source":"function onTick()local x x=1 goto done x=2 ::done:: output.setNumber(1,x)end","options":{"sourceMap":true},"ok":true,"code":"function onTick()goto done::done::output.setNumber(1,2)end","mapProduced":true}
+{"name":"table-capture","source":"local function f(t)local g=function()return t.x end return t.x+g()end function onTick()output.setNumber(1,f({x=input.getNumber(1)}))end","options":{"sourceMap":false},"ok":true,"code":"function a(a)local b=function()return\nt.x\nend\nreturn\na+b()end\nfunction onTick()output.setNumber(1,a(input.getNumber(1)))end","mapProduced":false}
+{"name":"table-capture","source":"local function f(t)local g=function()return t.x end return t.x+g()end function onTick()output.setNumber(1,f({x=input.getNumber(1)}))end","options":{"sourceMap":true},"ok":true,"code":"function a(a)local b=function()return\nt.x\nend\nreturn\na+b()end\nfunction onTick()output.setNumber(1,a(input.getNumber(1)))end","mapProduced":true}
+{"name":"fixed-metadata-build","ok":true,"code":"                     \n                        \n  \nfunction onTick()output.setNumber(1,3)end","mapProduced":true}
+{"name":"fixed-metadata-buildLifeboat","ok":true,"code":"local __lbloaders,__lbloaded,__lbaliases={},{},{}\nlocal function require(name)\n if __lbloaded[name] then return end\n __lbloaded[name]=true\n local fn=__lbloaders[__lbaliases[name] or name]\n if fn then fn() end\nend\n__lbloaders[\"main\"]=function()\n                     \n                        \n  \nfunction onTick()output.setNumber(1,3)end\nend\nrequire(\"main\")\n","mapProduced":true}
+{"name":"integer-div-overflow","error":"RuntimeError: unreachable"}
+{"name":"after-panic","ok":true,"code":"return\n3"}

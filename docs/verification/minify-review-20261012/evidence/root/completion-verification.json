@@ -1,0 +1,42 @@
+{
+  "verifiedAtUtc": "2026-10-12T14:45:05.131831+00:00",
+  "reviewedRevision": "5a168d63eda82c898af4dcc72f8c2c3f9a178e51",
+  "sourceFilesVerified": 372,
+  "sourceMismatches": [],
+  "preexistingTrackedChangesPreserved": {
+    "initial-working-tree.patch": true,
+    "review-target.patch": true
+  },
+  "agentArtifactChecks": [
+    {
+      "group": "scope",
+      "verifiedArtifacts": 30,
+      "mismatches": []
+    },
+    {
+      "group": "api",
+      "verifiedArtifacts": 16,
+      "mismatches": []
+    },
+    {
+      "group": "numeric",
+      "verifiedArtifacts": 25,
+      "mismatches": []
+    }
+  ],
+  "mainReportFindingAnchors": 35,
+  "localLinksChecked": 95,
+  "nativeTests": {
+    "passed": 875,
+    "failed": 0,
+    "ignored": 0
+  },
+  "wasmTests": {
+    "passed": 91,
+    "failed": 0,
+    "skipped": 0
+  },
+  "rootAvailableBytes": 5875146752,
+  "rootMinimumRequiredBytes": 4294967296,
+  "storageFilesystem": "ext4"
+}

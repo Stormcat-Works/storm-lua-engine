@@ -42,3 +42,5 @@
 | 全収集コーパス回帰・包括的性能評価 | 今回実施した代表回帰を全件と表現しない。測定なしの速度向上を主張しない |
 
 Storm MinのCLI/WebをPlaygroundへ移設・廃止しません。PlaygroundへIDE、共同編集、クラウド同期、ゲーム世界・仮物理を追加しません。過去版の確認件数と初回移管時の結果は各verificationに保持します。
+
+- [ ] Validate the explicit shared CRT random provider against independent native sampler traces and the actual host's complete consumer/checkpoint lifecycle.

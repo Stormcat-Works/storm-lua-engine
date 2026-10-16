@@ -33,3 +33,11 @@ loggingはVM側が共通所有する。制限付きdebug.logとprintの公開は
 ## 環境プロファイル
 
 Luaの公開集合は[環境仕様](environments.md)を正本とする。game/extended、Vehicle/Addon、ホストdebuggerを独立して選ぶ。両環境のdebugテーブルはlogのみ。printはextended専用で、onLogを設定するだけでは追加されない。明示的なホストbindingsは高レベル生成APIから渡し、reset/reloadで再適用する。
+
+## Explicit shared CRT random context
+
+`Vm::install_crt_random` and `AddonConfig.random` accept a `SharedCrtRandom` owned by the host. Its `CrtRandomSource` supplies raw values in 0..=32767 and an exact `srand(u32)` operation. A value above that range or a provider error is reported as an execution error. The provider captures its own shared state; it must not re-enter the VM. The host checkpoints this state together with its scene consumers.
+
+This optional mode applies Windows CRT Lua 5.3 sampling in the Engine: each `math.random` consumes one draw before validating its argument count and exact integer bounds. Zero arguments return a Number in [0,1); integer sampling scales that value once and truncates without rejection sampling. Invalid intervals still consume the draw. `math.randomseed` coerces its first argument to Number, truncates through signed 64-bit conversion (the native indefinite integer for nonfinite/out-of-range input), writes its low 32 bits, then discards exactly one draw. Additional seed arguments are ignored and the call returns no values.
+
+Creating/reloading an addon does not implicitly seed or draw from the supplied context. Top-level script calls still execute normally. Cloning the config retains the shared resource. Omitting the provider retains the existing isolated deterministic generator; it does not claim a shared native random sequence. This Rust host API adds no WASM ABI provider or automatic global state.

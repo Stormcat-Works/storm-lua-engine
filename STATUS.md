@@ -29,3 +29,5 @@ GitHub Actionsの公開対象commit確認、正式配布物の固定、タグ・
 **最適化後Source Mapはv0.2.5またはv0.3.0へ分離**します。由来情報を考慮せず実装された最適化器の大規模変更であり、v0.2.0の完成条件に含めません。Addonコンパイラ、require方式の統合・gameとloaderの分離、追加map API、全consumerの移行完了も今回の必須条件ではありません。
 
 初回公開の事実と当時の測定は[0.1.0検証記録](docs/verification/release-0.1.0.md)を参照してください。
+
+Optional host-shared Windows CRT random input is being added through VM/Add-on APIs. Lua conversion and sampling stay in the Engine; the host owns context state/order/checkpoint. Isolated defaults remain separately specified. Native conformance and consumer integration are in progress; this is not a release or complete simulation-context acceptance.

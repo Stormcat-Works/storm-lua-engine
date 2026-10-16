@@ -169,6 +169,16 @@ impl Vm {
             debugger,
         })
     }
+    /// Install host-shared Windows CRT math.random/randomseed semantics while idle.
+    /// Lua argument/distribution/seed-discard behavior remains owned by this VM.
+    pub fn install_crt_random(
+        &mut self,
+        source: crate::random::SharedCrtRandom,
+    ) -> Result<(), VmError> {
+        self.ensure_idle()?;
+        crate::random::install(&self.lua, &self.environment.get::<Table>("math")?, source)?;
+        Ok(())
+    }
     /// バックエンド密結合な明示的拡張フィーチャーを通じてホストバインディングを設定します。
     #[cfg(feature = "backend-mlua")]
     pub fn configure<T>(

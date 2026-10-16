@@ -1,0 +1,2997 @@
+{
+  "schema": 1,
+  "provenance": {
+    "binary_sha256": "b261e81eb8a4e5bb84782e521212dcc94151fc2c2b5940bcff5aabef85bbe20f",
+    "oracle_sha256": "baa65bc311bb1137f290631e096185b9b2d2b62076e5a5e1525dc8d26f9da63e",
+    "generator": "bu_ft_crt_random_oracle.py",
+    "generator_sha256": "2a6da05d2a7ee2b2c0dd10ec87a28d7513c54f40df18c26d5c36a5d9bf4c1bc9",
+    "scope": "Synthetic primitive inputs and original Windows machine-code outputs. PTD lookup and Lua error reporting are explicit boundaries. No executable/ROM bytes. String conversion, FLS, full scene startup/ordering and actual-client acceptance excluded."
+  },
+  "cases": [
+    {
+      "name": "unit",
+      "function": "random",
+      "arguments": [],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "number",
+          "bits": 4563413059921510400
+        }
+      ]
+    },
+    {
+      "name": "one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "positive",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 100
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "negative",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -100
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -100
+        }
+      ]
+    },
+    {
+      "name": "cross_zero",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -10
+        },
+        {
+          "kind": "integer",
+          "value": 10
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "singleton_min",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "singleton_max",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "max_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 11540474045136896
+        }
+      ]
+    },
+    {
+      "name": "min_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9211831562809638912
+        }
+      ]
+    },
+    {
+      "name": "negative_wide_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -4611686018427387904
+        },
+        {
+          "kind": "integer",
+          "value": 4611686018427387903
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -4600145544382251008
+        }
+      ]
+    },
+    {
+      "name": "full_i64_interval",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "overflow_span_by_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_two",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4622100592565682176
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_low",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13836183955189006336
+        },
+        {
+          "kind": "integer",
+          "value": 8
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_high",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -8
+        },
+        {
+          "kind": "number",
+          "bits": 4612811918334230528
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integral_numbers",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13845191154443747328
+        },
+        {
+          "kind": "number",
+          "bits": 4621819117588971520
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "number_lower_limit",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9211831562809638912
+        }
+      ]
+    },
+    {
+      "name": "number_upper_overflow",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "number_positive_infinity",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "extra_arguments",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        },
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 3
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "unit",
+      "function": "random",
+      "arguments": [],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "number",
+          "bits": 4562990847456444416
+        }
+      ]
+    },
+    {
+      "name": "one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "positive",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 100
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "negative",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -100
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -100
+        }
+      ]
+    },
+    {
+      "name": "cross_zero",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -10
+        },
+        {
+          "kind": "integer",
+          "value": 10
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "singleton_min",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "singleton_max",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "max_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 10696049115004928
+        }
+      ]
+    },
+    {
+      "name": "min_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9212675987739770880
+        }
+      ]
+    },
+    {
+      "name": "negative_wide_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -4611686018427387904
+        },
+        {
+          "kind": "integer",
+          "value": 4611686018427387903
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -4600989969312382976
+        }
+      ]
+    },
+    {
+      "name": "full_i64_interval",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "overflow_span_by_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_two",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4622100592565682176
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_low",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13836183955189006336
+        },
+        {
+          "kind": "integer",
+          "value": 8
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_high",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -8
+        },
+        {
+          "kind": "number",
+          "bits": 4612811918334230528
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integral_numbers",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13845191154443747328
+        },
+        {
+          "kind": "number",
+          "bits": 4621819117588971520
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "number_lower_limit",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9212675987739770880
+        }
+      ]
+    },
+    {
+      "name": "number_upper_overflow",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "number_positive_infinity",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "extra_arguments",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        },
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 3
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "unit",
+      "function": "random",
+      "arguments": [],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "number",
+          "bits": 4562568634991378432
+        }
+      ]
+    },
+    {
+      "name": "one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "positive",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 100
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "negative",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -100
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -100
+        }
+      ]
+    },
+    {
+      "name": "cross_zero",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -10
+        },
+        {
+          "kind": "integer",
+          "value": 10
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "singleton_min",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "singleton_max",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "max_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9851624184872960
+        }
+      ]
+    },
+    {
+      "name": "min_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9213520412669902848
+        }
+      ]
+    },
+    {
+      "name": "negative_wide_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -4611686018427387904
+        },
+        {
+          "kind": "integer",
+          "value": 4611686018427387903
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -4601834394242514944
+        }
+      ]
+    },
+    {
+      "name": "full_i64_interval",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "overflow_span_by_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_two",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4622100592565682176
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_low",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13836183955189006336
+        },
+        {
+          "kind": "integer",
+          "value": 8
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_high",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -8
+        },
+        {
+          "kind": "number",
+          "bits": 4612811918334230528
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integral_numbers",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13845191154443747328
+        },
+        {
+          "kind": "number",
+          "bits": 4621819117588971520
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "number_lower_limit",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9213520412669902848
+        }
+      ]
+    },
+    {
+      "name": "number_upper_overflow",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "number_positive_infinity",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "extra_arguments",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        },
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 3
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "unit",
+      "function": "random",
+      "arguments": [],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "number",
+          "bits": 4562990847456444416
+        }
+      ]
+    },
+    {
+      "name": "one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "positive",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 100
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "negative",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -100
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -100
+        }
+      ]
+    },
+    {
+      "name": "cross_zero",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -10
+        },
+        {
+          "kind": "integer",
+          "value": 10
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "singleton_min",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "singleton_max",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "max_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 10696049115004928
+        }
+      ]
+    },
+    {
+      "name": "min_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9212675987739770880
+        }
+      ]
+    },
+    {
+      "name": "negative_wide_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -4611686018427387904
+        },
+        {
+          "kind": "integer",
+          "value": 4611686018427387903
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -4600989969312382976
+        }
+      ]
+    },
+    {
+      "name": "full_i64_interval",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "overflow_span_by_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_two",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4622100592565682176
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_low",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13836183955189006336
+        },
+        {
+          "kind": "integer",
+          "value": 8
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_high",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -8
+        },
+        {
+          "kind": "number",
+          "bits": 4612811918334230528
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integral_numbers",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13845191154443747328
+        },
+        {
+          "kind": "number",
+          "bits": 4621819117588971520
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -10
+        }
+      ]
+    },
+    {
+      "name": "number_lower_limit",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9212675987739770880
+        }
+      ]
+    },
+    {
+      "name": "number_upper_overflow",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "number_positive_infinity",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "extra_arguments",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        },
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 3
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "unit",
+      "function": "random",
+      "arguments": [],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "number",
+          "bits": 4600960832254246912
+        }
+      ]
+    },
+    {
+      "name": "one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "positive",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 100
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 41
+        }
+      ]
+    },
+    {
+      "name": "negative",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -100
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -60
+        }
+      ]
+    },
+    {
+      "name": "cross_zero",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -10
+        },
+        {
+          "kind": "integer",
+          "value": 10
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -2
+        }
+      ]
+    },
+    {
+      "name": "singleton_min",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ]
+    },
+    {
+      "name": "singleton_max",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ]
+    },
+    {
+      "name": "max_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": 3732076716206587904
+        }
+      ]
+    },
+    {
+      "name": "min_signed_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -5491295320648187904
+        }
+      ]
+    },
+    {
+      "name": "negative_wide_span",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -4611686018427387904
+        },
+        {
+          "kind": "integer",
+          "value": 4611686018427387903
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -879609302220800000
+        }
+      ]
+    },
+    {
+      "name": "full_i64_interval",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "overflow_span_by_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        },
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "empty_two",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_one",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4622100592565682176
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_low",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13836183955189006336
+        },
+        {
+          "kind": "integer",
+          "value": 8
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "fraction_high",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -8
+        },
+        {
+          "kind": "number",
+          "bits": 4612811918334230528
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integral_numbers",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13845191154443747328
+        },
+        {
+          "kind": "number",
+          "bits": 4621819117588971520
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -2
+        }
+      ]
+    },
+    {
+      "name": "number_lower_limit",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        },
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": false,
+      "values": [
+        {
+          "kind": "integer",
+          "value": -5491295320648187904
+        }
+      ]
+    },
+    {
+      "name": "number_upper_overflow",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "number_positive_infinity",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "extra_arguments",
+      "function": "random",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        },
+        {
+          "kind": "integer",
+          "value": 2
+        },
+        {
+          "kind": "integer",
+          "value": 3
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "integer_1",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 1
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [
+        1
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_0",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 0
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_4294967295",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 4294967295
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [
+        4294967295
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_2147483648",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 2147483648
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        2147483648
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_123456789",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 123456789
+        }
+      ],
+      "raw_draws": [
+        13259
+      ],
+      "seeds": [
+        123456789
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_integer",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -1
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [
+        4294967295
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_above_f64_exact",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9007199254740993
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_min",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": -9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "integer_max",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "integer",
+          "value": 9223372036854775807
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "positive_fraction",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4611235658464650854
+        }
+      ],
+      "raw_draws": [
+        41
+      ],
+      "seeds": [
+        1
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_fraction",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13834607695319426662
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [
+        4294967295
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "positive_zero",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 0
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_zero",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9223372036854775808
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "positive_infinity",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9218868437227405312
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_infinity",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 18442240474082181120
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "quiet_nan",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9221120237041090561
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_nan",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 18444492273895866659
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "positive_overflow",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358656
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_overflow",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134465
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "last_positive_i64_number",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 4890909195324358655
+        }
+      ],
+      "raw_draws": [
+        29462
+      ],
+      "seeds": [
+        4294966272
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "negative_limit",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 14114281232179134464
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "large_finite_positive",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 9094988921128908188
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "large_finite_negative",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 18318360957983683996
+        }
+      ],
+      "raw_draws": [
+        38
+      ],
+      "seeds": [
+        0
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "extra_arguments_ignored",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "number",
+          "bits": 13834607695319426662
+        },
+        {
+          "kind": "nil"
+        },
+        {
+          "kind": "boolean",
+          "value": true
+        }
+      ],
+      "raw_draws": [
+        35
+      ],
+      "seeds": [
+        4294967295
+      ],
+      "error": false,
+      "values": []
+    },
+    {
+      "name": "missing",
+      "function": "randomseed",
+      "arguments": [],
+      "raw_draws": [],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "nil",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "nil"
+        }
+      ],
+      "raw_draws": [],
+      "seeds": [],
+      "error": true,
+      "values": []
+    },
+    {
+      "name": "boolean",
+      "function": "randomseed",
+      "arguments": [
+        {
+          "kind": "boolean",
+          "value": false
+        }
+      ],
+      "raw_draws": [],
+      "seeds": [],
+      "error": true,
+      "values": []
+    }
+  ]
+}

@@ -35,6 +35,9 @@ pub struct AddonConfig {
     pub environment: storm_lua_spec::environment::EnvironmentProfile,
     /// Explicit host extensions, retained across savedata reload.
     pub bindings: storm_lua_vm::bindings::HostBindings,
+    /// Optional Windows CRT execution-context stream shared with the host scene.
+    /// None retains the isolated deterministic default. The host saves its state.
+    pub random: Option<storm_lua_vm::random::SharedCrtRandom>,
     /// Explicit development require; cache is recreated during savedata reload.
     pub require_loader: Option<storm_lua_vm::source::RequireLoader>,
 }
@@ -50,6 +53,7 @@ impl Default for AddonConfig {
             environment: Default::default(),
             bindings: Default::default(),
             require_loader: None,
+            random: None,
         }
     }
 }
@@ -143,6 +147,9 @@ impl Addon {
             }
         }
         let mut vm = Vm::with_environment(config.limits, config.environment)?;
+        if let Some(random) = &config.random {
+            vm.install_crt_random(Rc::clone(random))?;
+        }
         if let Some(savedata) = &config.savedata {
             if !matches!(savedata, LuaValue::Table(_)) {
                 return Err(invalid("savedata must be a table"));

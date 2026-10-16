@@ -65,3 +65,6 @@ pub mod bindings;
 pub mod host;
 /// Owned source chunks and explicit development-time include loading.
 pub mod source;
+
+/// Explicit host-shared native CRT random context, separate from isolated defaults.
+pub mod random;

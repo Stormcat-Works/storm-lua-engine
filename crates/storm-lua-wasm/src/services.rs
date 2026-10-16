@@ -188,6 +188,7 @@ pub(crate) fn create_addon(
         server,
         scoped_server: Vec::new(),
         dev_logs: false,
+        random: None,
         environment: environment(&request)?,
         bindings: bindings(&request, host_key)?,
         require_loader: require_loader(&request, host_key)?,

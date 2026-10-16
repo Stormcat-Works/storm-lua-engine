@@ -131,3 +131,4 @@ consumerの公開SDK参照は専用ブランチへpush済みですが、consumer
 `feat/optimized-source-maps`で[計画](docs/design/source-provenance.md)のP0/P1を実装。未達target探索は共通コアと一意候補を再利用する。非短縮の通常/LifeBoatビルドはUTF-8コピー範囲とトークン/UTF-16列のmapを保持し、合成prefix・削除済み開発区間に元位置を付けない。診断の列と終端も同じ範囲から変換する。
 
 最適化ASTの由来引き継ぎ、最終minify出力のmap、元変数復元、Playgroundの双方向表示は未実装。`minify`と`build(minify:true)`がmapを返すとは扱わない。公開・版上げ・他ブランチの置換は行っていない。実行済みテスト・性能比較・未実装範囲は[検証記録](docs/verification/source-provenance-20260930.md)に記録する。
+Optional host-shared Windows CRT random input is being added through VM/Add-on APIs. Lua conversion and sampling stay in the Engine; the host owns context state/order/checkpoint. Isolated defaults remain separately specified. Native conformance and consumer integration are in progress; this is not a release or complete simulation-context acceptance.

@@ -6,7 +6,7 @@
 
 Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
 
-server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。`httpGet`は予約され上書き不可。
+server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。通常の`server`登録では`httpGet`は予約名。`scoped_server`への明示登録はHTTP要求の所有をhostへ移し、SDK内キューの代わりに借用host操作を呼ぶ。
 
 これは汎用的なホスト接続面であり、すべてのゲームserver APIについて引数・戻り値を検証済みにしたという意味ではない。ホストが各関数の署名・世界に対する副作用・権限を実装する。
 
@@ -18,7 +18,7 @@ Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終
 
 `reload(checkpoint)`は同じsourceを既存ワールドとして読み直す。新VMの構築・loadが成功した場合に置換し、startは別に呼ぶ。external hostの副作用はrollbackできない。VM構築・ロード前の設定失敗と、外部サービスが既に実行された後の失敗を同一視しない。
 
-`onDestroy`はホストが明示駆動する。disposeで勝手に実行しない。HTTPの返信はReady時のみ配送し、busyの拒否ではtokenを消費しない。再作成で旧HTTP generationとdebug handlesは失効する。
+`onDestroy`はホストが明示駆動する。disposeで勝手に実行しない。LuaへのHTTP返信はReady時のみ配送し、単一Addon用`http_reply`のbusy拒否ではtokenを消費しない。Luaを実行しない`resolve_http_reply`はDestroyed・Failed後も送信済み要求を精算できる。再作成で旧HTTP generationとdebug handlesは失効する。
 
 ## APIと精度
 
@@ -78,4 +78,4 @@ world guards before invoking a predicate and project selected world objects afte
 all predicate calls when the native operation requires that order. Borrowed phases
 must finish synchronously; debugger suspension across their lifetime is unsupported.
 
-複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenと応答のサイズを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、同じ検証・消費の後にそのAddonのcallbackを呼びます。実HTTP transportと複数scriptの配送範囲はhostが所有します。
+複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenと応答のサイズを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、Readyを確認してから同じ検証・消費を行い、そのAddonのcallbackを呼びます。`dispatch_http_reply`はu32のportをLua整数として渡し、要求・応答のNULを含む全bytesを保持します。NativeのC文字列境界やport変換はhostの責務です。`HostCall::number`と`string`は元のLua値に数値・文字列のcoercionを適用するため、hostは関数引数をowned valueへ変換する前に読み取れます。実HTTP transportと複数scriptの配送範囲はhostが所有します。

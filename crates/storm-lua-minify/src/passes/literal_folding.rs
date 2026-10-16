@@ -596,7 +596,7 @@ fn fold_node_inner(
         // `math.type(1.0)` and `-0.0` can preserve Lua's subtype/sign.
         let unsafe_integer =
             integer_literal_value(&v).is_some_and(|value| value.unsigned_abs() > (1u64 << 53));
-        if !(v.contains('.') || v.contains('e') || v.contains('E')) && !unsafe_integer {
+        if !(v.contains('.') || v.contains('e') || v.contains('E') || unsafe_integer) {
             target.nodes[node as usize] = Node::Num(normalize_num_literal(&v).into());
         }
     }

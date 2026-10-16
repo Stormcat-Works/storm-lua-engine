@@ -48,6 +48,11 @@ impl HostCall<'_> {
             .coerce_string(self.argument(index)?.clone())?
             .map(|value| value.as_bytes().to_vec()))
     }
+    /// Lua's native numeric coercion, including its numeric-string syntax.
+    /// Other types return None, matching lua_tonumberx's conversion result.
+    pub fn number(&self, index: usize) -> Result<Option<f64>, VmError> {
+        Ok(self.lua.coerce_number(self.argument(index)?.clone())?)
+    }
     /// Decode one ordinary data argument with the normal value budget.
     pub fn decode(&self, index: usize) -> Result<LuaValue, VmError> {
         let mut values =

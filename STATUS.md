@@ -1,5 +1,9 @@
 # Current status
 
+## AD-01/AD-02 host接続（2026-10-17）
+
+借用HTTP sink、Lua数値coercion、u32返信port、破棄・失敗後の要求精算を追加。SDK既定キューを維持し、実通信・scene寿命・配送順はhostが所有する。
+
 ## v0.3.1 公開版の準備と検証（2026-10-12）
 
 最新性能ブランチ、Addon実行/非短縮build/metadata、採用済み743件の描画契約を統合した。条件分岐のpanic/trap、部分/大量反復名mapとWASMオプション拒否を修正。Native871、SDK30、実WASM87、Playground/CLI38、3ブラウザ各16例、独立tarball consumerと基本ゲートが成功した。[候補の検証・性能・成果物](docs/verification/release-candidate-0.3.1.md)。

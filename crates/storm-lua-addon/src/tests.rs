@@ -32,7 +32,7 @@ fn host_can_resolve_http_without_invoking_an_origin_callback() -> Result<(), Box
     assert!(addon
         .resolve_http_reply(request.token, b"duplicate")
         .is_err());
-    addon.dispatch_http_reply(resolved.port, &resolved.request, b"response")?;
+    addon.dispatch_http_reply(u32::from(resolved.port), &resolved.request, b"response")?;
     assert_eq!(field(&addon, "replied")?, Some(LuaValue::Bool(true)));
     Ok(())
 }
@@ -567,5 +567,119 @@ fn borrowed_predicate_c_buffer_runtime_error_rejects_candidate() -> Result<(), B
     assert_eq!(field(&addon, "accepted")?, Some(LuaValue::Bool(false)));
     assert_eq!(field(&addon, "finished")?, Some(LuaValue::Bool(true)));
     assert!(!addon.is_failed());
+    Ok(())
+}
+
+#[test]
+fn scoped_http_sink_owns_native_request_arguments_and_wide_reply_port() -> Result<(), Box<dyn Error>>
+{
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["httpGet".into()],
+        ..Default::default()
+    })?;
+    let requests = RefCell::new(Vec::new());
+    let enqueue = |call: HostCall<'_>| {
+        requests
+            .borrow_mut()
+            .push((call.number(0)?, call.string(1)?));
+        Ok(HostReturn::Values(Vec::new()))
+    };
+    let target = addon.callback_target();
+    target.with_server_calls(&[], &[("httpGet", &enqueue)], || {
+        addon.load(
+            br#"
+            local get = server.httpGet
+            function onCreate() get(' 0x10 ', '/before'..string.char(0)..'after') end
+            function onTick() get(-38355.75, 123) end
+            function httpReply(port, request, reply)
+                g_savedata.port=port; g_savedata.kind=math.type(port)
+                g_savedata.request=request; g_savedata.reply=reply
+            end
+        "#,
+            "=shared-http",
+        )?;
+        addon.start()?;
+        addon.tick(1)?;
+        Ok(())
+    })?;
+    assert_eq!(
+        requests.into_inner(),
+        vec![
+            (Some(16.0), Some(b"/before\0after".to_vec())),
+            (Some(-38355.75), Some(b"123".to_vec())),
+        ]
+    );
+    assert!(
+        addon.drain_http_requests().is_empty(),
+        "the SDK queue is not the host sink"
+    );
+    addon.dispatch_http_reply(0xffff_ffff, b"/request", b"raw\0bytes")?;
+    assert_eq!(field(&addon, "port")?, Some(LuaValue::Integer(4294967295)));
+    assert_eq!(field(&addon, "kind")?, Some(LuaValue::text("integer")));
+    assert_eq!(
+        field(&addon, "reply")?,
+        Some(LuaValue::Bytes(b"raw\0bytes".to_vec()))
+    );
+    Ok(())
+}
+
+#[test]
+fn sdk_http_settlement_is_independent_of_destroyed_vm() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        b"function onCreate() server.httpGet(27180,'/pending') end",
+        "=settlement",
+    )?;
+    addon.start()?;
+    let request = addon
+        .drain_http_requests()
+        .pop()
+        .ok_or("pending request absent")?;
+    addon.destroy()?;
+    // The convenience callback path rejects before consuming the request.
+    assert!(addon.http_reply(request.token, b"response").is_err());
+    assert_eq!(
+        addon.resolve_http_reply(request.token, b"response")?,
+        request
+    );
+    assert!(addon
+        .resolve_http_reply(request.token, b"duplicate")
+        .is_err());
+    Ok(())
+}
+
+#[test]
+fn sdk_http_settlement_survives_terminal_instruction_failure() -> Result<(), Box<dyn Error>> {
+    let mut config = AddonConfig::default();
+    config.limits.instruction_budget =
+        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+    let mut addon = Addon::new(config)?;
+    addon.load(
+        b"function onCreate() server.httpGet(27180,'/pending') end; function onTick() while true do end end",
+        "=failed-settlement",
+    )?;
+    addon.start()?;
+    let request = addon
+        .drain_http_requests()
+        .pop()
+        .ok_or("pending request absent")?;
+    assert_eq!(
+        addon
+            .tick(1)
+            .err()
+            .ok_or("expected instruction limit")?
+            .kind,
+        ErrorKind::Limit
+    );
+    assert!(addon.is_failed());
+    assert!(addon.http_reply(request.token, b"response").is_err());
+    assert_eq!(
+        addon.resolve_http_reply(request.token, b"response")?,
+        request
+    );
+    assert!(addon
+        .resolve_http_reply(request.token, b"duplicate")
+        .is_err());
     Ok(())
 }

@@ -38,6 +38,7 @@ pub struct AddonConfig {
     /// 修飾なしの名前でインデックス付けされた、明示的に実装された同期的なserver関数群。
     pub server: BTreeMap<String, HostFunction>,
     /// Server operations supplied for each borrowed host execution phase.
+    /// Including `httpGet` transfers request enqueue ownership to the host.
     pub scoped_server: Vec<String>,
     /// printを追加します。制限付きのdebug.logはアドオンプロファイルで既定で利用可能です。
     pub dev_logs: bool,
@@ -124,7 +125,9 @@ impl Addon {
             return Err(invalid("too many server bindings"));
         }
         for name in config.server.keys().chain(config.scoped_server.iter()) {
-            if name == "httpGet"
+            // A scoped httpGet explicitly transfers enqueue ownership to the
+            // scene host. The built-in bounded queue remains the default.
+            if (name == "httpGet" && !config.scoped_server.iter().any(|n| n == "httpGet"))
                 || name.len() > 128
                 || name.is_empty()
                 || !name.bytes().enumerate().all(|(i, b)| {
@@ -379,14 +382,15 @@ impl Addon {
     }
     /// コールバックの合間にレスポンスを配信します。ビジー状態または不正ステージによる拒否時には未処理トークンを保持します。
     pub fn http_reply(&mut self, token: HttpToken, reply: &[u8]) -> Result<RunOutcome, VmError> {
+        self.require(Stage::Ready)?;
         let request = self.resolve_http_reply(token, reply)?;
-        self.dispatch_http_reply(request.port, &request.request, reply)
+        self.dispatch_http_reply(u32::from(request.port), &request.request, reply)
     }
     /// hostが完了させたHTTP応答を、このscriptへ配送します。
     /// tokenの消費とcontainer内の配送順はhostが所有します。
     pub fn dispatch_http_reply(
         &mut self,
-        port: u16,
+        port: u32,
         request: &[u8],
         reply: &[u8],
     ) -> Result<RunOutcome, VmError> {
@@ -402,13 +406,13 @@ impl Addon {
     }
     /// 応答を検証し、送信済みtokenを消費して元要求を返します。
     /// 複数scriptへの配送を所有するhost用で、callbackは実行しません。
+    /// VMのdestroy/failure後もsettlementでき、Luaは実行しません。
     /// 拒否時にはtokenを保持します。
     pub fn resolve_http_reply(
         &mut self,
         token: HttpToken,
         reply: &[u8],
     ) -> Result<HttpRequest, VmError> {
-        self.require(Stage::Ready)?;
         self.state
             .borrow_mut()
             .http

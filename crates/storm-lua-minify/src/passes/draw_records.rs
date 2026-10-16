@@ -291,10 +291,10 @@ impl<'a> Classifier<'a> {
             };
             // Root declarations must precede this call lexically. Functions
             // declared conditionally or inside a callback are not forwarded.
-            if !self
+            if self
                 .definitions
                 .get(&function)
-                .is_some_and(|&d| d < self.order[&call.statement])
+                .is_none_or(|&d| d >= self.order[&call.statement])
             {
                 break;
             }

@@ -9,6 +9,9 @@ use mlua::{
 };
 use std::{cell::RefCell, fmt, rc::Rc};
 
+mod synchronous;
+pub use synchronous::{SynchronousCallbackPass, SynchronousCallbacks};
+
 /// ホストAPIおよび外部関数アダプタで使用される安定したエラーカテゴリ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -115,7 +118,9 @@ pub struct Vm {
     pub(crate) pending: Option<Thread>,
     pub(crate) control: Rc<RefCell<HookControl>>,
     pub(crate) limits: ExecutionLimits,
-    failed: bool,
+    failed: Rc<std::cell::Cell<bool>>,
+    synchronous: Rc<synchronous::Context>,
+    _synchronous_owner: Rc<()>,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     pub(crate) logs: Rc<RefCell<crate::logging::LogBuffer>>,
     #[cfg(feature = "debug")]
@@ -156,13 +161,24 @@ impl Vm {
         )?;
         #[cfg(feature = "debug")]
         let debugger = crate::debug::Debugger::new(&lua)?;
+        let synchronous_owner = Rc::new(());
+        let synchronous = synchronous::Context::new(
+            &lua,
+            &environment,
+            Rc::clone(&control),
+            limits,
+            Rc::downgrade(&synchronous_owner),
+        );
+        let failed = Rc::clone(&synchronous.failed);
         Ok(Self {
             lua,
             environment,
             pending: None,
             control,
             limits,
-            failed: false,
+            failed,
+            synchronous,
+            _synchronous_owner: synchronous_owner,
             environment_profile,
             logs,
             #[cfg(feature = "debug")]
@@ -180,14 +196,17 @@ impl Vm {
     }
     /// 中断中のコールバックと重複する、または故障状態を再利用しようとするコマンドを拒否します。
     pub fn ensure_idle(&self) -> Result<(), VmError> {
-        if self.failed {
+        if self.failed.get() {
             return Err(VmError::new(
                 ErrorKind::Failed,
                 "reset the VM after failure",
             ));
         }
-        if self.pending.is_some() {
-            return Err(VmError::new(ErrorKind::Busy, "callback is suspended"));
+        if self.pending.is_some() || self.synchronous.active.get() != 0 {
+            return Err(VmError::new(
+                ErrorKind::Busy,
+                "callback is active or suspended",
+            ));
         }
         Ok(())
     }
@@ -197,7 +216,7 @@ impl Vm {
     }
     /// 実行が失敗したかどうか。リセットするにはホストがこのインスタンスを再作成する必要があります。
     pub fn is_failed(&self) -> bool {
-        self.failed
+        self.failed.get()
     }
     /// ホストバッファを除いた現在のLuaヒープ使用量。
     pub fn used_memory(&self) -> usize {
@@ -254,84 +273,11 @@ impl Vm {
         let thread = self.lua.create_thread(function)?;
         self.install_hook(&thread)?;
         self.pending = Some(thread);
+        self.synchronous.main_pending.set(true);
         self.resume_inner(arguments)
     }
     pub(crate) fn install_hook(&self, thread: &Thread) -> Result<(), VmError> {
-        let control = Rc::clone(&self.control);
-        let probe = YieldProbe::new(&self.lua, thread)?;
-        let quantum = self.limits.instruction_budget.get().min(100) as u32;
-        let mut triggers = HookTriggers::new().every_nth_instruction(quantum);
-        #[cfg(feature = "debug")]
-        {
-            // デバッガサポートのコンパイルによって、通常の実行に行フックや呼び出しフックが追加されてはなりません。
-            let state = self.control.borrow();
-            if !state.breakpoints.is_empty() || state.step.is_some() {
-                triggers = triggers.every_line().on_calls().on_returns();
-            }
-        }
-        #[cfg(not(feature = "debug"))]
-        let _ = &mut triggers;
-        thread.set_hook(triggers, move |_, info| {
-            let mut state = control.borrow_mut();
-            if info.event() == DebugEvent::Count {
-                if state.remaining <= u64::from(quantum) {
-                    state.remaining = 0;
-                    state.exhausted = true;
-                } else {
-                    state.remaining -= u64::from(quantum);
-                }
-            }
-            if state.exhausted {
-                // mluaはyield不可能なCコールバック内のYieldを暗黙に無視するため、そこではエラーを送出します。
-                // yield可能な境界では代わりに中断することで、pcallがバジェット枯渇を握りつぶせないようにします。
-                return if probe.can_yield() {
-                    Ok(VmState::Yield)
-                } else {
-                    Err(mlua::Error::RuntimeError(
-                        "instruction budget exceeded".into(),
-                    ))
-                };
-            }
-            #[cfg(feature = "debug")]
-            {
-                match info.event() {
-                    DebugEvent::Call => state.depth += 1,
-                    DebugEvent::Ret => state.depth -= 1,
-                    _ => {}
-                }
-                if info.event() == DebugEvent::Line {
-                    let source = info
-                        .source()
-                        .source
-                        .map(|s| s.into_owned())
-                        .unwrap_or_default();
-                    let line = info.curr_line();
-                    if state.skip_first_line {
-                        state.skip_first_line = false;
-                        if state.last_line.as_ref() == Some(&(source.clone(), line)) {
-                            return Ok(VmState::Continue);
-                        }
-                    }
-                    let stop = state
-                        .breakpoints
-                        .iter()
-                        .any(|(s, l)| *l == line && (s.is_empty() || *s == source))
-                        || match state.step {
-                            Some(StepMode::Into) => true,
-                            Some(StepMode::Over) => state.depth <= state.target_depth,
-                            Some(StepMode::Out) => state.depth < state.target_depth,
-                            _ => false,
-                        };
-                    if stop && probe.can_yield() {
-                        state.last_line = Some((source, line));
-                        state.local_names = probe.local_names()?;
-                        return Ok(VmState::Yield);
-                    }
-                }
-            }
-            Ok(VmState::Continue)
-        });
-        Ok(())
+        self.synchronous.install_main_hook(thread)
     }
     fn resume_inner(&mut self, arguments: MultiValue) -> Result<RunOutcome, VmError> {
         #[cfg(feature = "debug")]
@@ -340,10 +286,20 @@ impl Vm {
             .pending
             .as_ref()
             .ok_or_else(|| VmError::new(ErrorKind::InvalidArgument, "no suspended callback"))?;
-        let result = thread.resume::<MultiValue>(arguments);
-        if self.control.borrow().exhausted {
-            self.failed = true;
+        let result = {
+            let _active = synchronous::ActiveCall::enter(&self.synchronous, thread, true);
+            thread.resume::<MultiValue>(arguments)
+        };
+        if let Some(error) = self.synchronous.restore_error.borrow_mut().take() {
+            self.failed.set(true);
             self.pending = None;
+            self.synchronous.main_pending.set(false);
+            return Err(error);
+        }
+        if self.control.borrow().exhausted {
+            self.failed.set(true);
+            self.pending = None;
+            self.synchronous.main_pending.set(false);
             return Err(VmError::new(
                 ErrorKind::Limit,
                 "instruction budget exceeded",
@@ -351,8 +307,9 @@ impl Vm {
         }
         match result {
             Err(error) => {
-                self.failed = true;
+                self.failed.set(true);
                 self.pending = None;
+                self.synchronous.main_pending.set(false);
                 Err(error.into())
             }
             Ok(_) => {
@@ -360,6 +317,7 @@ impl Vm {
                     Ok(RunOutcome::Suspended)
                 } else {
                     self.pending = None;
+                    self.synchronous.main_pending.set(false);
                     Ok(RunOutcome::Completed)
                 }
             }
@@ -368,6 +326,9 @@ impl Vm {
     /// 残りの命令数バジェットを維持したまま、同一の中断中の継続を再開します。
     #[cfg(feature = "debug")]
     pub fn resume(&mut self, mode: StepMode) -> Result<RunOutcome, VmError> {
+        if self.failed.get() {
+            return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
+        }
         if self.pending.is_none() {
             return Err(VmError::new(
                 ErrorKind::InvalidArgument,

@@ -4,7 +4,11 @@ mod bindings;
 #[cfg(feature = "debug")]
 mod debugger;
 mod matrix;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeMap,
+    rc::{Rc, Weak},
+};
 use storm_lua_spec::{
     http::{HttpError, HttpQueue, HttpRequest, HttpToken},
     property::PropertyBag,
@@ -79,12 +83,79 @@ enum Stage {
     Destroyed,
     Failed,
 }
+/// A synchronous entry for host-generated Addon events, including reentrant events.
+/// Handles share the actual VM and lifecycle; reload/drop invalidates older handles.
+#[derive(Clone)]
+pub struct SynchronousEvents {
+    callbacks: storm_lua_vm::runner::SynchronousCallbacks,
+    stage: Weak<Cell<Stage>>,
+    scoped: bool,
+}
+impl SynchronousEvents {
+    /// Whether this script still admits events. Failed or destroyed scripts are excluded.
+    pub fn is_live(&self) -> bool {
+        self.stage
+            .upgrade()
+            .is_some_and(|s| !matches!(s.get(), Stage::Failed | Stage::Destroyed))
+            && self.callbacks.is_live()
+    }
+    /// Execute a documented event before its triggering host call returns.
+    /// Errors retain side effects and fail this script; they do not roll back host state.
+    pub fn dispatch(&self, callback: &str, arguments: &[LuaValue]) -> Result<RunOutcome, VmError> {
+        if !storm_lua_spec::addon::EVENTS.contains(&callback) {
+            return Err(invalid("unknown or reserved addon callback"));
+        }
+        let stage = self
+            .stage
+            .upgrade()
+            .ok_or_else(|| invalid("addon event owner was dropped"))?;
+        if matches!(stage.get(), Stage::Failed | Stage::Destroyed) {
+            return Err(VmError::new(
+                ErrorKind::Failed,
+                "addon no longer admits callbacks",
+            ));
+        }
+        self.callbacks.ensure_available()?;
+        let result = self.callbacks.call_if_function(callback, arguments);
+        if result.is_err() && (!self.scoped || !self.callbacks.is_live()) {
+            stage.set(Stage::Failed);
+        }
+        result
+    }
+}
+
+/// One host call's event scope. Errors are reported immediately; ordinary
+/// callback failures become terminal at the end of the pass.
+pub struct SynchronousEventPass {
+    pass: Option<storm_lua_vm::runner::SynchronousCallbackPass>,
+    events: SynchronousEvents,
+    owner: SynchronousEvents,
+}
+impl SynchronousEventPass {
+    /// A cloneable event entry whose lifetime is bounded by this guard.
+    pub fn events(&self) -> SynchronousEvents {
+        self.events.clone()
+    }
+}
+impl Drop for SynchronousEventPass {
+    fn drop(&mut self) {
+        self.pass.take();
+        if !self.owner.callbacks.is_live() {
+            if let Some(stage) = self.owner.stage.upgrade() {
+                if stage.get() != Stage::Destroyed {
+                    stage.set(Stage::Failed);
+                }
+            }
+        }
+    }
+}
+
 /// 1つのアドオンLua状態。Composite I/O、画面API、ワールドシミュレータ、スケジューラは含みません。
 pub struct Addon {
     vm: Vm,
     config: AddonConfig,
     state: Rc<RefCell<State>>,
-    stage: Stage,
+    stage: Rc<Cell<Stage>>,
     source: Vec<u8>,
     source_name: String,
 }
@@ -102,6 +173,30 @@ fn http_error(error: HttpError) -> VmError {
     )
 }
 impl Addon {
+    /// Obtain an event entry for synchronous world services without borrowing an executing Addon.
+    pub fn synchronous_events(&self) -> SynchronousEvents {
+        SynchronousEvents {
+            callbacks: self.vm.synchronous_callbacks(),
+            stage: Rc::downgrade(&self.stage),
+            scoped: false,
+        }
+    }
+    /// Admit nested callbacks for one host root call, retaining ordinary errors
+    /// until its scope ends. Resource failures stop immediately.
+    pub fn begin_synchronous_event_pass(&self) -> Result<SynchronousEventPass, VmError> {
+        let owner = self.synchronous_events();
+        let pass = owner.callbacks.begin_pass()?;
+        let events = SynchronousEvents {
+            callbacks: pass.callbacks(),
+            stage: owner.stage.clone(),
+            scoped: true,
+        };
+        Ok(SynchronousEventPass {
+            pass: Some(pass),
+            events,
+            owner,
+        })
+    }
     /// アドオン固有のAPI名前空間のみを持つ未開始のアドオンを作成します。
     pub fn new(config: AddonConfig) -> Result<Self, VmError> {
         if config.is_world_create && config.savedata.is_some() {
@@ -172,20 +267,20 @@ impl Addon {
             vm,
             config,
             state,
-            stage: Stage::Empty,
+            stage: Rc::new(Cell::new(Stage::Empty)),
             source: Vec::new(),
             source_name: String::new(),
         })
     }
     fn require(&self, stage: Stage) -> Result<(), VmError> {
         self.vm.ensure_idle()?;
-        if self.stage == Stage::Failed {
+        if self.stage.get() == Stage::Failed {
             return Err(VmError::new(
                 ErrorKind::Failed,
                 "reload the addon after failure",
             ));
         }
-        if self.stage != stage {
+        if self.stage.get() != stage {
             return Err(invalid("addon lifecycle operation is out of order"));
         }
         Ok(())
@@ -198,14 +293,14 @@ impl Addon {
         }
         self.source = source.to_vec();
         self.source_name = name.to_owned();
-        self.stage = Stage::Loading;
+        self.stage.set(Stage::Loading);
         let result = self.vm.execute(source, name);
         self.finish(result)
     }
     /// loadの後にonCreateを1度呼び出します。コールバックが存在しない場合でもライフサイクル遷移は完了します。
     pub fn start(&mut self) -> Result<RunOutcome, VmError> {
         self.require(Stage::Loaded)?;
-        self.stage = Stage::Creating;
+        self.stage.set(Stage::Creating);
         let result = self
             .vm
             .call_with("onCreate", &[LuaValue::Bool(self.config.is_world_create)]);
@@ -232,27 +327,27 @@ impl Addon {
         self.run_event(callback, arguments)
     }
     fn run_event(&mut self, callback: &str, arguments: &[LuaValue]) -> Result<RunOutcome, VmError> {
-        self.stage = Stage::Callback;
+        self.stage.set(Stage::Callback);
         let result = self.vm.call_with(callback, arguments);
         self.finish(result)
     }
     /// onDestroyを明示的に呼び出します。破棄処理自体がユーザーコードを暗黙に実行することはありません。
     pub fn destroy(&mut self) -> Result<RunOutcome, VmError> {
         self.require(Stage::Ready)?;
-        self.stage = Stage::Destroying;
+        self.stage.set(Stage::Destroying);
         let result = self.vm.call("onDestroy");
         self.finish(result)
     }
     fn finish(&mut self, result: Result<RunOutcome, VmError>) -> Result<RunOutcome, VmError> {
         match &result {
             Ok(RunOutcome::Suspended) => {}
-            Err(_) => self.stage = Stage::Failed,
+            Err(_) => self.stage.set(Stage::Failed),
             Ok(_) => {
-                self.stage = match self.stage {
+                let next = match self.stage.get() {
                     Stage::Loading => {
                         if let Some(savedata) = &self.config.savedata {
                             if let Err(error) = self.vm.set_global("g_savedata", savedata) {
-                                self.stage = Stage::Failed;
+                                self.stage.set(Stage::Failed);
                                 return Err(error);
                             }
                         }
@@ -262,13 +357,14 @@ impl Addon {
                     Stage::Destroying => Stage::Destroyed,
                     other => other,
                 };
+                self.stage.set(next);
             }
         }
         result
     }
     /// Luaを実行せずに現在のg_savedataをコピーします（VM全体のスナップショットやゲームXMLではありません）。
     pub fn savedata(&self) -> Result<LuaValue, VmError> {
-        if matches!(self.stage, Stage::Empty | Stage::Loading) {
+        if matches!(self.stage.get(), Stage::Empty | Stage::Loading) {
             return Err(invalid("savedata is not initialized"));
         }
         let value = self.vm.global("g_savedata")?;
@@ -280,7 +376,7 @@ impl Addon {
     /// 明示的なホストチェックポイントを用いて再作成およびロードを行います。その後 start()（onCreate(false)）を呼び出してください。
     /// 置換成功後は古いHTTP／デバッグ識別子は無効となり、外部への影響はロールバックできません。
     pub fn reload(&mut self, savedata: LuaValue) -> Result<RunOutcome, VmError> {
-        if self.stage == Stage::Empty {
+        if self.stage.get() == Stage::Empty {
             return Err(invalid("no addon source to reload"));
         }
         let mut config = self.config.clone();
@@ -341,6 +437,6 @@ impl Addon {
     }
     /// 実行時エラーまたはライフサイクル初期化失敗により再作成が必要かどうか。
     pub fn is_failed(&self) -> bool {
-        self.stage == Stage::Failed || self.vm.is_failed()
+        self.stage.get() == Stage::Failed || self.vm.is_failed()
     }
 }

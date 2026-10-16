@@ -45,3 +45,38 @@ The compiler owners are implemented on the development branch; see the [compiler
 The syntax visitor and dependency-graph validator have one owner each. Analysis does not depend on the linker or minifier. `storm-lua-build` composes shared services rather than becoming a new implementation core. Low-level implementation modules needed by sibling crates are distinguished from documented host-level entry points.
 
 The compiler WASM is a separate module and memory from runtime/raster. `@stormcat-works/storm-lua-engine/compiler` loads it explicitly; it neither initializes a VM nor creates a Worker. Host applications own lifecycle and scheduling. Official CLI/Web relocation is a later frontend stage, not a dependency of the SDK.
+
+## Synchronous world events
+
+The VM provides an owned `SynchronousCallbacks` entry for host services that must
+complete a callback before returning to Lua. Addon exposes the lifecycle-aware
+`SynchronousEvents` entry and validates its event catalog. Hosts still own world
+state, admission and event ordering. They must release host state borrows before
+calling scripts and decide how to record callback errors; VM side effects are not
+rolled back.
+
+Each nested event executes a protected Lua coroutine in the same VM environment.
+The active VM's instruction control is shared. Idle invocations receive a fresh
+budget; nested invocations cannot replenish it, and short nested events count
+every instruction. Synchronous events cannot yield or overlap a suspended main
+continuation. A rejected busy preflight preserves that continuation. Reload,
+destruction and VM drop invalidate old entries. No raw VM pointer or backend type
+is exposed by these APIs.
+
+The event entry does not create a second world model, a scheduler, HTTP routing or
+server API implementations. Synchronous nested events are atomic with respect to
+the host debugger's main continuation and do not create debugger continuations of
+their own. The host remains responsible for script order and post-callback world
+snapshots.
+
+同期host eventのprotected coroutineはmluaのVM単位のhookを共有するため、
+入れ子から戻るたびに直前のthreadの命令数・debug hookを復元する。復元失敗も
+明示的なterminal errorとする。入れ子の短いcallbackで命令数の未計数分を
+蓄積できないよう、同じ予算を命令ごとに消費する。
+
+Native Addonのhost呼出し内で通常callback error後も後続eventを許す場合、
+`begin_synchronous_event_pass` のowned guardを外側のhost呼出しの終了まで保持する。
+guardから取得したevent handleのcloneはpassを延命しない。通常のcallback errorは
+その都度Errを返し、pass終了で失敗状態を確定する。命令数・メモリ制限、yield、
+hook復元の失敗は即時停止する。scopeなしの経路の既存の即時失敗契約は維持する。
+Addon同期eventの非function globalは欠落handlerとして扱う。

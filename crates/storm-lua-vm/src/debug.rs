@@ -30,16 +30,9 @@ pub enum DebugValue {
     Opaque(&'static str),
 }
 
-use crate::{
-    backend_support::YieldProbe,
-    runner::{ErrorKind, Vm, VmError},
-};
-use mlua::{ChunkMode, Function, HookTriggers, Lua, Table, Thread, Value, VmState};
-use std::{
-    cell::Cell,
-    rc::Rc,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use crate::runner::{ErrorKind, Vm, VmError};
+use mlua::{ChunkMode, Function, Lua, Table, Thread, Value};
+use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_VM: AtomicU64 = AtomicU64::new(1);
 pub(crate) struct Debugger {
     pub(crate) library: Table,
@@ -321,36 +314,8 @@ impl Vm {
             .set_environment(scope)
             .into_function()?;
         let evaluator = self.lua.create_thread(function)?;
-        let probe = YieldProbe::new(&self.lua, &evaluator)?;
-        let left = Rc::new(Cell::new(100_000_u64));
-        let count = Rc::clone(&left);
-        let shared_control = Rc::clone(&self.control);
-        let old_exhausted = self.control.borrow().exhausted;
-        evaluator.set_hook(
-            HookTriggers::new().every_nth_instruction(100),
-            move |_, _| {
-                count.set(count.get().saturating_sub(100));
-                if count.get() == 0 {
-                    shared_control.borrow_mut().exhausted = true;
-                    if probe.can_yield() {
-                        Ok(VmState::Yield)
-                    } else {
-                        Err(mlua::Error::RuntimeError("watch budget exceeded".into()))
-                    }
-                } else {
-                    Ok(VmState::Continue)
-                }
-            },
-        );
         self.debugger.hook_dirty = true;
-        let result = evaluator.resume::<Value>(());
-        self.control.borrow_mut().exhausted = old_exhausted;
-        if left.get() == 0 {
-            return Err(VmError::new(
-                ErrorKind::Limit,
-                "watch instruction budget exceeded",
-            ));
-        }
-        self.debugger.value(result?)
+        let value = self.evaluate_watch_thread(&evaluator)?;
+        self.debugger.value(value)
     }
 }

@@ -22,9 +22,8 @@ pub type ScopedServerFunction<'a> = &'a dyn Fn(&[LuaValue]) -> Result<Vec<LuaVal
 /// Detached callback target. It retains the VM, but becomes invalid when its Addon is replaced.
 #[derive(Clone)]
 pub struct AddonCallback {
-    vm: Rc<RefCell<Vm>>,
+    synchronous: storm_lua_vm::runner::SynchronousCallbacks,
     lua: Lua,
-    environment: Table,
     slots: Table,
     names: Rc<Vec<String>>,
     stage: Rc<Cell<Stage>>,
@@ -63,7 +62,7 @@ impl AddonCallback {
         tick_disabled: Rc<Cell<bool>>,
         names: &[String],
     ) -> Result<Self, VmError> {
-        let (lua, environment, slots) = vm.borrow_mut().configure(|lua, env| {
+        let (lua, slots) = vm.borrow_mut().configure(|lua, env| {
             let slots = lua.create_table()?;
             let server: Table = env.raw_get("server")?;
             // Script-held aliases resolve the current phase slot.
@@ -73,14 +72,14 @@ impl AddonCallback {
                     .set_name("=host server dispatch").call((slots.clone(), index + 1, lua.globals().get::<Function>("error")?))?;
                 server.raw_set(name.as_str(), wrapper)?;
             }
-            Ok((lua.clone(), env.clone(), slots))
+            Ok((lua.clone(), slots))
         })?;
         let logs = vm.borrow().log_reader();
         let host_calls = vm.borrow().host_call_context();
+        let synchronous = vm.borrow().synchronous_callbacks();
         Ok(Self {
-            vm,
+            synchronous,
             lua,
-            environment,
             slots,
             names: Rc::new(names.to_vec()),
             stage,
@@ -121,24 +120,9 @@ impl AddonCallback {
         if matches!(prior, Stage::Empty) {
             return Err(invalid("addon source has not been loaded"));
         }
-        let nested = self.depth.get() != 0;
-        if !nested {
-            self.vm.borrow().ensure_idle()?;
-        }
+        self.synchronous.ensure_available()?;
         let _execution = self.enter();
-        let result = if nested {
-            (|| {
-                let value: Value = self.environment.raw_get(callback)?;
-                let Value::Function(function) = value else {
-                    return Ok(RunOutcome::Missing);
-                };
-                let args = backend::encode_values(&self.lua, arguments)?;
-                function.call::<MultiValue>(args).map_err(VmError::from)?;
-                Ok(RunOutcome::Completed)
-            })()
-        } else {
-            self.vm.borrow_mut().call_with(callback, arguments)
-        };
+        let result = self.synchronous.call_if_function(callback, arguments);
         if let Err(error) = &result {
             if error.kind == ErrorKind::Lua {
                 self.tick_disabled.set(true);

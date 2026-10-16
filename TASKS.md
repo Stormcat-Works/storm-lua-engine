@@ -134,4 +134,5 @@ npmの初回Trusted Publisher承認、検査済みtarballのregistry公開、reg
 ## 2026-10-05 印字ラウンドの検証引継ぎ
 
 `f3e5c87`までの実装の検証・計測・失敗ケース再確認を完了し、docs/verification/compile-emission-20261005.mdに保存した。最大Map比1.2（理想1.1）と、Map無効時も速くする要件は継続する。最適化の全入力・毎回の改善が完了したとは扱わない。
-- [ ] Validate the explicit shared CRT random provider against independent native sampler traces and the actual host's complete consumer/checkpoint lifecycle.
+- [x] Validate the explicit shared CRT random provider against independent native sampler traces (120 random and 27 seed cases).
+- [ ] Validate the actual host's complete shared-random consumer/checkpoint lifecycle.

@@ -77,3 +77,5 @@ only instruction exhaustion currently has an independent sticky flag. Hosts rele
 world guards before invoking a predicate and project selected world objects after
 all predicate calls when the native operation requires that order. Borrowed phases
 must finish synchronously; debugger suspension across their lifetime is unsupported.
+
+複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenと応答のサイズを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、同じ検証・消費の後にそのAddonのcallbackを呼びます。実HTTP transportと複数scriptの配送範囲はhostが所有します。

@@ -11,6 +11,33 @@ fn field(addon: &Addon, name: &str) -> Result<Option<LuaValue>, Box<dyn Error>> 
 }
 
 #[test]
+fn host_can_resolve_http_without_invoking_an_origin_callback() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        function onCreate() server.httpGet(27180, '/request') end
+        function httpReply() g_savedata.replied = true end
+    "#,
+        "=host-http",
+    )?;
+    addon.start()?;
+    let request = addon.drain_http_requests().pop().ok_or("missing request")?;
+    // Rejected transport data must leave the token available to the host.
+    assert!(addon
+        .resolve_http_reply(request.token, &vec![0; 1024 * 1024])
+        .is_err());
+    let resolved = addon.resolve_http_reply(request.token, b"response")?;
+    assert_eq!(resolved, request);
+    assert_eq!(field(&addon, "replied")?, None);
+    assert!(addon
+        .resolve_http_reply(request.token, b"duplicate")
+        .is_err());
+    addon.dispatch_http_reply(resolved.port, &resolved.request, b"response")?;
+    assert_eq!(field(&addon, "replied")?, Some(LuaValue::Bool(true)));
+    Ok(())
+}
+
+#[test]
 fn tick_lua_error_retains_globals_and_delivers_events_and_destroy() -> Result<(), Box<dyn Error>> {
     let mut addon = Addon::new(Default::default())?;
     addon.load(

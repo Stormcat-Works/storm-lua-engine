@@ -379,21 +379,41 @@ impl Addon {
     }
     /// コールバックの合間にレスポンスを配信します。ビジー状態または不正ステージによる拒否時には未処理トークンを保持します。
     pub fn http_reply(&mut self, token: HttpToken, reply: &[u8]) -> Result<RunOutcome, VmError> {
+        let request = self.resolve_http_reply(token, reply)?;
+        self.dispatch_http_reply(request.port, &request.request, reply)
+    }
+    /// hostが完了させたHTTP応答を、このscriptへ配送します。
+    /// tokenの消費とcontainer内の配送順はhostが所有します。
+    pub fn dispatch_http_reply(
+        &mut self,
+        port: u16,
+        request: &[u8],
+        reply: &[u8],
+    ) -> Result<RunOutcome, VmError> {
         self.require(Stage::Ready)?;
-        let request = self
-            .state
-            .borrow_mut()
-            .http
-            .reply(token, reply)
-            .map_err(http_error)?;
         self.run_event(
             "httpReply",
             &[
-                LuaValue::Integer(i64::from(request.port)),
-                LuaValue::Bytes(request.request),
+                LuaValue::Integer(i64::from(port)),
+                LuaValue::Bytes(request.to_vec()),
                 LuaValue::Bytes(reply.to_vec()),
             ],
         )
+    }
+    /// 応答を検証し、送信済みtokenを消費して元要求を返します。
+    /// 複数scriptへの配送を所有するhost用で、callbackは実行しません。
+    /// 拒否時にはtokenを保持します。
+    pub fn resolve_http_reply(
+        &mut self,
+        token: HttpToken,
+        reply: &[u8],
+    ) -> Result<HttpRequest, VmError> {
+        self.require(Stage::Ready)?;
+        self.state
+            .borrow_mut()
+            .http
+            .reply(token, reply)
+            .map_err(http_error)
     }
     /// 成功レスポンスを捏造することなく、実際のトランスポート失敗後にキャンセルします。
     pub fn cancel_http(&mut self, token: HttpToken) -> Result<(), VmError> {

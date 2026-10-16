@@ -1,5 +1,9 @@
 # Implementation tasks
 
+## AD-01/AD-02 host接続（2026-10-17）
+
+host側のHTTP worker・sceneキュー・実ゲームとの応答比較はconsumer側で接続中。Engine追加APIの検証と公開工程は区別する。
+
 ## v0.3.1のローカル公開候補（2026-10-12、完了）
 
 最新性能・Addon・metadata・743件の描画契約を統合し、Native/WASM/SDK/3ブラウザ/Playground/梱包consumerと固定240設定・実コーパス・反復性能を再検証した。[候補記録](docs/verification/release-candidate-0.3.1.md)。既知7入力のtrapと、部分/反復名mapの不具合も解消した。source manifestと検査済みtarball/ZIP、hash、release notes、ガイドpatchを保存した。

@@ -7,6 +7,9 @@
 ## metadataと詳細Source Mapの修正（2026-10-12、未公開）
 
 公開v0.3.1で`metadataTag`・`minify:false`・`sourceMap:true`を併用すると、空白化したmetadataに完全一致コピーを主張して失敗する。除去範囲を共通リンカーのコピー区間から除外し、通常/LifeBoat/Addon、標準/詳細mapを修正した。元snapshotと変更範囲外のbyte/UTF-16位置を保持する。[修正と検証](docs/verification/metadata-source-map-20261012.md)。公開済み0.3.1のタグ・配布物は固定されており、この修正は未公開。
+## AD-01/AD-02 host接続（2026-10-17）
+
+借用HTTP sink、Lua数値/integer coercion、u32返信port、破棄・失敗後の要求精算を追加。SDK既定キューを維持し、実通信・scene寿命・配送順はhostが所有する。
 
 ## v0.3.1 公開版の準備と検証（2026-10-12）
 

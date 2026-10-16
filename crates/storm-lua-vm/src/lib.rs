@@ -6,6 +6,19 @@ pub mod debug;
 /// バックエンド密結合アクセス。通常のエンジンAPIではなく、mluaへの互換性保証でもありません。
 #[cfg(feature = "backend-mlua")]
 pub mod backend {
+    /// Encode owned host values with the VM's normal size and depth limits.
+    pub fn encode_values(
+        lua: &Lua,
+        values: &[crate::value::LuaValue],
+    ) -> Result<MultiValue, crate::runner::VmError> {
+        crate::value::encode(lua, values)
+    }
+    /// Decode callback arguments with the VM's normal size and depth limits.
+    pub fn decode_values(
+        values: MultiValue,
+    ) -> Result<Vec<crate::value::LuaValue>, crate::runner::VmError> {
+        crate::value::decode(values)
+    }
     /// 独立した統合テストおよび数値境界テストに必要な直接のバックエンド型。
     pub use mlua::{
         Error as BackendError, Function, Lua, MultiValue, Result as BackendResult,
@@ -48,5 +61,7 @@ pub mod value;
 
 /// Trusted host value/function bindings, separate from script-visible standard libraries.
 pub mod bindings;
+/// Synchronous borrowed host arguments and protected predicates.
+pub mod host;
 /// Owned source chunks and explicit development-time include loading.
 pub mod source;

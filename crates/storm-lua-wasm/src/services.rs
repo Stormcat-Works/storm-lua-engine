@@ -186,6 +186,7 @@ pub(crate) fn create_addon(
         properties: codec::properties(&property_bytes)?,
         savedata,
         server,
+        scoped_server: Vec::new(),
         dev_logs: false,
         environment: environment(&request)?,
         bindings: bindings(&request, host_key)?,

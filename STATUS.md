@@ -2,7 +2,7 @@
 
 ## AD-01/AD-02 host接続（2026-10-17）
 
-借用HTTP sink、Lua数値coercion、u32返信port、破棄・失敗後の要求精算を追加。SDK既定キューを維持し、実通信・scene寿命・配送順はhostが所有する。
+借用HTTP sink、Lua数値/integer coercion、u32返信port、破棄・失敗後の要求精算を追加。SDK既定キューを維持し、実通信・scene寿命・配送順はhostが所有する。
 
 ## v0.3.1 公開版の準備と検証（2026-10-12）
 

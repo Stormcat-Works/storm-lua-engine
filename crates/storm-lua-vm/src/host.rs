@@ -53,6 +53,12 @@ impl HostCall<'_> {
     pub fn number(&self, index: usize) -> Result<Option<f64>, VmError> {
         Ok(self.lua.coerce_number(self.argument(index)?.clone())?)
     }
+    /// Lua's native integer coercion, including integral numeric strings.
+    /// Nonintegral numbers and other nonconvertible values return None, matching
+    /// lua_tointegerx; the host decides how to handle conversion failure.
+    pub fn integer(&self, index: usize) -> Result<Option<i64>, VmError> {
+        Ok(self.lua.coerce_integer(self.argument(index)?.clone())?)
+    }
     /// Decode one ordinary data argument with the normal value budget.
     pub fn decode(&self, index: usize) -> Result<LuaValue, VmError> {
         let mut values =

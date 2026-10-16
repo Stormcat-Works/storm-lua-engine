@@ -683,3 +683,53 @@ fn sdk_http_settlement_survives_terminal_instruction_failure() -> Result<(), Box
         .is_err());
     Ok(())
 }
+
+#[test]
+fn scoped_integer_coercion_retains_lua_integer_rules_without_owned_decoding(
+) -> Result<(), Box<dyn Error>> {
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["integer".into()],
+        ..Default::default()
+    })?;
+    let observed = RefCell::new(Vec::new());
+    let coerce = |call: HostCall<'_>| {
+        assert_eq!(call.len(), 1);
+        assert!(call.integer(1).is_err(), "missing arguments are not nil");
+        observed.borrow_mut().push(call.integer(0)?);
+        Ok(HostReturn::Values(Vec::new()))
+    };
+    let target = addon.callback_target();
+    target.with_server_calls(&[], &[("integer", &coerce)], || {
+        addon.load(
+            br#"function onCreate()
+            local f=server.integer
+            f(math.maxinteger); f(math.mininteger); f(7.0); f(-0.5)
+            f(' 0x10 '); f('1e2'); f('7.5'); f('bad'); f(nil)
+            f(true); f({}); f(function() end); f(0/0); f(2^63)
+        end"#,
+            "=integer-coercion",
+        )?;
+        addon.start()
+    })?;
+    assert_eq!(
+        observed.into_inner(),
+        vec![
+            Some(i64::MAX),
+            Some(i64::MIN),
+            Some(7),
+            None,
+            Some(16),
+            Some(100),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
+    );
+    Ok(())
+}

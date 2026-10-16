@@ -212,3 +212,333 @@ fn source_syntax_error_still_restores_checkpoint() -> Result<(), Box<dyn Error>>
     assert_eq!(addon.destroy()?, RunOutcome::Missing);
     Ok(())
 }
+
+#[test]
+fn borrowed_host_phase_supports_cached_alias_and_synchronous_callback() -> Result<(), Box<dyn Error>>
+{
+    use crate::ScopedServerFunction;
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["spawn".into(), "read".into()],
+        ..Default::default()
+    })?;
+    let target = addon.callback_target();
+    let world = RefCell::new(0i64);
+    let spawn = |_: &[LuaValue]| {
+        *world.borrow_mut() += 1;
+        target.dispatch("onVehicleSpawn", &[LuaValue::Integer(42)])?;
+        Ok(vec![])
+    };
+    let read = |_: &[LuaValue]| Ok(vec![LuaValue::Integer(*world.borrow())]);
+    let functions: [(&str, ScopedServerFunction<'_>); 2] = [("spawn", &spawn), ("read", &read)];
+    target.with_server_functions(&functions, || {
+        addon.load(br#"
+            local spawn, read = server.spawn, server.read
+            g_savedata.order = ''
+            function onVehicleSpawn(id)
+                if id ~= 42 or read() ~= 1 then server.testFailure() end
+                g_savedata.order = g_savedata.order .. 'V'
+            end
+            function onCreate()
+                g_savedata.order = g_savedata.order .. 'C'
+                spawn()
+                g_savedata.order = g_savedata.order .. 'R'
+            end
+            function onTick() if read() ~= 1 then server.testFailure() end; g_savedata.order = g_savedata.order .. 'T' end
+        "#, "phase")?;
+        // Native environment components spawn before onCreate.
+        target.dispatch("onVehicleSpawn", &[LuaValue::Integer(42)])?;
+        Ok(())
+    }).err().ok_or("expected error")?; // read() == 0 is a real script error, but start remains permitted.
+    target.with_server_functions(&functions, || {
+        addon.start()?;
+        Ok(())
+    })?;
+    target.with_server_functions(&functions, || {
+        addon.tick(1)?;
+        Ok(())
+    })?;
+    // The pre-create ordinary error disabled ticks, without disabling onCreate or nested callbacks.
+    assert_eq!(
+        addon.savedata()?,
+        LuaValue::Table(vec![(
+            LuaValue::Bytes(b"order".to_vec()),
+            LuaValue::Bytes(b"CVR".to_vec())
+        )])
+    );
+    Ok(())
+}
+
+#[test]
+fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["again".into()],
+        ..Default::default()
+    })?;
+    let target = addon.callback_target();
+    let again = |_: &[LuaValue]| {
+        target.dispatch("onVehicleSpawn", &[])?;
+        Ok(vec![])
+    };
+    target.with_server_functions(&[("again", &again)], || {
+        addon.load(b"function onVehicleSpawn() while true do end end; function onCreate() server.again() end", "budget")?;
+        let error = addon.start().err().ok_or_else(|| invalid("expected error"))?;
+        assert_eq!(error.kind, ErrorKind::Limit);
+        assert!(addon.is_failed());
+        Ok(())
+    })?;
+    Ok(())
+}
+
+#[test]
+fn replaced_addon_invalidates_detached_target() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(b"function onVehicleSpawn() end", "reload")?;
+    let old = addon.callback_target();
+    addon.reload(LuaValue::Table(vec![]))?;
+    assert_eq!(
+        old.dispatch("onVehicleSpawn", &[])
+            .err()
+            .ok_or("expected error")?
+            .kind,
+        ErrorKind::Failed
+    );
+    Ok(())
+}
+
+#[test]
+fn cached_host_alias_uses_each_new_phase_and_restores_outer_phase() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["read".into()],
+        ..Default::default()
+    })?;
+    let target = addon.callback_target();
+    let first = |_: &[LuaValue]| Ok(vec![LuaValue::Integer(1)]);
+    let second = |_: &[LuaValue]| Ok(vec![LuaValue::Integer(2)]);
+    target.with_server_functions(&[("read", &first)], || {
+        addon.load(b"local read = server.read; function onCreate() g_savedata.value = read() end; function onVehicleSpawn() g_savedata.value = read() end; function onTick() g_savedata.value = read() end", "alias")?;
+        addon.start()?;
+        target.with_server_functions(&[("read", &second)], || { target.dispatch("onVehicleSpawn", &[])?; Ok(()) })?;
+        target.dispatch("onVehicleSpawn", &[])?;
+        assert_eq!(field(&addon, "value").map_err(|e| invalid(&e.to_string()))?, Some(LuaValue::Integer(1)));
+        let inner: Result<(), VmError> = target.with_server_functions(&[("read", &second)], || Err(invalid("inner host error")));
+        assert!(inner.is_err());
+        target.dispatch("onVehicleSpawn", &[])?;
+        Ok(())
+    })?;
+    assert_eq!(field(&addon, "value")?, Some(LuaValue::Integer(1)));
+    target.with_server_functions(&[("read", &first)], || {
+        addon.tick(1)?;
+        Ok(())
+    })?;
+    assert_eq!(field(&addon, "value")?, Some(LuaValue::Integer(1)));
+    assert_eq!(
+        target
+            .dispatch("onVehicleSpawn", &[])
+            .err()
+            .ok_or("expected closed phase error")?
+            .kind,
+        ErrorKind::Lua
+    );
+    addon.reload_with(LuaValue::Table(vec![]), |next, source, name| {
+        let next_target = next.callback_target();
+        next_target.with_server_functions(&[("read", &second)], || next.load(source, name))
+    })?;
+    assert_eq!(
+        target
+            .dispatch("onVehicleSpawn", &[])
+            .err()
+            .ok_or("expected invalidated target")?
+            .kind,
+        ErrorKind::Failed
+    );
+    let fresh = addon.callback_target();
+    fresh.with_server_functions(&[("read", &second)], || {
+        addon.start()?;
+        Ok(())
+    })?;
+    assert_eq!(field(&addon, "value")?, Some(LuaValue::Integer(2)));
+    Ok(())
+}
+
+#[cfg(feature = "debug")]
+#[test]
+fn suspended_dispatch_is_busy_but_watch_can_deliver_synchronous_event() -> Result<(), Box<dyn Error>>
+{
+    use storm_lua_vm::runner::StepMode;
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["trigger".into()],
+        ..Default::default()
+    })?;
+    addon.load(b"function onVehicleSpawn()\n g_savedata.callback = true\nend\nfunction onTick()\n local x = 1\n g_savedata.tick = x\nend", "=watch-reentry")?;
+    addon.start()?;
+    addon.set_breakpoints(vec![("=watch-reentry".into(), 5)])?;
+    assert_eq!(addon.tick(1)?, RunOutcome::Suspended);
+    let target = addon.callback_target();
+    assert_eq!(
+        target
+            .dispatch("onVehicleSpawn", &[])
+            .err()
+            .ok_or("expected Busy")?
+            .kind,
+        ErrorKind::Busy
+    );
+    assert!(!addon.is_failed());
+    let trigger = |_: &[LuaValue]| {
+        target.dispatch("onVehicleSpawn", &[])?;
+        Ok(vec![])
+    };
+    addon.set_breakpoints(vec![])?;
+    target.with_server_functions(&[("trigger", &trigger)], || {
+        addon.evaluate_watch(0, "server.trigger()")?;
+        Ok(())
+    })?;
+    assert!(addon.is_suspended());
+    assert_eq!(addon.resume(StepMode::Continue)?, RunOutcome::Completed);
+    assert_eq!(field(&addon, "callback")?, Some(LuaValue::Bool(true)));
+    assert_eq!(field(&addon, "tick")?, Some(LuaValue::Integer(1)));
+    Ok(())
+}
+
+#[test]
+fn borrowed_predicates_preserve_upvalues_passthrough_and_strict_boolean(
+) -> Result<(), Box<dyn Error>> {
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut addon = Addon::new(AddonConfig {
+        scoped_server: vec!["choose".into()],
+        ..Default::default()
+    })?;
+    let target = addon.callback_target();
+    let choose = |call: HostCall<'_>| {
+        if !call.is_function(0)? {
+            return Ok(HostReturn::Argument(0));
+        }
+        let mut selected = 0;
+        for value in 1..=3 {
+            if call.predicate(0, &[LuaValue::Integer(value)])? {
+                selected += 1;
+            }
+        }
+        Ok(HostReturn::Values(vec![LuaValue::Integer(selected)]))
+    };
+    target.with_server_calls(&[], &[("choose", &choose)], || {
+        addon.load(br#"
+            function onCreate()
+                local count = 0
+                g_savedata.selected = server.choose(function(value)
+                    count = count + 1
+                    if value == 1 then return 1 end
+                    if value == 2 then math.abs(nil) end
+                    return true
+                end)
+                g_savedata.count = count
+                g_savedata.cycle_rejected = server.choose(function() local t = {}; t.self=t; return t end)
+                local t = {}; t.self=t
+                g_savedata.identity = server.choose(t) == t
+                g_savedata.false_value = server.choose(false)
+            end
+        "#, "=borrowed-predicate")?;
+        addon.start()
+    })?;
+    assert_eq!(field(&addon, "selected")?, Some(LuaValue::Integer(1)));
+    assert_eq!(field(&addon, "count")?, Some(LuaValue::Integer(3)));
+    assert_eq!(field(&addon, "cycle_rejected")?, Some(LuaValue::Integer(0)));
+    assert_eq!(field(&addon, "identity")?, Some(LuaValue::Bool(true)));
+    assert_eq!(field(&addon, "false_value")?, Some(LuaValue::Bool(false)));
+    Ok(())
+}
+
+#[test]
+fn borrowed_predicates_share_budget_and_propagate_caught_exhaustion() -> Result<(), Box<dyn Error>>
+{
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut config = AddonConfig {
+        scoped_server: vec!["choose".into()],
+        ..Default::default()
+    };
+    config.limits.instruction_budget = std::num::NonZeroU64::new(2000).ok_or("budget")?;
+    let mut addon = Addon::new(config)?;
+    let target = addon.callback_target();
+    let attempts = std::cell::Cell::new(0);
+    let choose = |call: HostCall<'_>| {
+        for _ in 0..10000 {
+            attempts.set(attempts.get() + 1);
+            call.predicate(0, &[])?;
+        }
+        Ok(HostReturn::Values(Vec::new()))
+    };
+    let result = target.with_server_calls(&[], &[("choose", &choose)], || {
+        addon.load(
+            br#"
+            function onCreate()
+                server.choose(function()
+                    local total = 0
+                    for i = 1, 50 do total = total + i end
+                    return true
+                end)
+                g_savedata.finished = true
+            end
+        "#,
+            "=predicate-budget",
+        )?;
+        addon.start()
+    });
+    assert_eq!(result.err().ok_or("expected limit")?.kind, ErrorKind::Limit);
+    assert!(attempts.get() > 1 && attempts.get() < 10000);
+    assert!(addon.is_failed());
+    Ok(())
+}
+
+#[test]
+fn borrowed_predicate_allocator_memory_error_propagates() -> Result<(), Box<dyn Error>> {
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut config = AddonConfig {
+        scoped_server: vec!["choose".into()],
+        ..Default::default()
+    };
+    config.limits.lua_memory_bytes =
+        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+    let mut addon = Addon::new(config)?;
+    let target = addon.callback_target();
+    let choose = |call: HostCall<'_>| {
+        let accepted = call.predicate(0, &[])?;
+        Ok(HostReturn::Values(vec![LuaValue::Bool(accepted)]))
+    };
+    let result = target.with_server_calls(&[], &[("choose", &choose)], || {
+        addon.load(br#"function onCreate() server.choose(function() local t = {}; for i = 1, 1000000 do t[i] = i end; return true end) end"#, "=predicate-oom")?;
+        addon.start()
+    });
+    assert_eq!(
+        result.err().ok_or("expected memory limit")?.kind,
+        ErrorKind::Limit
+    );
+    assert!(addon.is_failed());
+    Ok(())
+}
+
+#[test]
+fn borrowed_predicate_c_buffer_runtime_error_rejects_candidate() -> Result<(), Box<dyn Error>> {
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let mut config = AddonConfig {
+        scoped_server: vec!["choose".into()],
+        ..Default::default()
+    };
+    config.limits.lua_memory_bytes =
+        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+    let mut addon = Addon::new(config)?;
+    let target = addon.callback_target();
+    let choose = |call: HostCall<'_>| {
+        Ok(HostReturn::Values(vec![LuaValue::Bool(
+            call.predicate(0, &[])?,
+        )]))
+    };
+    target.with_server_calls(&[], &[("choose", &choose)], || {
+        // Lua 5.3 lauxlib resizebox calls luaL_error on buffer allocation failure,
+        // yielding LUA_ERRRUN, unlike core allocator exhaustion's LUA_ERRMEM.
+        addon.load(br#"function onCreate() g_savedata.accepted = server.choose(function() return string.rep("x", 1000000) end); g_savedata.finished = true end"#, "=predicate-buffer")?;
+        addon.start()
+    })?;
+    assert_eq!(field(&addon, "accepted")?, Some(LuaValue::Bool(false)));
+    assert_eq!(field(&addon, "finished")?, Some(LuaValue::Bool(true)));
+    assert!(!addon.is_failed());
+    Ok(())
+}

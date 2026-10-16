@@ -119,6 +119,20 @@ pub(crate) fn install(
     env.raw_set("debug", debug)?;
     Ok(())
 }
+/// Reader usable during synchronous host callbacks without borrowing the VM.
+#[cfg(feature = "backend-mlua")]
+#[derive(Clone)]
+pub struct LogReader(Rc<RefCell<LogBuffer>>);
+#[cfg(feature = "backend-mlua")]
+impl LogReader {
+    /// Take pending records and reset the bounded buffer.
+    pub fn drain(&self) -> Vec<LogRecord> {
+        let mut buffer = self.0.borrow_mut();
+        buffer.bytes = 0;
+        std::mem::take(&mut buffer.records)
+    }
+}
+
 impl crate::runner::Vm {
     /// 明示的な開発用拡張として print および制限付き debug.log を組み込みます。
     pub fn enable_logs(&mut self) -> Result<(), VmError> {
@@ -137,6 +151,11 @@ impl crate::runner::Vm {
         self.ensure_idle()?;
         install(&self.lua, &self.environment, Rc::clone(&self.logs), false)?;
         Ok(())
+    }
+    /// Obtain a reader independent of execution borrows.
+    #[cfg(feature = "backend-mlua")]
+    pub fn log_reader(&self) -> LogReader {
+        LogReader(Rc::clone(&self.logs))
     }
     /// 一時停止やエラーの前に出力されたログを含め、所有権を持つログレコードを取り出します。
     pub fn drain_log_records(&mut self) -> Vec<LogRecord> {

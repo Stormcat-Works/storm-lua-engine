@@ -1,5 +1,11 @@
 # Current status
 
+## 由来解決の高速化（2026-10-26、未公開）
+
+`GeneratedOrigins::from_arena` の active 集合と interning ハッシュを高速化し、
+生成 Lua とマップ内容を維持した。合成 dense-normal で由来解決が約 30% 短縮。
+Map 比 1.2 の目標は未達のまま。[検証記録](docs/verification/from-arena-interning-20261026.md)。
+
 ## minifyレビュー修正（2026-10-13、未公開）
 
 レビューの35指摘と3性能課題を修正し、Native/WASM・Source Map・既存最適化の回帰を検証した。深い構文の診断境界と保守的な適用条件を追加している。文字数増加・性能が悪化する小ケースを含む測定結果は[単一の実装レポート](docs/verification/minify-review-fixes-20261013.md)に記録した。metadata修正とともに未公開。

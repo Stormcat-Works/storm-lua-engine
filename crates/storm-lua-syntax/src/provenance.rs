@@ -10,7 +10,67 @@ use crate::origin_slots::OriginSlots;
 use crate::{Ast, NameSite, Node, NodeId, NodePositions, PrintedSource};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
+
+/// Small deterministic FxHash-style hasher for internal origin interning only.
+/// Output order never comes from hash order: origins, contexts and mappings are
+/// all appended in first-seen order, so the hasher affects speed, not output.
+/// It must stay non-cryptographic and dependency-free: this map is rebuilt on
+/// every resolve and never crosses a trust boundary.
+#[derive(Default)]
+struct FastHasher {
+    hash: usize,
+}
+
+const FAST_HASH_SEED: usize = 0x51_7c_c1_b7_27_22_0a_95;
+
+impl FastHasher {
+    #[inline]
+    fn mix(&mut self, value: usize) {
+        self.hash = (self.hash.rotate_left(5) ^ value).wrapping_mul(FAST_HASH_SEED);
+    }
+}
+
+impl Hasher for FastHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash as u64
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(std::mem::size_of::<usize>()) {
+            let mut value = 0usize;
+            for (index, &byte) in chunk.iter().enumerate() {
+                value |= (byte as usize) << (index * 8);
+            }
+            self.mix(value);
+        }
+    }
+
+    #[inline]
+    fn write_usize(&mut self, value: usize) {
+        self.mix(value);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value as usize);
+    }
+
+    #[inline]
+    fn write_u32(&mut self, value: u32) {
+        self.mix(value as usize);
+    }
+
+    #[inline]
+    fn write_u8(&mut self, value: u8) {
+        self.mix(value as usize);
+    }
+}
+
+type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 
 /// Immutable source snapshot. A filename alone does not identify source contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -524,8 +584,12 @@ impl GeneratedOrigins {
                 index,
             )
         };
-        let mut active = BTreeSet::<(usize, bool, usize)>::new();
-        let mut active_contexts = BTreeSet::<(usize, bool, usize)>::new();
+        // Active ranges are keyed by (span length, name-site tiebreak, emission
+        // index), so keys are unique and the set stays tiny (nesting depth).
+        // A sorted Vec gives the same first()/insert/remove order as the previous
+        // BTreeSet without a heap allocation per overlapping range.
+        let mut active = Vec::<(usize, bool, usize)>::new();
+        let mut active_contexts = Vec::<(usize, bool, usize)>::new();
         let mut result = Self {
             sources: Arc::clone(&arena.sources),
             origins: Vec::new(),
@@ -534,8 +598,8 @@ impl GeneratedOrigins {
             constructs: Vec::new(),
             dispositions: Arc::clone(&arena.dispositions),
         };
-        let mut interned = HashMap::new();
-        let mut context_ids = HashMap::<InlineContext, u32>::new();
+        let mut interned = FastMap::<Origin, u32>::default();
+        let mut context_ids = FastMap::<InlineContext, u32>::default();
         let mut cursor = 0;
         for (offset, start, index) in events {
             if cursor < offset {
@@ -615,14 +679,22 @@ impl GeneratedOrigins {
                 .as_ref()
                 .is_some_and(|slot| !slot.contexts.is_empty());
             if start {
-                active.insert(event_key);
+                if let Err(position) = active.binary_search(&event_key) {
+                    active.insert(position, event_key);
+                }
                 if carries_context {
-                    active_contexts.insert(event_key);
+                    if let Err(position) = active_contexts.binary_search(&event_key) {
+                        active_contexts.insert(position, event_key);
+                    }
                 }
             } else {
-                active.remove(&event_key);
+                if let Ok(position) = active.binary_search(&event_key) {
+                    active.remove(position);
+                }
                 if carries_context {
-                    active_contexts.remove(&event_key);
+                    if let Ok(position) = active_contexts.binary_search(&event_key) {
+                        active_contexts.remove(position);
+                    }
                 }
             }
         }
@@ -678,23 +750,23 @@ impl GeneratedOrigins {
         }
         Some(result)
     }
-    fn append(
+    fn append<S: std::hash::BuildHasher>(
         &mut self,
         start: usize,
         end: usize,
         origin: Option<&Origin>,
-        interned: &mut HashMap<Origin, u32>,
+        interned: &mut HashMap<Origin, u32, S>,
     ) {
         self.append_detail(start, end, origin, None, Vec::new(), interned);
     }
-    fn append_detail(
+    fn append_detail<S: std::hash::BuildHasher>(
         &mut self,
         start: usize,
         end: usize,
         origin: Option<&Origin>,
         copied: Option<SourceSpan>,
         contexts: Vec<u32>,
-        interned: &mut HashMap<Origin, u32>,
+        interned: &mut HashMap<Origin, u32, S>,
     ) {
         let id = origin.map(|origin| {
             if let Some(&id) = interned.get(origin) {

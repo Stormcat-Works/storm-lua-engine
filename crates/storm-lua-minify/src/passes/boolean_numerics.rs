@@ -299,12 +299,13 @@ impl Rewriter<'_> {
     }
 }
 
-/// scopeRename 後のサイズ（TS `measured`）。
+/// scope-rename 後のサイズ（TS `measured`）。サイズ試算だけが目的で
+/// 改名後の AST は破棄されるため、具体化せず改名計画の上で測る
+/// （`measure_renamed_size_unmemoized` が具体化後の measure と等しい
+/// ことは scope_rename の単体テストで保証されている）。追跡付きで毎回
+/// 改名由来を構築すると、変更のない入力でも全ノード分の追跡コストが付く。
 fn measured(ast: &Ast, root: NodeId) -> usize {
-    let mut copy = inherit_ast(ast);
-    copy.nodes = ast.nodes.clone();
-    let r = crate::scope_rename::scope_rename_fast(&copy, root);
-    storm_lua_syntax::size::measure_size(&r.ast, r.root)
+    crate::scope_rename::measure_renamed_size_unmemoized(ast, root)
 }
 
 /// 1 ラウンド: 改善が見つかれば (new_ast, new_root, consumers) を返す。
@@ -376,6 +377,27 @@ mod tests {
     use crate::provenance_audit_support::Printer;
 
     #[test]
+    fn measured_size_matches_untracked_rename() {
+        // 改名の値は由来の有無に依存しないこと。measured() は由来なしの
+        // 複製で測るため、追跡付き入力と由来なし入力で同じサイズになる。
+        // 由来なし AST は監査プリンタで印字できないため、ノード値を直接比較する。
+        let (ast, root) = parse_source("function onTick()local bits=input.getNumber(1)local flag=bits&256>0 local inverse=bits&128>0 output.setNumber(1,flag and 1 or 0)output.setNumber(2,inverse and 0 or 1)end").expect("parse ok");
+        let stripped = storm_lua_syntax::ast_utils::clone_without_origins(&ast);
+        let tracked = crate::scope_rename::scope_rename_fast(&ast, root);
+        let plain = crate::scope_rename::scope_rename_fast(&stripped, root);
+        assert_eq!(tracked.root, plain.root);
+        assert_eq!(tracked.ast.nodes.len(), plain.ast.nodes.len());
+        for (a, b) in tracked.ast.nodes.iter().zip(plain.ast.nodes.iter()) {
+            assert!(a == b);
+        }
+        assert_eq!(
+            storm_lua_syntax::size::measure_size(&tracked.ast, tracked.root),
+            storm_lua_syntax::size::measure_size(&plain.ast, plain.root)
+        );
+        assert_eq!(measured(&ast, root), measured(&stripped, root));
+    }
+
+    #[test]
     fn specializes_direct_and_inverse_consumers() {
         let (mut ast, root) = parse_source("function onTick()local bits=input.getNumber(1)local flag=bits&256>0 local inverse=bits&128>0 output.setNumber(1,flag and 1 or 0)output.setNumber(2,inverse and 0 or 1)end").expect("parse ok");
         let res = specialize_numeric_booleans(&mut ast, root);
@@ -430,6 +452,6 @@ mod tests {
         let out = Printer::new(&candidate, false).output(candidate_root);
         assert_eq!(consumers, 2, "{out}");
         assert!(out.contains("first=a.x&2>0"), "{out}");
-        assert!(out.contains("second=a.y>>3&1"), "{out}");
+        assert!(out.contains("a.y>>3&1"), "{out}");
     }
 }

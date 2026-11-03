@@ -140,7 +140,7 @@ fn merging_locals_keeps_each_name_and_both_contributing_declarations() {
     let result = crate::passes::adjacent_locals::pack_adjacent_locals(&mut ast, root, false);
     let printed = Printer::new(&ast, true).output_with_positions(result.root);
     assert!(
-        printed.code.contains("local first,second="),
+        printed.code.contains("local\nfirst,second="),
         "{}",
         printed.code
     );
@@ -239,7 +239,7 @@ fn full_pipeline_target_miss_and_untracked_search_keep_identical_candidates() {
 }
 
 #[test]
-fn source_early_exit_and_extended_lexical_route_return_matching_origins() {
+fn source_fit_target_continues_to_printed_winner_with_matching_origins() {
     let source = "function onTick() output.setNumber(1,1) end";
     let result = compile_code(
         source,
@@ -249,8 +249,11 @@ fn source_early_exit_and_extended_lexical_route_return_matching_origins() {
         },
     )
     .unwrap();
-    assert_eq!(result.code, source);
-    assert!(result.stats.stopped_early);
+    // Option B: a fitting source no longer stops the search. With all
+    // optimization passes disabled the winner is the printed base form,
+    // not the source text, and the search runs to completion.
+    assert_eq!(result.code, "function\nonTick()output.setNumber(1,1)end");
+    assert!(!result.stats.stopped_early);
     assert_eq!(result.origins.unwrap().unknown_bytes(), 0);
     let options = CompileOptions {
         environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
@@ -406,7 +409,7 @@ fn root_local_globalization_copies_function_binding_to_new_name_node() {
     let source =
         "local function helper(argument) return argument+1 end output.setNumber(1,helper(2))";
     let result = compile_code(source, &only(&["root-local-globalization"])).unwrap();
-    assert!(result.code.starts_with("function helper"));
+    assert!(result.code.starts_with("function\nhelper"));
     let origins = result.origins.unwrap();
     assert_eq!(origins.unknown_bytes(), 0);
     let names = origins
@@ -608,11 +611,11 @@ fn hybrid_function_globalization_preserves_retained_and_converted_names() {
                 .any(|o| o.name.as_deref() == Some(name)));
         }
         if frequency == 3 {
-            assert!(printed.code.contains("local rare"));
-            assert!(!printed.code.contains("local frequent"));
+            assert!(printed.code.contains("local\nrare"));
+            assert!(!printed.code.contains("local\nfrequent"));
         }
         if frequency == 100 {
-            assert!(printed.code.contains("local frequent"));
+            assert!(printed.code.contains("local\nfrequent"));
         }
     }
 }

@@ -15,6 +15,7 @@ struct Candidate {
     gain: usize,
 }
 
+#[cfg(test)]
 pub(super) fn fixed_payload(codec: &Codec, columns: &[Vec<i64>], count: usize) -> Option<String> {
     let (biases, radices, width, prefixes) = match codec {
         Codec::PackedBytes {
@@ -30,9 +31,29 @@ pub(super) fn fixed_payload(codec: &Codec, columns: &[Vec<i64>], count: usize) -
         } => (biases, radices, *width, Some(*prefixes)),
         _ => return None,
     };
+    let mut text = String::new();
+    walk_fixed_bytes(biases, radices, width, prefixes, columns, count, &mut |b| {
+        text.push(b as char)
+    })?;
+    Some(text)
+}
+
+/// The fixed-width byte walk behind `fixed_payload` and the recipe
+/// constructor: checked mixed-radix composition per row, emitted as
+/// base-92 digits offset by 35; the prefix form widens rows at or past
+/// the cutoff to `width + 1` digits. It fails exactly where the string
+/// constructor's checked arithmetic did.
+pub(super) fn walk_fixed_bytes(
+    biases: &[i64],
+    radices: &[i64],
+    width: usize,
+    prefixes: Option<usize>,
+    columns: &[Vec<i64>],
+    count: usize,
+    sink: &mut impl FnMut(u8),
+) -> Option<()> {
     let capacity = 92i64.pow(width as u32);
     let cutoff = prefixes.map(|n| n as i64 * (capacity / 92));
-    let mut text = String::new();
     for row in 0..count {
         let mut value = 0i64;
         for ((column, &bias), &radix) in columns.iter().zip(biases).zip(radices) {
@@ -49,11 +70,54 @@ pub(super) fn fixed_payload(codec: &Codec, columns: &[Vec<i64>], count: usize) -
         };
         let mut divisor = 92i64.pow(digits as u32 - 1);
         for _ in 0..digits {
-            text.push((encoded / divisor % 92 + 35) as u8 as char);
+            sink((encoded / divisor % 92 + 35) as u8);
             divisor /= 92;
         }
     }
-    Some(text)
+    Some(())
+}
+
+/// The recipe form of the fixed-width payload, for candidates priced
+/// and usually discarded: the same walk with a features sink, so no
+/// string is built unless the candidate is adopted.
+pub(super) fn fixed_recipe(
+    codec: &Codec,
+    source: &Arc<Vec<Vec<i64>>>,
+    count: usize,
+) -> Option<BytesRecipe> {
+    let (biases, radices, width, prefixes) = match codec {
+        Codec::PackedBytes {
+            biases,
+            radices,
+            width,
+        } => (biases.clone(), radices.clone(), *width, None),
+        Codec::PrefixBytes {
+            biases,
+            radices,
+            width,
+            prefixes,
+        } => (biases.clone(), radices.clone(), *width, Some(*prefixes)),
+        _ => return None,
+    };
+    let mut features = PrintableFeatures::new();
+    walk_fixed_bytes(
+        &biases,
+        &radices,
+        width,
+        prefixes,
+        source,
+        count,
+        &mut |b| features.push(b),
+    )?;
+    Some(BytesRecipe::Fixed {
+        source: source.clone(),
+        biases,
+        radices,
+        width,
+        prefixes,
+        count,
+        features,
+    })
 }
 
 fn candidates(runs: &[Run], indices: &[usize]) -> Vec<Candidate> {
@@ -138,11 +202,10 @@ fn candidates(runs: &[Run], indices: &[usize]) -> Vec<Candidate> {
                     column.extend(values)
                 }
             }
-            let Some((codec @ Codec::PackedBytes { .. }, _)) =
-                packed_payload_with_limit(&columns, rows.len(), 8)
-            else {
+            let Some(layout) = packed_layout(&columns, 8) else {
                 continue;
             };
+            let codec = packed_codec(layout);
             let mut codecs = vec![codec.clone()];
             if let Codec::PackedBytes {
                 biases,
@@ -182,15 +245,15 @@ fn candidates(runs: &[Run], indices: &[usize]) -> Vec<Candidate> {
                         clippy::expect_used,
                         reason = "The group selection and dictionary construction validated every call in these immutable runs"
                     )]
-                    let columns = project(&r.calls).expect("validated integer calls");
+                    let columns = Arc::new(project(&r.calls).expect("validated integer calls"));
                     #[expect(
                         clippy::expect_used,
                         reason = "The fixed codec bounds were selected from these same validated integer columns"
                     )]
-                    let payload = Payload::Bytes(
-                        fixed_payload(&shape.codec, &columns, r.calls.len())
+                    let payload = Payload::Bytes(BytesPayload::Recipe(
+                        fixed_recipe(&shape.codec, &columns, r.calls.len())
                             .expect("bounded dictionary data"),
-                    );
+                    ));
                     payloads.push((run, payload));
                 }
                 out.push(Candidate {
@@ -204,55 +267,31 @@ fn candidates(runs: &[Run], indices: &[usize]) -> Vec<Candidate> {
     out
 }
 
-pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
-    let mut jumps = false;
-    storm_lua_syntax::ast_utils::walk(ast, root, &mut |n| {
-        jumps |= matches!(ast.node(n), Node::Goto(_) | Node::Label(_))
-    });
-    if jumps
-        || chunk_locals(ast, root) > 145
-        || !super::super::closed_fields::has_closed_key_space(ast, root)
-    {
+pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &SharedInput) -> usize {
+    if input.facts().jumps || input.chunk_locals() > 145 || !input.closed_key_space() {
         return 0;
     }
-    let source = ast.clone();
-    let res = resolve(&source, root);
     // Match the record planner's conservative upvalue/temporary headroom.
-    let mut inherited = vec![0usize; res.scopes.len()];
-    for scope in &res.scopes {
-        inherited[scope.id as usize] = scope.parent.map_or(0, |p| inherited[p as usize])
-            + scope
-                .bindings
-                .iter()
-                .filter(|&&b| res.binding(b).kind != BindingKind::Global)
-                .count();
-    }
-    if inherited.into_iter().max().unwrap_or(0) > 200 {
+    if input.max_inherited() > 200 {
         return 0;
     }
-    let classifier = Classifier::new(&source, &res, root);
-    let mut blocks = Vec::new();
-    storm_lua_syntax::ast_utils::walk(&source, root, &mut |n| {
-        if matches!(source.node(n), Node::Block(_)) {
-            blocks.push(n)
-        }
-    });
+    let source = input.source();
     let mut runs = Vec::new();
     let mut groups = BTreeMap::<(String, usize), Vec<usize>>::new();
-    for block in blocks {
+    for block in input.blocks().iter().copied() {
         let Node::Block(stmts) = source.node(block) else {
             unreachable!()
         };
         let mut at = 0;
         while at < stmts.len() {
-            let Some(first) = classifier.call(stmts[at]) else {
+            let Some(first) = input.call(stmts[at]) else {
                 at += 1;
                 continue;
             };
             let key = (first.key.clone(), first.args.len());
             let mut calls = vec![first];
             while at + calls.len() < stmts.len() {
-                let Some(next) = classifier.call(stmts[at + calls.len()]) else {
+                let Some(next) = input.call(stmts[at + calls.len()]) else {
                     break;
                 };
                 if next.key != key.0 || next.args.len() != key.1 {
@@ -283,9 +322,9 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
                 let old = run
                     .calls
                     .iter()
-                    .map(|c| measure_stmt(&source, c.statement))
+                    .map(|c| measure_stmt(source, c.statement))
                     .sum::<usize>();
-                let new = 4 + measure_expr(&source, run.calls[0].callee) + payload.size();
+                let new = 4 + measure_expr(source, run.calls[0].callee) + payload.size();
                 if old > new {
                     total += old - new;
                     true
@@ -330,13 +369,13 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
         let definition =
             encoding::emit_helper_recording(&mut target, &c.shape, symbol, serial, &mut trace);
         if let Some(t) = trace {
-            t.finish(&mut target, &source, first, definition);
+            t.finish(&mut target, source, first, definition);
         }
         definitions.push(definition);
         for (i, payload) in &c.payloads {
             let run = &runs[*i];
             let f = name(&mut target, symbol);
-            let callee = copy_callee(&source, &mut target, run.calls[0].callee);
+            let callee = copy_callee(source, &mut target, run.calls[0].callee);
             let data = payload.emit(&mut target);
             let call = target.push(Node::Call(f, vec![callee, data], None));
             let stmt = target.push(Node::Callstat(call));
@@ -349,7 +388,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
                 provenance::derive(
                     &mut target,
                     data,
-                    &source,
+                    source,
                     &inputs,
                     "draw-record-encoded-payload",
                 );
@@ -360,14 +399,14 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
                 provenance::derive(
                     &mut target,
                     call,
-                    &source,
+                    source,
                     &commands,
                     "draw-record-batch-call",
                 );
                 provenance::derive(
                     &mut target,
                     stmt,
-                    &source,
+                    source,
                     &commands,
                     "draw-record-batch-call",
                 );
@@ -407,7 +446,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool) -> usize {
     if rename {
         target = scope_rename_fast(&target, root).ast
     }
-    if measure_size(&target, root) >= measure_size(&source, root) {
+    if measure_size(&target, root) >= measure_size(source, root) {
         return 0;
     }
     *ast = target;

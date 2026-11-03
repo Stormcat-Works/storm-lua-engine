@@ -95,7 +95,7 @@ const optimizedSource = 'local function twice(value)\n return value*2\nend\nfunc
 const optimized = compiler.minify(optimizedSource, {sourceMap:true,sourceName:'optimized.lua',numericMode:'exact',zeroCostNewlines:false});
 assert.equal(optimized.ok,true);
 const details = compiler.validateSourceMap(optimized.code,optimized.map);
-assert.equal(details.schemaVersion,1);
+assert.equal(details.schemaVersion,2);
 assert.equal(details.producer.version,JSON.parse(await readFile(new URL('../package.json',import.meta.resolve('@stormcat-works/storm-lua-engine/compiler')),'utf8')).version);
 const star = optimized.code.indexOf('*2');assert.ok(star>=0);
 const point = originalPositionFor(new TraceMap(optimized.map), {line:1,column:star+1});

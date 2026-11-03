@@ -40,7 +40,36 @@ fn definitely_truthy(ast: &Ast, expression: NodeId, analyzer: &EffectAnalyzer<'_
     }
 }
 
+/// Boolean-valued ternary specialization. This is the same shape
+/// `boolean_coercion` in literal_folding handles before conditional
+/// lowering runs: `c and true or false` evaluates `c` exactly once,
+/// adjusts it to one value, and returns a boolean, so it is exactly
+/// `not not c`. Conditional lowering runs after constant folding, so
+/// ternaries it creates with boolean branches would otherwise keep the
+/// longer form. The `(false, true)` pair is deliberately NOT handled:
+/// `c and false or true` is constant `true` (the `and`/`or` idiom
+/// requires a truthy `yes` value), and lowering never generates it for
+/// a false `yes` value (see the `definitely_truthy` guards).
+fn bool_ternary(ast: &mut Ast, condition: NodeId, yes: NodeId, no: NodeId) -> Option<NodeId> {
+    let yes_value = match ast.node(peel_parens(ast, yes)) {
+        Node::Bool(value) => *value,
+        _ => return None,
+    };
+    let no_value = match ast.node(peel_parens(ast, no)) {
+        Node::Bool(value) => *value,
+        _ => return None,
+    };
+    if !yes_value || no_value {
+        return None;
+    }
+    let once = ast.un("not", condition);
+    Some(ast.un("not", once))
+}
+
 fn logical_ternary(ast: &mut Ast, condition: NodeId, yes: NodeId, no: NodeId) -> NodeId {
+    if let Some(coerced) = bool_ternary(ast, condition, yes, no) {
+        return coerced;
+    }
     let conjunction = ast.bin("and", condition, yes);
     ast.bin("or", conjunction, no)
 }
@@ -215,6 +244,14 @@ fn call_candidate(
     None
 }
 
+/// Peel parenthesized wrappers from an expression node.
+fn peel_parens(ast: &Ast, mut id: NodeId) -> NodeId {
+    while let Node::Paren(inner) = ast.node(id) {
+        id = *inner;
+    }
+    id
+}
+
 fn single_assignment(ast: &Ast, statement: Option<NodeId>) -> Option<(NodeId, NodeId)> {
     let statement = statement?;
     let Node::Assign(targets, expressions) = ast.node(statement) else {
@@ -240,6 +277,9 @@ fn prepend_or(ast: &mut Ast, prefix: NodeId, expression: NodeId) -> NodeId {
 }
 
 fn flat_logical_ternary(ast: &mut Ast, condition: NodeId, yes: NodeId, no: NodeId) -> NodeId {
+    if let Some(coerced) = bool_ternary(ast, condition, yes, no) {
+        return coerced;
+    }
     let conjunction = ast.bin("and", condition, yes);
     // `or` is associative while preserving left-to-right short-circuit
     // evaluation. Recursively prepend to an already-lowered fallback so long
@@ -264,6 +304,39 @@ fn assignment_candidate(
             return None;
         }
         let (yes_target, yes_value) = single_assignment(ast, branches.yes)?;
+        // Self-fallback special cases (no else only): when the condition
+        // is the assignment target itself, or its negation, the ternary
+        // `c and v or x` carries a redundant tail. `x and v` evaluates
+        // exactly like `if x then x = v end`, and `x or v` exactly like
+        // `if not x then x = v end`, for any value v, so no truthiness
+        // proof is needed here. The condition's top-level name and the
+        // target share one statement with no intervening binding (the
+        // body is a single assignment), so equal symbols are the same
+        // variable. The printer parenthesizes by precedence, so an
+        // `or` value under the `and` form keeps its parentheses.
+        if !branches.has_else {
+            let Node::Name(target_sym) = ast.node(yes_target) else {
+                return None;
+            };
+            let target_sym = *target_sym;
+            let cond = peel_parens(ast, branches.condition);
+            match ast.node(cond) {
+                Node::Name(sym) if *sym == target_sym => {
+                    let value = ast.bin("and", yes_target, yes_value);
+                    return Some(ast.assign(vec![yes_target], vec![value]));
+                }
+                Node::Un(op, operand) if op.as_str() == "not" => {
+                    let inner = peel_parens(ast, *operand);
+                    if let Node::Name(sym) = ast.node(inner) {
+                        if *sym == target_sym {
+                            let value = ast.bin("or", yes_target, yes_value);
+                            return Some(ast.assign(vec![yes_target], vec![value]));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         if !definitely_truthy(ast, yes_value, analyzer) {
             return None;
         }
@@ -348,6 +421,9 @@ fn definitely_truthy_return(ast: &Ast, expression: NodeId) -> bool {
 }
 
 fn logical_return_ternary(ast: &mut Ast, condition: NodeId, yes: NodeId, no: NodeId) -> NodeId {
+    if let Some(coerced) = bool_ternary(ast, condition, yes, no) {
+        return coerced;
+    }
     let conjunction = ast.bin("and", condition, yes);
     // `or` is associative while preserving left-to-right short-circuit
     // evaluation. Flatten a previously lowered fallback so guard-return chains
@@ -411,9 +487,20 @@ fn guard_return_candidate(ast: &mut Ast, statement: NodeId, fallback: NodeId) ->
     conditional_return_value(ast, branches.condition, yes, no)
 }
 
+/// Attribute only the nodes a candidate created, in `[start, end)`.
+///
+/// Callers must pass the `end` captured right after candidate construction:
+/// nodes created later by the size comparison itself (for example the
+/// comparison blocks) are not part of the candidate and must stay
+/// unattributed, exactly as before. Attributing only adopted candidates
+/// (never rejected ones) is output-invariant: rejected candidates are
+/// unreachable from the pass output, and generated origins are derived
+/// from the printed output, so their origins are never observed. It
+/// removes one slot allocation per rejected candidate node.
 fn attribute_conditional_nodes(
     ast: &mut Ast,
     start: usize,
+    end: usize,
     statement: NodeId,
     fallback: Option<NodeId>,
     transformation: &str,
@@ -422,7 +509,7 @@ fn attribute_conditional_nodes(
         return;
     }
     let origin = ast.nodes.capture_origin(statement);
-    for node in start..ast.nodes.len() {
+    for node in start..end {
         ast.nodes
             .finish_rewrite(node as NodeId, origin.clone(), transformation);
         if let Some(fallback) = fallback {
@@ -458,10 +545,14 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
         // Lua requires a return to be the final statement in its block. An
         // if/else whose arms return may still precede statements or a label
         // reachable by goto; preserve that wrapper rather than dropping the tail.
+        let mut adopted_range: Option<(usize, usize)> = None;
         let candidate = if index + 1 == statement_count {
             let start = ast.nodes.len();
             let candidate = full_return_candidate(ast, statement);
-            attribute_conditional_nodes(ast, start, statement, None, "conditional-return-lowering");
+            let end = ast.nodes.len();
+            if candidate.is_some() {
+                adopted_range = Some((start, end));
+            }
             candidate
         } else {
             None
@@ -476,6 +567,18 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
         } else {
             statement
         };
+        if selected != statement {
+            if let Some((start, end)) = adopted_range {
+                attribute_conditional_nodes(
+                    ast,
+                    start,
+                    end,
+                    statement,
+                    None,
+                    "conditional-return-lowering",
+                );
+            }
+        }
         output.push(selected);
     }
 
@@ -490,11 +593,19 @@ fn transform_return_block(ast: &mut Ast, block: NodeId, lowered: &mut usize) -> 
             let second = output[index];
             let start = ast.nodes.len();
             let candidate = guard_return_candidate(ast, first, second);
-            attribute_conditional_nodes(ast, start, first, Some(second), "guard-return-lowering");
+            let end = ast.nodes.len();
             if let Some(candidate) = candidate {
                 let old_block = ast.block(vec![first, second]);
                 let new_block = ast.block(vec![candidate]);
                 if measure_size(ast, new_block) < measure_size(ast, old_block) {
+                    attribute_conditional_nodes(
+                        ast,
+                        start,
+                        end,
+                        first,
+                        Some(second),
+                        "guard-return-lowering",
+                    );
                     output[index - 1] = candidate;
                     output.remove(index);
                     *lowered += 1;
@@ -597,7 +708,7 @@ fn transform_block(
             ConditionalKind::Calls => "conditional-call-lowering",
             ConditionalKind::Assignments => "conditional-assignment-lowering",
         };
-        attribute_conditional_nodes(ast, start, statement, None, transformation);
+        let end = ast.nodes.len();
         let selected = if let Some(candidate) = candidate {
             let old_len = measure_stmt(ast, statement);
             let new_len = measure_stmt(ast, candidate);
@@ -610,6 +721,9 @@ fn transform_block(
         } else {
             statement
         };
+        if selected != statement {
+            attribute_conditional_nodes(ast, start, end, statement, None, transformation);
+        }
         output.push(selected);
     }
     let statements = output;
@@ -676,6 +790,20 @@ mod tests {
     }
 
     #[test]
+    fn rejected_call_candidate_leaves_output_unchanged() {
+        // Same function with many differing arguments: the ternary form
+        // repeats the long condition once per argument and loses the size
+        // comparison, so the candidate is rejected. The output must stay
+        // exactly the input statement (no partial lowering).
+        let source = "if veryLongConditionName then output.setNumber(1,2,3,4,5,6) else output.setNumber(1,7,8,9,10,11) end";
+        let code = output(source, true);
+        assert_eq!(
+            code,
+            "if veryLongConditionName then output.setNumber(1,2,3,4,5,6)else output.setNumber(1,7,8,9,10,11)end"
+        );
+    }
+
+    #[test]
     fn nested_calls_refresh_analysis_after_child_lowering() {
         let source = "if a then if b then output.setNumber(1,2) else output.setNumber(1,3) end else output.setNumber(1,4) end";
         let out = output(source, true);
@@ -709,9 +837,72 @@ mod tests {
     }
 
     #[test]
+    fn lowers_self_condition_assignment_without_redundant_tail() {
+        // Condition is the target itself: the `or x` tail is redundant.
+        assert_eq!(output("if x then x=1 end", false), "x=x and 1");
+        // Negated target condition: the whole ternary collapses to `or`.
+        assert_eq!(output("if not x then x=1 end", false), "x=x or 1");
+        // Neither form needs a truthiness proof for the value.
+        assert_eq!(output("if x then x=y end", false), "x=x and y");
+        assert_eq!(output("if not x then x=y end", false), "x=x or y");
+        // Parenthesized conditions peel to the same forms.
+        assert_eq!(output("if (x) then x=1 end", false), "x=x and 1");
+        assert_eq!(output("if not (x) then x=1 end", false), "x=x or 1");
+    }
+
+    #[test]
+    fn keeps_ternary_for_else_branches_and_other_conditions() {
+        // With an else branch the fallback is a real value, not the target.
+        assert_eq!(
+            output("if c then x=1 else x=2 end", false),
+            "x=c and 1 or 2"
+        );
+        // A different condition name still needs the full ternary.
+        assert_eq!(output("if c then x=1 end", false), "x=c and 1 or x");
+    }
+
+    #[test]
     fn rejects_false_yes_value() {
         let out = output("if c then x=false else x=true end", false);
         assert!(out.starts_with("if c then"), "{out}");
+    }
+
+    #[test]
+    fn lowers_boolean_assignment_ternary_to_double_negation() {
+        assert_eq!(
+            output("if c then x=true else x=false end", false),
+            "x=not not c"
+        );
+    }
+
+    #[test]
+    fn lowers_boolean_call_argument_ternary_to_double_negation() {
+        assert_eq!(
+            output(
+                "if c then output.setBool(1,true) else output.setBool(1,false) end",
+                true,
+            ),
+            "output.setBool(1,not not c)"
+        );
+    }
+
+    #[test]
+    fn lowers_boolean_return_ternary_to_double_negation() {
+        assert_eq!(
+            return_output("if c then return true else return false end"),
+            "return not not c"
+        );
+    }
+
+    #[test]
+    fn lowers_boolean_elseif_chain_inner_ternary() {
+        assert_eq!(
+            output(
+                "if a then x=true elseif b then x=true else x=false end",
+                false,
+            ),
+            "x=a and 1>0 or not not b"
+        );
     }
 
     #[test]

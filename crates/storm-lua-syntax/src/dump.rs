@@ -242,7 +242,7 @@ fn write_node(ast: &Ast, id: NodeId, out: &mut String) {
             list(out, args, |o, n| write_node(ast, *n, o));
             out.push_str("],method:");
             if let Some(m) = method {
-                quoted(out, m);
+                quoted(out, intern.get(*m));
             } else {
                 out.push_str("null");
             }
@@ -425,7 +425,9 @@ mod tests {
                     "call(fn:{},args:[{}],method:{})",
                     dump_node(ast, *fn_),
                     join(args.iter().map(|a| dump_node(ast, *a)), ","),
-                    method.as_deref().map_or_else(|| "null".to_string(), esc)
+                    method
+                        .as_ref()
+                        .map_or_else(|| "null".to_string(), |m| esc(intern.get(*m)))
                 ),
                 Node::Name(v) => format!("name(v:{})", esc(intern.get(*v))),
                 Node::Index(obj, key, dot) => format!(
@@ -461,9 +463,9 @@ mod tests {
             }
         }
         let mut ast = Ast::new();
-        let mut root = ast.num("2".into());
+        let mut root = ast.num("2");
         for _ in 0..128 {
-            let one = ast.num("1".into());
+            let one = ast.num("1");
             let paren = ast.push(Node::Paren(root));
             root = ast.bin("+", one, paren);
         }
@@ -477,7 +479,7 @@ mod tests {
             (0u8..=127).map(char::from).collect(),
             "雪😀/\"\\\r\n\t\u{2028}".into(),
         ] {
-            let id = ast.str(s);
+            let id = ast.str(&s);
             assert_eq!(dump(&ast, id), reference::dump(&ast, id));
         }
     }

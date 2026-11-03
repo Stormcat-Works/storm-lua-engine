@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use crate::pass::PassResult;
-use crate::scope_rename::scope_rename_fast;
+use crate::scope_rename::{measure_renamed_size_unmemoized, scope_rename_fast};
 use storm_lua_analysis::resolver::{resolve, BindingKind};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::size::{measure_expr, measure_size};
@@ -57,7 +57,12 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
             })
         })
         .collect::<Vec<_>>();
-    if groups.is_empty() || !super::closed_fields::has_closed_key_space(ast, root) {
+    // No closed-key-space gate: pooling replaces value occurrences with a
+    // local holding the identical numeric value. It renames no keys or
+    // fields, and the pooled binding is never written after its
+    // initializer, so dynamic keys and numeric-producing code cannot
+    // observe a difference. (Same argument as the string pool.)
+    if groups.is_empty() {
         return unchanged();
     }
     groups.sort_by(|a, b| {
@@ -92,7 +97,7 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
         });
         own + children
     }
-    let budget = 24
+    let budget = 64
         .min(180usize.saturating_sub(chunk_locals(ast, root)))
         .min(245usize.saturating_sub(inherited.into_iter().max().unwrap_or(0)));
     groups.truncate(budget);
@@ -101,7 +106,9 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
     }
     // Bounded batch search, not one whole-AST rename per literal. The shorter
     // prefixes protect against alias-pressure making marginal pooling costly.
-    let mut widths = vec![groups.len(), groups.len() / 2, 1];
+    // The 24 anchor keeps previously optimal portfolios reachable when more
+    // than 24 groups are profitable; the register-limit bounds above still apply.
+    let mut widths = vec![groups.len(), groups.len() / 2, 24.min(groups.len()), 1];
     widths.retain(|&n| n > 0);
     widths.sort_unstable();
     widths.dedup();
@@ -164,10 +171,11 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
         trial
             .nodes
             .rewrite(root, Node::Block(stmts), "numeric-literal-pool-insertion");
-        if rename {
-            trial = scope_rename_fast(&trial, root).ast;
-        }
-        let size = measure_size(&trial, root);
+        let size = if rename {
+            measure_renamed_size_unmemoized(&trial, root)
+        } else {
+            measure_size(&trial, root)
+        };
         if size < best_size {
             best = Some(trial);
             best_size = size;
@@ -175,7 +183,11 @@ fn pool_repeated_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassResu
         }
     }
     if let Some(trial) = best {
-        *ast = trial;
+        *ast = if rename {
+            scope_rename_fast(&trial, root).ast
+        } else {
+            trial
+        };
         PassResult {
             root,
             saved: Some((before - best_size) as u64),
@@ -215,4 +227,59 @@ pub fn pool_numeric_literals(ast: &mut Ast, root: NodeId, rename: bool) -> PassR
     *ast = best;
     result.saved = Some(before.saturating_sub(best_size) as u64);
     result
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::provenance_audit_support::parse_source;
+    use crate::provenance_audit_support::Printer;
+
+    fn run(source: &str) -> (String, u64) {
+        let (mut ast, root) = parse_source(source).expect("parse");
+        // rename=true mirrors the pipeline: the pooled binding is renamed
+        // to a short name, which is what makes pooling profitable.
+        let result = pool_numeric_literals(&mut ast, root, true);
+        let code = Printer::new(&ast, false).output(result.root);
+        (code, result.saved.unwrap_or(0))
+    }
+
+    #[test]
+    fn pools_despite_dynamic_keys() {
+        // Dynamic key access (t[k]) plus string production (..) used to trip
+        // the closed-key-space gate (plan() fails with unbounded dynamic
+        // string keys); pooling only replaces value occurrences with a local
+        // holding the identical numeric value, so the gate must not block it.
+        let (code, saved) = run(
+            "function onTick(t, k) local s = t[k] .. \"!\" output.setNumber(1, 12345678) output.setNumber(2, 12345678) output.setNumber(3, 12345678) return s end",
+        );
+        assert!(saved > 0, "code: {code}");
+        assert_eq!(code.matches("12345678").count(), 1, "code: {code}");
+    }
+
+    #[test]
+    fn pools_more_than_24_groups() {
+        // 30 distinct profitable groups: with the old 24-group budget only
+        // 24 could be pooled, leaving 6 spellings repeated.
+        let mut src = String::from("function onTick() ");
+        let mut numbers = Vec::new();
+        for i in 0..30 {
+            let n = 10000000 + i * 137;
+            numbers.push(n);
+            for _ in 0..3 {
+                src.push_str(&format!("output.setNumber(1, {n}) "));
+            }
+        }
+        src.push_str("end");
+        let (code, saved) = run(&src);
+        assert!(saved > 0, "code: {code}");
+        for n in numbers {
+            assert_eq!(
+                code.matches(&n.to_string()).count(),
+                1,
+                "number {n} must appear exactly once: {code}"
+            );
+        }
+    }
 }

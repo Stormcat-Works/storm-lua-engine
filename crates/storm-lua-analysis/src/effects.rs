@@ -57,12 +57,29 @@ pub fn merge_effects(xs: &[Effects]) -> Effects {
 
 /// Internal accumulation may contain duplicate bindings. Normalize only at an
 /// analysis boundary, rather than allocating and sorting at every AST edge.
-fn normalize_effects(mut e: Effects) -> Effects {
+fn normalize_effects_in_place(e: &mut Effects) {
     e.reads.sort_unstable();
     e.reads.dedup();
     e.writes.sort_unstable();
     e.writes.dedup();
+}
+
+fn normalize_effects(mut e: Effects) -> Effects {
+    normalize_effects_in_place(&mut e);
     e
+}
+
+/// Reset `out` to the empty-effects state (keeping its vector capacities)
+/// before a borrowing query refills it. Matches `empty_effects()` field
+/// for field, so a refilled accumulator is indistinguishable from a
+/// freshly allocated one.
+fn refill_effects(out: &mut Effects) {
+    out.reads.clear();
+    out.writes.clear();
+    out.calls = false;
+    out.ordered = false;
+    out.may_throw = false;
+    out.stable = true;
 }
 
 pub fn effect_key(e: &Effects) -> String {
@@ -196,6 +213,96 @@ fn borrowed_member(raw: &str) -> Option<std::borrow::Cow<'_, str>> {
     decode_lua_string(raw).map(std::borrow::Cow::Owned)
 }
 
+/// Whether a binding's declaration itself defines a value: a
+/// `local function`, or a `local` whose name position has an
+/// initializer expression. Such a definition is invisible to
+/// `binding_write_counts` (declaration names are not writes), so
+/// the alias fixpoint -- which counts definitions by writes --
+/// must account for it separately.
+fn binding_has_initialized_decl(ast: &Ast, res: &Resolution, bid: BindingId) -> bool {
+    let Some(binding) = res.bindings.get(bid as usize) else {
+        return false;
+    };
+    let Some(decl) = binding.decl_node else {
+        return false;
+    };
+    match ast.node(decl) {
+        Node::Localfunc(..) => true,
+        Node::Local(_, exprs) => res
+            .node_bids
+            .get(decl as usize)
+            .and_then(|bids| bids.iter().position(|candidate| *candidate == bid))
+            .map(|idx| idx < exprs.len())
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Dominance context for root-block alias definitions: for each direct
+/// statement of the root block, the set of bindings read in that and all
+/// earlier statements (reads inside nested functions count at their
+/// definition statement), plus whether the block's non-function subtrees
+/// contain a Goto or Label. An alias taken from an assignment holds
+/// only after that assignment executes, so it may be registered only
+/// when no read of the target binding occurs in the defining statement
+/// or any earlier one and chunk-level control flow cannot skip the
+/// assignment. Shared by both analyzer constructions so the guard is
+/// identical by construction.
+struct RootBlockAliasContext {
+    reads_before: Vec<std::collections::HashSet<BindingId>>,
+    has_goto_or_label: bool,
+}
+
+fn root_block_alias_context(ast: &Ast, res: &Resolution, root: NodeId) -> RootBlockAliasContext {
+    fn collect(
+        ast: &Ast,
+        res: &Resolution,
+        node: NodeId,
+        in_function: bool,
+        reads: &mut std::collections::HashSet<BindingId>,
+        has_goto_or_label: &mut bool,
+    ) {
+        match ast.node(node) {
+            Node::Name(_) => {
+                if let Some(bid) = res.node_bid[node as usize] {
+                    if !res.node_write[node as usize] {
+                        reads.insert(bid);
+                    }
+                }
+            }
+            Node::Goto(_) | Node::Label(_) if !in_function => {
+                *has_goto_or_label = true;
+            }
+            _ => {}
+        }
+        let in_function = in_function || matches!(ast.node(node), Node::Function(..));
+        for_each_child(ast, node, &mut |child| {
+            collect(ast, res, child, in_function, reads, has_goto_or_label)
+        });
+    }
+    let mut context = RootBlockAliasContext {
+        reads_before: Vec::new(),
+        has_goto_or_label: false,
+    };
+    if let Node::Block(ss) = ast.node(root) {
+        let mut accumulated = std::collections::HashSet::new();
+        for &s in ss {
+            let mut reads = std::collections::HashSet::new();
+            collect(
+                ast,
+                res,
+                s,
+                false,
+                &mut reads,
+                &mut context.has_goto_or_label,
+            );
+            accumulated.extend(reads);
+            context.reads_before.push(accumulated.clone());
+        }
+    }
+    context
+}
+
 /// API tables lose builtin identity when mutated through any known alias or
 /// passed as table values to unknown code. This is shared by effect analysis
 /// and the lightweight alias collector used by field renaming.
@@ -224,6 +331,61 @@ pub fn mutated_builtin_roots(
             .then(|| res.node_bid[node as usize])
             .flatten()
     }
+    // A value produced by an `and`/`or` chain can be either operand's value
+    // (recursively), so any leaf reachable through such a chain -- or
+    // through parentheses -- may flow into the result. Collect the leaf
+    // bases of a value expression under that may-flow reading; outside an
+    // and/or chain this is exactly `base` on the whole value.
+    fn value_bases(ast: &Ast, res: &Resolution, node: NodeId, out: &mut Vec<BindingId>) {
+        match ast.node(node) {
+            Node::Paren(inner) => value_bases(ast, res, *inner, out),
+            Node::Bin(op, l, r) if matches!(op.as_str(), "and" | "or") => {
+                value_bases(ast, res, *l, out);
+                value_bases(ast, res, *r, out);
+            }
+            _ => {
+                if let Some(bid) = base(ast, res, node) {
+                    out.push(bid);
+                }
+            }
+        }
+    }
+    // The escape-reading twin of `value_bases`: leaves are read with
+    // `named_base`, so only plain names passed as values count as escapes.
+    fn named_value_bases(ast: &Ast, res: &Resolution, node: NodeId, out: &mut Vec<BindingId>) {
+        match ast.node(node) {
+            Node::Paren(inner) => named_value_bases(ast, res, *inner, out),
+            Node::Bin(op, l, r) if matches!(op.as_str(), "and" | "or") => {
+                named_value_bases(ast, res, *l, out);
+                named_value_bases(ast, res, *r, out);
+            }
+            _ => {
+                if let Some(bid) = named_base(ast, res, node) {
+                    out.push(bid);
+                }
+            }
+        }
+    }
+    // The table an indexed assignment writes through can itself sit under
+    // parentheses or an and/or chain (a parenthesized prefix expression);
+    // collect every name that may be that table.
+    fn target_bases(ast: &Ast, res: &Resolution, node: NodeId, out: &mut Vec<BindingId>) {
+        match ast.node(node) {
+            Node::Name(_) => {
+                if let Some(bid) = res.node_bid[node as usize] {
+                    out.push(bid);
+                }
+            }
+            Node::Paren(inner) | Node::Methodname(inner, _) | Node::Index(inner, _, _) => {
+                target_bases(ast, res, *inner, out)
+            }
+            Node::Bin(op, l, r) if matches!(op.as_str(), "and" | "or") => {
+                target_bases(ast, res, *l, out);
+                target_bases(ast, res, *r, out);
+            }
+            _ => {}
+        }
+    }
     // Alias roots are a union: overwriting an alias later does not undo a
     // mutation that could have happened through its previous value.
     let mut aliases = HashMap::<BindingId, HashSet<String>>::new();
@@ -235,10 +397,12 @@ pub fn mutated_builtin_roots(
     }
     let mut edges = Vec::new();
     let mut mutated = Vec::new();
+    let mut scratch = Vec::new();
     storm_lua_syntax::ast_utils::walk(ast, root, &mut |node| match ast.node(node) {
         Node::Local(_, values) => {
             for (bid, value) in res.node_bids[node as usize].iter().zip(values) {
-                if let Some(source) = base(ast, res, *value) {
+                value_bases(ast, res, *value, &mut scratch);
+                for source in scratch.drain(..) {
                     edges.push((*bid, source));
                 }
             }
@@ -246,35 +410,43 @@ pub fn mutated_builtin_roots(
         Node::Assign(targets, values) => {
             for target in targets {
                 if matches!(ast.node(*target), Node::Index(..) | Node::Methodname(..)) {
-                    if let Some(bid) = base(ast, res, *target) {
-                        mutated.push(bid);
-                    }
+                    target_bases(ast, res, *target, &mut scratch);
+                    mutated.append(&mut scratch);
                 }
             }
             for (target, value) in targets.iter().zip(values) {
                 if !matches!(ast.node(*target), Node::Name(_)) {
-                    if let Some(bid) = named_base(ast, res, *value) {
-                        mutated.push(bid);
-                    }
-                } else {
-                    if let (Some(to), Some(from)) =
-                        (base(ast, res, *target), base(ast, res, *value))
-                    {
+                    named_value_bases(ast, res, *value, &mut scratch);
+                    mutated.append(&mut scratch);
+                } else if let Some(to) = base(ast, res, *target) {
+                    value_bases(ast, res, *value, &mut scratch);
+                    for from in scratch.drain(..) {
                         edges.push((to, from));
                     }
                 }
             }
         }
         Node::Funcstat(target, _) if !matches!(ast.node(*target), Node::Name(_)) => {
-            if let Some(bid) = base(ast, res, *target) {
-                mutated.push(bid);
-            }
+            target_bases(ast, res, *target, &mut scratch);
+            mutated.append(&mut scratch);
         }
         Node::Call(_, args, _) | Node::Return(args) => {
             for arg in args {
-                if let Some(bid) = named_base(ast, res, *arg) {
-                    mutated.push(bid);
-                }
+                named_value_bases(ast, res, *arg, &mut scratch);
+                mutated.append(&mut scratch);
+            }
+        }
+        Node::Forin(_, expressions, _) => {
+            // The generic-for protocol passes the state and control
+            // values to the iterator function on every step, so a
+            // builtin root flowing into those positions escapes to
+            // the iterator exactly as if it were a call argument.
+            // (The iterator expression itself is in function
+            // position, not value position, and is not an escape,
+            // mirroring how a call's function is not an argument.)
+            for value in expressions.iter().skip(1) {
+                named_value_bases(ast, res, *value, &mut scratch);
+                mutated.append(&mut scratch);
             }
         }
         Node::Table(fields) => {
@@ -284,9 +456,8 @@ pub fn mutated_builtin_roots(
                     | storm_lua_syntax::TableField::Name(_, v)
                     | storm_lua_syntax::TableField::KVar(_, v) => v,
                 };
-                if let Some(bid) = named_base(ast, res, *value) {
-                    mutated.push(bid);
-                }
+                named_value_bases(ast, res, *value, &mut scratch);
+                mutated.append(&mut scratch);
             }
         }
         _ => {}
@@ -353,10 +524,11 @@ impl<'a> EffectAnalyzer<'a> {
         });
 
         // apiAliases fixpoint（8 周）
+        let alias_context = root_block_alias_context(ast, res, root);
         if let Node::Block(ss) = &ast.nodes[root as usize] {
             for _ in 0..8 {
                 let mut changed = false;
-                for &s in ss {
+                for (stmt_index, &s) in ss.iter().enumerate() {
                     let Node::Assign(vs, es) = &ast.nodes[s as usize] else {
                         continue;
                     };
@@ -372,6 +544,31 @@ impl<'a> EffectAnalyzer<'a> {
                             continue;
                         };
                         if writes[tbid as usize] != 1 {
+                            continue;
+                        }
+                        // A binding whose declaration carries an
+                        // initializer (a `local` with an initial
+                        // value at its position, or a `local
+                        // function`) has a definition the write
+                        // count does not see: this Assign is then
+                        // its second definition, and an alias taken
+                        // from it would not hold before the
+                        // assignment. The single-definition rule is
+                        // only sound when the Assign is the binding's
+                        // sole definition.
+                        if binding_has_initialized_decl(ast, res, tbid) {
+                            continue;
+                        }
+                        // Dominance: the alias holds only after this
+                        // assignment executes. A read of the target
+                        // binding in this or any earlier top-level
+                        // statement can observe the previous value,
+                        // and a chunk-level Goto/Label can skip the
+                        // assignment entirely, so neither shape may
+                        // register an alias.
+                        if alias_context.has_goto_or_label
+                            || alias_context.reads_before[stmt_index].contains(&tbid)
+                        {
                             continue;
                         }
                         // Borrow already-proven names while testing this fixed
@@ -453,6 +650,7 @@ impl<'a> EffectAnalyzer<'a> {
         let mut versions = vec![0u32; res.bindings.len()];
         let mut dependencies: Vec<Option<Vec<(BindingId, u32)>>> =
             (0..function_bindings.len()).map(|_| None).collect();
+        let mut converged = false;
         for _ in 0..20 {
             let mut changed = false;
             // The worklist retains binding order, round count and immediate
@@ -504,11 +702,90 @@ impl<'a> EffectAnalyzer<'a> {
                 }
             }
             if !changed {
+                converged = true;
                 break;
             }
         }
+        analyzer.downgrade_unproven_summaries(converged);
 
         analyzer
+    }
+
+    /// Downgrade summaries whose totality the fixpoint could not prove.
+    ///
+    /// The fixpoint starts from optimistic initial values
+    /// (may_throw = false, calls = false) and recomputes body effects
+    /// through the current summaries of direct callees. Along a recursive
+    /// call cycle that optimism is self-confirming: a self-recursive
+    /// function reads its own still-initial summary, so every body on the
+    /// cycle can come out pure and total even though a recursive call may
+    /// not return at all (unbounded recursion ends in a stack overflow).
+    /// Elimination consumers trusted that totality and dropped live
+    /// recursive calls (candidate W, w9 cycle 67).
+    ///
+    /// A function is downgraded when it sits on, or can reach, a cycle
+    /// in the direct-call graph -- edges are the function bindings a
+    /// summary reads, the same dependency notion the fixpoint tracks --
+    /// because non-return propagates to every caller. Functions that
+    /// only reach acyclic summaries keep their proven bits. If the
+    /// fixpoint hit its round cap without converging, unstabilized
+    /// summaries may still hold optimistic bits, so all are downgraded.
+    fn downgrade_unproven_summaries(&mut self, converged: bool) {
+        let count = self.res.bindings.len();
+        // Out-degree within the function-only call graph, plus the
+        // reverse (caller) edges used by the peeling below.
+        let mut out_degree = vec![0usize; count];
+        let mut callers: Vec<Vec<BindingId>> = vec![Vec::new(); count];
+        for (bid, function) in self.functions.iter().enumerate() {
+            if function.is_none() {
+                continue;
+            }
+            let Some(summary) = &self.summaries[bid] else {
+                continue;
+            };
+            let mut callees: Vec<BindingId> = summary
+                .reads
+                .iter()
+                .copied()
+                .filter(|&callee| self.functions[callee as usize].is_some())
+                .collect();
+            callees.sort_unstable();
+            callees.dedup();
+            out_degree[bid] = callees.len();
+            for callee in callees {
+                callers[callee as usize].push(bid as BindingId);
+            }
+        }
+        // Peel functions that cannot reach a cycle: repeatedly remove
+        // sinks. Whatever remains unpeeled can reach a recursive cycle.
+        let mut peeled = vec![false; count];
+        let mut stack: Vec<BindingId> = (0..count)
+            .filter(|&bid| self.functions[bid].is_some() && out_degree[bid] == 0)
+            .map(|bid| bid as BindingId)
+            .collect();
+        while let Some(bid) = stack.pop() {
+            if peeled[bid as usize] {
+                continue;
+            }
+            peeled[bid as usize] = true;
+            for &caller in &callers[bid as usize] {
+                out_degree[caller as usize] -= 1;
+                if out_degree[caller as usize] == 0 {
+                    stack.push(caller);
+                }
+            }
+        }
+        for (bid, summary) in self.summaries.iter_mut().enumerate() {
+            if self.functions[bid].is_none() || (converged && peeled[bid]) {
+                continue;
+            }
+            if let Some(summary) = summary {
+                summary.pure = false;
+                summary.total = false;
+                summary.calls = true;
+                summary.may_throw = true;
+            }
+        }
     }
 
     fn api_alias_get(&self, bid: BindingId) -> Option<&String> {
@@ -522,7 +799,16 @@ impl<'a> EffectAnalyzer<'a> {
                 }
                 let name = self.ast.strings.get(symbol);
                 let binding = &self.res.bindings[bid as usize];
+                // `self` is never seeded as an API root: the AST does not
+                // bind the implicit method parameter (Function params carry
+                // no implicit self), so occurrences of the name inside a
+                // method body resolve to this global binding even though
+                // they read the parameter, not a stable runtime-provided
+                // table. Aliasing `self.<member>` would hoist that member
+                // read to the chunk head, where `self` is the global
+                // (candidate X, w9 cycle 67).
                 if writes[bid as usize] == 0
+                    && name != "self"
                     && api_roots(name)
                     && binding.kind == BindingKind::Global
                     && self.ast.strings.get(binding.name) == name
@@ -572,6 +858,188 @@ impl<'a> EffectAnalyzer<'a> {
         }
     }
 
+    /// Whether a call proven to name a TOTAL_API builtin can still throw
+    /// on its arguments alone. Every TOTAL_API entry needs at least one
+    /// argument, and the math members additionally reject statically
+    /// non-numeric arguments (Lua coerces only numbers and numeric
+    /// strings) in the positions the implementation actually checks:
+    /// the first argument for the unary members, both fixed arguments
+    /// for atan (whose optional second argument is checked unless
+    /// nil), and every argument for max/min — which also fail when a
+    /// number is compared against a string, since lua_compare applies
+    /// no coercion. A trailing Call/Vararg may expand to zero values,
+    /// so an argument count resting on it proves nothing. Argument
+    /// shapes whose type is not statically known stay unjudged,
+    /// matching the catalog's standing contract for dynamic values.
+    fn total_api_call_throws(&self, full: &BuiltinReference<'_>, args: &[NodeId]) -> bool {
+        if !is_total_api(full) {
+            return true;
+        }
+        let fixed = match args.last() {
+            Some(&last) if matches!(self.ast.node(last), Node::Call(..) | Node::Vararg) => {
+                args.len() - 1
+            }
+            _ => args.len(),
+        };
+        if fixed == 0 {
+            return true;
+        }
+        let (root, member) = full.parts();
+        if root == "math" {
+            match member {
+                Some("max" | "min") => {
+                    for &arg in &args[..fixed] {
+                        if self.statically_non_numeric(arg) == Some(true) {
+                            return true;
+                        }
+                    }
+                    // max/min also compare their arguments pairwise
+                    // with lua_compare, which applies no numeric
+                    // coercion: a number compared against any string
+                    // fails, even against a numeric string (which the
+                    // check above accepts as numeric).
+                    let has_number = args[..fixed].iter().any(|&arg| self.statically_number(arg));
+                    let has_string = args[..fixed].iter().any(|&arg| self.statically_string(arg));
+                    if has_number && has_string {
+                        return true;
+                    }
+                }
+                Some("atan") => {
+                    // atan's optional second argument is type-checked
+                    // like the first when it is present and not nil
+                    // (luaL_optnumber substitutes a default for nil).
+                    for &arg in &args[..1] {
+                        if self.statically_non_numeric(arg) == Some(true) {
+                            return true;
+                        }
+                    }
+                    if fixed >= 2
+                        && !self.statically_nil(args[1])
+                        && self.statically_non_numeric(args[1]) == Some(true)
+                    {
+                        return true;
+                    }
+                }
+                _ => {
+                    // The remaining unary members consume only the
+                    // first argument; extra arguments are ignored.
+                    for &arg in &args[..1] {
+                        if self.statically_non_numeric(arg) == Some(true) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether the expression is statically a number (a numeric string
+    /// does not count: comparisons do not coerce).
+    fn statically_number(&self, x: NodeId) -> bool {
+        match self.ast.node(x) {
+            Node::Num(_) => true,
+            Node::Paren(inner) => self.statically_number(*inner),
+            Node::Un(op, inner) if op.as_str() == "-" => self.statically_number(*inner),
+            _ => false,
+        }
+    }
+
+    /// Whether the expression is statically a string.
+    fn statically_string(&self, x: NodeId) -> bool {
+        match self.ast.node(x) {
+            Node::Str(_) => true,
+            Node::Paren(inner) => self.statically_string(*inner),
+            Node::Bin(op, _, _) if op.as_str() == ".." => true,
+            _ => false,
+        }
+    }
+
+    /// Whether the expression is statically nil.
+    fn statically_nil(&self, x: NodeId) -> bool {
+        match self.ast.node(x) {
+            Node::Nil => true,
+            Node::Paren(inner) => self.statically_nil(*inner),
+            _ => false,
+        }
+    }
+
+    /// Merge the effects of the implicit iterator call a generic-for
+    /// performs each step: a proven builtin classifies like a direct
+    /// call, a known local iterator contributes its summary, and
+    /// anything else is an unknown call.
+    fn iterator_call_into<const READS: bool>(&self, iter: NodeId, e: &mut Effects) {
+        if let Some(full) = self.builtin_reference(iter) {
+            if full.starts_with("screen.")
+                && !full.is("screen.getWidth")
+                && !full.is("screen.getHeight")
+            {
+                e.calls = true;
+                e.ordered = true;
+                e.stable = false;
+                return;
+            }
+            if is_pure_api(&full) {
+                e.may_throw |= !is_total_api(&full);
+                e.stable &= self.stable_reads
+                    || (!full.starts_with("input.") && !full.starts_with("property."));
+                return;
+            }
+            if is_effect_api(&full) {
+                e.calls = true;
+                e.stable = false;
+                return;
+            }
+        }
+        if let (Node::Name(_), Some(bid)) = (
+            &self.ast.nodes[iter as usize],
+            self.res.node_bid[iter as usize],
+        ) {
+            if let Some(s) = &self.summaries[bid as usize] {
+                if READS {
+                    e.reads.extend_from_slice(&s.reads);
+                }
+                e.writes.extend_from_slice(&s.writes);
+                e.calls |= s.calls;
+                e.ordered |= s.ordered;
+                e.may_throw |= s.may_throw;
+                e.stable &= s.stable;
+                return;
+            }
+        }
+        e.calls = true;
+        e.may_throw = true;
+        e.stable = false;
+    }
+
+    /// テーブルコンストラクタのキーとして静的に合法と証明できるか。
+    /// リテラル（文字列・数値・真偽値・テーブル・関数）は常に合法な
+    /// キーであり、nil は常に違法、それ以外は実行時に決まるため
+    /// 保守的に「証明できない」として扱う（Q03）。
+    fn statically_legal_table_key(&self, x: NodeId) -> bool {
+        match self.ast.node(x) {
+            Node::Str(_) | Node::Num(_) | Node::Bool(_) | Node::Table(_) | Node::Function(..) => {
+                true
+            }
+            Node::Paren(inner) => self.statically_legal_table_key(*inner),
+            _ => false,
+        }
+    }
+
+    /// Some(true) when the expression is statically a value the numeric
+    /// builtins reject, Some(false) when it is statically numeric, None
+    /// when its type is not statically known.
+    fn statically_non_numeric(&self, x: NodeId) -> Option<bool> {
+        match self.ast.node(x) {
+            Node::Num(_) => Some(false),
+            Node::Str(raw) => decode_lua_string(raw).map(|s| !lua_numeric_string(&s)),
+            Node::Nil | Node::Bool(_) | Node::Table(_) | Node::Function(..) => Some(true),
+            Node::Paren(inner) => self.statically_non_numeric(*inner),
+            Node::Un(op, inner) if op.as_str() == "-" => self.statically_non_numeric(*inner),
+            _ => None,
+        }
+    }
+
     // A single accumulator avoids a Vec<Effects> and two binding-vector
     // allocations per expression. No results are cached across mutable summary
     // fixpoint iterations or changes to the public stable_reads setting.
@@ -601,6 +1069,13 @@ impl<'a> EffectAnalyzer<'a> {
                         storm_lua_syntax::ast::TableField::KVar(k, v) => {
                             self.expr_into::<READS>(*k, e);
                             self.expr_into::<READS>(*v, e);
+                            // コンストラクタ自身の格納も投げうる: キーが
+                            // nil（や NaN）だと `table index is nil` で
+                            // エラーになる（Q03）。静的に合法と証明できる
+                            // リテラルキー以外のキーは送出可能として扱う。
+                            if !self.statically_legal_table_key(*k) {
+                                e.may_throw = true;
+                            }
                         }
                     }
                 }
@@ -642,7 +1117,7 @@ impl<'a> EffectAnalyzer<'a> {
                         return;
                     }
                     if is_pure_api(full) {
-                        e.may_throw |= !is_total_api(full);
+                        e.may_throw |= self.total_api_call_throws(full, args);
                         e.stable &= self.stable_reads
                             || (!full.starts_with("input.") && !full.starts_with("property."));
                         return;
@@ -745,7 +1220,11 @@ impl<'a> EffectAnalyzer<'a> {
                         return;
                     }
                     if PURE_API.contains(&full) {
-                        e.may_throw |= !TOTAL_API.contains(&full);
+                        let reference = BuiltinReference {
+                            base: std::borrow::Cow::Borrowed(full),
+                            member: None,
+                        };
+                        e.may_throw |= self.total_api_call_throws(&reference, args);
                         e.stable &= self.stable_reads
                             || (!full.starts_with("input.") && !full.starts_with("property."));
                         return;
@@ -784,7 +1263,22 @@ impl<'a> EffectAnalyzer<'a> {
 
     fn statement_into<const READS: bool>(&self, statement: NodeId, e: &mut Effects) {
         match &self.ast.nodes[statement as usize] {
-            Node::Local(_, es) | Node::Return(es) => {
+            Node::Local(_, es) => {
+                for &x in es {
+                    self.expr_into::<READS>(x, e);
+                }
+                // A declaration is a definition: consumers that track
+                // per-binding writes must see the declared bids, like
+                // an Assign to the same names. Without this, a pass
+                // checking intervening writes (captured-use hoisting,
+                // candidate Z in cycle 67) could move a use of the
+                // binding to before its declaration, which then
+                // overwrote the moved value.
+                if let Some(bids) = self.res.node_bids.get(statement as usize) {
+                    e.writes.extend(bids.iter().copied());
+                }
+            }
+            Node::Return(es) => {
                 for &x in es {
                     self.expr_into::<READS>(x, e);
                 }
@@ -842,7 +1336,47 @@ impl<'a> EffectAnalyzer<'a> {
                 for &x in es {
                     self.expr_into::<READS>(x, e);
                 }
+                // The generic-for protocol calls the iterator itself
+                // (with the state and control values) once per step;
+                // count that implicit call's effects as well.
+                if let Some(&iter) = es.first() {
+                    self.iterator_call_into::<READS>(iter, e);
+                }
                 self.block_into::<READS>(*body, e);
+            }
+            Node::Funcstat(target, _) => {
+                // A function statement is an assignment to its target:
+                // consumers that track per-binding writes (available
+                // expressions, forwarding, dead-store analysis) must see
+                // the definition as a write, like an Assign to the same
+                // target. The body does not execute at definition time,
+                // so its effects are not merged.
+                match &self.ast.nodes[*target as usize] {
+                    Node::Name(_) => {
+                        if let Some(bid) = self.res.node_bid[*target as usize] {
+                            e.writes.push(bid);
+                        }
+                    }
+                    _ => {
+                        // Preserve the Assign lvalue contract for indexed
+                        // targets: only reads/calls are merged and an
+                        // indexed store may throw.
+                        let mut target_effects = empty_effects();
+                        self.expr_into::<READS>(*target, &mut target_effects);
+                        if READS {
+                            e.reads.extend(target_effects.reads);
+                        }
+                        e.calls |= target_effects.calls;
+                        e.may_throw = true;
+                    }
+                }
+            }
+            Node::Localfunc(..) => {
+                // The resolver records the defined binding on the
+                // statement node itself.
+                if let Some(bid) = self.res.node_bid[statement as usize] {
+                    e.writes.push(bid);
+                }
             }
             _ => {}
         }
@@ -859,14 +1393,26 @@ impl<'a> EffectAnalyzer<'a> {
 
     fn expr_effects(&self, x: NodeId, _current_fn: Option<BindingId>) -> Effects {
         let mut e = empty_effects();
-        self.expr_into::<true>(x, &mut e);
-        normalize_effects(e)
+        self.expr_effects_into(x, &mut e);
+        e
+    }
+
+    fn expr_effects_into(&self, x: NodeId, out: &mut Effects) {
+        refill_effects(out);
+        self.expr_into::<true>(x, out);
+        normalize_effects_in_place(out);
     }
 
     fn statement_effects(&self, statement: NodeId, _current_fn: Option<BindingId>) -> Effects {
         let mut e = empty_effects();
-        self.statement_into::<true>(statement, &mut e);
-        normalize_effects(e)
+        self.statement_effects_into(statement, &mut e);
+        e
+    }
+
+    fn statement_effects_into(&self, statement: NodeId, out: &mut Effects) {
+        refill_effects(out);
+        self.statement_into::<true>(statement, out);
+        normalize_effects_in_place(out);
     }
 
     fn block_effects(&self, block: NodeId, _current_fn: Option<BindingId>) -> Effects {
@@ -880,9 +1426,27 @@ impl<'a> EffectAnalyzer<'a> {
         self.expr_effects(x, None)
     }
 
+    /// Borrowing-output form of [`Self::effects_for_expr`]: the result is
+    /// written into the caller-owned `out` accumulator (its previous
+    /// contents are discarded, its vector capacities are kept), so a hot
+    /// loop can reuse one accumulator instead of allocating two binding
+    /// vectors per query. The value is computed fresh from the analyzer's
+    /// current state on every call -- public analysis state (`summaries`,
+    /// `stable_reads`, ...) stays mutable and no result is ever cached
+    /// across calls.
+    pub fn effects_for_expr_into(&self, x: NodeId, out: &mut Effects) {
+        self.expr_effects_into(x, out);
+    }
+
     /// Public read-only view of statement effects for optimization passes.
     pub fn effects_for_statement(&self, statement: NodeId) -> Effects {
         self.statement_effects(statement, None)
+    }
+
+    /// Borrowing-output form of [`Self::effects_for_statement`]; see
+    /// [`Self::effects_for_expr_into`] for the contract.
+    pub fn effects_for_statement_into(&self, statement: NodeId, out: &mut Effects) {
+        self.statement_effects_into(statement, out);
     }
 
     pub fn is_pure(&self, x: NodeId) -> bool {
@@ -898,10 +1462,106 @@ impl<'a> EffectAnalyzer<'a> {
         self.expr_into::<false>(x, &mut e);
         !e.calls && !e.ordered && e.writes.is_empty() && !e.may_throw && e.stable
     }
+
+    /// Whether a call proven to name a TOTAL_API builtin has only
+    /// arguments that statically cannot make it throw. This is the
+    /// acceptance mirror of `total_api_call_throws`: that oracle answers
+    /// "definitely throws" and deliberately leaves dynamically typed
+    /// arguments unjudged, so it cannot ground a may-throw claim.
+    fn total_api_args_acceptable(&self, full: &BuiltinReference<'_>, args: &[NodeId]) -> bool {
+        let fixed = match args.last() {
+            Some(&last) if matches!(self.ast.node(last), Node::Call(..) | Node::Vararg) => {
+                args.len() - 1
+            }
+            _ => args.len(),
+        };
+        if fixed == 0 {
+            return false;
+        }
+        let (root, member) = full.parts();
+        match (root, member) {
+            ("type", None) | ("tostring", None) => true,
+            ("math", Some("max" | "min")) => {
+                args[..fixed].iter().all(|&arg| self.statically_number(arg))
+            }
+            ("math", Some("atan")) => {
+                self.statically_non_numeric(args[0]) == Some(false)
+                    && (fixed < 2
+                        || self.statically_nil(args[1])
+                        || self.statically_non_numeric(args[1]) == Some(false))
+            }
+            ("math", Some(_)) => self.statically_non_numeric(args[0]) == Some(false),
+            ("input" | "property", Some(_)) => self.statically_non_numeric(args[0]) == Some(false),
+            _ => false,
+        }
+    }
+
+    /// Whether the expression may be dropped entirely (never evaluated)
+    /// when its value is unused. Stronger than `is_movable`: the
+    /// may_throw bit is fed by `total_api_call_throws`, a
+    /// definitely-throws oracle that leaves dynamically typed arguments
+    /// unjudged, so a TOTAL_API call with an argument of unknown static
+    /// type is recorded as non-throwing even though a nil or
+    /// non-numeric dynamic value makes it throw at run time
+    /// (candidate O, w9 cycle 66). Elimination consumers must use this
+    /// predicate; movement and duplication consumers keep `is_movable`,
+    /// since the expression still runs exactly once there.
+    pub fn is_droppable(&self, x: NodeId) -> bool {
+        if !self.is_movable(x) {
+            return false;
+        }
+        let mut stack = vec![x];
+        while let Some(node) = stack.pop() {
+            if matches!(self.ast.node(node), Node::Function(..)) {
+                continue;
+            }
+            if let Node::Call(function, args, _) = self.ast.node(node) {
+                if let Some(full) = self.builtin_reference(*function) {
+                    if is_total_api(&full) && !self.total_api_args_acceptable(&full, args) {
+                        return false;
+                    }
+                }
+            }
+            for_each_child(self.ast, node, &mut |child| stack.push(child));
+        }
+        true
+    }
 }
 
 pub fn decode_lua_string(s: &str) -> Option<String> {
     storm_lua_syntax::numeric::decode_lua_string(s)
+}
+
+/// Lua 5.3 string-to-number coercion acceptance for a decoded string:
+/// optional surrounding whitespace and sign, then a decimal or
+/// hexadecimal numeral. Spellings a Rust parser would accept but Lua
+/// rejects (such as "inf" or "nan") are refused.
+fn lua_numeric_string(s: &str) -> bool {
+    let t = s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r'));
+    if t.is_empty() {
+        return false;
+    }
+    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if let Some(hex) = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    {
+        let (mantissa, exp) = match hex.find(['p', 'P']) {
+            Some(i) => (&hex[..i], Some(&hex[i + 1..])),
+            None => (hex, None),
+        };
+        let mantissa_ok = mantissa.bytes().any(|b| b.is_ascii_hexdigit())
+            && mantissa.bytes().all(|b| b.is_ascii_hexdigit() || b == b'.')
+            && mantissa.matches('.').count() <= 1;
+        let exp_ok = exp.is_none_or(|e| {
+            let e = e.strip_prefix(['+', '-']).unwrap_or(e);
+            !e.is_empty() && e.bytes().all(|b| b.is_ascii_digit())
+        });
+        return mantissa_ok && exp_ok;
+    }
+    t.bytes()
+        .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'e' | b'E' | b'+' | b'-'))
+        && t.parse::<f64>().is_ok()
 }
 
 /// `semanticExpressionKey`: scopeId/bids/write を除外した直列化キー。
@@ -1000,7 +1660,7 @@ impl<'a> EffectAnalyzer<'a> {
                 let Some(bid) = res.node_bid[nid as usize] else {
                     continue;
                 };
-                if !api_roots(name) || writes[bid as usize] != 0 {
+                if !api_roots(name) || name == "self" || writes[bid as usize] != 0 {
                     continue;
                 }
                 let b = &res.bindings[bid as usize];
@@ -1011,10 +1671,11 @@ impl<'a> EffectAnalyzer<'a> {
         }
 
         // apiAliases fixpoint（8 周）
+        let alias_context = root_block_alias_context(ast, res, root);
         if let Node::Block(ss) = &ast.nodes[root as usize] {
             for _ in 0..8 {
                 let mut changed = false;
-                for &s in ss {
+                for (stmt_index, &s) in ss.iter().enumerate() {
                     let Node::Assign(vs, es) = &ast.nodes[s as usize] else {
                         continue;
                     };
@@ -1030,6 +1691,31 @@ impl<'a> EffectAnalyzer<'a> {
                             continue;
                         };
                         if writes[tbid as usize] != 1 {
+                            continue;
+                        }
+                        // A binding whose declaration carries an
+                        // initializer (a `local` with an initial
+                        // value at its position, or a `local
+                        // function`) has a definition the write
+                        // count does not see: this Assign is then
+                        // its second definition, and an alias taken
+                        // from it would not hold before the
+                        // assignment. The single-definition rule is
+                        // only sound when the Assign is the binding's
+                        // sole definition.
+                        if binding_has_initialized_decl(ast, res, tbid) {
+                            continue;
+                        }
+                        // Dominance: the alias holds only after this
+                        // assignment executes. A read of the target
+                        // binding in this or any earlier top-level
+                        // statement can observe the previous value,
+                        // and a chunk-level Goto/Label can skip the
+                        // assignment entirely, so neither shape may
+                        // register an alias.
+                        if alias_context.has_goto_or_label
+                            || alias_context.reads_before[stmt_index].contains(&tbid)
+                        {
                             continue;
                         }
                         let alias: Option<String> = match &ast.nodes[*expression as usize] {
@@ -1092,6 +1778,7 @@ impl<'a> EffectAnalyzer<'a> {
                 });
             }
         }
+        let mut converged = false;
         for _ in 0..20 {
             let mut changed = false;
             for bid in 1..res.bindings.len() as BindingId {
@@ -1120,9 +1807,11 @@ impl<'a> EffectAnalyzer<'a> {
                 }
             }
             if !changed {
+                converged = true;
                 break;
             }
         }
+        analyzer.downgrade_unproven_summaries(converged);
 
         analyzer
     }
@@ -1708,5 +2397,403 @@ mod builtin_membership_tests {
             ]
         );
         assert_eq!(EFFECT_API, ["output.setNumber", "output.setBool"]);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod alias_definition_count_tests {
+    use super::*;
+
+    /// The builtin spelling resolved at the (single) call of `f`
+    /// inside function `g`, asserting both analyzer constructions
+    /// agree on the alias map.
+    fn call_resolution(source: &str) -> Option<String> {
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let mut found = None;
+        for id in 0..ast.nodes.len() as u32 {
+            if let Node::Call(function, _, _) = ast.node(id) {
+                if let Node::Name(_) = ast.node(*function) {
+                    let bid = res.node_bid[*function as usize].unwrap();
+                    if ast.strings.get(res.binding(bid).name) == "f" {
+                        found = Some(*function);
+                    }
+                }
+            }
+        }
+        let callee = found.expect("a call of f");
+        let a = EffectAnalyzer::reference_new(&ast, &res, root, false);
+        let b = EffectAnalyzer::new(&ast, &res, root, false);
+        assert_eq!(a.api_alias_map, b.api_alias_map);
+        b.resolve_builtin_reference(callee)
+    }
+
+    #[test]
+    fn initialized_local_reassigned_once_gets_no_alias() {
+        // The local's initializer is a first definition the write
+        // count does not see; the single counted Assign is a second
+        // definition, so no alias may be taken from it.
+        assert_eq!(
+            call_resolution("local f=string.sub f=string.find function g() return f('a',1) end"),
+            None
+        );
+    }
+
+    #[test]
+    fn localfunc_reassigned_once_gets_no_alias() {
+        assert_eq!(
+            call_resolution("local function f() end f=string.sub function g() return f('a',1) end"),
+            None
+        );
+    }
+
+    #[test]
+    fn uninitialized_local_assigned_once_keeps_alias() {
+        assert_eq!(
+            call_resolution("local f f=string.sub function g() return f('a',1) end"),
+            Some("string.sub".to_string())
+        );
+    }
+
+    #[test]
+    fn local_without_initializer_at_its_position_keeps_alias() {
+        // `local a,f=1`: f's position has no initializer, so the
+        // Assign is still its sole definition.
+        assert_eq!(
+            call_resolution("local a,f=1 f=string.sub function g() return f('a',1) end"),
+            Some("string.sub".to_string())
+        );
+    }
+
+    #[test]
+    fn global_assigned_once_keeps_alias() {
+        assert_eq!(
+            call_resolution("f=string.sub function g() return f('a',1) end"),
+            Some("string.sub".to_string())
+        );
+    }
+
+    #[test]
+    fn use_before_assignment_gets_no_alias() {
+        // Codex correctness review run #2, finding 5: the call reads
+        // the binding before the single assignment executes, so the
+        // later value must not be propagated back to it.
+        assert_eq!(
+            call_resolution("local x=f(2.5) f=math.floor return x"),
+            None
+        );
+    }
+
+    #[test]
+    fn chunk_level_goto_gets_no_alias() {
+        // A chunk-level goto can skip the defining assignment, so
+        // textual statement order alone proves no dominance.
+        assert_eq!(
+            call_resolution("f=math.floor goto skip ::skip:: function g() return f(2.5) end"),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod mutated_builtin_roots_tests {
+    use super::*;
+
+    fn mutated(source: &str) -> std::collections::HashSet<String> {
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        mutated_builtin_roots(&ast, &res, root)
+    }
+
+    #[test]
+    fn and_or_alias_write_marks_builtin_root_mutated() {
+        // Codex correctness review run #2, finding 4: the alias reaches
+        // `math` only through an and/or chain, so the write through it
+        // must still mark the root as mutated.
+        let m = mutated("local m=input.getBool(0) and math or {} m.abs=function(x) return 99 end");
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn plain_alias_write_still_marks_root() {
+        let m = mutated("local m=math m.abs=function(x) return 99 end");
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn and_or_value_passed_to_call_escapes() {
+        let m = mutated("local m=input.getBool(0) and math or {} print(m)");
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn and_or_alias_of_plain_tables_does_not_mark_builtin() {
+        let m = mutated("local m=input.getBool(0) and {} or {} m.abs=function(x) return 99 end");
+        assert!(!m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn generic_for_state_value_escapes_to_iterator() {
+        // w6 cycle 50: the generic-for state is passed to the iterator
+        // function on every step, so a builtin root in that position
+        // escapes exactly like a call argument; a write through the
+        // iterator's parameter must mark the root as mutated.
+        let m = mutated(
+            "local function it(m) m.floor=function(x) return 100 end end for _ in it, math do end",
+        );
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn generic_for_control_value_escapes_to_iterator() {
+        // The control value (third expression) is the iterator's
+        // second argument on the first step.
+        let m = mutated(
+            "local function it(s, m) m.floor=function(x) return 100 end end \
+             for _ in it, nil, math do end",
+        );
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn generic_for_state_alias_escapes_to_iterator() {
+        let m = mutated("local mm=math local function it(m) end for _ in it, mm do end");
+        assert!(m.contains("math"), "{m:?}");
+    }
+
+    #[test]
+    fn generic_for_over_user_table_does_not_mark_builtin() {
+        // Iterating a plain table (as state, or through pairs) passes
+        // no builtin root to the iterator, so unrelated builtin reads
+        // stay unmutated.
+        let m = mutated(
+            "local t={} local function it(m) m.x=1 end for _ in it, t do end \
+             for k, v in pairs(t) do end local u=math.floor(1.5)",
+        );
+        assert!(!m.contains("math"), "{m:?}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod total_api_argument_tests {
+    use super::*;
+
+    /// The call's own totality judgment (argument subexpressions' own
+    /// effects are not part of this predicate).
+    fn call_may_throw(source: &str) -> bool {
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let mut verdict = None;
+        for id in 0..ast.nodes.len() as u32 {
+            if let Node::Call(f, args, _) = ast.node(id) {
+                let full = analyzer.builtin_reference(*f).expect("a builtin call");
+                verdict = Some(analyzer.total_api_call_throws(&full, args));
+            }
+        }
+        verdict.expect("a call")
+    }
+
+    #[test]
+    fn statically_throwing_total_calls_are_not_total() {
+        // Codex correctness review run #2, finding 10: a TOTAL_API
+        // classification must not erase errors the arguments provably
+        // raise.
+        assert!(call_may_throw("local u=math.floor(nil)"));
+        assert!(call_may_throw("local u=math.abs({})"));
+        assert!(call_may_throw("local u=type()"));
+        assert!(call_may_throw("local u=math.max()"));
+        assert!(call_may_throw("local u=math.floor('x')"));
+        assert!(call_may_throw("local u=tostring()"));
+    }
+
+    #[test]
+    fn valid_total_calls_stay_total() {
+        assert!(!call_may_throw("local u=math.floor(2.5)"));
+        assert!(!call_may_throw("local u=math.abs(-1)"));
+        assert!(!call_may_throw("local u=math.floor('3')"));
+        assert!(!call_may_throw("local u=type(1)"));
+        assert!(!call_may_throw("local u=math.max(1,2)"));
+        // Dynamic arguments stay unjudged under the catalog contract.
+        assert!(!call_may_throw("local u=math.floor(x)"));
+    }
+
+    #[test]
+    fn atan_second_argument_is_type_checked() {
+        // Codex correctness review run #3, finding 10: atan's optional
+        // second argument is not ignored — a non-nil non-numeric value
+        // fails its luaL_optnumber check.
+        assert!(call_may_throw("local u=math.atan(1, {})"));
+        assert!(call_may_throw("local u=math.atan(1, 'x')"));
+        assert!(!call_may_throw("local u=math.atan(1, 2)"));
+        assert!(!call_may_throw("local u=math.atan(1, nil)"));
+        assert!(!call_may_throw("local u=math.atan(1)"));
+    }
+
+    #[test]
+    fn max_min_reject_number_string_pairs() {
+        // lua_compare applies no coercion, so a number compared
+        // against a string fails even when the string is numeric.
+        assert!(call_may_throw("local u=math.max(1, '2')"));
+        assert!(call_may_throw("local u=math.min('2', 1)"));
+        assert!(call_may_throw("local u=math.max(1, 'x')"));
+        assert!(!call_may_throw("local u=math.max('3', '2')"));
+    }
+
+    #[test]
+    fn unary_members_still_ignore_extra_arguments() {
+        assert!(!call_may_throw("local u=math.floor(1, {})"));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod forin_iterator_effect_tests {
+    use super::*;
+
+    fn forin_node(ast: &Ast) -> NodeId {
+        (0..ast.nodes.len() as u32)
+            .find(|&id| matches!(ast.node(id), Node::Forin(..)))
+            .expect("a generic for")
+    }
+
+    #[test]
+    fn local_iterator_summary_flows_into_forin() {
+        // Codex correctness review run #2, finding 6: the implicit
+        // iterator call's writes are part of the loop statement's
+        // effects.
+        let (ast, root) = storm_lua_syntax::parse_source(
+            "local x=0 local function it() x=1 end for _ in it do end",
+        )
+        .unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let e = analyzer.effects_for_statement(forin_node(&ast));
+        // The name x has two binding instances (chunk scope and the
+        // function's captured scope); the summary records the latter.
+        let x_written = (0..res.bindings.len() as u32)
+            .filter(|&bid| ast.strings.get(res.binding(bid).name) == "x")
+            .any(|bid| e.writes.contains(&bid));
+        assert!(x_written, "{e:?}");
+    }
+
+    #[test]
+    fn unknown_iterator_is_an_unknown_call() {
+        let (ast, root) = storm_lua_syntax::parse_source("for _ in it do end").unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let e = analyzer.effects_for_statement(forin_node(&ast));
+        assert!(e.calls && e.may_throw, "{e:?}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod funcstat_statement_write_tests {
+    use super::*;
+
+    #[test]
+    fn funcstat_records_write_to_its_target_binding() {
+        // A function statement is an assignment to its target; effect
+        // consumers that track per-binding writes must see it.
+        let (ast, root) =
+            storm_lua_syntax::parse_source("function h() return 1 end local x = h()").unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let funcstat = (0..ast.nodes.len() as u32)
+            .find(|&id| matches!(ast.node(id), Node::Funcstat(..)))
+            .expect("a funcstat");
+        let Node::Funcstat(target, _) = ast.node(funcstat) else {
+            unreachable!()
+        };
+        let bid = res.node_bid[*target as usize].expect("target binding");
+        let e = analyzer.effects_for_statement(funcstat);
+        assert!(e.writes.contains(&bid), "{e:?}");
+    }
+
+    #[test]
+    fn localfunc_records_write_to_its_own_binding() {
+        let (ast, root) =
+            storm_lua_syntax::parse_source("local function h() return 1 end local x = h()")
+                .unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let localfunc = (0..ast.nodes.len() as u32)
+            .find(|&id| matches!(ast.node(id), Node::Localfunc(..)))
+            .expect("a localfunc");
+        let bid = res.node_bid[localfunc as usize].expect("own binding");
+        let e = analyzer.effects_for_statement(localfunc);
+        assert!(e.writes.contains(&bid), "{e:?}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod borrowing_form_tests {
+    use super::*;
+
+    const SOURCES: [&str; 4] = [
+        "local x=0 function f(a) x=a return x end function onTick() output.setNumber(1,f(2)) end",
+        "a=b b=c c=d x=a.getNumber function onTick() output.setNumber(1,x(2)) end",
+        "for i=1,3 do t[i]=i end while q do q=p() end repeat r() until s",
+        "local t={} function t.m(v) return v*2 end local y=t.m(21)",
+    ];
+
+    #[test]
+    fn into_forms_match_owned_forms_for_all_nodes_with_reused_accumulator() {
+        for source in SOURCES {
+            let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+            let res = crate::resolver::resolve(&ast, root);
+            let analyzer = EffectAnalyzer::new(&ast, &res, root, true);
+            // One accumulator reused for every query of both forms,
+            // starting from a deliberately non-empty state.
+            let mut out = Effects {
+                reads: vec![u32::MAX],
+                writes: vec![u32::MAX, u32::MAX],
+                calls: true,
+                ordered: true,
+                may_throw: true,
+                stable: false,
+            };
+            for id in 0..ast.nodes.len() as NodeId {
+                analyzer.effects_for_statement_into(id, &mut out);
+                assert_eq!(
+                    out,
+                    analyzer.effects_for_statement(id),
+                    "stmt {id} {source}"
+                );
+                analyzer.effects_for_expr_into(id, &mut out);
+                assert_eq!(out, analyzer.effects_for_expr(id), "expr {id} {source}");
+            }
+        }
+    }
+
+    #[test]
+    fn into_forms_observe_public_state_mutations() {
+        // The borrowing forms must not cache: edits to the public
+        // analysis state between calls are reflected immediately,
+        // exactly as with the owned forms.
+        let source = "local x=0 local function it() x=1 end for _ in it do end";
+        let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+        let res = crate::resolver::resolve(&ast, root);
+        let mut analyzer = EffectAnalyzer::new(&ast, &res, root, false);
+        let mut out = empty_effects();
+        analyzer.effects_for_statement_into(root, &mut out);
+        let before = out.clone();
+
+        analyzer.stable_reads = true;
+        if let Some(i) = analyzer.summaries.iter().position(Option::is_some) {
+            analyzer.summaries[i] = None;
+        }
+        analyzer.effects_for_statement_into(root, &mut out);
+        let mut expected = EffectAnalyzer::new(&ast, &res, root, true);
+        if expected.summaries.len() == analyzer.summaries.len() {
+            expected.summaries = analyzer.summaries.clone();
+        }
+        assert_eq!(out, expected.effects_for_statement(root));
+        let _ = before;
     }
 }

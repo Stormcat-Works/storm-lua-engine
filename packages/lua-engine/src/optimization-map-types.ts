@@ -53,7 +53,7 @@ export interface SourceDisposition {
 export interface SourceBufferIdentity { readonly bytes: number; readonly sha256: string; }
 /** Result of compiler.validateSourceMap(code, map), after structural and hash checks. */
 export interface OptimizationMap {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly producer: {
     readonly name: 'storm-lua-engine';
     readonly version: string;
@@ -72,6 +72,22 @@ export interface OptimizationMap {
   readonly mappings: readonly OptimizationMapping[];
   readonly constructs: readonly GeneratedConstruct[];
   readonly dispositions: readonly SourceDisposition[];
+  /** Schema-2 token table: first-appearance name spellings. Empty for
+      general maps and for lexical-shape maps that fall back to the
+      materialized layout. */
+  readonly tokenNames: readonly string[];
+  /** Schema-2 token table records; the layout is selected by the source
+      count. Single-source maps: [generatedStart, sourceStart, sourceEnd,
+      nameId] per exact-copy token, with a fifth generatedEnd element for a
+      renamed token; nameId is -1 for a non-name token. Maps with more than
+      one source insert the source index as the second element (five
+      elements for an exact copy, six for a renamed token). Unknown gaps
+      are omitted on the wire; validateSourceMap expands them back to
+      mappings/origins. When origins/mappings are also non-empty the map is
+      in mixed form: those arrays carry only the residual (non-simple)
+      origins and their mappings, which expansion splices into the token
+      gaps. */
+  readonly tokens: readonly (readonly number[])[];
   /** Canonical-map SHA-256; consistency check, not an authenticated signature. */
   readonly integrity: string;
 }

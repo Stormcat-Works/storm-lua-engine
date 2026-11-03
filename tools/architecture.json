@@ -5,7 +5,13 @@
     "dev": [],
     "external": [
       "serde"
-    ]
+    ],
+    "features": {
+      "serde": [
+        "derive",
+        "rc"
+      ]
+    }
   },
   "storm-screen-raster": {
     "role": "product",
@@ -18,12 +24,19 @@
   "storm-lua-vm": {
     "role": "product",
     "normal": [
-      "storm-lua-spec"
+      "storm-lua-spec",
+      "storm-lua-syntax"
     ],
     "dev": [],
     "external": [
       "mlua"
-    ]
+    ],
+    "features": {
+      "mlua": [
+        "lua53",
+        "vendored"
+      ]
+    }
   },
   "storm-lua-microcontroller": {
     "role": "product",
@@ -32,7 +45,12 @@
       "storm-lua-vm"
     ],
     "dev": [],
-    "external": []
+    "external": [],
+    "features": {
+      "storm-lua-vm": [
+        "backend-mlua"
+      ]
+    }
   },
   "storm-lua-wasm": {
     "role": "adapter",
@@ -47,7 +65,12 @@
     "dev": [],
     "external": [
       "serde_json"
-    ]
+    ],
+    "features": {
+      "storm-lua-vm": [
+        "backend-mlua"
+      ]
+    }
   },
   "storm-screen-wasm": {
     "role": "adapter",
@@ -57,7 +80,13 @@
       "storm-lua-bridge"
     ],
     "dev": [],
-    "external": []
+    "external": [],
+    "target_graph": {
+      "target": "wasm32-unknown-unknown",
+      "forbidden_transitive": [
+        "lua-src"
+      ]
+    }
   },
   "storm-lua-conformance": {
     "role": "test",
@@ -75,7 +104,19 @@
     "external": [
       "serde_json",
       "sourcemap"
-    ]
+    ],
+    "features": {
+      "storm-lua-addon": [
+        "debug"
+      ],
+      "storm-lua-microcontroller": [
+        "debug"
+      ],
+      "storm-lua-vm": [
+        "backend-mlua",
+        "debug"
+      ]
+    }
   },
   "xtask": {
     "role": "tool",
@@ -102,7 +143,12 @@
       "storm-lua-vm"
     ],
     "dev": [],
-    "external": []
+    "external": [],
+    "features": {
+      "storm-lua-vm": [
+        "backend-mlua"
+      ]
+    }
   },
   "storm-lua-syntax": {
     "role": "product",
@@ -110,8 +156,18 @@
     "dev": [],
     "external": [
       "serde",
-      "serde_json"
-    ]
+      "serde_json",
+      "smallvec"
+    ],
+    "features": {
+      "serde": [
+        "derive",
+        "rc"
+      ],
+      "smallvec": [
+        "serde"
+      ]
+    }
   },
   "storm-lua-analysis": {
     "role": "product",
@@ -123,14 +179,21 @@
     "external": [
       "serde",
       "serde_json"
-    ]
+    ],
+    "features": {
+      "serde": [
+        "derive",
+        "rc"
+      ]
+    }
   },
   "storm-lua-minify": {
     "role": "product",
     "normal": [
       "storm-lua-syntax",
       "storm-lua-analysis",
-      "storm-lua-spec"
+      "storm-lua-spec",
+      "storm-lua-vm"
     ],
     "dev": [],
     "external": [
@@ -139,7 +202,17 @@
       "web-time",
       "serde_json",
       "mlua"
-    ]
+    ],
+    "features": {
+      "mlua": [
+        "lua53",
+        "vendored"
+      ],
+      "serde": [
+        "derive",
+        "rc"
+      ]
+    }
   },
   "storm-lua-build": {
     "role": "product",
@@ -147,7 +220,8 @@
       "storm-lua-syntax",
       "storm-lua-analysis",
       "storm-lua-minify",
-      "storm-lua-spec"
+      "storm-lua-spec",
+      "storm-lua-vm"
     ],
     "dev": [],
     "external": [
@@ -155,7 +229,13 @@
       "sourcemap",
       "serde_json",
       "sha2"
-    ]
+    ],
+    "features": {
+      "serde": [
+        "derive",
+        "rc"
+      ]
+    }
   },
   "storm-lua-compiler-wasm": {
     "role": "adapter",
@@ -171,6 +251,18 @@
       "serde-wasm-bindgen",
       "js-sys",
       "serde"
-    ]
+    ],
+    "features": {
+      "serde": [
+        "derive",
+        "rc"
+      ]
+    },
+    "target_graph": {
+      "target": "wasm32-unknown-unknown",
+      "forbidden_transitive": [
+        "lua-src"
+      ]
+    }
   }
 }

@@ -3,6 +3,8 @@
 
 pub mod config;
 #[doc(hidden)]
+pub mod lexical_rename;
+#[doc(hidden)]
 pub mod orchestration;
 #[doc(hidden)]
 pub mod pass;

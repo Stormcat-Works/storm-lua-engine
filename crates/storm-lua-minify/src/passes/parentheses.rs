@@ -31,18 +31,33 @@ enum Role {
     Prefix,
 }
 
-fn rewrite(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> NodeId {
-    let origin = ast.nodes.capture_origin(id);
-    let result = rewrite_inner(ast, id, role, removed);
-    if result == id {
-        ast.nodes.finish_rewrite(id, origin, "parentheses");
-    }
-    // A removed parenthesis returns an existing child, preserving that child's
-    // own origin rather than overwriting it with the discarded parent's range.
-    result
+/// Outcome of rewriting one node: either the node survives with a new value
+/// (applied by the caller through `NodeArena::rewrite`, which takes the old
+/// value out of the arena instead of cloning it), or it was a removed
+/// parenthesis replaced by an existing child.
+enum RewriteOutcome {
+    Kept(Node),
+    Replaced(NodeId),
 }
 
-fn rewrite_inner(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> NodeId {
+fn rewrite(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> NodeId {
+    match rewrite_inner(ast, id, role, removed) {
+        RewriteOutcome::Kept(value) => {
+            // `rewrite` keeps the shared origin without another allocation
+            // when the value is unchanged, and otherwise runs the same
+            // `finish_rewrite` path with the same "parentheses" reason as
+            // the previous capture + assign + finish sequence. A removed
+            // parenthesis returns an existing child below, preserving that
+            // child's own origin rather than overwriting it with the
+            // discarded parent's range.
+            ast.nodes.rewrite(id, value, "parentheses");
+            id
+        }
+        RewriteOutcome::Replaced(inner) => inner,
+    }
+}
+
+fn rewrite_inner(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> RewriteOutcome {
     let node = ast.nodes[id as usize].clone();
     match node {
         Node::Paren(e) => {
@@ -53,22 +68,22 @@ fn rewrite_inner(ast: &mut Ast, id: NodeId, role: Role, removed: &mut u64) -> No
                     ast.nodes[inner as usize],
                     Node::Function(..) | Node::Table(_)
                 )
-                // In Lua, a parenthesized call is adjusted to exactly one
-                // result.  Removing these parentheses changes multiple-return
-                // assignment/argument semantics (e.g. `local a,b=(f())`).
-                || matches!(ast.nodes[inner as usize], Node::Call(..));
+                // In Lua, a parenthesized call or vararg expression is
+                // adjusted to exactly one result.  Removing these parentheses
+                // changes multiple-return assignment/argument semantics
+                // (e.g. `local a,b=(f())` or `return (...)` after a local
+                // bound to `...` is sunk into an expansion position).
+                || matches!(ast.nodes[inner as usize], Node::Call(..) | Node::Vararg);
             if keep {
-                ast.nodes[id as usize] = Node::Paren(inner);
-                id
+                RewriteOutcome::Kept(Node::Paren(inner))
             } else {
                 *removed += 1;
-                inner
+                RewriteOutcome::Replaced(inner)
             }
         }
         other => {
             let (new_node, _) = map_children_role(&other, &mut |c, r| rewrite(ast, c, r, removed));
-            ast.nodes[id as usize] = new_node;
-            id
+            RewriteOutcome::Kept(new_node)
         }
     }
 }
@@ -87,7 +102,7 @@ fn map_children_role(node: &Node, f: &mut dyn FnMut(NodeId, Role) -> NodeId) -> 
                 }
                 out.push(m);
             }
-            (Node::Call(mfn, out, method.clone()), changed)
+            (Node::Call(mfn, out, *method), changed)
         }
         Node::Index(obj, key, dot) => {
             let mo = f(*obj, Role::Prefix);
@@ -155,6 +170,53 @@ mod tests {
         let (out, saved) = run("local a = ({x=1}):y()");
         assert_eq!(out, "local a=({x=1}):y()");
         assert_eq!(saved, 0);
+    }
+
+    #[test]
+    fn keeps_outer_paren_with_changed_child_and_removed_inner() {
+        // Kept node whose child changed (reason path) and a removed outer
+        // paren over a kept inner paren (both rewrite outcomes). `run` uses
+        // the origin-auditing printer, so surviving bytes must keep known
+        // origins through the `NodeArena::rewrite` path.
+        let (out, saved) = run("local a = ({x=(1)}).x");
+        assert_eq!(out, "local a=({x=1}).x");
+        assert_eq!(saved, 1);
+        let (out, saved) = run("local a = ((function() return 1 end))()");
+        assert_eq!(out, "local a=(function()return 1 end)()");
+        assert_eq!(saved, 1);
+    }
+
+    #[test]
+    fn keeps_parentheses_for_vararg() {
+        // A parenthesized vararg adjusts to one value; stripping it in an
+        // expansion position (return / multi-name local) would expand the
+        // whole vararg list. This is the vararg counterpart of the call
+        // case above, and of the parentheses that single-use-local-sinking
+        // inserts when it sinks a `...`-bound local.
+        let (out, saved) = run("local function f(...) return (...) end");
+        assert!(out.contains("return(...)"), "out={out}");
+        assert_eq!(saved, 0);
+        let (out, saved) = run("local function f(...) local a, b = (...) return a, b end");
+        assert!(out.contains("(...)"), "out={out}");
+        assert_eq!(saved, 0);
+    }
+
+    #[test]
+    fn left_nested_right_associative_grouping_survives_printing() {
+        // `(a .. b) .. c` and `(a ^ b) ^ c`: this pass strips the Paren
+        // nodes, leaving a bare left-nested Bin shape. The printer must
+        // re-parenthesize that shape, because the flat text re-parses
+        // right-nested and changes evaluation order and values
+        // (candidate T, w9 cycle 67).
+        let (out, _) = run("local a = ((x .. y) .. z)");
+        assert_eq!(out, "local a=(x..y)..z");
+        let (out, _) = run("local a = ((x ^ 2) ^ 0.5)");
+        assert_eq!(out, "local a=(x^2)^.5");
+        // Right-nested shapes need no parentheses and stay flat.
+        let (out, _) = run("local a = (x .. (y .. z))");
+        assert_eq!(out, "local a=x..y..z");
+        let (out, _) = run("local a = (x ^ (2 ^ 0.5))");
+        assert_eq!(out, "local a=x^2^.5");
     }
 
     #[test]

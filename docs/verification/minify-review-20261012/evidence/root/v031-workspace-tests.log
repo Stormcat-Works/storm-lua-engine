@@ -42,16 +42,16 @@
    Compiling zerovec v0.11.8
    Compiling zerotrie v0.2.5
    Compiling tap v1.0.1
-   Compiling storm-lua-spec v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-spec)
-   Compiling storm-lua-syntax v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-syntax)
+   Compiling storm-lua-spec v0.3.1 (crates/storm-lua-spec)
+   Compiling storm-lua-syntax v0.3.1 (crates/storm-lua-syntax)
    Compiling bincode v1.3.3
    Compiling tinystr v0.8.4
    Compiling icu_locale_core v2.3.0
    Compiling potential_utf v0.1.6
-   Compiling storm-lua-vm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-vm)
+   Compiling storm-lua-vm v0.3.1 (crates/storm-lua-vm)
    Compiling icu_collections v2.3.0
    Compiling web-time v1.1.0
-   Compiling storm-screen-raster v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-screen-raster)
+   Compiling storm-screen-raster v0.3.1 (crates/storm-screen-raster)
    Compiling icu_provider v2.3.1
    Compiling wyz v0.5.1
    Compiling block-buffer v0.10.4
@@ -60,7 +60,7 @@
    Compiling icu_normalizer v2.3.0
    Compiling icu_properties v2.3.0
    Compiling funty v2.0.0
-   Compiling storm-lua-analysis v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-analysis)
+   Compiling storm-lua-analysis v0.3.1 (crates/storm-lua-analysis)
    Compiling outref v0.5.2
    Compiling uuid v1.26.1
    Compiling vsimd v0.8.0
@@ -68,21 +68,21 @@
    Compiling idna_adapter v1.2.2
    Compiling base64-simd v0.8.0
    Compiling idna v1.1.0
-   Compiling storm-lua-minify v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-minify)
+   Compiling storm-lua-minify v0.3.1 (crates/storm-lua-minify)
    Compiling debugid v0.8.0
    Compiling digest v0.10.7
    Compiling unicode-id-start v1.5.0
    Compiling data-encoding v2.11.1
    Compiling url v2.5.8
    Compiling if_chain v1.0.3
-   Compiling storm-lua-build v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-build)
+   Compiling storm-lua-build v0.3.1 (crates/storm-lua-build)
    Compiling cpufeatures v0.2.17
    Compiling sha2 v0.10.9
-   Compiling storm-lua-addon v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-addon)
-   Compiling storm-lua-microcontroller v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-microcontroller)
-   Compiling storm-lua-conformance v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/conformance)
+   Compiling storm-lua-addon v0.3.1 (crates/storm-lua-addon)
+   Compiling storm-lua-microcontroller v0.3.1 (crates/storm-lua-microcontroller)
+   Compiling storm-lua-conformance v0.3.1 (conformance)
    Compiling wasm-bindgen-shared v0.2.128
-   Compiling storm-lua-bridge v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-bridge)
+   Compiling storm-lua-bridge v0.3.1 (crates/storm-lua-bridge)
    Compiling sourcemap v9.3.2
    Compiling bumpalo v3.20.3
    Compiling wasm-bindgen v0.2.128
@@ -94,13 +94,13 @@
    Compiling pin-project-lite v0.2.17
    Compiling once_cell v1.21.4
    Compiling futures-util v0.3.34
-   Compiling storm-lua-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-wasm)
+   Compiling storm-lua-wasm v0.3.1 (crates/storm-lua-wasm)
    Compiling wasm-bindgen-macro v0.2.128
-   Compiling storm-screen-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-screen-wasm)
+   Compiling storm-screen-wasm v0.3.1 (crates/storm-screen-wasm)
    Compiling js-sys v0.3.105
    Compiling serde-wasm-bindgen v0.6.5
-   Compiling storm-lua-compiler-wasm v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/crates/storm-lua-compiler-wasm)
-   Compiling xtask v0.3.1 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/.worktrees/metadata-source-map-fix/xtask)
+   Compiling storm-lua-compiler-wasm v0.3.1 (crates/storm-lua-compiler-wasm)
+   Compiling xtask v0.3.1 (xtask)
     Finished `test` profile [optimized] target(s) in 44.87s
      Running unittests src/lib.rs (/tmp/cargo-targets/storm-lua-engine/minify-review-20261012/debug/deps/storm_lua_addon-18a03086be21077c)
 

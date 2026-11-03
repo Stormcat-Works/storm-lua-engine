@@ -44,19 +44,19 @@
    Compiling potential_utf v0.1.6
    Compiling icu_locale_core v2.3.0
    Compiling icu_collections v2.3.0
-   Compiling storm-lua-spec v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-spec)
-   Compiling storm-lua-syntax v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-syntax)
+   Compiling storm-lua-spec v0.2.0 (crates/storm-lua-spec)
+   Compiling storm-lua-syntax v0.2.0 (crates/storm-lua-syntax)
    Compiling bincode v1.3.3
-   Compiling storm-lua-vm v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-vm)
+   Compiling storm-lua-vm v0.2.0 (crates/storm-lua-vm)
    Compiling tap v1.0.1
    Compiling percent-encoding v2.3.2
    Compiling icu_provider v2.3.1
-   Compiling storm-lua-analysis v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-analysis)
+   Compiling storm-lua-analysis v0.2.0 (crates/storm-lua-analysis)
    Compiling icu_properties v2.3.0
    Compiling icu_normalizer v2.3.0
    Compiling form_urlencoded v1.2.2
    Compiling wyz v0.5.1
-   Compiling storm-screen-raster v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-screen-raster)
+   Compiling storm-screen-raster v0.2.0 (crates/storm-screen-raster)
    Compiling outref v0.5.2
    Compiling vsimd v0.8.0
    Compiling funty v2.0.0
@@ -65,17 +65,17 @@
    Compiling uuid v1.26.1
    Compiling base64-simd v0.8.0
    Compiling debugid v0.8.0
-   Compiling storm-lua-minify v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-minify)
+   Compiling storm-lua-minify v0.2.0 (crates/storm-lua-minify)
    Compiling bitvec v1.1.1
    Compiling unicode-id-start v1.5.0
    Compiling data-encoding v2.11.1
    Compiling url v2.5.8
    Compiling if_chain v1.0.3
-   Compiling storm-lua-addon v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-addon)
-   Compiling storm-lua-microcontroller v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-microcontroller)
-   Compiling storm-lua-conformance v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/conformance)
+   Compiling storm-lua-addon v0.2.0 (crates/storm-lua-addon)
+   Compiling storm-lua-microcontroller v0.2.0 (crates/storm-lua-microcontroller)
+   Compiling storm-lua-conformance v0.2.0 (conformance)
    Compiling wasm-bindgen-shared v0.2.128
-   Compiling storm-lua-bridge v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-bridge)
+   Compiling storm-lua-bridge v0.2.0 (crates/storm-lua-bridge)
    Compiling bumpalo v3.20.3
    Compiling wasm-bindgen v0.2.128
    Compiling wasm-bindgen-macro-support v0.2.128
@@ -88,10 +88,10 @@
    Compiling slab v0.4.12
    Compiling futures-util v0.3.34
    Compiling wasm-bindgen-macro v0.2.128
-   Compiling storm-lua-build v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-build)
-   Compiling storm-lua-wasm v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-lua-wasm)
+   Compiling storm-lua-build v0.2.0 (crates/storm-lua-build)
+   Compiling storm-lua-wasm v0.2.0 (crates/storm-lua-wasm)
    Compiling js-sys v0.3.105
-   Compiling storm-screen-wasm v0.2.0 (/home/makkii/develop/Stormworks/Stormcat-Works/storm-lua-engine/crates/storm-screen-wasm)
+   Compiling storm-screen-wasm v0.2.0 (crates/storm-screen-wasm)
 error[E0063]: missing field `metadata_tag` in initializer of `ApiProjectCompileOptions`
   --> conformance/tests/compiler.rs:94:10
    |

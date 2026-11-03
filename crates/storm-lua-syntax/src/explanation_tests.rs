@@ -133,7 +133,9 @@ fn syntax_keywords_belong_to_their_actual_token_not_another_keyword() {
         "if flag then output.setNumber(1,7)else output.setNumber(2,8)end",
         "repeat output.setNumber(1,7)until flag",
         "while flag do end",
-        "if flag then end",
+        // "if flag then end" prints empty (dead-if removal), so the kept
+        // empty-then form below covers the same `then` keyword instead.
+        "if f() then end",
         "for i=1,3 do end",
     ] {
         let (ast, root) = parse_source_with_origins("keywords.lua", source).unwrap();
@@ -192,6 +194,28 @@ fn selected_empty_root_keeps_its_removals_without_emitting_a_fake_position() {
         &source[origins.dispositions[0].original.start..origins.dispositions[0].original.end],
         source
     );
+}
+
+#[test]
+fn retain_block_statements_with_code_matches_retain() {
+    let source = "local a=1 local b=2 local c=3 output.setNumber(1, c)";
+    let (mut old, root_old) = parse_source_with_origins("strip.lua", source).unwrap();
+    let (mut shared, root_shared) = parse_source_with_origins("strip.lua", source).unwrap();
+    let code: std::sync::Arc<str> = std::sync::Arc::from("test-strip-removal");
+    let removed_old = match old.node(root_old) {
+        Node::Block(statements) => statements[0],
+        _ => panic!(),
+    };
+    let removed_shared = match shared.node(root_shared) {
+        Node::Block(statements) => statements[0],
+        _ => panic!(),
+    };
+    old.nodes
+        .retain_block_statements(|id| id != removed_old, "test-strip-removal");
+    shared
+        .nodes
+        .retain_block_statements_with_code(|id| id != removed_shared, &code);
+    assert_eq!(output(&old, root_old), output(&shared, root_shared));
 }
 
 #[test]

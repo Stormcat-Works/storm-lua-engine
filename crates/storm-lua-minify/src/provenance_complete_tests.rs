@@ -90,11 +90,15 @@ fn reduced_fraction_keeps_both_operand_literals() {
 
 #[test]
 fn bit_test_modulus_and_boundary_keep_mask_and_comparison_sources() {
-    let source = "return (value&8)~=0";
+    // The modulo rewrite of a bit test requires a provably
+    // integer-valued operand (a name alone does not prove it: the `&`
+    // could raise on a fractional or non-finite value), so the operand
+    // here is itself a bitwise expression.
+    let source = "return ((value&8)&8)~=0";
     let (code, origins) = run(source, |a, r| {
         passes::literal_folding::constant_fold(a, r, true)
     });
-    assert_eq!(code, "return value%16>7");
+    assert_eq!(code, "return(value&8)%16>7");
     assert_eq!(origins.unknown_bytes(), 0);
     assert_eq!(
         original(source, at(&origins, code.find("16").unwrap()).unwrap()),
@@ -123,9 +127,109 @@ fn rejected_literal_call_candidate_keeps_original_parentheses() {
 }
 
 #[test]
+fn scratch_folded_literal_call_keeps_body_origin() {
+    let source = "local function f(a,b) return a*2+b*3 end r=f(1,2)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=8"), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+    let number = at(&origins, code.find('8').unwrap()).unwrap();
+    assert_eq!(original(source, number), "a*2+b*3");
+}
+
+#[test]
+fn scratch_folded_nested_literal_call_keeps_body_origin() {
+    let source = "local function f(a,b,c,d) return (a*2+b*3)*(c*4+d*5) end r=f(1,2,3,4)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=256"), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+    let number = at(&origins, code.find("256").unwrap()).unwrap();
+    assert!(
+        original(source, number).contains("a*2+b*3"),
+        "{}",
+        original(source, number)
+    );
+}
+
+#[test]
+fn scratch_folded_unary_literal_call_keeps_body_origin() {
+    let source = "local function f(x) return -x end r=f(3)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=-3"), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+    let number = at(&origins, code.find("-3").unwrap()).unwrap();
+    assert_eq!(original(source, number), "-x");
+}
+
+#[test]
+fn reused_tiny_arena_folds_consecutive_literal_calls() {
+    // Two literal calls in one pass: the second install reuses the
+    // tiny tracked arena after the first call reset it, so both
+    // results must keep their body origins with no unknown bytes.
+    let source = "local function f(a,b) return a*2+b*3 end r=f(1,2) s=f(3,4)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=8"), "{code}");
+    assert!(code.contains("s=18"), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+    let first = at(&origins, code.find('8').unwrap()).unwrap();
+    assert_eq!(original(source, first), "a*2+b*3");
+    let second = at(&origins, code.rfind("18").unwrap()).unwrap();
+    assert_eq!(original(source, second), "a*2+b*3");
+}
+
+#[test]
+fn direct_folded_atom_keeps_body_origin_for_unary() {
+    let source = "local function f(x) return -x end r=f(5)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=-5"), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+    let folded = at(&origins, code.find("-5").unwrap()).unwrap();
+    assert_eq!(original(source, folded), "-x");
+}
+
+#[test]
+fn direct_folded_atom_keeps_body_origin_for_comparison() {
+    let source = "local function f(a,b) return a<b end r=f(1,2)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=1>0"), "{code}"); // printer shortens true to 1>0
+    assert_eq!(origins.unknown_bytes(), 0);
+}
+
+#[test]
+fn direct_folded_atom_keeps_body_origin_for_concat() {
+    let source = "local function f(a,b) return a..b end r=f(\"x\",\"y\")";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=\"xy\""), "{code}");
+    assert_eq!(origins.unknown_bytes(), 0);
+}
+
+#[test]
+fn direct_folded_atom_keeps_body_origin_for_and() {
+    let source = "local function f(a,b) return a and b end r=f(true,false)";
+    let (code, origins) = run(source, |a, r| {
+        passes::inline_functions::fold_literal_function_calls(a, r, false)
+    });
+    assert!(code.contains("r=1>2"), "{code}"); // printer shortens false to 1>2
+    assert_eq!(origins.unknown_bytes(), 0);
+}
+
+#[test]
 fn generated_root_function_name_stays_synthetic_after_globalization() {
     let (mut ast, root) = parse_source_with_origins("empty.lua", "").unwrap();
-    let literal = ast.num("7".into());
+    let literal = ast.num("7");
     let ret = ast.push(Node::Return(vec![literal]));
     let body = ast.block(vec![ret]);
     let f = ast.function(Vec::<String>::new(), false, body);

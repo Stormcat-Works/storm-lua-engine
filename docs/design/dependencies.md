@@ -6,7 +6,7 @@
 
 | Dependency class | Policy |
 |---|---|
-| mlua / vendored Lua | vmだけが直接所有。現行baselineはmlua 0.10.5 + lua53 |
+| mlua / vendored Lua | vmだけが直接所有（任意依存であり、`backend-mlua` feature が有効な場合のみ実体化する）。現行baselineはmlua 0.10.5 + lua53 |
 | Serde/JSON | cold-path adapterや開発ツールでは許可。spec/rasterには必須にしない |
 | Error helpers | 標準Errorか小さなhelper。必要になるまで依存を追加しない |
 | Image decoding | サンプル/host/toolを基本とし、raw pixel rasterの必須依存にしない |
@@ -21,6 +21,8 @@ Cargo featuresは同じdependency上で加算されるため、別の利用者�
 ## Public types and raw backend
 
 通常の公開APIはmlua型を隠す。`backend-mlua`featureはmicrocontrollerのAPI登録と独立backendテストに必要なLua/Table/Function/Value/String/Variadic/Result/Error等だけを明示的に公開する。これはmluaを何でも再exportするfacadeではなく、backend版と結びつく逃げ道である。API登録で追加型が必要になった際は、そのconsumerと共に追加する。
+
+`backend-mlua`は第305ラウンド以降、型の再公開ゲートであると同時に**依存ゲート**でもある: mluaはvmの任意依存であり、このfeatureを有効にしたconsumerのグラフにだけ現れる。有効化するのは実行backendを必要とするconsumer（addon、microcontroller、wasm runtime、conformance、検証ハーネス）であり、コンパイラ専用consumer（build、minify、compiler-wasm）は有効化しない。feature無効時のvmは実行backendを持たず、ロード合法性判定は自前パーサとPUCロード規則チェッカによる代替判定になる（意味論と参照判定との残差は`load_legality`のモジュール文書が正本）。
 
 ## Update gate
 

@@ -1,4 +1,6 @@
 //! Provenance operations shared by transformations with explicit operands.
+use std::sync::Arc;
+
 use storm_lua_syntax::{Ast, NodeId};
 
 // This checks actual input subexpressions, not an enclosing fallback anchor.
@@ -37,6 +39,29 @@ pub(super) fn derive(
     target
         .nodes
         .relate_many_from(result, &source.nodes, &inputs[1..], reason);
+}
+
+pub(super) fn derive_with_code(
+    target: &mut Ast,
+    result: NodeId,
+    source: &Ast,
+    inputs: &[NodeId],
+    code: &Arc<str>,
+) {
+    if !target.nodes.tracks_origins() {
+        return;
+    }
+    if inputs.is_empty() || inputs.iter().any(|&n| !known(source, n)) {
+        let value = target.node(result).clone();
+        target.nodes[result as usize] = value;
+        return;
+    }
+    target
+        .nodes
+        .derive_from_with_code(result, &source.nodes, inputs[0], code);
+    target
+        .nodes
+        .relate_many_from(result, &source.nodes, &inputs[1..], code.as_ref());
 }
 
 pub(super) fn within(target: &mut Ast, result: NodeId, inputs: &[NodeId], reason: &str) {

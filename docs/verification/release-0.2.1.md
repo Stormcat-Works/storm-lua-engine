@@ -74,7 +74,7 @@ npm管理者によるTrusted Publisherの設定後、[Publish npm release run 36
 | registry tarball SHA-256 | `3826946bbe2117bf7cc4d2ea7745f20ecaffb0927304af6540bd781f7354ad19`、GitHubの検査済み配布物と一致 |
 | dist.integrity | SHA-512一致 |
 | Hosted registry consumer | Vehicle/Addon、Lua実行、描画、compiler、host、保存/reload、source loading、mapped debugger/errorを確認 |
-| Dev-Serverの空ディレクトリから通常のnpm install | `@stormcat-works/storm-lua-engine@0.2.1`の導入成功 |
+| 開発ホストの空ディレクトリから通常のnpm install | `@stormcat-works/storm-lua-engine@0.2.1`の導入成功 |
 | 通常導入したSDKの追加smoke | 入力3.5→出力7、描画画素、minify成功、fast/beam1の目標未達と最大探索のbyte一致 |
 
 導入コマンド: `npm install @stormcat-works/storm-lua-engine@0.2.1`。

@@ -130,6 +130,15 @@ pub(crate) fn apply(id: &str, a: &mut Ast, r: NodeId) -> NodeId {
         "output-sequence-loop-synthesis" => {
             passes::output_loops::synthesize_output_loops(a, r).root
         }
+        "redundant-output-store-elimination" => {
+            passes::output_stores::eliminate_redundant_output_stores(a, r).root
+        }
+        "redundant-setcolor-elimination" => {
+            passes::screen_setcolor::eliminate_redundant_setcolors(a, r).root
+        }
+        "negated-comparison-inversion" => {
+            passes::negated_comparison::invert_negated_comparisons(a, r).root
+        }
         "common-offset-absorption" => {
             passes::common_offsets::absorb_common_offsets(a, r, true).root
         }
@@ -141,6 +150,9 @@ pub(crate) fn apply(id: &str, a: &mut Ast, r: NodeId) -> NodeId {
         }
         "available-expression-reuse" => {
             passes::available_expressions::reuse_available_expressions(a, r).root
+        }
+        "pure-call-carrier-synthesis" => {
+            passes::available_expressions::synthesize_pure_call_carriers(a, r).root
         }
         "signed-expression-factoring" => {
             passes::signed_factoring::factor_signed_expressions(a, r, true, 16).root
@@ -167,6 +179,9 @@ pub(crate) fn apply(id: &str, a: &mut Ast, r: NodeId) -> NodeId {
         "exact-numeric-literal-pooling" => {
             passes::literal_pool::pool_numeric_literals(a, r, true).root
         }
+        "exact-string-literal-pooling" => {
+            passes::string_pool::pool_string_literals(a, r, true).root
+        }
         "ordered-draw-record-packing" => passes::draw_records::pack_draw_records(a, r, true).root,
         "repeated-draw-sequence-outlining" => {
             passes::draw_sequences::outline_draw_sequences(a, r, true).root
@@ -175,6 +190,9 @@ pub(crate) fn apply(id: &str, a: &mut Ast, r: NodeId) -> NodeId {
             passes::adjacent_locals::pack_adjacent_locals(a, r, false).root
         }
         "conditional-return-lowering" => passes::conditionals::lower_conditional_returns(a, r).root,
+        "straightline-arithmetic-cse" => {
+            passes::arithmetic_cse::cse_straightline_arithmetic(a, r).root
+        }
         _ => panic!("unregistered fixture dispatch {id}"),
     }
 }
@@ -231,10 +249,14 @@ pub(crate) fn fixture(id: &str) -> String {
         "unwritten-global-nil-propagation" => r#"function onTick()output.setBool(1,pcall==nil)end"#.to_owned(),
         "temporary-global-packing" => r#"function onTick()first=input.getNumber(1)output.setNumber(1,first)second=input.getNumber(2)output.setNumber(2,second)end"#.to_owned(),
         "output-sequence-loop-synthesis" => format!("function onTick(){}end",(1..=12).map(|i|format!("output.setNumber({i},{i}) ")).collect::<String>()),
+        "redundant-output-store-elimination" => r#"function onTick() output.setNumber(1,5) output.setNumber(1,9) end"#.to_owned(),
+        "redundant-setcolor-elimination" => r#"function onDraw() screen.setColor(255,0,0) screen.drawRectF(0,0,10,10) screen.setColor(255,0,0) screen.drawRectF(20,0,10,10) end"#.to_owned(),
+        "negated-comparison-inversion" => r#"function onTick() local x = not (a == b) local y = not (a ~= b) output.setBool(1, x and y) end"#.to_owned(),
         "common-offset-absorption" => r#"function onTick()a=input.getNumber(1)b=input.getNumber(2)c=input.getNumber(3)t={-a+b+.022+c,a+b+.022+c,-a-b-.022+c,a-b-.022+c}b=0 output.setNumber(1,t[1])end"#.to_owned(),
         "ordered-screen-loop-synthesis" => format!("function onDraw(){}end",(0..32).map(|i|format!("screen.drawLine({i},0,{i},20) ")).collect::<String>()),
         "periodic-screen-loop-synthesis" => format!("function onDraw(){}end",(0..32).map(|i|format!("screen.drawLine({},0,{},20) ",i%4,i%4)).collect::<String>()),
         "available-expression-reuse" => r#"function onTick()local a=input.getNumber(1)x=a*2 y=a*2 output.setNumber(1,x+y)end"#.to_owned(),
+        "pure-call-carrier-synthesis" => r#"function onTick()x=math.floor(input.getNumber(1))+math.floor(input.getNumber(1))output.setNumber(1,x)end"#.to_owned(),
         "signed-expression-factoring" => r#"function onTick()local x=input.getNumber(1)a=(x+123456)*2 b=-(x+123456)*3 c=(x+123456)*4 output.setNumber(1,a+b+c)end"#.to_owned(),
         "one-use-expression-helper-reversal" => r#"local function helper(v)return v+1 end function onTick()output.setNumber(1,helper(input.getNumber(1)))end"#.to_owned(),
         "final-dead-store-elimination" => r#"function onTick()x=1 x=2 output.setNumber(1,x)end"#.to_owned(),
@@ -244,10 +266,13 @@ pub(crate) fn fixture(id: &str) -> String {
         "closed-table-field-renaming" => r#"local state={longDescriptiveField=1}function onTick()state.longDescriptiveField=state.longDescriptiveField+1 output.setNumber(1,state.longDescriptiveField)end"#.to_owned(),
         "closed-namespace-devirtualization" => r#"local module={}module.run=function(x)return x+1 end local alias=module if alias==nil then alias=true end function onTick()output.setNumber(1,alias.run(2))output.setNumber(2,module.run(3))end"#.to_owned(),
         "exact-numeric-literal-pooling" => r#"function onTick()output.setNumber(1,12345678)output.setNumber(2,12345678)output.setNumber(3,12345678)end"#.to_owned(),
+        "exact-string-literal-pooling" => r#"function onTick()screen.drawText(0,0,"repeated label")screen.drawText(0,6,"repeated label")screen.drawText(0,12,"repeated label")end"#.to_owned(),
         "ordered-draw-record-packing" => format!("function onDraw(){}end",(0..96).map(|i|format!("screen.drawRectF({},{},{},{}) ",(i*7)%127,(i*11)%61,1+i%3,2+i%2)).collect::<String>()),
         "repeated-draw-sequence-outlining" => format!("function onDraw(){}end",(0..6).map(|i|format!("screen.drawLine(1,2,3,4)screen.drawText(5,6,'repeated long label')screen.drawRectF(7,8,9,10)screen.setColor({i},1,2) ")).collect::<String>()),
-        "adjacent-local-declaration-packing" => r#"local first=1 local second=2 output.setNumber(1,first+second)"#.to_owned(),
+        // Print-layer merging conservatively blocks on any spelling mention (including a shadowed inner binding), while this pass resolves bids, so this fixture still exercises the pass distinctly.
+        "adjacent-local-declaration-packing" => r#"local first=1 local second=function() local first=2 return first end output.setNumber(1,second())"#.to_owned(),
         "conditional-return-lowering" => r#"function f()if flag then return 1 else return 2 end end"#.to_owned(),
+        "straightline-arithmetic-cse" => r#"function onTick()local alpha=2 local beta=3 local x=alpha*100+beta*200 local y=alpha*100+beta*200 local z=alpha*100+beta*200 output.setNumber(1,x+y+z)end"#.to_owned(),
         _=>panic!("missing fixture {id}")
     }
 }
@@ -333,7 +358,7 @@ macro_rules! pass_cases {
             let tested=BTreeSet::from([$($id),*]);
             let registered=crate::pass_ids::OPTIMIZATION_PASS_IDS.iter().copied().collect::<BTreeSet<_>>();
             assert_eq!(tested,registered);
-            assert_eq!(tested.len(),67);
+            assert_eq!(tested.len(),73);
         }
     }
 }
@@ -392,6 +417,7 @@ pass_cases! {
     ordered_screen_loop_synthesis => "ordered-screen-loop-synthesis",
     periodic_screen_loop_synthesis => "periodic-screen-loop-synthesis",
     available_expression_reuse => "available-expression-reuse",
+    pure_call_carrier_synthesis => "pure-call-carrier-synthesis",
     signed_expression_factoring => "signed-expression-factoring",
     one_use_expression_helper_reversal => "one-use-expression-helper-reversal",
     final_dead_store_elimination => "final-dead-store-elimination",
@@ -401,8 +427,13 @@ pass_cases! {
     closed_table_field_renaming => "closed-table-field-renaming",
     closed_namespace_devirtualization => "closed-namespace-devirtualization",
     exact_numeric_literal_pooling => "exact-numeric-literal-pooling",
+    exact_string_literal_pooling => "exact-string-literal-pooling",
     ordered_draw_record_packing => "ordered-draw-record-packing",
     repeated_draw_sequence_outlining => "repeated-draw-sequence-outlining",
     adjacent_local_declaration_packing => "adjacent-local-declaration-packing",
     conditional_return_lowering => "conditional-return-lowering",
+    redundant_output_store_elimination => "redundant-output-store-elimination",
+    redundant_setcolor_elimination => "redundant-setcolor-elimination",
+    negated_comparison_inversion => "negated-comparison-inversion",
+    straightline_arithmetic_cse => "straightline-arithmetic-cse",
 }

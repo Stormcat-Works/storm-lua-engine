@@ -1,6 +1,6 @@
 # Storm Lua Engine: Playground
 
-v0.3.1のSDKとPlaygroundは同じcheckoutから検証・梱包する。最終公開状態はGitHub Releaseと本番version.jsonで確認する。
+v0.4.0のSDKとPlaygroundは同じcheckoutから検証・梱包する。最終公開状態はGitHub Releaseと本番version.jsonで確認する。
 
 SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホスト接続を実際に試すCLI/Webです。Storm MinのCLI/Webとは併存し、置き換えません。ゲーム世界、仮物理、共同編集、クラウド保存は実装しません。
 

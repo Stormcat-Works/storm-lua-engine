@@ -8,7 +8,7 @@
 
 use crate::pass::PassResult;
 use std::collections::HashSet;
-use storm_lua_analysis::effects::{ast_same, EffectAnalyzer};
+use storm_lua_analysis::effects::{ast_same, empty_effects, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
 use storm_lua_syntax::print::Printer;
@@ -82,6 +82,7 @@ fn collect_plans(
         return Vec::new();
     };
     let mut plans = Vec::new();
+    let mut effect = empty_effects();
     for (at, assignment_id) in statements.iter().copied().enumerate() {
         let Node::Assign(targets, expressions) = ast.node(assignment_id) else {
             continue;
@@ -121,7 +122,8 @@ fn collect_plans(
                 // expression has an observable effect.  Coalescing removes
                 // the duplicate RHS evaluation, so only genuinely inert
                 // expressions are eligible.
-                let expression_effect = analyzer.effects_for_expr(expressions[keep]);
+                analyzer.effects_for_expr_into(expressions[keep], &mut effect);
+                let expression_effect = &effect;
                 if expression_effect.calls
                     || expression_effect.ordered
                     || !expression_effect.writes.is_empty()
@@ -140,9 +142,8 @@ fn collect_plans(
                     let use_count = scoped_read_count(ast, resolution, statement, duplicate_bid);
                     scanned.push((statement, use_count));
                     reads += use_count;
-                    let effects = analyzer.effects_for_statement(statement);
-                    if effects.writes.contains(&keeper_bid)
-                        || effects.writes.contains(&duplicate_bid)
+                    analyzer.effects_for_statement_into(statement, &mut effect);
+                    if effect.writes.contains(&keeper_bid) || effect.writes.contains(&duplicate_bid)
                     {
                         break;
                     }

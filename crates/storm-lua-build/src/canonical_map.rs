@@ -1,19 +1,21 @@
-//! Write the schema-1 canonical map without allocating a JSON object per record.
+//! Write the schema-2 canonical map without allocating a JSON object per record.
 //! Trusted key/delimiter bytes are emitted in canonical order. All caller text,
 //! numbers and dynamic values still pass through serde_json's normal encoder.
 use crate::optimized_source_map::{
-    BufferIdentity, MapDisposition, MapExtension, MapOrigin, MapProducer,
+    BufferIdentity, MapDisposition, MapExtension, MapOrigin, MapProducer, SCHEMA_VERSION,
 };
 use serde::Serialize;
 #[cfg(test)]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
 use storm_lua_syntax::provenance::{
     CopiedToken, GeneratedConstruct, LexicalCopiedOrigins, Origin, OriginMapping, SourceSpan,
 };
 
 type JsonResult = Result<(), serde_json::Error>;
+type SimpleCopyTokenTable = (Vec<std::sync::Arc<str>>, Vec<Vec<i64>>);
 #[derive(Default)]
 struct Writer {
     bytes: Vec<u8>,
@@ -126,19 +128,45 @@ impl Writer {
     }
     fn origin(&mut self, value: &MapOrigin) -> JsonResult {
         self.literal(b"{\"kind\":");
-        self.value(&value.kind)?;
+        // Unit enums serialize as fixed camelCase strings; writing the
+        // literal avoids a serde call per origin without changing bytes.
+        self.literal(match value.kind {
+            storm_lua_syntax::provenance::OriginKind::Source => b"\"source\"",
+            storm_lua_syntax::provenance::OriginKind::Derived => b"\"derived\"",
+            storm_lua_syntax::provenance::OriginKind::Synthetic => b"\"synthetic\"",
+        });
         self.literal(b",\"name\":");
-        self.value(&value.name)?;
+        match value.name.as_ref() {
+            None => self.literal(b"null"),
+            Some(name) => self.value(name)?,
+        }
         self.literal(b",\"precision\":");
-        self.value(&value.precision)?;
+        self.literal(match value.precision {
+            storm_lua_syntax::provenance::OriginPrecision::Name => b"\"name\"",
+            storm_lua_syntax::provenance::OriginPrecision::Token => b"\"token\"",
+            storm_lua_syntax::provenance::OriginPrecision::Expression => b"\"expression\"",
+            storm_lua_syntax::provenance::OriginPrecision::Statement => b"\"statement\"",
+            storm_lua_syntax::provenance::OriginPrecision::Group => b"\"group\"",
+        });
         self.literal(b",\"primary\":");
         self.optional_span(value.primary.as_ref())?;
         self.literal(b",\"reasons\":");
-        self.value(&value.reasons)?;
+        if value.reasons.is_empty() {
+            self.literal(b"[]");
+        } else {
+            self.value(&value.reasons)?;
+        }
         self.literal(b",\"related\":");
-        self.value(&value.related)?;
+        if value.related.is_empty() {
+            self.literal(b"[]");
+        } else {
+            self.value(&value.related)?;
+        }
         self.literal(b",\"transformation\":");
-        self.value(&value.transformation)?;
+        match value.transformation.as_ref() {
+            None => self.literal(b"null"),
+            Some(transformation) => self.value(transformation)?,
+        }
         self.literal(b"}");
         Ok(())
     }
@@ -148,9 +176,16 @@ impl Writer {
         self.literal(b",\"end\":");
         self.value(&value.end)?;
         self.literal(b",\"inlineContexts\":");
-        self.value(&value.inline_contexts)?;
+        if value.inline_contexts.is_empty() {
+            self.literal(b"[]");
+        } else {
+            self.value(&value.inline_contexts)?;
+        }
         self.literal(b",\"origin\":");
-        self.value(&value.origin)?;
+        match value.origin {
+            None => self.literal(b"null"),
+            Some(_) => self.value(&value.origin)?,
+        }
         self.literal(b",\"start\":");
         self.value(&value.start)?;
         self.literal(b"}");
@@ -184,11 +219,20 @@ impl Writer {
     }
     fn reason(&mut self, value: &OptimizationReason) -> JsonResult {
         self.literal(b"{\"after\":");
-        self.value(&value.after)?;
+        match value.after.as_ref() {
+            None => self.literal(b"null"),
+            Some(after) => self.value(after)?,
+        }
         self.literal(b",\"basis\":");
-        self.value(&value.basis)?;
+        match value.basis.as_ref() {
+            None => self.literal(b"null"),
+            Some(basis) => self.value(basis)?,
+        }
         self.literal(b",\"before\":");
-        self.value(&value.before)?;
+        match value.before.as_ref() {
+            None => self.literal(b"null"),
+            Some(before) => self.value(before)?,
+        }
         self.literal(b",\"code\":");
         self.value(&value.code)?;
         self.literal(b",\"facts\":");
@@ -251,36 +295,27 @@ impl Writer {
         self.value(&value.schema_version)?;
         self.literal(b",\"sources\":");
         self.value(&value.sources)?;
+        self.literal(b",\"tokenNames\":");
+        self.value(&value.token_names)?;
+        self.literal(b",\"tokens\":");
+        self.value(&value.tokens)?;
         self.literal(b"}");
         Ok(digest_at)
     }
-    fn lexical_copy_origin(&mut self, token: &CopiedToken, source: &str) -> JsonResult {
-        self.literal(b"{\"kind\":\"source\",\"name\":");
-        if token.is_name {
-            self.value(&Some(&source[token.source_start..token.source_end]))?;
-        } else {
-            self.literal(b"null");
-        }
-        self.literal(b",\"precision\":");
-        if token.is_name {
-            self.literal(b"\"name\"");
-        } else {
-            self.literal(b"\"token\"");
-        }
-        self.literal(b",\"primary\":{\"end\":");
-        self.usize_value(token.source_end);
-        self.literal(b",\"source\":0,\"start\":");
-        self.usize_value(token.source_start);
-        self.literal(b"},\"reasons\":[],\"related\":[],\"transformation\":null}");
-        Ok(())
-    }
 
     fn lexical_copy_mapping_known(&mut self, token: &CopiedToken, origin: u32) {
-        self.literal(b"{\"copied\":{\"end\":");
-        self.usize_value(token.source_end);
-        self.literal(b",\"source\":0,\"start\":");
-        self.usize_value(token.source_start);
-        self.literal(b"},\"end\":");
+        if token.renamed {
+            // A renamed token is not an exact copy of its source span, so
+            // the materialized form must not claim one (mirrors
+            // `GeneratedOrigins::copied_tokens`).
+            self.literal(b"{\"copied\":null,\"end\":");
+        } else {
+            self.literal(b"{\"copied\":{\"end\":");
+            self.usize_value(token.source_end);
+            self.literal(b",\"source\":0,\"start\":");
+            self.usize_value(token.source_start);
+            self.literal(b"},\"end\":");
+        }
         self.usize_value(token.end());
         self.literal(b",\"inlineContexts\":[],\"origin\":");
         self.u32_value(origin);
@@ -305,6 +340,71 @@ impl Writer {
         lexical: &LexicalCopiedOrigins,
         compilation: &(impl Serialize + ?Sized),
     ) -> Result<usize, serde_json::Error> {
+        // An empty token list cannot carry the unknown gap that spans the
+        // whole generated code, so it keeps the materialized layout (with
+        // empty token arrays) instead of an empty token table.
+        if lexical.tokens.is_empty() {
+            self.literal(b"{\"compilation\":");
+            self.value(compilation)?;
+            self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
+            self.value(generated)?;
+            self.literal(b",\"integrity\":\"");
+            let digest_at = self.bytes.len();
+            self.bytes.extend_from_slice(&[b'0'; 64]);
+            self.literal(b"\",\"mappings\":[");
+            let mut cursor = 0;
+            let mut first = true;
+            for (id, token) in lexical.tokens.iter().enumerate() {
+                if cursor < token.start {
+                    if !first {
+                        self.literal(b",");
+                    }
+                    self.lexical_copy_mapping_unknown(cursor, token.start);
+                    first = false;
+                }
+                if !first {
+                    self.literal(b",");
+                }
+                self.lexical_copy_mapping_known(token, id as u32);
+                first = false;
+                cursor = token.end();
+            }
+            if cursor < lexical.generated_len {
+                if !first {
+                    self.literal(b",");
+                }
+                self.lexical_copy_mapping_unknown(cursor, lexical.generated_len);
+            }
+            self.literal(b"],\"origins\":[],\"producer\":{\"dirty\":");
+            self.value(&producer.dirty)?;
+            self.literal(b",\"name\":");
+            self.value(&producer.name)?;
+            self.literal(b",\"revision\":");
+            self.value(&producer.revision)?;
+            self.literal(b",\"version\":");
+            self.value(&producer.version)?;
+            self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
+            self.value(&SCHEMA_VERSION)?;
+            self.literal(b",\"sources\":");
+            self.value(sources)?;
+            self.literal(b",\"tokenNames\":[],\"tokens\":[]}");
+            return Ok(digest_at);
+        }
+        // Schema-2 token table: the first-appearance name pool plus one
+        // compact record per token. Unknown gaps are omitted; `validate`
+        // restores them from the cursor walk, exactly as the schema-1
+        // writer emitted them.
+        let mut name_ids: HashMap<&str, usize> = HashMap::new();
+        let mut token_names: Vec<&str> = Vec::new();
+        for token in &lexical.tokens {
+            if token.is_name {
+                let text = &lexical.source_text[token.source_start..token.source_end];
+                if !name_ids.contains_key(text) {
+                    name_ids.insert(text, token_names.len());
+                    token_names.push(text);
+                }
+            }
+        }
         self.literal(b"{\"compilation\":");
         self.value(compilation)?;
         self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
@@ -312,38 +412,7 @@ impl Writer {
         self.literal(b",\"integrity\":\"");
         let digest_at = self.bytes.len();
         self.bytes.extend_from_slice(&[b'0'; 64]);
-        self.literal(b"\",\"mappings\":[");
-        let mut cursor = 0;
-        let mut first = true;
-        for (id, token) in lexical.tokens.iter().enumerate() {
-            if cursor < token.start {
-                if !first {
-                    self.literal(b",");
-                }
-                self.lexical_copy_mapping_unknown(cursor, token.start);
-                first = false;
-            }
-            if !first {
-                self.literal(b",");
-            }
-            self.lexical_copy_mapping_known(token, id as u32);
-            first = false;
-            cursor = token.end();
-        }
-        if cursor < lexical.generated_len {
-            if !first {
-                self.literal(b",");
-            }
-            self.lexical_copy_mapping_unknown(cursor, lexical.generated_len);
-        }
-        self.literal(b"],\"origins\":[");
-        for (index, token) in lexical.tokens.iter().enumerate() {
-            if index > 0 {
-                self.literal(b",");
-            }
-            self.lexical_copy_origin(token, &lexical.source_text)?;
-        }
-        self.literal(b"],\"producer\":{\"dirty\":");
+        self.literal(b"\",\"mappings\":[],\"origins\":[],\"producer\":{\"dirty\":");
         self.value(&producer.dirty)?;
         self.literal(b",\"name\":");
         self.value(&producer.name)?;
@@ -351,10 +420,232 @@ impl Writer {
         self.value(&producer.revision)?;
         self.literal(b",\"version\":");
         self.value(&producer.version)?;
-        self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":1,\"sources\":");
+        self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
+        self.value(&SCHEMA_VERSION)?;
+        self.literal(b",\"sources\":");
         self.value(sources)?;
-        self.literal(b"}");
+        self.literal(b",\"tokenNames\":[");
+        for (index, name) in token_names.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.value(name)?;
+        }
+        self.literal(b"],\"tokens\":[");
+        for (index, token) in lexical.tokens.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.literal(b"[");
+            self.usize_value(token.start);
+            self.literal(b",");
+            self.usize_value(token.source_start);
+            self.literal(b",");
+            self.usize_value(token.source_end);
+            self.literal(b",");
+            if token.is_name {
+                let text = &lexical.source_text[token.source_start..token.source_end];
+                self.usize_value(name_ids[text]);
+            } else {
+                self.literal(b"-1");
+            }
+            if token.renamed {
+                // The generated end differs from the source span length;
+                // expansion needs it explicitly to place the next record.
+                self.literal(b",");
+                self.usize_value(token.end());
+            }
+            self.literal(b"]");
+        }
+        self.literal(b"]}");
         Ok(digest_at)
+    }
+
+    /// Schema-2 token-table eligibility for a lexical-shape (simple-copy)
+    /// map. Returns the name pool and token records when the table expands
+    /// back to exactly these origins and mappings, and `None` otherwise
+    /// (the caller then emits the traditional layout under schema 2).
+    /// The checks are deliberately strict: every origin
+    /// referenced at least once, first-appearance order equal to origin
+    /// order, unique (source, primary, name, precision) tuples, name present
+    /// exactly for name-precision origins, and mappings that contiguously
+    /// cover the generated code so unknown gaps are exactly the gaps
+    /// between known tokens. Multiple sources are supported: the record
+    /// layout then carries an explicit source index (see the token-table
+    /// documentation on `MapExtension::tokens`); single-source maps keep
+    /// the original record layout byte-for-byte.
+    fn simple_copy_token_table(
+        sources_len: usize,
+        origins: &[Origin],
+        mappings: &[OriginMapping],
+        generated_len: usize,
+    ) -> Option<SimpleCopyTokenTable> {
+        if sources_len == 0 || origins.is_empty() || mappings.is_empty() {
+            return None;
+        }
+        let mut seen_tuples: HashSet<(u32, usize, usize, Option<String>, bool)> = HashSet::new();
+        for origin in origins {
+            if origin.kind != storm_lua_syntax::provenance::OriginKind::Source
+                || origin.transformation.is_some()
+                || !origin.related.is_empty()
+                || !origin.relations.is_empty()
+                || !origin.reasons.is_empty()
+            {
+                return None;
+            }
+            let primary = origin.primary?;
+            if primary.source as usize >= sources_len {
+                return None;
+            }
+            let is_name = matches!(
+                origin.precision,
+                storm_lua_syntax::provenance::OriginPrecision::Name
+            );
+            let is_token = matches!(
+                origin.precision,
+                storm_lua_syntax::provenance::OriginPrecision::Token
+            );
+            if !is_name && !is_token {
+                return None;
+            }
+            if is_name != origin.name.is_some() {
+                return None;
+            }
+            if !seen_tuples.insert((
+                primary.source,
+                primary.start,
+                primary.end,
+                origin.name.as_deref().map(str::to_owned),
+                is_name,
+            )) {
+                return None;
+            }
+        }
+        let mut first_order: Vec<u32> = Vec::new();
+        let mut seen_origins: HashSet<u32> = HashSet::new();
+        let mut cursor = 0usize;
+        for mapping in mappings {
+            if mapping.start != cursor || mapping.end < mapping.start {
+                return None;
+            }
+            cursor = mapping.end;
+            if !mapping.inline_contexts.is_empty() {
+                return None;
+            }
+            if let Some(id) = mapping.origin {
+                let origin = origins.get(id as usize)?;
+                match mapping.copied {
+                    Some(copied) => {
+                        if Some(copied) != origin.primary {
+                            return None;
+                        }
+                        if mapping.end - mapping.start != copied.end - copied.start {
+                            return None;
+                        }
+                    }
+                    // Renamed token: the origin still names the original
+                    // spelling at its primary span (checked in the origins
+                    // loop above: Name precision implies a name is present),
+                    // but the generated spelling differs, so no exact-copy
+                    // attribution exists. The record below carries the
+                    // generated end explicitly.
+                    None => {
+                        if !matches!(
+                            origin.precision,
+                            storm_lua_syntax::provenance::OriginPrecision::Name
+                        ) || origin.name.is_none()
+                        {
+                            return None;
+                        }
+                    }
+                }
+                if seen_origins.insert(id) {
+                    first_order.push(id);
+                }
+            } else {
+                if mapping.copied.is_some() {
+                    return None;
+                }
+            }
+        }
+        if cursor != generated_len || seen_origins.len() != origins.len() {
+            return None;
+        }
+        if first_order
+            .iter()
+            .enumerate()
+            .any(|(i, &id)| id as usize != i)
+        {
+            return None;
+        }
+        let mut name_ids: HashMap<&str, usize> = HashMap::new();
+        let mut token_names: Vec<std::sync::Arc<str>> = Vec::new();
+        for origin in origins {
+            if let Some(name) = &origin.name {
+                if !name_ids.contains_key(name.as_ref()) {
+                    name_ids.insert(name.as_ref(), token_names.len());
+                    token_names.push(std::sync::Arc::clone(name));
+                }
+            }
+        }
+        let mut tokens: Vec<Vec<i64>> = Vec::new();
+        for mapping in mappings {
+            if let Some(id) = mapping.origin {
+                let origin = &origins[id as usize];
+                let name_id = match &origin.name {
+                    Some(name) => name_ids[name.as_ref()] as i64,
+                    None => -1,
+                };
+                match mapping.copied {
+                    Some(copied) => {
+                        if sources_len == 1 {
+                            tokens.push(vec![
+                                mapping.start as i64,
+                                copied.start as i64,
+                                copied.end as i64,
+                                name_id,
+                            ]);
+                        } else {
+                            // Multi-source layout: the source index is the
+                            // second element (see `MapExtension::tokens`).
+                            tokens.push(vec![
+                                mapping.start as i64,
+                                copied.source as i64,
+                                copied.start as i64,
+                                copied.end as i64,
+                                name_id,
+                            ]);
+                        }
+                    }
+                    None => {
+                        // Renamed token (the gate above already restricted
+                        // this shape to Name origins): the last element
+                        // carries the generated end, which the source span
+                        // length cannot supply.
+                        let primary = origin.primary?;
+                        if sources_len == 1 {
+                            tokens.push(vec![
+                                mapping.start as i64,
+                                primary.start as i64,
+                                primary.end as i64,
+                                name_id,
+                                mapping.end as i64,
+                            ]);
+                        } else {
+                            tokens.push(vec![
+                                mapping.start as i64,
+                                primary.source as i64,
+                                primary.start as i64,
+                                primary.end as i64,
+                                name_id,
+                                mapping.end as i64,
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+        Some((token_names, tokens))
     }
 
     fn simple_copy_extension(
@@ -366,6 +657,8 @@ impl Writer {
         mappings: &[OriginMapping],
         compilation: &(impl Serialize + ?Sized),
     ) -> Result<usize, serde_json::Error> {
+        let token_table =
+            Self::simple_copy_token_table(sources.len(), origins, mappings, generated.bytes);
         self.literal(b"{\"compilation\":");
         self.value(compilation)?;
         self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
@@ -373,10 +666,14 @@ impl Writer {
         self.literal(b",\"integrity\":\"");
         let digest_at = self.bytes.len();
         self.bytes.extend_from_slice(&[b'0'; 64]);
-        self.literal(b"\",\"mappings\":");
-        self.array(mappings, Self::simple_copy_mapping)?;
-        self.literal(b",\"origins\":");
-        self.array(origins, Self::simple_copy_origin)?;
+        if token_table.is_some() {
+            self.literal(b"\",\"mappings\":[],\"origins\":[]");
+        } else {
+            self.literal(b"\",\"mappings\":");
+            self.array(mappings, Self::simple_copy_mapping)?;
+            self.literal(b",\"origins\":");
+            self.array(origins, Self::simple_copy_origin)?;
+        }
         self.literal(b",\"producer\":{\"dirty\":");
         self.value(&producer.dirty)?;
         self.literal(b",\"name\":");
@@ -385,8 +682,21 @@ impl Writer {
         self.value(&producer.revision)?;
         self.literal(b",\"version\":");
         self.value(&producer.version)?;
-        self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":1,\"sources\":");
+        self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
+        self.value(&SCHEMA_VERSION)?;
+        self.literal(b",\"sources\":");
         self.value(sources)?;
+        match &token_table {
+            Some((token_names, tokens)) => {
+                self.literal(b",\"tokenNames\":");
+                self.value(token_names)?;
+                self.literal(b",\"tokens\":");
+                self.value(tokens)?;
+            }
+            None => {
+                self.literal(b",\"tokenNames\":[],\"tokens\":[]");
+            }
+        }
         self.literal(b"}");
         Ok(digest_at)
     }
@@ -430,7 +740,7 @@ pub(crate) fn encode_lexical_copy_with_settings(
     lexical: &LexicalCopiedOrigins,
     compilation: &(impl Serialize + ?Sized),
 ) -> Result<String, String> {
-    let capacity = 1024usize.saturating_add(lexical.tokens.len().saturating_mul(272));
+    let capacity = 1024usize.saturating_add(lexical.tokens.len().saturating_mul(64));
     let mut writer = begin_standard(standard, capacity)?;
     let at = writer
         .lexical_copy_extension(producer, generated, sources, lexical, compilation)
@@ -493,7 +803,7 @@ mod canonical_tests {
     };
     use storm_lua_analysis::project::LuaProject;
 
-    // Independent reference of the released schema-1 materialized encoder. It
+    // Independent reference of the released schema-2 materialized encoder. It
     // hashes sorted JSON with an empty integrity field, then writes it again.
     fn old_encode(standard: &Value, mut extension: MapExtension) -> String {
         extension.integrity.clear();
@@ -515,13 +825,35 @@ mod canonical_tests {
             .all(|k| k.as_str() < "x_storm"));
         // The independent Value serializer below includes every public struct
         // field, so omissions in the direct writer fail exact-byte equality.
+        let expected_mappings = serde_json::to_value(&extension.mappings).unwrap();
+        let expected_origins = serde_json::to_value(&extension.origins).unwrap();
         let expected = old_encode(&original, extension.clone());
         let actual = encode(&original, extension).unwrap();
         assert_eq!(
             actual, expected,
             "exact canonical bytes and fingerprint differ"
         );
-        assert_eq!(actual, map, "regenerated map differs");
+        // A schema-2 token-table wire map re-encodes to the materialized
+        // form: the bytes differ by construction, but validating the
+        // re-encoded map must expand to exactly the same details.
+        let wire_tokens = serde_json::from_str::<Value>(map).unwrap()["x_storm"]["tokens"]
+            .as_array()
+            .is_none_or(|tokens| tokens.is_empty());
+        if wire_tokens {
+            assert_eq!(actual, map, "regenerated map differs");
+        } else {
+            let revalidated = validate(code, &actual).unwrap();
+            assert_eq!(
+                serde_json::to_value(&revalidated.mappings).unwrap(),
+                expected_mappings,
+                "re-encoded token map expands to different mappings"
+            );
+            assert_eq!(
+                serde_json::to_value(&revalidated.origins).unwrap(),
+                expected_origins,
+                "re-encoded token map expands to different origins"
+            );
+        }
         validate(code, &actual).unwrap();
     }
     #[test]

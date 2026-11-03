@@ -34,7 +34,7 @@ test('optimized maps are opt-in, standard-decodable and independently fingerprin
  const source='function onTick()output.setNumber(1,2*3)end';
  const result=mapped(source,{zeroCostNewlines:false});
  assert.equal(compiler.minify(source).map,undefined);
- assert.equal(result.json.version,3);assert.equal(result.details.schemaVersion,1);
+ assert.equal(result.json.version,3);assert.equal(result.details.schemaVersion,2);
  assert.equal(result.details.producer.name,'storm-lua-engine');assert.equal(result.details.producer.version,coordinator.version());
  assert.equal(result.details.generated.sha256,hash(result.code));assert.equal(result.details.sources[0].sha256,hash(source));
  assert.equal(result.details.generated.bytes,bytes(result.code));
@@ -58,11 +58,15 @@ test('operator and end locations are fine tokens while parent expression reasons
  assert.ok(result.details.constructs.some(c=>c.origin!==null && result.details.origins[c.origin].precision==='expression'));
 });
 
-test('identity target keeps a precise copy contract after Unicode and CRLF',()=>{
+test('target compile after Unicode and CRLF keeps exact token attribution',()=>{
  const source="-- 😀雪\r\nfunction onTick()\r\n local message='あ😀';output.setNumber(1,7)\r\nend\r\n";
- const result=mapped(source,{targetSize:8192});assert.equal(result.code,source);
- assert.equal(result.details.mappings.length,1);assert.deepEqual(result.details.mappings[0].copied,{source:0,start:0,end:bytes(source)});
- const point=originalPositionFor(new TraceMap(result.map),position(source,'output'));
+ // identity 短絡は 2026-10-30 の satisficing 再設計（db920cf）で
+ // 廃止済み。適合するソースでも最適候補（ここでは dead local の
+ // 除去を含む）が返る。保持されたトークンの帰属が正確であること
+ // を引き続き固定する。
+ const result=mapped(source,{targetSize:8192});
+ assert.equal(result.code,'function\nonTick()output.setNumber(1,7)end');
+ const point=originalPositionFor(new TraceMap(result.map),position(result.code,'output'));
  assert.deepEqual({line:point.line,column:point.column},position(source,'output'));
 });
 
@@ -136,7 +140,7 @@ test('host-owned compiler RPC also supports validated optimization maps',async()
  try{
   const result=await client.minify('function onTick()output.setNumber(1,2*3)end',{sourceMap:true});
   const details=await client.validateSourceMap(result.code,result.map);
-  assert.equal(details.schemaVersion,1);assert.ok(details.reasons.length>0);
+  assert.equal(details.schemaVersion,2);assert.ok(details.reasons.length>0);
   await assert.rejects(client.validateSourceMap(result.code+' ',result.map),/code|fingerprint/i);
  }finally{client.dispose();stop();port1.close();port2.close();}
 });

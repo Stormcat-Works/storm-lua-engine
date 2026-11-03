@@ -24,8 +24,77 @@ use storm_lua_syntax::provenance::{
 };
 use storm_lua_syntax::{lexer::Lexer, source_position::LineIndex};
 
+/// Fast deterministic hasher for the output stage's interning tables only.
+///
+/// The tables are keyed by full values (reasons, relations, spans) and are
+/// never iterated for output: the serialized tables keep insertion order in
+/// separate `Vec`s, and every lookup is verified by `Eq`. The hasher therefore
+/// only affects lookup speed, never the output bytes or integrity values.
+/// It hashes content, never pointer identity: deserialized or freshly built
+/// reasons with equal content must share one ID regardless of allocation.
+/// This is a multiply-xor (FxHash-style) hasher, chosen over the default
+/// `RandomState` (SipHash) because these keys are short, numerous, and
+/// internal to one compilation; no new dependency is introduced.
+#[derive(Default)]
+struct FastHasher {
+    hash: u64,
+}
+
+impl FastHasher {
+    fn add(&mut self, value: u64) {
+        self.hash = (self.hash.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl std::hash::Hasher for FastHasher {
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in chunks.by_ref() {
+            let mut value = 0u64;
+            for (i, byte) in chunk.iter().enumerate() {
+                value |= (*byte as u64) << (i * 8);
+            }
+            self.add(value);
+        }
+        let rest = chunks.remainder();
+        if !rest.is_empty() {
+            let mut buf = [0u8; 8];
+            buf[..rest.len()].copy_from_slice(rest);
+            self.add(u64::from_le_bytes(buf));
+        }
+    }
+
+    fn write_u8(&mut self, n: u8) {
+        self.add(n as u64);
+    }
+
+    fn write_u16(&mut self, n: u16) {
+        self.add(n as u64);
+    }
+
+    fn write_u32(&mut self, n: u32) {
+        self.add(n as u64);
+    }
+
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+}
+
+type FastBuildHasher = std::hash::BuildHasherDefault<FastHasher>;
+type FastMap<K, V> = HashMap<K, V, FastBuildHasher>;
+type FastSet<T> = std::collections::HashSet<T, FastBuildHasher>;
+
 /// Encoding version of x_storm, independent of both Source Map and engine versions.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 /// Producer identity captured at build time. Unknown source revisions stay explicit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -108,6 +177,37 @@ pub struct MapExtension {
     pub constructs: Vec<GeneratedConstruct>,
     /// Explicit selected-candidate removals or replacements.
     pub dispositions: Vec<MapDisposition>,
+    /// Schema-2 token table: first-appearance name spellings, used only when
+    /// `tokens` is non-empty. Empty for general maps and for lexical-shape
+    /// maps that fall back to the materialized layout.
+    pub token_names: Vec<Arc<str>>,
+    /// Schema-2 token table: `[generated_start, source_start, source_end,
+    /// name_id]` per token, with `-1` for a non-name token. Unknown gaps
+    /// between tokens are omitted on the wire and restored by `validate`.
+    /// Token records. Four elements `[generated_start, source_start,
+    /// source_end, name_id]` describe an exact copy (the generated span
+    /// length equals the source span length). Five elements append
+    /// `generated_end` and describe a renamed token: the origin still names
+    /// the original spelling at its source span, but the generated span has
+    /// its own length and carries no exact-copy attribution (`copied: None`
+    /// on expansion). Any other length is rejected by expansion.
+    ///
+    /// When the map has more than one source, records instead carry an
+    /// explicit source index as the second element:
+    /// `[generated_start, source, source_start, source_end, name_id]` for
+    /// an exact copy, plus a sixth `generated_end` element for a renamed
+    /// token. The layout is selected by the source count, so single-source
+    /// records keep the original meaning (in particular a five-element
+    /// record in a single-source map is always a renamed token) and
+    /// multi-source tables are rejected by readers that only support the
+    /// single-source layout. Any other length is rejected by expansion.
+    ///
+    /// When `origins`/`mappings` are also non-empty alongside a token
+    /// table, the map is in mixed form: the arrays carry only the residual
+    /// (non-simple) origins and their mappings, and expansion splices the
+    /// residual mappings into the unknown gaps of the token expansion (see
+    /// `expand_token_table` and `validate`).
+    pub tokens: Vec<Vec<i64>>,
     /// Digest of canonical map JSON with this field replaced by the empty string.
     /// Detects mismatched data; this is not an authenticated digital signature.
     pub integrity: String,
@@ -138,7 +238,7 @@ fn producer() -> MapProducer {
 fn reason_id(
     reason: &OptimizationReason,
     table: &mut Vec<OptimizationReason>,
-    ids: &mut HashMap<OptimizationReason, u32>,
+    ids: &mut FastMap<OptimizationReason, u32>,
 ) -> u32 {
     if let Some(&id) = ids.get(reason) {
         return id;
@@ -151,24 +251,25 @@ fn reason_id(
 }
 fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapExtension {
     let mut reasons = Vec::new();
-    let mut ids = HashMap::new();
+    let mut ids: FastMap<OptimizationReason, u32> = FastMap::default();
     let mut relation_table = Vec::new();
-    let mut relation_ids = HashMap::new();
+    let mut relation_ids: FastMap<SourceRelation, u32> = FastMap::default();
+    let mut present: FastSet<SourceSpan> = FastSet::default();
     let records = origins
         .origins
         .iter()
         .map(|origin| {
             let mut related = origin.relations.as_ref().clone();
-            let mut present = related
-                .iter()
-                .map(|r| r.span)
-                .collect::<std::collections::HashSet<_>>();
-            for &span in origin.related.iter() {
-                if present.insert(span) {
-                    related.push(SourceRelation {
-                        role: RelationRole::Contribution,
-                        span,
-                    });
+            if !origin.related.is_empty() {
+                present.clear();
+                present.extend(related.iter().map(|r| r.span));
+                for &span in origin.related.iter() {
+                    if present.insert(span) {
+                        related.push(SourceRelation {
+                            role: RelationRole::Contribution,
+                            span,
+                        });
+                    }
                 }
             }
             MapOrigin {
@@ -176,12 +277,14 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
                 primary: origin.primary,
                 related: related
                     .into_iter()
-                    .map(|relation| {
-                        *relation_ids.entry(relation.clone()).or_insert_with(|| {
+                    .map(|relation| match relation_ids.get(&relation) {
+                        Some(&id) => id,
+                        None => {
                             let id = relation_table.len() as u32;
-                            relation_table.push(relation);
+                            relation_table.push(relation.clone());
+                            relation_ids.insert(relation, id);
                             id
-                        })
+                        }
                     })
                     .collect(),
                 precision: origin.precision,
@@ -221,7 +324,12 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
             }
         })
         .collect();
-    MapExtension {
+    let source_texts: Vec<&str> = origins
+        .sources
+        .iter()
+        .map(|snapshot| snapshot.text.as_ref())
+        .collect();
+    let mut extension = MapExtension {
         schema_version: SCHEMA_VERSION,
         producer: producer(),
         coordinate_unit: "utf8-bytes".into(),
@@ -235,8 +343,12 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
         mappings: origins.mappings.clone(),
         constructs: origins.constructs.clone(),
         dispositions,
+        token_names: Vec::new(),
+        tokens: Vec::new(),
         integrity: String::new(),
-    }
+    };
+    extract_token_table(&mut extension, &source_texts);
+    extension
 }
 fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) -> MapExtension {
     let GeneratedOrigins {
@@ -248,23 +360,24 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
         dispositions,
     } = origins;
     let mut reasons = Vec::new();
-    let mut ids = HashMap::new();
+    let mut ids: FastMap<OptimizationReason, u32> = FastMap::default();
     let mut relation_table = Vec::new();
-    let mut relation_ids = HashMap::new();
+    let mut relation_ids: FastMap<SourceRelation, u32> = FastMap::default();
+    let mut present: FastSet<SourceSpan> = FastSet::default();
     let records = origins
         .into_iter()
         .map(|origin| {
             let mut related = Arc::unwrap_or_clone(origin.relations);
-            let mut present = related
-                .iter()
-                .map(|r| r.span)
-                .collect::<std::collections::HashSet<_>>();
-            for span in origin.related.iter().copied() {
-                if present.insert(span) {
-                    related.push(SourceRelation {
-                        role: RelationRole::Contribution,
-                        span,
-                    });
+            if !origin.related.is_empty() {
+                present.clear();
+                present.extend(related.iter().map(|r| r.span));
+                for span in origin.related.iter().copied() {
+                    if present.insert(span) {
+                        related.push(SourceRelation {
+                            role: RelationRole::Contribution,
+                            span,
+                        });
+                    }
                 }
             }
             MapOrigin {
@@ -272,12 +385,14 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
                 primary: origin.primary,
                 related: related
                     .into_iter()
-                    .map(|relation| {
-                        *relation_ids.entry(relation.clone()).or_insert_with(|| {
+                    .map(|relation| match relation_ids.get(&relation) {
+                        Some(&id) => id,
+                        None => {
                             let id = relation_table.len() as u32;
-                            relation_table.push(relation);
+                            relation_table.push(relation.clone());
+                            relation_ids.insert(relation, id);
                             id
-                        })
+                        }
                     })
                     .collect(),
                 precision: origin.precision,
@@ -315,7 +430,11 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
             }
         })
         .collect();
-    MapExtension {
+    let source_texts: Vec<&str> = sources
+        .iter()
+        .map(|snapshot| snapshot.text.as_ref())
+        .collect();
+    let mut extension = MapExtension {
         schema_version: SCHEMA_VERSION,
         producer: producer(),
         coordinate_unit: "utf8-bytes".into(),
@@ -329,8 +448,272 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
         mappings,
         constructs,
         dispositions,
+        token_names: Vec::new(),
+        tokens: Vec::new(),
         integrity: String::new(),
+    };
+    extract_token_table(&mut extension, &source_texts);
+    extension
+}
+
+/// Upper bound on the residual (non-simple) origin count of a mixed-form
+/// token table. The mixed form exists for maps that are simple except for
+/// a bounded amount of synthetic or template material (for example a
+/// lifeboat preamble); general optimized maps stay in the full layout.
+const MAX_MIXED_RESIDUAL_ORIGINS: usize = 256;
+
+/// Whether an origin can be represented by the token table: a source
+/// origin with a Name/Token precision, an optional name matching its
+/// precision, and no transformation, related spans or reasons (token-table
+/// expansion reconstructs exactly this shape).
+fn token_table_simple_origin(origin: &MapOrigin) -> bool {
+    origin.kind == OriginKind::Source
+        && origin.primary.is_some()
+        && matches!(
+            origin.precision,
+            OriginPrecision::Name | OriginPrecision::Token
+        )
+        && origin.transformation.is_none()
+        && origin.related.is_empty()
+        && origin.reasons.is_empty()
+        && (origin.precision == OriginPrecision::Name) == origin.name.is_some()
+}
+
+/// Split a map whose origins are mostly token-table-simple into the mixed
+/// form: simple origins and their mappings move into the token table, the
+/// remaining (residual) origins keep the full layout with remapped
+/// references, and reasons/relations pools stay shared. Every condition
+/// mirrors a check the reader performs on expansion or merge, so the
+/// emitted map always validates against the same generated code and
+/// sources; when any condition fails the extension is left untouched.
+fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
+    if !extension.contexts.is_empty()
+        || !extension.constructs.is_empty()
+        || !extension.dispositions.is_empty()
+    {
+        return;
     }
+    if extension.origins.is_empty()
+        || extension.mappings.is_empty()
+        || extension.sources.is_empty()
+        || extension.sources.len() != source_texts.len()
+    {
+        return;
+    }
+    let multi_source = extension.sources.len() > 1;
+    let simple: Vec<bool> = extension
+        .origins
+        .iter()
+        .map(token_table_simple_origin)
+        .collect();
+    let simple_count = simple.iter().filter(|&&flag| flag).count();
+    let residual_count = simple.len() - simple_count;
+    if simple_count == 0
+        || residual_count > MAX_MIXED_RESIDUAL_ORIGINS
+        || residual_count > simple_count
+    {
+        return;
+    }
+    // Simple tuples must be unique (the reader deduplicates by tuple and
+    // would silently merge distinct origins), the name of a Name origin
+    // must match its primary source slice (the reader rejects mismatches),
+    // and primary source references must be in range.
+    let mut seen_tuples: std::collections::HashSet<(u32, usize, usize, Option<String>, bool)> =
+        std::collections::HashSet::new();
+    for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
+        if !is_simple {
+            continue;
+        }
+        let Some(primary) = origin.primary else {
+            return;
+        };
+        let Some(text) = source_texts.get(primary.source as usize) else {
+            return;
+        };
+        if let Some(name) = &origin.name {
+            if text.get(primary.start..primary.end) != Some(name.as_ref()) {
+                return;
+            }
+        }
+        if !seen_tuples.insert((
+            primary.source,
+            primary.start,
+            primary.end,
+            origin.name.as_deref().map(str::to_owned),
+            origin.precision == OriginPrecision::Name,
+        )) {
+            return;
+        }
+    }
+    // Name pool in simple-origin order, as the reader reconstructs it.
+    let mut name_ids: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut token_names: Vec<Arc<str>> = Vec::new();
+    for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
+        if is_simple {
+            if let Some(name) = &origin.name {
+                if !name_ids.contains_key(name.as_ref()) {
+                    name_ids.insert(name.as_ref(), token_names.len());
+                    token_names.push(Arc::clone(name));
+                }
+            }
+        }
+    }
+    // Residual origin ids in original order.
+    let mut residual_ids: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    for (index, &is_simple) in simple.iter().enumerate() {
+        if !is_simple {
+            residual_ids.insert(index as u32, residual_ids.len() as u32);
+        }
+    }
+    let mut tokens: Vec<Vec<i64>> = Vec::new();
+    let mut residual_mappings: Vec<OriginMapping> = Vec::new();
+    let mut first_order: Vec<u32> = Vec::new();
+    let mut seen_simple: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut cursor = 0usize;
+    for mapping in &extension.mappings {
+        if mapping.start != cursor || mapping.end < mapping.start {
+            return;
+        }
+        cursor = mapping.end;
+        if !mapping.inline_contexts.is_empty() {
+            return;
+        }
+        let Some(id) = mapping.origin else {
+            if mapping.copied.is_some() {
+                return;
+            }
+            // Unknown mappings stay residual; the merge splices them into
+            // the expansion gaps, which reconstructs them identically.
+            residual_mappings.push(mapping.clone());
+            continue;
+        };
+        let Some(origin) = extension.origins.get(id as usize) else {
+            return;
+        };
+        if !simple[id as usize] {
+            let mut mapping = mapping.clone();
+            mapping.origin = Some(residual_ids[&id]);
+            residual_mappings.push(mapping);
+            continue;
+        }
+        let Some(primary) = origin.primary else {
+            return;
+        };
+        let name_id = match &origin.name {
+            Some(name) => name_ids[name.as_ref()] as i64,
+            None => -1,
+        };
+        match mapping.copied {
+            Some(copied) => {
+                if Some(copied) != origin.primary
+                    || mapping.end - mapping.start != copied.end - copied.start
+                {
+                    return;
+                }
+                if multi_source {
+                    tokens.push(vec![
+                        mapping.start as i64,
+                        copied.source as i64,
+                        copied.start as i64,
+                        copied.end as i64,
+                        name_id,
+                    ]);
+                } else {
+                    tokens.push(vec![
+                        mapping.start as i64,
+                        copied.start as i64,
+                        copied.end as i64,
+                        name_id,
+                    ]);
+                }
+            }
+            None => {
+                if origin.precision != OriginPrecision::Name {
+                    return;
+                }
+                if multi_source {
+                    tokens.push(vec![
+                        mapping.start as i64,
+                        primary.source as i64,
+                        primary.start as i64,
+                        primary.end as i64,
+                        name_id,
+                        mapping.end as i64,
+                    ]);
+                } else {
+                    tokens.push(vec![
+                        mapping.start as i64,
+                        primary.start as i64,
+                        primary.end as i64,
+                        name_id,
+                        mapping.end as i64,
+                    ]);
+                }
+            }
+        }
+        if seen_simple.insert(id) {
+            first_order.push(id);
+        }
+    }
+    if cursor != extension.generated.bytes || tokens.is_empty() {
+        return;
+    }
+    // Every simple origin must be referenced (expansion only creates
+    // referenced origins) and first-appearance order must equal the
+    // relative origin order (expansion renumbers in appearance order).
+    let simple_in_origin_order: Vec<u32> = (0..extension.origins.len() as u32)
+        .filter(|&index| simple[index as usize])
+        .collect();
+    if first_order != simple_in_origin_order {
+        return;
+    }
+    // Standard names are pooled in the original origin order, but mixed
+    // expansion reconstructs the simple origins first and appends the
+    // residual origins. Only extract when that regrouping preserves the
+    // unique-name sequence; otherwise the expanded origins would pool the
+    // same names in a different order and the standard mappings' name IDs
+    // would no longer agree with the wire form.
+    let mut original_names: Vec<&str> = Vec::new();
+    for origin in &extension.origins {
+        if let Some(name) = origin.name.as_deref() {
+            if !original_names.contains(&name) {
+                original_names.push(name);
+            }
+        }
+    }
+    let mut expanded_names: Vec<&str> = Vec::new();
+    for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
+        if is_simple {
+            if let Some(name) = origin.name.as_deref() {
+                if !expanded_names.contains(&name) {
+                    expanded_names.push(name);
+                }
+            }
+        }
+    }
+    for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
+        if !is_simple {
+            if let Some(name) = origin.name.as_deref() {
+                if !expanded_names.contains(&name) {
+                    expanded_names.push(name);
+                }
+            }
+        }
+    }
+    if original_names != expanded_names {
+        return;
+    }
+    let residual_origins: Vec<MapOrigin> = extension
+        .origins
+        .iter()
+        .zip(&simple)
+        .filter(|(_, &is_simple)| !is_simple)
+        .map(|(origin, _)| origin.clone())
+        .collect();
+    extension.origins = residual_origins;
+    extension.mappings = residual_mappings;
+    extension.token_names = token_names;
+    extension.tokens = tokens;
 }
 #[cfg(test)]
 fn numeric(value: f64) -> String {
@@ -542,14 +925,28 @@ fn lexical_copy_only(code: &str, origins: &GeneratedOrigins) -> bool {
                         .is_some_and(|gap| gap.bytes().all(|byte| byte.is_ascii_whitespace()))
             }
             Some(id) => {
+                let origin = origins.origins.get(id as usize);
                 mapping.inline_contexts.is_empty()
-                    && mapping.copied.is_some_and(|copied| {
-                        origins
-                            .origins
-                            .get(id as usize)
-                            .and_then(|origin| origin.primary)
-                            == Some(copied)
-                    })
+                    && match (mapping.copied, origin) {
+                        (Some(copied), Some(origin)) => origin.primary == Some(copied),
+                        // Renamed token: no exact copy, but the origin still
+                        // names the original spelling at its primary span.
+                        // The token-table gate carries the generated end
+                        // explicitly for this shape.
+                        (None, Some(origin)) => {
+                            origin.precision == OriginPrecision::Name
+                                && origin.name.as_ref().is_some_and(|name| {
+                                    origin.primary.is_some_and(|primary| {
+                                        origins.sources.get(primary.source as usize).and_then(
+                                            |snapshot| {
+                                                snapshot.text.get(primary.start..primary.end)
+                                            },
+                                        ) == Some(name.as_ref())
+                                    })
+                                })
+                        }
+                        _ => false,
+                    }
             }
         })
 }
@@ -811,6 +1208,233 @@ fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String>
     serde_json::to_value(standard_fields(code, origins)?).map_err(|e| e.to_string())
 }
 
+/// Expand a schema-2 token table into the materialized mappings and origins
+/// that schema-1 maps carried directly. The expansion is order-preserving:
+/// origins are deduplicated by (source, primary span, name, precision) in
+/// first-appearance order, and unknown gaps are restored from the cursor
+/// walk, exactly as the lexical-copy writer emits them. The caller must
+/// already have checked the integrity digest over the wire form.
+///
+/// The record layout is selected by the source count (see the
+/// `MapExtension::tokens` field documentation): single-source maps use the
+/// original layout without a source index, maps with more than one source
+/// carry the source index as the second element. In both layouts a final
+/// extra element marks a renamed token and carries its generated end.
+fn expand_token_table(
+    details: &MapExtension,
+    snapshots: &[SourceSnapshot],
+    generated_len: usize,
+) -> Result<(Vec<OriginMapping>, Vec<MapOrigin>), String> {
+    if details.sources.is_empty() || snapshots.len() != details.sources.len() {
+        return Err("token table source snapshots are unavailable".into());
+    }
+    let multi_source = details.sources.len() > 1;
+    let mut origins: Vec<MapOrigin> = Vec::new();
+    let mut origin_ids: HashMap<(u32, usize, usize, Option<String>, bool), u32> = HashMap::new();
+    let mut mappings: Vec<OriginMapping> = Vec::new();
+    let mut cursor = 0usize;
+    for record in &details.tokens {
+        // A final extra element marks a renamed token and carries its
+        // generated end explicitly; without it the generated end is
+        // derived from the source length, which is only valid for exact
+        // copies.
+        let base_len = if multi_source { 5 } else { 4 };
+        let renamed = match record.len() {
+            len if len == base_len => false,
+            len if len == base_len + 1 => true,
+            _ => return Err("token table record has an unsupported length".into()),
+        };
+        let (generated_start, source, source_start, source_end, name_id) = if multi_source {
+            (record[0], record[1], record[2], record[3], record[4])
+        } else {
+            (record[0], 0, record[1], record[2], record[3])
+        };
+        if generated_start < 0 || source < 0 || source_start < 0 || source_end < 0 {
+            return Err("token table has a negative coordinate".into());
+        }
+        let (generated_start, source_start, source_end) = (
+            generated_start as usize,
+            source_start as usize,
+            source_end as usize,
+        );
+        let source = source as usize;
+        let source_text = snapshots
+            .get(source)
+            .map(|snapshot| snapshot.text.as_ref())
+            .ok_or("token table has an invalid source reference")?;
+        if generated_start < cursor {
+            return Err("token table is not in generated order".into());
+        }
+        if source_start >= source_end || source_end > source_text.len() {
+            return Err("token table has an invalid source range".into());
+        }
+        let generated_end = if renamed {
+            let end = record[base_len];
+            if end < 0 {
+                return Err("token table has a negative coordinate".into());
+            }
+            end as usize
+        } else {
+            generated_start
+                .checked_add(source_end - source_start)
+                .ok_or("token table generated end overflow")?
+        };
+        if generated_end <= generated_start {
+            return Err("token table has an invalid generated range".into());
+        }
+        if generated_end > generated_len {
+            return Err("token table exceeds the generated code".into());
+        }
+        if cursor < generated_start {
+            mappings.push(OriginMapping {
+                start: cursor,
+                end: generated_start,
+                origin: None,
+                copied: None,
+                inline_contexts: Vec::new(),
+            });
+        }
+        let name: Option<Arc<str>> = if name_id < 0 {
+            None
+        } else {
+            Some(
+                details
+                    .token_names
+                    .get(name_id as usize)
+                    .cloned()
+                    .ok_or("token table has an invalid name reference")?,
+            )
+        };
+        if let Some(name) = &name {
+            if source_text.get(source_start..source_end) != Some(name.as_ref()) {
+                return Err("token table name does not match the source slice".into());
+            }
+        }
+        let is_name = name.is_some();
+        let primary = SourceSpan {
+            source: source as u32,
+            start: source_start,
+            end: source_end,
+        };
+        let key = (
+            source as u32,
+            source_start,
+            source_end,
+            name.as_deref().map(str::to_owned),
+            is_name,
+        );
+        let id = *origin_ids.entry(key).or_insert_with(|| {
+            let id = origins.len() as u32;
+            origins.push(MapOrigin {
+                kind: OriginKind::Source,
+                primary: Some(primary),
+                related: Vec::new(),
+                precision: if is_name {
+                    OriginPrecision::Name
+                } else {
+                    OriginPrecision::Token
+                },
+                name: name.clone(),
+                transformation: None,
+                reasons: Vec::new(),
+            });
+            id
+        });
+        mappings.push(OriginMapping {
+            start: generated_start,
+            end: generated_end,
+            origin: Some(id),
+            // Renamed tokens are not exact copies: the origin names the
+            // original spelling, but the generated spelling differs, so no
+            // exact-copy attribution is recorded (mirrors the materialized
+            // form produced by `GeneratedOrigins::copied_tokens`).
+            copied: if renamed { None } else { Some(primary) },
+            inline_contexts: Vec::new(),
+        });
+        cursor = generated_end;
+    }
+    if cursor < generated_len {
+        mappings.push(OriginMapping {
+            start: cursor,
+            end: generated_len,
+            origin: None,
+            copied: None,
+            inline_contexts: Vec::new(),
+        });
+    }
+    Ok((mappings, origins))
+}
+
+/// Merge the token-table expansion with the residual (non-simple) part of
+/// a mixed-form map. Residual mappings must lie entirely inside single
+/// unknown gaps of the expansion and must not overlap each other; gaps are
+/// split around them. The merged origin list is the expanded simple
+/// origins followed by the residual origins, so residual mapping origin
+/// references are offset by the simple origin count. Anything else is
+/// rejected (this only adds restrictions on top of the pure token-table
+/// expansion; it never relaxes a check).
+fn merge_token_and_residual(
+    token_mappings: Vec<OriginMapping>,
+    token_origins: Vec<MapOrigin>,
+    residual_mappings: Vec<OriginMapping>,
+    residual_origins: Vec<MapOrigin>,
+) -> Result<(Vec<OriginMapping>, Vec<MapOrigin>), String> {
+    let offset = token_origins.len() as u32;
+    let mut merged: Vec<OriginMapping> = Vec::new();
+    let mut residual = residual_mappings.into_iter().peekable();
+    for segment in token_mappings {
+        if segment.origin.is_some() {
+            merged.push(segment);
+            continue;
+        }
+        // Unknown gap: splice the residual mappings contained in it.
+        let mut cursor = segment.start;
+        while residual
+            .peek()
+            .is_some_and(|m| m.start >= segment.start && m.end <= segment.end)
+        {
+            let Some(mut mapping) = residual.next() else {
+                break;
+            };
+            if mapping.start < cursor {
+                return Err("mixed token table residual mappings overlap".into());
+            }
+            if cursor < mapping.start {
+                merged.push(OriginMapping {
+                    start: cursor,
+                    end: mapping.start,
+                    origin: None,
+                    copied: None,
+                    inline_contexts: Vec::new(),
+                });
+            }
+            if let Some(id) = mapping.origin {
+                mapping.origin = Some(
+                    id.checked_add(offset)
+                        .ok_or("mixed token table origin reference overflow")?,
+                );
+            }
+            cursor = mapping.end;
+            merged.push(mapping);
+        }
+        if cursor < segment.end {
+            merged.push(OriginMapping {
+                start: cursor,
+                end: segment.end,
+                origin: None,
+                copied: None,
+                inline_contexts: Vec::new(),
+            });
+        }
+    }
+    if residual.next().is_some() {
+        return Err("mixed token table residual mapping is outside the token gaps".into());
+    }
+    let mut origins = token_origins;
+    origins.extend(residual_origins);
+    Ok((merged, origins))
+}
+
 /// Reject mismatched code, corrupted extension data or an unsupported schema.
 /// This checks integrity, not authenticity: an author can intentionally create a new map.
 pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
@@ -818,7 +1442,7 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
     if json["version"] != 3 {
         return Err("unsupported Source Map version".into());
     }
-    let details: MapExtension = serde_json::from_value(json["x_storm"].clone())
+    let mut details: MapExtension = serde_json::from_value(json["x_storm"].clone())
         .map_err(|e| format!("invalid x_storm extension: {e}"))?;
     if details.schema_version != SCHEMA_VERSION || details.coordinate_unit != "utf8-bytes" {
         return Err("unsupported Storm source map schema".into());
@@ -854,6 +1478,37 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
             name: name.as_str().ok_or("invalid source name")?.into(),
             text: text.into(),
         });
+    }
+    if !details.tokens.is_empty() || !details.token_names.is_empty() {
+        if details.tokens.is_empty() {
+            return Err("token names without a token table".into());
+        }
+        let (token_mappings, token_origins) =
+            expand_token_table(&details, &snapshots, details.generated.bytes)?;
+        if details.mappings.is_empty() && details.origins.is_empty() {
+            details.mappings = token_mappings;
+            details.origins = token_origins;
+        } else {
+            // Mixed form: the wire arrays carry only the residual
+            // (non-simple) origins and mappings; splice them into the
+            // unknown gaps of the token expansion.
+            let residual_mappings = std::mem::take(&mut details.mappings);
+            let residual_origins = std::mem::take(&mut details.origins);
+            let (mappings, origins) = merge_token_and_residual(
+                token_mappings,
+                token_origins,
+                residual_mappings,
+                residual_origins,
+            )?;
+            details.mappings = mappings;
+            details.origins = origins;
+        }
+        // The returned extension is the normalized materialized form:
+        // the token table is consumed by the expansion above, so a
+        // re-encode of the returned value emits the full layout and
+        // validates to exactly the same details.
+        details.tokens = Vec::new();
+        details.token_names = Vec::new();
     }
     for reason in &details.reasons {
         reason.validate()?;
@@ -1392,6 +2047,75 @@ mod compact_lexical_map_tests {
     }
 
     #[test]
+    fn schema_two_token_table_expands_to_materialized_provenance() {
+        let source = "local _ENV=_ENV function onTick()output.setNumber(1,2)end";
+        let (code, compact) =
+            storm_lua_syntax::print::lexical_minify_with_compact_origins("lexical.lua", source)
+                .unwrap();
+        let materialized = compact.clone().into_generated();
+        let map =
+            encode_compact_lexical_for_options(&code, &compact, &CompileOptions::default(), None)
+                .unwrap();
+        let json: Value = serde_json::from_str(&map).unwrap();
+        let extension = &json["x_storm"];
+        assert_eq!(extension["schemaVersion"], 2);
+        assert!(extension["mappings"].as_array().unwrap().is_empty());
+        assert!(extension["origins"].as_array().unwrap().is_empty());
+        assert!(!extension["tokens"].as_array().unwrap().is_empty());
+        let details = validate(&code, &map).unwrap();
+        assert_eq!(details.schema_version, 2);
+        assert_eq!(details.mappings.len(), materialized.mappings.len());
+        assert_eq!(details.origins.len(), materialized.origins.len());
+        for (expanded, original) in details.mappings.iter().zip(&materialized.mappings) {
+            assert_eq!(expanded.start, original.start);
+            assert_eq!(expanded.end, original.end);
+            assert_eq!(expanded.origin, original.origin);
+            assert_eq!(expanded.copied, original.copied);
+        }
+        // A schema-1 wire version is rejected even before the digest check.
+        let mut old = json.clone();
+        old["x_storm"]["schemaVersion"] = serde_json::json!(1);
+        assert!(validate(&code, &old.to_string()).is_err());
+    }
+
+    #[test]
+    fn derived_named_origin_never_emits_a_mixed_map_with_reordered_names() {
+        let source = "return a+b";
+        let (code, base) =
+            storm_lua_syntax::print::lexical_minify_with_origins("example.lua", source).unwrap();
+        let name_index = |origins: &GeneratedOrigins, name: &str| {
+            origins
+                .origins
+                .iter()
+                .position(|origin| origin.name.as_deref() == Some(name))
+                .unwrap()
+        };
+
+        // Deriving the first named origin makes it residual. Mixed
+        // expansion would append it after the token-table origin for `b`,
+        // changing the standard name pool from [a, b] to [b, a], so the
+        // encoder must keep the full layout for this shape.
+        let mut first = base.clone();
+        let a = name_index(&first, "a");
+        first.origins[a] = first.origins[a].derived("example-rewrite");
+        let map = encode(&code, &first, Value::Null).unwrap();
+        let json: Value = serde_json::from_str(&map).unwrap();
+        assert!(json["x_storm"]["tokens"].as_array().unwrap().is_empty());
+        validate(&code, &map).unwrap();
+
+        // Deriving the last named origin leaves the name sequence intact:
+        // the mixed form remains available and validates.
+        let mut last = base;
+        let b = name_index(&last, "b");
+        last.origins[b] = last.origins[b].derived("example-rewrite");
+        let map = encode(&code, &last, Value::Null).unwrap();
+        let json: Value = serde_json::from_str(&map).unwrap();
+        assert!(!json["x_storm"]["tokens"].as_array().unwrap().is_empty());
+        assert_eq!(json["x_storm"]["tokenNames"], json!(["a"]));
+        validate(&code, &map).unwrap();
+    }
+
+    #[test]
     fn large_lexical_maps_validate_after_names_are_deserialized() {
         let source = format!(
             "local _ENV=_ENV function onTick() {} end",
@@ -1411,5 +2135,64 @@ mod compact_lexical_map_tests {
         let json: Value = serde_json::from_str(&map).unwrap();
         assert!(details.origins.len() > 64);
         assert!(json["names"].as_array().unwrap().len() < 10);
+    }
+
+    #[test]
+    fn renamed_lexical_map_validates_and_uses_five_element_records() {
+        let source = "local longname=1\n_ENV.x=longname\nreturn longname\n";
+        let plan: Vec<(usize, usize, String)> = source
+            .match_indices("longname")
+            .map(|(i, _)| (i, i + "longname".len(), "a".to_string()))
+            .collect();
+        assert_eq!(plan.len(), 3);
+        let options = CompileOptions {
+            origin_source: Some("lexical.lua".into()),
+            ..CompileOptions::default()
+        };
+        let (code, compact) = storm_lua_syntax::print::lexical_minify_renamed_with_compact_origins(
+            "lexical.lua",
+            source,
+            &plan,
+        )
+        .unwrap();
+        assert!(compact.tokens.iter().any(|t| t.renamed));
+        let map = encode_compact_lexical_for_options(&code, &compact, &options, None).unwrap();
+        let json: Value = serde_json::from_str(&map).unwrap();
+        let tokens = json["x_storm"]["tokens"].as_array().unwrap();
+        assert!(!tokens.is_empty());
+        assert!(tokens.iter().any(|t| t.as_array().unwrap().len() == 5));
+        assert!(tokens
+            .iter()
+            .all(|t| matches!(t.as_array().unwrap().len(), 4 | 5)));
+        let details = validate(&code, &map).unwrap();
+        // Expanded renamed mappings carry no exact-copy attribution.
+        assert!(details
+            .mappings
+            .iter()
+            .any(|m| m.origin.is_some() && m.copied.is_none()));
+        // The materialized form agrees byte-for-byte with the compact form.
+        let materialized = compact.clone().into_generated();
+        let expected = encode_owned_for_options(&code, materialized, &options, None).unwrap();
+        assert_eq!(
+            map, expected,
+            "renamed compact and materialized maps differ"
+        );
+    }
+
+    #[test]
+    fn unrenamed_lexical_map_keeps_four_element_records() {
+        let source = "local _ENV=_ENV function onTick()output.setNumber(1,2)end";
+        let (code, compact) =
+            storm_lua_syntax::print::lexical_minify_with_compact_origins("lexical.lua", source)
+                .unwrap();
+        assert!(compact.tokens.iter().all(|t| !t.renamed));
+        let map =
+            encode_compact_lexical_for_options(&code, &compact, &CompileOptions::default(), None)
+                .unwrap();
+        let json: Value = serde_json::from_str(&map).unwrap();
+        let tokens = json["x_storm"]["tokens"].as_array().unwrap();
+        assert!(!tokens.is_empty());
+        assert!(tokens.iter().all(|t| t.as_array().unwrap().len() == 4));
+        validate(&code, &map).unwrap();
     }
 }

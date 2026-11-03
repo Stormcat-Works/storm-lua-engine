@@ -3,15 +3,13 @@
 //! The largest byte integer is < 92^8 < 2^53 and all decoding is integer-only.
 use super::*;
 
-pub(super) fn payloads(columns: &[Vec<i64>], count: usize) -> Vec<(Codec, String)> {
-    let Some((
-        Codec::PackedBytes {
-            biases,
-            radices,
-            width: single_width,
-        },
-        _,
-    )) = packed_payload_with_limit(columns, count, 8)
+pub(super) fn payloads(source: &Arc<Vec<Vec<i64>>>, count: usize) -> Vec<(Codec, BytesRecipe)> {
+    let columns: &[Vec<i64>] = source;
+    let Some(PackedLayout {
+        biases,
+        radices,
+        width: single_width,
+    }) = packed_layout(columns, 8)
     else {
         return Vec::new();
     };
@@ -45,23 +43,17 @@ pub(super) fn payloads(columns: &[Vec<i64>], count: usize) -> Vec<(Codec, String
         }
         best_width = width;
         best_rows = rows;
-        let mut bytes = String::with_capacity(count / rows * width);
-        for first in (0..count).step_by(rows) {
-            let mut group = 0i64;
-            for row in (first..first + rows).rev() {
-                let value = columns
-                    .iter()
-                    .zip(&biases)
-                    .zip(&radices)
-                    .fold(0, |value, ((c, bias), radix)| value * radix + c[row] - bias);
-                group = group * cardinality + value;
-            }
-            let mut divisor = capacity / 92;
-            for _ in 0..width {
-                bytes.push((group / divisor % 92 + 35) as u8 as char);
-                divisor /= 92;
-            }
-        }
+        let mut features = PrintableFeatures::new();
+        walk_grouped_bytes(
+            columns,
+            &biases,
+            &radices,
+            width,
+            rows,
+            cardinality,
+            count,
+            &mut |b| features.push(b),
+        );
         out.push((
             Codec::GroupedBytes {
                 biases: biases.clone(),
@@ -69,10 +61,53 @@ pub(super) fn payloads(columns: &[Vec<i64>], count: usize) -> Vec<(Codec, String
                 width,
                 rows,
             },
-            bytes,
+            BytesRecipe::Grouped {
+                source: source.clone(),
+                biases: biases.clone(),
+                radices: radices.clone(),
+                width,
+                rows,
+                count,
+                features,
+            },
         ));
     }
     out
+}
+
+/// The grouped byte walk: each group of `rows` consecutive rows
+/// composes into one mixed-radix number (the group's last row is the
+/// most significant), emitted as `width` base-92 digits offset by 35.
+/// The codec's only byte generation; building the payload string and
+/// accumulating its size features are two sinks over the walk.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn walk_grouped_bytes(
+    columns: &[Vec<i64>],
+    biases: &[i64],
+    radices: &[i64],
+    width: usize,
+    rows: usize,
+    cardinality: i64,
+    count: usize,
+    sink: &mut impl FnMut(u8),
+) {
+    let capacity = 92_i64.pow(width as u32);
+    for first in (0..count).step_by(rows) {
+        let mut group = 0i64;
+        for row in (first..first + rows).rev() {
+            let value = columns
+                .iter()
+                .zip(biases)
+                .zip(radices)
+                .fold(0, |value, ((c, bias), radix)| value * radix + c[row] - bias);
+            group = group * cardinality + value;
+        }
+        let mut divisor = capacity / 92;
+        for _ in 0..width {
+            sink((group / divisor % 92 + 35) as u8);
+            divisor /= 92;
+        }
+    }
 }
 
 pub(super) fn emit_helper(

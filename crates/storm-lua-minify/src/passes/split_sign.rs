@@ -341,7 +341,7 @@ fn transform_squares_node(
     };
     let generated_start = target.nodes.len();
     let value = if matches!(number, super::numeric_proof::Number::Integer(_)) {
-        let one = target.num("1.0".into());
+        let one = target.num("1.0");
         target.bin("*", positive.value, one)
     } else {
         positive.value
@@ -350,7 +350,7 @@ fn transform_squares_node(
         target.name(alias)
     } else {
         let math = target.name("math");
-        let key = target.str("\"abs\"".to_string());
+        let key = target.str("\"abs\"");
         target.index(math, key, true)
     };
     let abs_call = target.call(abs_function, vec![value], None);
@@ -376,16 +376,147 @@ fn transform_squares_node(
     replacement
 }
 
+/// Necessary condition for the squares stage to rewrite anything.
+///
+/// Every successful `squared_part` in the transform traces back to a `^`
+/// node in the stage input whose exponent is the number 2 and whose base
+/// is a `math.max` (left operand) or `math.min` (right operand) call.
+/// The transform's replacements contain no `^` nodes, so a part exposed
+/// only through an earlier replacement is still an original `^` node
+/// (the extracted value or factor of the inner pattern), and resolving
+/// the base call reads only nodes the transform never rewrites. If
+/// either operation lacks such a node, `squared_part` can never succeed
+/// and the stage provably rewrites nothing.
+fn squared_rewrite_possible(ast: &Ast, analyzer: &EffectAnalyzer<'_>, root: NodeId) -> bool {
+    let mut has_max = false;
+    let mut has_min = false;
+    storm_lua_syntax::ast_utils::walk(ast, root, &mut |node| {
+        if has_max && has_min {
+            return;
+        }
+        if let Node::Bin(op, base, exponent) = ast.node(node) {
+            if op == "^" && matches!(ast.node(*exponent), Node::Num(raw) if num_val(raw) == 2.0) {
+                if !has_max && call_operation(ast, analyzer, *base, "max").is_some() {
+                    has_max = true;
+                }
+                if !has_min && call_operation(ast, analyzer, *base, "min").is_some() {
+                    has_min = true;
+                }
+            }
+        }
+    });
+    has_max && has_min
+}
+
+/// Necessary-condition gate for the whole pass, checked on the input
+/// before any resolution or analysis runs.
+///
+/// Both stages can rewrite only through a successful `call_operation`
+/// for `"max"` and for `"min"`: the blocks stage eliminates solely on
+/// the `(Some, Some)` pair in `transform_block`, and the squares stage
+/// is itself gated on `squared_rewrite_possible`, which needs both
+/// operations. `call_operation` succeeds only when the analyzer
+/// resolves the callee to `"math.max"` / `"math.min"`, so if no node
+/// in the chunk resolves to either text, `eliminated` stays 0, the
+/// squares gate stays false, and the pass returns its input untouched.
+///
+/// Resolution (`EffectAnalyzer::builtin_reference`) builds a dotted
+/// text only from a binding's proven alias (for a bare `Name`) or from
+/// an `Index` chain whose final member is the decoded value of a
+/// literal `Str` key. If any node resolved to `"math.max"`, then
+/// either that node is itself an `Index` whose `Str` key decodes to
+/// `"max"`, or some binding holds the alias `"math.max"`. Aliases are
+/// seeded only with plain API-root names (no dots) and propagated by
+/// the root-block fixpoint only from a `Name` (whose binding already
+/// holds the alias, so the first holder cannot arise this way) or from
+/// an `Index(Name, Str)` right-hand side, whose text splits as
+/// `base.member` -- so the first `"math.max"` alias also traces back
+/// to an `Index` whose `Str` key decodes to `"max"` in this same AST.
+/// The same holds for `"min"`. Computed keys never resolve (the
+/// resolver requires `Node::Str` keys), and `_ENV`-mediated spellings
+/// keep their base as a prefix (e.g. `"_ENV.math.max"`), never the
+/// bare text. A chunk with no `Index` node whose `Str` key decodes to
+/// `"max"` or `"min"` therefore provably resolves nothing, and
+/// skipping the resolver, the analyzer, both transforms, and the
+/// squares gate walk is indistinguishable from running them: the
+/// analyzer and resolver operate on a clone, and the untouched-input
+/// result (`saved` 0, `eliminated=0`, `squared=0`) is reproduced
+/// exactly.
+fn split_sign_pattern_present(ast: &Ast, root: NodeId) -> bool {
+    let mut present = false;
+    storm_lua_syntax::ast_utils::walk(ast, root, &mut |node| {
+        if present {
+            return;
+        }
+        if let Node::Index(_, key, _) = ast.node(node) {
+            if let Node::Str(raw) = ast.node(*key) {
+                if matches!(
+                    storm_lua_syntax::numeric::decode_lua_string(raw).as_deref(),
+                    Some("max") | Some("min")
+                ) {
+                    present = true;
+                }
+            }
+        }
+    });
+    present
+}
+
 pub fn eliminate_split_sign_recomposition(
     ast: &mut Ast,
     root: NodeId,
     aggressive: bool,
 ) -> PassResult {
     let original_size = measure_size(ast, root);
+    if !split_sign_pattern_present(ast, root) {
+        // No node can resolve to "math.max" / "math.min" (see
+        // `split_sign_pattern_present`), so both stages provably
+        // rewrite nothing and the result is the untouched input,
+        // exactly as the full pipeline below would return it.
+        return PassResult {
+            root,
+            saved: Some(0),
+            details: Some(vec!["eliminated=0".to_string(), "squared=0".to_string()]),
+        };
+    }
     let mut source = storm_lua_syntax::ast_utils::inherit_ast(ast);
     source.nodes = ast.nodes.clone();
     let resolution = resolve(&source, root);
     let analyzer = EffectAnalyzer::new(&source, &resolution, root, true);
+
+    let mut after_blocks = storm_lua_syntax::ast_utils::inherit_ast(&source);
+    after_blocks.nodes = source.nodes.clone();
+    let mut eliminated = 0usize;
+    transform_blocks_node(
+        &mut after_blocks,
+        &source,
+        &resolution,
+        &analyzer,
+        root,
+        &mut eliminated,
+    );
+
+    if !aggressive || !squared_rewrite_possible(&after_blocks, &analyzer, root) {
+        // The squares stage cannot rewrite anything (see
+        // `squared_rewrite_possible`), so the result is exactly
+        // `after_blocks`. When nothing was eliminated either, that is a
+        // value- and origin-identical copy of the input (rewriting a node
+        // with an equal value is a no-op that keeps its origin), so `ast`
+        // can stay untouched; the alias scan, the numeric proof, the
+        // candidate clone, and the squares walk are all skipped.
+        if eliminated > 0 {
+            ast.nodes = after_blocks.nodes;
+            ast.strings = after_blocks.strings;
+        }
+        return PassResult {
+            root,
+            saved: Some(original_size.saturating_sub(measure_size(ast, root)) as u64),
+            details: Some(vec![
+                format!("eliminated={eliminated}"),
+                "squared=0".to_string(),
+            ]),
+        };
+    }
 
     let mut abs_alias: Option<String> = None;
     storm_lua_syntax::ast_utils::walk(&source, root, &mut |node| {
@@ -401,18 +532,6 @@ pub fn eliminate_split_sign_recomposition(
             }
         }
     });
-
-    let mut after_blocks = storm_lua_syntax::ast_utils::inherit_ast(&source);
-    after_blocks.nodes = source.nodes.clone();
-    let mut eliminated = 0usize;
-    transform_blocks_node(
-        &mut after_blocks,
-        &source,
-        &resolution,
-        &analyzer,
-        root,
-        &mut eliminated,
-    );
 
     let mut candidate = storm_lua_syntax::ast_utils::inherit_ast(&after_blocks);
     candidate.nodes = after_blocks.nodes.clone();
@@ -478,8 +597,131 @@ mod tests {
     }
 
     #[test]
+    fn lone_squared_part_is_not_rewritten() {
+        let source = "x=input.getNumber(1)y=math.max(x,0)^2*3";
+        assert!(output(source, true).contains("math.max(x,0)^2*3"));
+    }
+
+    #[test]
     fn squared_rewrite_requires_aggressive_mode() {
         let source = "x=input.getNumber(1)y=math.max(x,0)^2*3-math.min(x,0)^2*3";
         assert!(output(source, false).contains("math.max"));
+    }
+
+    fn pattern_of(source: &str) -> bool {
+        let (ast, root) = parse_source(source).expect("parse");
+        split_sign_pattern_present(&ast, root)
+    }
+
+    #[test]
+    fn pattern_gate_detects_literal_member_spellings() {
+        // Direct, bracket, escaped, alias-mediated and nested spellings
+        // all contain an Index node whose Str key decodes to max/min.
+        for source in [
+            "x=math.max(1,2)",
+            "x=math.min(1,2)",
+            "x=math[\"max\"](1,2)",
+            "x=math[\"m\\97x\"](1,2)",
+            "f=math.max x=f(1,2)",
+            "g=math h=g.max x=h(1,2)",
+            "local m=math x=m.max(1,2)",
+            "x=_ENV.math.max(1,2)",
+            "local t={} t.max=math.max x=t.max(1,2)",
+            "function onTick() p=math.max(x,0) end",
+        ] {
+            assert!(pattern_of(source), "pattern missing in {source}");
+        }
+    }
+
+    #[test]
+    fn pattern_gate_absent_without_literal_member() {
+        for source in [
+            "x=math.floor(1.5)",
+            "local k=\"ma\"..\"x\" x=math[k](1,2)",
+            "x=math.maximize(1,2)",
+            "x=math[\"maximize\"](1,2)",
+            "local max=5 x=max+1",
+            "x=math.abs(-1)",
+            "s=\"max\" output.setString(1,s)",
+            "local t={max=3}",
+            "x=input.getNumber(1) output.setNumber(1,x)",
+        ] {
+            assert!(!pattern_of(source), "unexpected pattern in {source}");
+        }
+    }
+
+    #[test]
+    fn resolution_to_max_or_min_implies_pattern() {
+        // Resolver audit, empirical side: across direct, aliased,
+        // shadowed, dynamic and _ENV-mediated spellings, whenever the
+        // analyzer resolves any node to "math.max" / "math.min", the
+        // syntactic pattern must be present in the same AST.
+        let sources = [
+            "x=math.max(1,2)",
+            "x=math.min(1,2)",
+            "x=math[\"max\"](1,2)",
+            "x=math[\"m\\97x\"](1,2)",
+            "f=math.max x=f(1,2)",
+            "f=math.min x=f(1,2)",
+            "g=math h=g.max x=h(1,2)",
+            "g=math.max h=g x=h(1,2)",
+            "local m=math x=m.max(1,2)",
+            "x=_ENV.math.max(1,2)",
+            "local t={} t.max=math.max x=t.max(1,2)",
+            "function onTick() p=math.max(x,0) end",
+            "x=math.floor(1.5)",
+            "local k=\"ma\"..\"x\" x=math[k](1,2)",
+            "x=math.maximize(1,2)",
+            "local math={max=function(a,b) return a end} x=math.max(1,2)",
+            "math={} x=math.max(1,2)",
+            "local max=math.max x=max(1,2)",
+            "x=math.abs(-1)",
+            "local t={max=3} x=t.max",
+        ];
+        for source in sources {
+            let (ast, root) = parse_source(source).expect("parse");
+            let resolution = resolve(&ast, root);
+            let analyzer = EffectAnalyzer::new(&ast, &resolution, root, true);
+            let mut resolved = false;
+            storm_lua_syntax::ast_utils::walk(&ast, root, &mut |node| {
+                if matches!(
+                    analyzer.resolve_builtin_reference(node).as_deref(),
+                    Some("math.max") | Some("math.min")
+                ) {
+                    resolved = true;
+                }
+            });
+            if resolved {
+                assert!(
+                    split_sign_pattern_present(&ast, root),
+                    "resolution without pattern in {source}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rewrites_through_root_assign_aliases() {
+        // The analyzer proves single-write root aliases, so both stages
+        // fire through them; the gate must not suppress these (the
+        // pattern is present at the alias definition sites).
+        let source = "f=math.max g=math.min function onTick()local x=input.getNumber(1)local p=f(x,0)x=g(x,0)x=p+x output.setNumber(1,x)end";
+        assert_eq!(
+            output(source, true),
+            "f=math.max g=math.min function onTick()local x=input.getNumber(1)output.setNumber(1,x)end"
+        );
+        let source = "f=math.max g=math.min x=input.getNumber(1)y=f(x,0)^2*3-g(x,0)^2*3";
+        assert_eq!(
+            output(source, true),
+            "f=math.max g=math.min x=input.getNumber(1)y=x*math.abs(x)*3"
+        );
+    }
+
+    #[test]
+    fn local_root_alias_is_not_resolved() {
+        // Locals are never aliased by the analyzer, so nothing fires;
+        // the output must stay exactly the input.
+        let source = "local m=math function onTick()local x=input.getNumber(1)local p=m.max(x,0)x=m.min(x,0)x=p+x output.setNumber(1,x)end";
+        assert_eq!(output(source, true), source);
     }
 }

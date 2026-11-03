@@ -76,7 +76,7 @@ try {
   compiledVm.load(compiled.code);compiledVm.io.inputNumbers[0]=4;compiledVm.tick();
   assert.equal(compiledVm.io.outputNumbers[0],8);
 } finally {compiledVm.dispose();}
-assert.equal(new Set(compiler.passIds()).size,67);
+assert.equal(new Set(compiler.passIds()).size,73);
 console.log('Installed compiler subpath: minification, explicit runtime load and output 8 passed.');
 
 const snapshot=compiler.build({entry:'main',modules:{main:"local m=require('m') function onTick()output.setNumber(1,m.read())end",m:"local gain=property.getNumber('Gain') return {read=function()return gain end}"}},{target:'vehicle',numericMode:'exact',minify:true});

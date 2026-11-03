@@ -310,7 +310,7 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
             storm_lua_syntax::numeric::quote_lua("setColor").into(),
         ));
         let set_color = candidate.push(Node::Index(screen_name, key, true));
-        let new_call = candidate.push(Node::Call(set_color, args, method.clone()));
+        let new_call = candidate.push(Node::Call(set_color, args, *method));
         let info = &helpers[&bid];
         let Node::Function(_, _, body) = source.node(info.function) else {
             unreachable!()

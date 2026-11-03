@@ -427,6 +427,25 @@ impl<'a> Lexer<'a> {
         {
             let m = number_len(&self.s[self.i..])
                 .ok_or_else(|| LexError(format!("bad number at {}:{}", line, col)))?;
+            // PUC の数値リーダは、数値として続きうる文字（10進では
+            // 16進数字の字 a-f/A-F、16進では更に指数の p/P）を貪欲に
+            // 取り込み、結果が数値として不正なら malformed number で
+            // 拒否する（T10: `1and` が `1` と `and` に分かれることは
+            // ない）。number_len が受理した最大の数値の直後にそれらの
+            // 字が残る形は、参照判定では必ず不正な数値になるため、
+            // ここで落とす。それ以外の字（`1or` の o 等）はリーダも
+            // 取り込まず、トークン列は参照判定と一致する。
+            if self.i + m < self.s.len() {
+                let next = self.s[self.i + m];
+                let hex = m >= 2
+                    && self.s[self.i] == b'0'
+                    && (self.s[self.i + 1] == b'x' || self.s[self.i + 1] == b'X');
+                if next.is_ascii_hexdigit() && !next.is_ascii_digit()
+                    || (hex && (next == b'p' || next == b'P'))
+                {
+                    return Err(LexError(format!("malformed number at {}:{}", line, col)));
+                }
+            }
             self.adv(m);
             let v = &self.source[p..self.i];
             return Ok(BorrowedToken {

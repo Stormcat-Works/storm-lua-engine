@@ -343,7 +343,7 @@ fn statements(
                         statement.function = name_path(ast, *f).map(|path| {
                             method
                                 .as_ref()
-                                .map_or(path.clone(), |m| format!("{path}.{m}"))
+                                .map_or(path.clone(), |m| format!("{path}.{}", ast.strings.get(*m)))
                         });
                         statement.arguments = args
                             .iter()

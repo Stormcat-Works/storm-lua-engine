@@ -2,7 +2,15 @@
 
 ## AD-01/AD-02 host接続（2026-10-17）
 
+`HostCall::truthy`で呼出し中の値をowned dataへ変換せずにLua truthinessを読みます。循環tableや関数の値を保持・実行しない引数参照APIです。hostの設定・同期・永続化はconsumerが所有し、公開工程とは区別します。
+
 host側のHTTP worker・sceneキュー・実ゲームとの応答比較はconsumer側で接続中。Engine追加APIの検証と公開工程は区別する。
+
+## v0.4.0のローカル公開候補（2026-11-02、準備完了・公開は明示承認待ち）
+
+正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を統合し、版番号を0.4.0へ更新した。現行コーパス全件の最終FULL検証、ワークスペーステスト、回帰パック114/114を確認済み。[候補記録](docs/verification/release-candidate-0.4.0.md)。
+
+残る公開工程は、ユーザーのgo/no-go確認とpush承認、検査済みcommitの3 OS CI、producer/revisionを確定した配布物の再検査、タグ・GitHub Release・npm・本番配備。現在の候補を公開済みにはしない。
 
 ## v0.3.1のローカル公開候補（2026-10-12、完了）
 
@@ -10,11 +18,11 @@ host側のHTTP worker・sceneキュー・実ゲームとの応答比較はconsum
 
 残る公開工程は、最終commitの3 OS CI、producer/revisionを確定した配布物の再検査、タグ・GitHub Release・npm・本番配備・registry再導入。現在の候補を公開済みにはしない。
 
-## v0.3.2以降へ送る改善
+## v0.5.0以降へ送る改善
 
 - 全入力でMap/plain比1.2以内にする目標（今回の最大反復中央値比7.019）。通常側を遅くせず、情報・精度を削らず追加研究する。
 - 大きなmapの容量・ピークメモリ、追加candidate/snapshot/poolの改善。
-- Addon最適化、完全なserver API analyzer、元変数/storage/lifetime/bytecode PCの動的復元はそれぞれ独立の後続機能。
+- Addonのコンパイル（最適化）サポートはv0.5.0の主題とする（2026-11-02決定）。完全なserver API analyzer、元変数/storage/lifetime/bytecode PCの動的復元はそれぞれ独立の後続機能。
 
 以下の開発ラウンドは過去の実測・未達記録として保持し、その研究目標をv0.3.1の追加公開ゲートにしない。
 

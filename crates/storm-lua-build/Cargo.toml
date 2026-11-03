@@ -14,9 +14,10 @@ workspace = true
 storm-lua-spec = { workspace = true }
 storm-lua-syntax = { workspace = true }
 storm-lua-analysis = { workspace = true }
+storm-lua-vm = { workspace = true }
 storm-lua-minify = { workspace = true }
 serde = { workspace = true }
 sourcemap = "9.3"
 
 serde_json = { workspace = true }
-sha2 = "0.10"
+sha2 = { version = "0.10" }

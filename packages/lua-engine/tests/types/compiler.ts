@@ -6,7 +6,7 @@ function consumer(compiler: Compiler): void {
   const generated = compiler.minify('function onTick()end', {sourceMap: true, sourceName: 'main.lua'});
   if (generated.code !== undefined && generated.map !== undefined) {
     const details: OptimizationMap = compiler.validateSourceMap(generated.code, generated.map);
-    const schema: 1 = details.schemaVersion;
+    const schema: 2 = details.schemaVersion;
     const role = details.relations[0]?.role;
     void schema; void role;
   }

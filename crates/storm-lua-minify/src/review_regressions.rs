@@ -83,6 +83,16 @@ fn review_hex_boundary_literals_are_exact() {
             "0x1.0000000000001p-1075",
             "0x1.fffffffffffff8p1023",
         ] {
+            // Windows では vendored PUC の16進浮動小数点パースが
+            // 0x1.0000000000000800001p0（厳密値 1+2^-53+2^-76）の
+            // 末尾桁を取りこぼし、最近接である 1+2^-52 ではなく
+            // 1.0 を返す。生成側と Linux/macOS の PUC は最近接に
+            // 一致しており、これはオラクル側のプラットフォーム
+            // 差異であるため、この1件だけ Windows では差分比較を
+            // 省略する。
+            if cfg!(target_os = "windows") && literal == "0x1.0000000000000800001p0" {
+                continue;
+            }
             equivalent(&format!("return {literal}"), &options);
         }
     }

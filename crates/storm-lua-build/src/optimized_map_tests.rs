@@ -33,7 +33,7 @@ fn standard_map_and_versioned_extension_describe_the_same_generated_buffer() {
     let (code, map, details) = mapped(source);
     let parsed: Value = serde_json::from_str(&map).unwrap();
     assert_eq!(parsed["version"], 3);
-    assert_eq!(details.schema_version, 1);
+    assert_eq!(details.schema_version, 2);
     assert_eq!(details.producer.name, "storm-lua-engine");
     assert_eq!(details.producer.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(parsed["sourcesContent"][0], source);
@@ -86,7 +86,10 @@ fn retained_operator_and_function_end_have_exact_token_positions() {
     );
 }
 #[test]
-fn identity_target_returns_exact_copy_contract_not_just_a_coarse_group() {
+fn target_fit_continues_to_optimized_winner_with_valid_map() {
+    // Option B: a fitting source no longer returns the exact-copy map.
+    // The winner is the optimized candidate and its map validates for
+    // the winner code; the selection criterion is the full-search one.
     let source = "-- 😀\r\nfunction onTick()\r\n output.setNumber(1,7)\r\nend\r\n";
     let options = ApiCompileOptions {
         source_map: Some(true),
@@ -95,14 +98,13 @@ fn identity_target_returns_exact_copy_contract_not_just_a_coarse_group() {
     };
     let result = compile(source, &options);
     assert!(result.ok);
-    assert_eq!(result.code.as_deref(), Some(source));
-    let data = validate(source, &result.map.unwrap()).unwrap();
-    assert_eq!(data.mappings.len(), 1);
-    let copy = data.mappings[0].copied.unwrap();
-    assert_eq!((copy.start, copy.end), (0, source.len()));
+    let code = result.code.unwrap();
+    assert_eq!(code, "function\nonTick()output.setNumber(1,7)end");
+    let data = validate(&code, &result.map.unwrap()).unwrap();
+    assert!(!data.mappings.is_empty());
     assert_eq!(
         data.compilation["selection"]["criterion"],
-        "valid-candidate-meeting-target"
+        "smallest-valid-evaluated-candidate"
     );
 }
 #[test]
@@ -416,8 +418,8 @@ fn same_filename_different_snapshots_keep_distinct_source_indices() {
     let (b, _) = parse_source_with_origins("same.lua", "return 2").unwrap();
     let mut target = Ast::new();
     target.nodes = a.nodes.empty_like();
-    let first = target.num("1".into());
-    let second = target.num("2".into());
+    let first = target.num("1");
+    let second = target.num("2");
     let one = a
         .nodes
         .iter()
@@ -546,7 +548,7 @@ fn effective_numeric_defaults_are_not_misreported_as_one_shared_tolerance() {
             .as_object()
             .unwrap()
             .len(),
-        67
+        73
     );
 }
 #[test]

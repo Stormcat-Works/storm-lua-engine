@@ -109,7 +109,7 @@ fn scaled_name(ast: &mut Ast, candidate: &Candidate) -> NodeId {
 }
 
 fn divisor_node(ast: &mut Ast, candidate: &Candidate) -> NodeId {
-    ast.num(short_num(candidate.divisor))
+    ast.num(&short_num(candidate.divisor))
 }
 
 fn compensated_name(ast: &mut Ast, candidate: &Candidate) -> NodeId {
@@ -209,7 +209,7 @@ fn rewrite_node(
             .map(|child| rewrite_node(target, source, res, child, candidate, false))
             .collect::<Vec<_>>();
         if node == candidate.initializer.statement {
-            let value = target.num(short_num(candidate.initializer.value / candidate.divisor));
+            let value = target.num(&short_num(candidate.initializer.value / candidate.divisor));
             let Node::Assign(_, originals) = source.node(node) else {
                 unreachable!()
             };

@@ -9,8 +9,119 @@ use crate::explanation::{
 use crate::origin_slots::OriginSlots;
 use crate::{Ast, NameSite, Node, NodeId, NodePositions, PrintedSource};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
+
+/// Small deterministic FxHash-style hasher for internal origin interning only.
+/// Output order never comes from hash order: origins, contexts and mappings are
+/// all appended in first-seen order, so the hasher affects speed, not output.
+/// It must stay non-cryptographic and dependency-free: this map is rebuilt on
+/// every resolve and never crosses a trust boundary.
+///
+/// The state is a fixed-width `u64`, never `usize`: the seed literal does not
+/// fit a 32-bit `usize` (wasm32 failed to compile), and a fixed width keeps
+/// the hash sequence identical on every target. On 64-bit targets the
+/// sequence is bit-for-bit the one the earlier `usize` state produced.
+#[derive(Default)]
+struct FastHasher {
+    hash: u64,
+}
+
+const FAST_HASH_SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+
+impl FastHasher {
+    #[inline]
+    fn mix(&mut self, value: u64) {
+        self.hash = (self.hash.rotate_left(5) ^ value).wrapping_mul(FAST_HASH_SEED);
+    }
+}
+
+impl Hasher for FastHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(std::mem::size_of::<u64>()) {
+            let mut value = 0u64;
+            for (index, &byte) in chunk.iter().enumerate() {
+                value |= (byte as u64) << (index * 8);
+            }
+            self.mix(value);
+        }
+    }
+
+    #[inline]
+    fn write_usize(&mut self, value: usize) {
+        self.mix(value as u64);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+
+    #[inline]
+    fn write_u32(&mut self, value: u32) {
+        self.mix(value as u64);
+    }
+
+    #[inline]
+    fn write_u8(&mut self, value: u8) {
+        self.mix(value as u64);
+    }
+}
+
+/// Origin interning table keyed by hash instead of by cloned key.
+///
+/// A plain `FastMap<Origin, u32>` clones every origin once for the map key
+/// and once more for the `origins` vector, even though every origin value
+/// is interned exactly once in practice. This table stores only the hash
+/// (from the same `FastHasher` the old map used) mapped to the id, and
+/// checks equality against the already-stored `origins` entry, so a
+/// distinct origin is cloned exactly once. Hash collisions cannot change
+/// results: ids sharing a hash live in `overflow` and are compared by value.
+#[derive(Default)]
+struct OriginInterner {
+    by_hash: FastMap<u64, u32>,
+    overflow: Vec<(u64, u32)>,
+}
+
+impl OriginInterner {
+    fn reserve(&mut self, additional: usize) {
+        self.by_hash.reserve(additional);
+    }
+
+    /// Return the id for `origin`, pushing one clone into `origins` on a miss.
+    fn intern(&mut self, origins: &mut Vec<Origin>, origin: &Origin) -> u32 {
+        let mut hasher = FastHasher::default();
+        std::hash::Hash::hash(origin, &mut hasher);
+        let hash = hasher.finish();
+        if let Some(&id) = self.by_hash.get(&hash) {
+            if origins[id as usize] == *origin {
+                return id;
+            }
+            for &(other_hash, other_id) in &self.overflow {
+                if other_hash == hash && origins[other_id as usize] == *origin {
+                    return other_id;
+                }
+            }
+            let id = origins.len() as u32;
+            origins.push(origin.clone());
+            self.overflow.push((hash, id));
+            return id;
+        }
+        let id = origins.len() as u32;
+        origins.push(origin.clone());
+        self.by_hash.insert(hash, id);
+        id
+    }
+}
+
+type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 
 /// Immutable source snapshot. A filename alone does not identify source contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,20 +209,12 @@ pub(crate) fn empty_reasons() -> Arc<Vec<OptimizationReason>> {
     static EMPTY: std::sync::OnceLock<Arc<Vec<OptimizationReason>>> = std::sync::OnceLock::new();
     Arc::clone(EMPTY.get_or_init(Arc::default))
 }
-pub(crate) fn empty_contexts() -> Arc<Vec<InlineContext>> {
-    static EMPTY: std::sync::OnceLock<Arc<Vec<InlineContext>>> = std::sync::OnceLock::new();
-    Arc::clone(EMPTY.get_or_init(Arc::default))
-}
+
 pub(crate) fn empty_dispositions() -> Arc<Vec<SourceDisposition>> {
     static EMPTY: std::sync::OnceLock<Arc<Vec<SourceDisposition>>> = std::sync::OnceLock::new();
     Arc::clone(EMPTY.get_or_init(Arc::default))
 }
-fn empty_names() -> Arc<Vec<(NameSite, StoredOrigin)>> {
-    static EMPTY: std::sync::OnceLock<Arc<Vec<(NameSite, StoredOrigin)>>> =
-        std::sync::OnceLock::new();
-    Arc::clone(EMPTY.get_or_init(Arc::default))
-}
-fn empty_tokens() -> Arc<Vec<(SyntaxSite, StoredOrigin)>> {
+pub(crate) fn empty_tokens() -> Arc<Vec<(SyntaxSite, StoredOrigin)>> {
     static EMPTY: std::sync::OnceLock<Arc<Vec<(SyntaxSite, StoredOrigin)>>> =
         std::sync::OnceLock::new();
     Arc::clone(EMPTY.get_or_init(Arc::default))
@@ -228,25 +331,44 @@ impl Origin {
     }
 }
 
+/// Name attributions of one arena slot, serialized as a JSON array.
+/// Up to two entries live inline: a renamed single name, or a two-name
+/// local binding. Larger bindings spill to a heap buffer exactly like the
+/// previous plain Vec, so this only removes the per-node buffer allocation
+/// for the common cases; it does not share the list between nodes, because
+/// a renamed node's names are rewritten in place after its origin is
+/// cloned, and sharing would force a copy-on-write duplication per node.
+/// Cloning an origin with empty names still allocates nothing.
+pub(crate) type NameOrigins = smallvec::SmallVec<[(NameSite, StoredOrigin); 2]>;
+
+/// Node-level inline contexts and dispositions, stored inline while small:
+/// most nodes carry zero or one entry, and the previous shared-empty
+/// Arc<Vec> paid one Arc box plus one buffer allocation on the first
+/// mutation. A single entry now lives in the slot itself (no allocation);
+/// larger lists spill to a heap buffer exactly like the previous plain
+/// Vec, and serialization stays a plain JSON array, so the recorded
+/// origins are unchanged.
+pub(crate) type ContextList = smallvec::SmallVec<[InlineContext; 1]>;
+pub(crate) type DispositionList = smallvec::SmallVec<[SourceDisposition; 1]>;
+
 /// One arena slot's origin, shared when candidate ASTs are cloned.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct NodeOrigin {
     pub origin: Option<StoredOrigin>,
-    // A vector keeps parameterized NameSite variants valid in JSON (not object keys).
-    pub names: Arc<Vec<(NameSite, StoredOrigin)>>,
-    pub contexts: Arc<Vec<InlineContext>>,
+    pub names: NameOrigins,
+    pub contexts: ContextList,
     pub tokens: Arc<Vec<(SyntaxSite, StoredOrigin)>>,
-    pub dispositions: Arc<Vec<SourceDisposition>>,
+    pub dispositions: DispositionList,
 }
 
 impl Default for NodeOrigin {
     fn default() -> Self {
         Self {
             origin: None,
-            names: empty_names(),
-            contexts: empty_contexts(),
+            names: NameOrigins::new(),
+            contexts: ContextList::new(),
             tokens: empty_tokens(),
-            dispositions: empty_dispositions(),
+            dispositions: DispositionList::new(),
         }
     }
 }
@@ -257,20 +379,49 @@ pub(crate) struct ArenaOrigins {
     pub slots: Arc<OriginSlots>,
     pub dispositions: Arc<Vec<SourceDisposition>>,
 }
+/// One lexed token as seen by origin seeding: a byte position, its end,
+/// and a spelling comparison. Fresh-lexed borrowed tokens carry the spelling
+/// directly; the parser's own tokens slice it from the source text on demand,
+/// so seeding never needs an intermediate borrowed-token vector. The
+/// comparison returns `None` when the spelling cannot be recovered from
+/// `text` (a parser token outside its source); borrowed tokens always
+/// return `Some`.
+pub(crate) trait SeedToken {
+    fn position(&self) -> usize;
+    fn end(&self) -> usize;
+    fn spelling_is(&self, text: &str, expected: &str) -> Option<bool>;
+}
+
+impl SeedToken for crate::lexer::BorrowedToken<'_> {
+    fn position(&self) -> usize {
+        self.p
+    }
+    fn end(&self) -> usize {
+        self.p + self.v.len()
+    }
+    fn spelling_is(&self, _text: &str, expected: &str) -> Option<bool> {
+        Some(self.v == expected)
+    }
+}
+
 impl ArenaOrigins {
-    pub fn seed(
+    /// Seed from an already-lexed token stream. The parser lexes the source
+    /// once while parsing; reusing its tokens here avoids a second lex pass
+    /// for the same text. Token spellings and positions are identical to a
+    /// fresh lex, so seeded origins are unchanged. Callers may pass either
+    /// fresh-lexed borrowed tokens or the parser's own tokens directly, so
+    /// the origin path needs no intermediate borrowed-token vector.
+    pub(crate) fn seed_with_tokens<T: SeedToken>(
         ast: &Ast,
         positions: &NodePositions,
         name: &str,
         text: &str,
+        tokens: &[T],
     ) -> Result<Self, String> {
         let sources = Arc::new(vec![SourceSnapshot {
             name: name.into(),
             text: text.into(),
         }]);
-        let tokens = crate::lexer::Lexer::new(text)
-            .all_borrowed()
-            .map_err(|e| e.to_string())?;
         let mut slots = Vec::with_capacity(ast.nodes.len());
         for (id, node) in ast.nodes.iter().enumerate() {
             let (start, end) = positions
@@ -305,10 +456,14 @@ impl ArenaOrigins {
                     continue;
                 };
                 let token = match site {
-                    SyntaxSite::Begin => tokens.get(tokens.partition_point(|t| t.p < start)),
-                    SyntaxSite::End => {
-                        tokens.get(tokens.partition_point(|t| t.p < end).saturating_sub(1))
+                    SyntaxSite::Begin => {
+                        tokens.get(tokens.partition_point(|t| t.position() < start))
                     }
+                    SyntaxSite::End => tokens.get(
+                        tokens
+                            .partition_point(|t| t.position() < end)
+                            .saturating_sub(1),
+                    ),
                     SyntaxSite::Body => {
                         let next = match node {
                             Node::While(_, body)
@@ -321,7 +476,9 @@ impl ArenaOrigins {
                         .and_then(|id| positions.span(id))
                         .map(|span| span.0);
                         next.and_then(|start| {
-                            tokens.partition_point(|t| t.p < start).checked_sub(1)
+                            tokens
+                                .partition_point(|t| t.position() < start)
+                                .checked_sub(1)
                         })
                         .and_then(|i| tokens.get(i))
                     }
@@ -331,19 +488,21 @@ impl ArenaOrigins {
                         } else {
                             start
                         };
-                        tokens.get(tokens.partition_point(|t| t.p < offset))
+                        tokens.get(tokens.partition_point(|t| t.position() < offset))
                     }
                 };
-                if let Some(token) =
-                    token.filter(|t| t.v == expected && t.p >= start && t.p + t.v.len() <= end)
-                {
+                let Some(token) = token else { continue };
+                let matches = token
+                    .spelling_is(text, expected)
+                    .ok_or("parser token is outside its source")?;
+                if matches && token.position() >= start && token.end() <= end {
                     syntax_tokens.push((
                         site,
                         Origin::source(
                             SourceSpan {
                                 source: 0,
-                                start: token.p,
-                                end: token.p + token.v.len(),
+                                start: token.position(),
+                                end: token.end(),
                             },
                             OriginPrecision::Token,
                             None,
@@ -365,14 +524,14 @@ impl ArenaOrigins {
                     )
                     .into(),
                 ),
-                names: empty_names(),
-                contexts: empty_contexts(),
+                names: NameOrigins::new(),
+                contexts: ContextList::new(),
                 tokens: if syntax_tokens.is_empty() {
                     empty_tokens()
                 } else {
                     Arc::new(syntax_tokens)
                 },
-                dispositions: empty_dispositions(),
+                dispositions: DispositionList::new(),
             })));
         }
         for ((node, site), (start, end)) in positions.name_spans() {
@@ -383,7 +542,7 @@ impl ArenaOrigins {
                 .get_mut(node as usize)
                 .and_then(Option::as_mut)
                 .ok_or("name refers to an unknown parsed node")?;
-            Arc::make_mut(&mut Arc::make_mut(slot).names).push((
+            Arc::make_mut(slot).names.push((
                 site,
                 Origin::source(
                     SourceSpan {
@@ -441,9 +600,11 @@ impl ArenaOrigins {
                     return Err("optimization reason has empty code".into());
                 }
             }
-            let mut sites = BTreeSet::new();
-            for (site, origin) in slot.names.iter() {
-                if !sites.insert(*site) {
+            // Name lists are almost always tiny, so a linear duplicate scan
+            // avoids one BTreeSet allocation per named slot while reporting
+            // exactly the same duplicates.
+            for (index, (site, origin)) in slot.names.iter().enumerate() {
+                if slot.names[..index].iter().any(|(other, _)| other == site) {
                     return Err("duplicate name occurrence in origin table".into());
                 }
                 origin.get().validate(&self.sources)?;
@@ -508,13 +669,51 @@ impl GeneratedOrigins {
         Self::from_arena(arena, printed)
     }
     fn from_arena(arena: &ArenaOrigins, printed: &PrintedSource) -> Option<Self> {
-        let mut events = Vec::with_capacity(printed.emissions.len() * 2);
+        // Start and end events are merged below. End events stay
+        // comparison-sorted (their input order is already nearly sorted,
+        // so that sort is cheap). Start events are ordered by a radix
+        // sort over 8-bit offset digits instead: merge decisions only
+        // compare offsets -- at equal offsets an end event always
+        // precedes a start event, and same-offset starts commute
+        // because the active set is order-independent -- so sorting
+        // start indices by offset is enough, and a linear radix pass
+        // beats a comparison sort on the thousands of inversions in
+        // start order. The radix sort is stable, so equal offsets keep
+        // emission order.
+        let mut ends = Vec::with_capacity(printed.emissions.len());
         for (index, emission) in printed.emissions.iter().enumerate() {
             assert!(emission.start < emission.end && emission.end <= printed.code.len());
-            events.push((emission.start, true, index));
-            events.push((emission.end, false, index));
+            ends.push((emission.end, false, index));
         }
-        events.sort_unstable();
+        let mut start_order: Vec<usize> = (0..printed.emissions.len()).collect();
+        let mut start_buf = vec![0usize; printed.emissions.len()];
+        let max_start = printed.emissions.iter().map(|e| e.start).max().unwrap_or(0);
+        let mut shift = 0;
+        while (max_start >> shift) != 0 {
+            let mut counts = vec![0usize; 1 << 8];
+            for &index in &start_order {
+                counts[(printed.emissions[index].start >> shift) & 0xFF] += 1;
+            }
+            let mut sum = 0usize;
+            for count in counts.iter_mut() {
+                let next = *count;
+                *count = sum;
+                sum += next;
+            }
+            for &index in &start_order {
+                let digit = (printed.emissions[index].start >> shift) & 0xFF;
+                start_buf[counts[digit]] = index;
+                counts[digit] += 1;
+            }
+            std::mem::swap(&mut start_order, &mut start_buf);
+            shift += 8;
+        }
+        // The merge below walks start_order directly instead of
+        // materializing a second starts vector of tuples: a start event
+        // is fully described by its emission index, and at equal offsets
+        // an end event precedes a start event, which the strict
+        // start-offset < end-offset comparison below encodes.
+        ends.sort_unstable();
         // More specific ranges win; name sites win ties; children are emitted before parents.
         let key = |index: usize| {
             let emission = &printed.emissions[index];
@@ -524,8 +723,12 @@ impl GeneratedOrigins {
                 index,
             )
         };
-        let mut active = BTreeSet::<(usize, bool, usize)>::new();
-        let mut active_contexts = BTreeSet::<(usize, bool, usize)>::new();
+        // Active ranges are keyed by (span length, name-site tiebreak, emission
+        // index), so keys are unique and the set stays tiny (nesting depth).
+        // A sorted Vec gives the same first()/insert/remove order as the previous
+        // BTreeSet without a heap allocation per overlapping range.
+        let mut active = Vec::<(usize, bool, usize)>::new();
+        let mut active_contexts = Vec::<(usize, bool, usize)>::new();
         let mut result = Self {
             sources: Arc::clone(&arena.sources),
             origins: Vec::new(),
@@ -534,15 +737,58 @@ impl GeneratedOrigins {
             constructs: Vec::new(),
             dispositions: Arc::clone(&arena.dispositions),
         };
-        let mut interned = HashMap::new();
-        let mut context_ids = HashMap::<InlineContext, u32>::new();
+        // Each gap adds at most one mapping and one interned origin, and each
+        // construct emission adds at most one construct, so reserving for the
+        // emission count avoids repeated table/vector growth (and rehashing)
+        // while resolving. The bounds are capacity hints only; growth past
+        // them still works, and the resolved values are unchanged.
+        let mut interned = OriginInterner::default();
+        interned.reserve(printed.emissions.len());
+        result.origins.reserve(printed.emissions.len());
+        result.mappings.reserve(printed.emissions.len());
+        result.constructs.reserve(printed.emissions.len());
+        let mut context_ids = FastMap::<InlineContext, u32>::default();
+        // Interning dominates resolving: every gap clones and hashes its
+        // origin, and a construct's plain main origin was usually already
+        // interned as some gap's winner, so both are memoized below.
+        // A gap winner is identified by its emission index: the selected
+        // stored origin for an emission is fixed by its node and site,
+        // and arena slots are immutable while resolving, so a recorded
+        // id is exactly what interning that winner again would return.
+        // The memo is used only for reason-free gaps (a reason would
+        // derive a fresh origin). On dense-normal this skips interning
+        // for 1,920 of 9,284 gaps, while the previous single-entry
+        // last-winner cache never hit there because the winner changes
+        // at nearly every gap.
+        let mut winner_ids: Vec<Option<u32>> = vec![None; printed.emissions.len()];
+        let mut main_origin_ids: Vec<Option<u32>> = vec![None; arena.slots.len()];
         let mut cursor = 0;
-        for (offset, start, index) in events {
+        let (mut start_cursor, mut end_cursor) = (0, 0);
+        while start_cursor < start_order.len() || end_cursor < ends.len() {
+            // End events precede start events at the same offset, which
+            // the strict comparison below encodes (equal offsets take
+            // the end event). Start events are already in radix order.
+            let take_start = if end_cursor >= ends.len() {
+                true
+            } else if start_cursor >= start_order.len() {
+                false
+            } else {
+                printed.emissions[start_order[start_cursor]].start < ends[end_cursor].0
+            };
+            let (offset, start, index) = if take_start {
+                let index = start_order[start_cursor];
+                start_cursor += 1;
+                (printed.emissions[index].start, true, index)
+            } else {
+                let event = ends[end_cursor];
+                end_cursor += 1;
+                event
+            };
             if cursor < offset {
-                let emission = active
-                    .first()
-                    .map(|&(_, _, index)| &printed.emissions[index]);
-                let origin = emission.and_then(|emission| {
+                let winner = active.first().copied();
+                let emission = winner.map(|(_, _, index)| &printed.emissions[index]);
+                let winner_index = winner.map(|(_, _, index)| index);
+                let selected = emission.and_then(|emission| {
                     let slot = arena.slots[emission.node as usize].as_ref()?;
                     emission
                         .token
@@ -550,7 +796,7 @@ impl GeneratedOrigins {
                             slot.tokens
                                 .iter()
                                 .find(|(key, _)| *key == site)
-                                .map(|(_, o)| o.get())
+                                .map(|(_, o)| (o, false))
                         })
                         .or_else(|| {
                             emission
@@ -559,11 +805,12 @@ impl GeneratedOrigins {
                                     slot.names
                                         .iter()
                                         .find(|(key, _)| *key == site)
-                                        .map(|(_, value)| value.get())
+                                        .map(|(_, value)| (value, false))
                                 })
-                                .or_else(|| slot.origin.as_ref().map(StoredOrigin::get))
+                                .or_else(|| slot.origin.as_ref().map(|o| (o, true)))
                         })
                 });
+                let origin = selected.map(|(stored, _)| stored.get());
                 let printed_origin = origin.zip(emission).and_then(|(origin, e)| {
                     e.reason.as_ref().map(|reason| {
                         let mut changed = origin.clone();
@@ -607,7 +854,42 @@ impl GeneratedOrigins {
                         }
                     }
                 }
-                result.append_detail(cursor, offset, origin, copied, contexts, &mut interned);
+                // Reuse the id recorded when this winner emission won an
+                // earlier gap; the id for an unchanged origin value is
+                // exactly what interning would return.
+                let has_reason = emission.is_some_and(|e| e.reason.is_some());
+                let cached = if has_reason {
+                    None
+                } else {
+                    winner_index.and_then(|index| winner_ids.get(index).copied().flatten())
+                };
+                let id = if let Some(id) = cached {
+                    result.append_with_id(cursor, offset, Some(id), copied, contexts);
+                    Some(id)
+                } else {
+                    result.append_detail_hashed(
+                        cursor,
+                        offset,
+                        origin,
+                        copied,
+                        contexts,
+                        &mut interned,
+                    )
+                };
+                if !has_reason {
+                    if let (Some((_, is_main)), Some(id)) = (selected, id) {
+                        if let Some(index) = winner_index {
+                            winner_ids[index] = Some(id);
+                        }
+                        if is_main {
+                            if let Some(winner) = emission {
+                                if let Some(slot) = main_origin_ids.get_mut(winner.node as usize) {
+                                    *slot = Some(id);
+                                }
+                            }
+                        }
+                    }
+                }
                 cursor = offset;
             }
             let event_key = key(index);
@@ -615,25 +897,36 @@ impl GeneratedOrigins {
                 .as_ref()
                 .is_some_and(|slot| !slot.contexts.is_empty());
             if start {
-                active.insert(event_key);
+                if let Err(position) = active.binary_search(&event_key) {
+                    active.insert(position, event_key);
+                }
                 if carries_context {
-                    active_contexts.insert(event_key);
+                    if let Err(position) = active_contexts.binary_search(&event_key) {
+                        active_contexts.insert(position, event_key);
+                    }
                 }
             } else {
-                active.remove(&event_key);
+                if let Ok(position) = active.binary_search(&event_key) {
+                    active.remove(position);
+                }
                 if carries_context {
-                    active_contexts.remove(&event_key);
+                    if let Ok(position) = active_contexts.binary_search(&event_key) {
+                        active_contexts.remove(position);
+                    }
                 }
             }
         }
         if cursor < printed.code.len() {
-            result.append(cursor, printed.code.len(), None, &mut interned);
+            result.append_with_id(cursor, printed.code.len(), None, None, Vec::new());
         }
         // Include the selected root even when every statement was eliminated.
         // Dead speculative arena slots are deliberately not inspected.
-        let mut disposition_nodes = std::collections::HashSet::new();
+        // Emission and root node ids index the same arena, so a bitset
+        // dedupes dispositions without hashing every node id.
+        let mut disposition_nodes = vec![false; arena.slots.len()];
         for node in std::iter::once(printed.root).chain(printed.emissions.iter().map(|e| e.node)) {
-            if disposition_nodes.insert(node) {
+            if !disposition_nodes[node as usize] {
+                disposition_nodes[node as usize] = true;
                 if let Some(slot) = arena.slots[node as usize].as_ref() {
                     if !slot.dispositions.is_empty() {
                         Arc::make_mut(&mut result.dispositions)
@@ -663,13 +956,18 @@ impl GeneratedOrigins {
                 })
             });
             let origin = printed_origin.as_ref().or(origin);
-            let id = origin.map(|origin| {
-                *interned.entry(origin.clone()).or_insert_with(|| {
-                    let id = result.origins.len() as u32;
-                    result.origins.push(origin.clone());
-                    id
-                })
-            });
+            let id = if emission.reason.is_none() && origin.is_some() {
+                match main_origin_ids
+                    .get(emission.node as usize)
+                    .copied()
+                    .flatten()
+                {
+                    Some(id) => Some(id),
+                    None => origin.map(|o| result.intern_hashed(o, &mut interned)),
+                }
+            } else {
+                origin.map(|o| result.intern_hashed(o, &mut interned))
+            };
             result.constructs.push(GeneratedConstruct {
                 start: emission.start,
                 end: emission.end,
@@ -678,33 +976,69 @@ impl GeneratedOrigins {
         }
         Some(result)
     }
-    fn append(
+    #[cfg(test)]
+    fn append<S: std::hash::BuildHasher>(
         &mut self,
         start: usize,
         end: usize,
         origin: Option<&Origin>,
-        interned: &mut HashMap<Origin, u32>,
+        interned: &mut HashMap<Origin, u32, S>,
     ) {
         self.append_detail(start, end, origin, None, Vec::new(), interned);
     }
-    fn append_detail(
+    fn intern_hashed(&mut self, origin: &Origin, table: &mut OriginInterner) -> u32 {
+        table.intern(&mut self.origins, origin)
+    }
+
+    fn append_detail_hashed(
         &mut self,
         start: usize,
         end: usize,
         origin: Option<&Origin>,
         copied: Option<SourceSpan>,
         contexts: Vec<u32>,
-        interned: &mut HashMap<Origin, u32>,
-    ) {
+        table: &mut OriginInterner,
+    ) -> Option<u32> {
+        let id = match origin {
+            Some(origin) => Some(table.intern(&mut self.origins, origin)),
+            None => None,
+        };
+        self.append_with_id(start, end, id, copied, contexts);
+        id
+    }
+
+    #[cfg(test)]
+    fn append_detail<S: std::hash::BuildHasher>(
+        &mut self,
+        start: usize,
+        end: usize,
+        origin: Option<&Origin>,
+        copied: Option<SourceSpan>,
+        contexts: Vec<u32>,
+        interned: &mut HashMap<Origin, u32, S>,
+    ) -> Option<u32> {
+        // One hash per origin: entry() hashes once, while get()+insert()
+        // hashed every miss twice. The cloned entry key is dropped on a hit;
+        // ids are still assigned in first-appearance order, so resolved
+        // origins, mappings and constructs are identical.
         let id = origin.map(|origin| {
-            if let Some(&id) = interned.get(origin) {
-                return id;
-            }
-            let id = self.origins.len() as u32;
-            self.origins.push(origin.clone());
-            interned.insert(origin.clone(), id);
-            id
+            *interned.entry(origin.clone()).or_insert_with(|| {
+                let id = self.origins.len() as u32;
+                self.origins.push(origin.clone());
+                id
+            })
         });
+        self.append_with_id(start, end, id, copied, contexts);
+        id
+    }
+    fn append_with_id(
+        &mut self,
+        start: usize,
+        end: usize,
+        id: Option<u32>,
+        copied: Option<SourceSpan>,
+        contexts: Vec<u32>,
+    ) {
         if let Some(previous) = self.mappings.last_mut().filter(|previous| {
             previous.end == start
                 && previous.origin == id
@@ -782,11 +1116,22 @@ pub struct CopiedToken {
     pub source_start: usize,
     pub source_end: usize,
     pub is_name: bool,
+    /// True when the generated spelling differs from the source spelling
+    /// (a renamed local identifier). Only renamed tokens may have a
+    /// generated length different from their source length.
+    #[serde(default)]
+    pub renamed: bool,
+    /// Generated-side end offset. Equal to `start + (source_end -
+    /// source_start)` for unrenamed tokens; for a renamed identifier
+    /// token it is `start + new_name.len()`, which may differ from the
+    /// source length. The origin name stays the original spelling
+    /// (from `source_text[source_start..source_end]`).
+    pub generated_end: usize,
 }
 impl CopiedToken {
     #[inline]
     pub fn end(&self) -> usize {
-        self.start + (self.source_end - self.source_start)
+        self.generated_end
     }
 }
 
@@ -817,15 +1162,13 @@ impl LexicalCopiedOrigins {
         let mut generated_end = 0;
         let mut source_end = 0;
         for token in &self.tokens {
-            let length = token
-                .source_end
-                .checked_sub(token.source_start)
-                .filter(|&length| length > 0)
-                .ok_or("invalid compact lexical source range")?;
-            let end = token
-                .start
-                .checked_add(length)
-                .ok_or("invalid compact lexical generated range")?;
+            if token.source_end <= token.source_start {
+                return Err("invalid compact lexical source range".into());
+            }
+            if token.generated_end <= token.start {
+                return Err("invalid compact lexical generated range".into());
+            }
+            let end = token.generated_end;
             if token.start < generated_end || token.source_start < source_end {
                 return Err("unordered compact lexical token ranges".into());
             }
@@ -833,7 +1176,17 @@ impl LexicalCopiedOrigins {
                 .source_text
                 .get(token.source_start..token.source_end)
                 .ok_or("invalid compact lexical source boundary")?;
-            if code.get(token.start..end) != Some(original) {
+            if token.renamed {
+                // Renamed token: only bounds / UTF-8 boundaries are
+                // checked here; the spelling is established by the
+                // rename step's re-lex verification and the FULL
+                // corpus comparison.
+                if code.get(token.start..end).is_none() {
+                    return Err("compact lexical token does not match generated code".into());
+                }
+            } else if code.get(token.start..end) != Some(original) {
+                // Unrenamed token: the generated piece must be the
+                // original spelling.
                 return Err("compact lexical token does not match generated code".into());
             }
             generated_end = end;
@@ -919,11 +1272,15 @@ impl GeneratedOrigins {
                 start: token.start,
                 end: token.end(),
                 origin: Some(id),
-                copied: Some(SourceSpan {
-                    source: 0,
-                    start: token.source_start,
-                    end: token.source_end,
-                }),
+                copied: if token.renamed {
+                    None
+                } else {
+                    Some(SourceSpan {
+                        source: 0,
+                        start: token.source_start,
+                        end: token.source_end,
+                    })
+                },
                 inline_contexts: Vec::new(),
             });
             cursor = token.end();
@@ -1082,10 +1439,10 @@ mod tests {
         trial.nodes[id as usize] = Node::Num("2".into());
         assert!(base.nodes.origin(id).is_some());
         let checkpoint = trial.nodes.len();
-        let temporary = trial.num("3".into());
+        let temporary = trial.num("3");
         trial.nodes.mark_synthetic(temporary, "test-helper");
         trial.nodes.truncate(checkpoint);
-        let reused = trial.num("4".into());
+        let reused = trial.num("4");
         assert_eq!(temporary, reused);
         assert_eq!(trial.nodes.origin(reused), None);
         trial.nodes = base.nodes.clone();
@@ -1096,7 +1453,7 @@ mod tests {
     fn an_empty_inherited_arena_does_not_inherit_origin_by_node_number() {
         let (source, _) = tracked("return 1");
         let mut target = crate::ast_utils::inherit_ast(&source);
-        let node = target.num("99".into());
+        let node = target.num("99");
         assert!(target.nodes.tracks_origins());
         assert_eq!(node, 0);
         assert!(source.nodes.origin(0).is_some());
@@ -1142,7 +1499,7 @@ mod tests {
         let (source, _) = parse_source_with_origins("same.lua", "local first=1").unwrap();
         let (mut target, _) = parse_source_with_origins("same.lua", "local other=2").unwrap();
         let from = locate(&source, |node| matches!(node, Node::Num(_)));
-        let to = target.num("1".into());
+        let to = target.num("1");
         target
             .nodes
             .derive_from(to, &source.nodes, from, "explicit-copy");
@@ -1190,6 +1547,60 @@ mod tests {
         let mut damaged = value;
         damaged["origins"]["slots"][0]["origin"]["primary"]["source"] = 123.into();
         assert!(serde_json::from_value::<Ast>(damaged).is_err());
+    }
+
+    #[test]
+    fn names_serialize_as_a_json_array_after_the_vec_representation_change() {
+        let (ast, _) = tracked("local x=1 return x");
+        let value = serde_json::to_value(&ast).unwrap();
+        let slots = value["origins"]["slots"].as_array().unwrap();
+        let named = slots
+            .iter()
+            .find(|slot| {
+                slot["names"]
+                    .as_array()
+                    .is_some_and(|names| !names.is_empty())
+            })
+            .expect("seeded name entry");
+        assert!(named["names"].is_array());
+        let restored: Ast = serde_json::from_value(value).unwrap();
+        assert!(restored == ast);
+    }
+
+    #[test]
+    fn name_origins_keep_inline_and_spilled_entries_equal_through_clone() {
+        // Two entries must stay inline (no heap buffer), a third spills;
+        // both shapes clone and serialize to the same JSON array entries.
+        let entry = |site: NameSite| {
+            (
+                site,
+                Origin::source(
+                    SourceSpan {
+                        source: 0,
+                        start: 0,
+                        end: 1,
+                    },
+                    OriginPrecision::Name,
+                    Some("x".into()),
+                )
+                .into(),
+            )
+        };
+        let mut inline: NameOrigins = NameOrigins::new();
+        inline.push(entry(NameSite::Reference));
+        inline.push(entry(NameSite::Binding(0)));
+        assert!(!inline.spilled());
+        assert_eq!(inline.clone(), inline);
+        let mut spilled = inline.clone();
+        spilled.push(entry(NameSite::Binding(1)));
+        assert!(spilled.spilled());
+        assert_eq!(spilled.len(), 3);
+        assert_eq!(spilled.clone(), spilled);
+        let value = serde_json::to_value(&spilled).unwrap();
+        assert!(value.is_array());
+        assert_eq!(value.as_array().unwrap().len(), 3);
+        let restored: NameOrigins = serde_json::from_value(value).unwrap();
+        assert_eq!(restored, spilled);
     }
 
     #[test]
@@ -1339,21 +1750,19 @@ struct PendingOriginInput {
 }
 impl DeferredGeneratedOrigins {
     /// Keep only slots actually referenced by this immutable final print.
+    /// Fully referenced pages are shared with the original arena instead of
+    /// cloning every slot: resolution only ever looks up slots of printed
+    /// nodes (see from_arena), so the resolved origins are unchanged,
+    /// while the per-slot clone cost of the old flat copy disappears.
     pub fn from_print(ast: &Ast, printed: PrintedSource) -> Option<Self> {
         let original = ast.nodes.provenance()?;
-        let len = std::iter::once(printed.root)
-            .chain(printed.emissions.iter().map(|e| e.node))
-            .max()
-            .map_or(0, |id| id as usize + 1);
-        let mut slots = vec![None; len];
+        let mut referenced = vec![false; original.slots.len()];
         for id in std::iter::once(printed.root).chain(printed.emissions.iter().map(|e| e.node)) {
-            if slots[id as usize].is_none() {
-                slots[id as usize] = original.slots[id as usize].clone();
-            }
+            referenced[id as usize] = true;
         }
         let arena = ArenaOrigins {
             sources: Arc::clone(&original.sources),
-            slots: Arc::new(OriginSlots::from(slots)),
+            slots: Arc::new(original.slots.select(&referenced)),
             dispositions: Arc::clone(&original.dispositions),
         };
         Some(Self {
@@ -1543,6 +1952,8 @@ mod unique_lexical_origin_tests {
                     source_start: t.p,
                     source_end: t.p + t.v.len(),
                     is_name: t.k == crate::lexer::TokenKind::Id,
+                    renamed: false,
+                    generated_end: t.p + t.v.len(),
                 })
                 .collect::<Vec<_>>();
             let previous =

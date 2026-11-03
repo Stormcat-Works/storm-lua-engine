@@ -143,7 +143,7 @@ fn rewrite(
                     return argument;
                 }
             }
-            let new_node = Node::Call(new_fn, new_args, method.clone());
+            let new_node = Node::Call(new_fn, new_args, *method);
             new_ast
                 .nodes
                 .rewrite(id, new_node, "integer-loop-call-folding");

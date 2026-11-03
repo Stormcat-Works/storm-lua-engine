@@ -4,7 +4,7 @@
   "host": {
     "os": "Linux",
     "machine": "x86_64",
-    "cpuModel": "13th Gen Intel(R) Core(TM) i5-13400F"
+    "cpuModel": "開発ホストのCPU"
   },
   "toolchain": {
     "rust": "1.97.1",

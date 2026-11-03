@@ -31,6 +31,11 @@ def validate_architecture(metadata, policy):
                 edges[name].add(target)
             elif target not in policy[name]["external"] or dep.get("path"):
                 raise ValueError(f"forbidden external dependency: {name} -> {target}")
+            allowed_features = policy[name].get("features", {}).get(target, [])
+            unregistered = sorted(set(dep.get("features") or []) - set(allowed_features))
+            if unregistered:
+                raise ValueError(
+                    f"unregistered feature activation: {name} -> {target}: {unregistered}")
     active, done = set(), set()
     def visit(name):
         if name in active: raise ValueError("dependency cycle, including dev edges")
@@ -46,6 +51,37 @@ def files(root):
         if path.name in IGNORED or path.name.startswith("local-") or path.is_symlink(): continue
         if path.is_dir(): yield from files(path)
         else: yield path
+
+def validate_target_graphs(policy):
+    # 対象ターゲット向けの解決済みグラフに、登録された推移的禁止
+    # パッケージ（lua-src 等の C ビルド依存）が到達していないことを
+    # 検査する。直接宣言しか見ない validate_architecture の補完。
+    checked = 0
+    for name, entry in policy.items():
+        graph = entry.get("target_graph")
+        if not graph:
+            continue
+        # --offline は付けない: 対象ターゲット向けの解決には、その
+        # ターゲットで初めて現れるクレートのマニフェストが要ることが
+        # あり、CI のようにキャッシュが冷たい環境では取得できないと
+        # 検査自体が成立しない（--locked で解決結果は固定される）。
+        try:
+            output = subprocess.check_output(
+                ["cargo", "tree", "-p", name, "--target", graph["target"],
+                 "--edges", "normal,build", "--prefix", "none",
+                 "--locked"],
+                cwd=ROOT, text=True, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as error:
+            raise ValueError(
+                f"target graph resolution failed for {name} "
+                f"({graph['target']}): {error.output.strip()}") from error
+        present = {line.split(" ", 1)[0] for line in output.splitlines() if line.strip()}
+        hits = sorted(present & set(graph["forbidden_transitive"]))
+        if hits:
+            raise ValueError(
+                f"forbidden transitive dependency for {graph['target']}: {name} reaches {hits}")
+        checked += 1
+    return checked
 
 def validate_docs():
     # プライベートなアプリケーション名はパブリックアーキテクチャの依存関係ではありません。
@@ -76,11 +112,12 @@ def main():
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version=1", "--locked", "--offline"], cwd=ROOT))
     policy = json.loads((ROOT / "tools/architecture.json").read_text())
     packages = validate_architecture(metadata, policy)
+    graphs = validate_target_graphs(policy)
     count = validate_docs()
     from check_screen_fixtures import verify
     cases = verify()
     validate_notices()
-    print(f"architecture: {len(packages)} classified crates, dependency ownership/DAG passed; {count} public Markdown files checked; {cases} accepted RGBA cases verified")
+    print(f"architecture: {len(packages)} classified crates, dependency ownership/DAG passed; {graphs} target graphs pure; {count} public Markdown files checked; {cases} accepted RGBA cases verified")
 
 if __name__ == "__main__":
     main()

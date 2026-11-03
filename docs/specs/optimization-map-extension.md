@@ -1,6 +1,6 @@
-# 最適化説明付きSource Map — x_storm schema 1
+# 最適化説明付きSource Map — x_storm schema 2
 
-対象: v0.3.0。最適化器の詳細由来を正本に、標準Source Map v3と本拡張を一つのJSONとして返す。Source Map本体の`version`は3であり、`x_storm.schemaVersion`、`producer.version`とは独立である。[採用方針](../design/optimization-explanation-schema.md)。
+対象: v0.4.0（schema 2）。schema 1 は互換断絶により読まない。最適化器の詳細由来を正本に、標準Source Map v3と本拡張を一つのJSONとして返す。Source Map本体の`version`は3であり、`x_storm.schemaVersion`、`producer.version`とは独立である。[採用方針](../design/optimization-explanation-schema.md)。
 
 ## 公開API
 
@@ -16,7 +16,7 @@
 
 | フィールド | 契約 |
 | --- | --- |
-| schemaVersion | 本拡張の形式版。現在は1。未知の版は拒否 |
+| schemaVersion | 本拡張の形式版。現在は2。1 を含む未知の版は拒否 |
 | producer | name=storm-lua-engine、生成したCargo版、Git revision、dirty状態。Git情報がない配布ソースではrevision=unknown/dirty=nullを明示 |
 | coordinateUnit | 拡張内の位置はutf8-bytes。標準mappingsの列はUTF-16 |
 | generated | 生成Luaの正確なUTF-8バイト長とSHA-256 |
@@ -31,7 +31,26 @@
 | dispositions | 採用候補から明示的に外された元構文、置換記録と理由 |
 | integrity | integrity自身を空文字列にしたcanonical JSON全体のSHA-256 |
 
-Rustの公開構造とvalidatorが実装契約で、TypeScriptの型は`optimization-map-types.ts`に置く。unknownな追加フィールドの扱いは標準mapと拡張で異なる。標準の未知プロパティは通常readerが無視できるが、schema1の構造化x_stormには不正・未対応のフィールドやenumを黙って受理しない。
+Rustの公開構造とvalidatorが実装契約で、TypeScriptの型は`optimization-map-types.ts`に置く。unknownな追加フィールドの扱いは標準mapと拡張で異なる。標準の未知プロパティは通常readerが無視できるが、schema2の構造化x_stormには不正・未対応のフィールドやenumを黙って受理しない。
+
+## schema 2 のトークン表（字句形 map と混在形）
+
+字句形の map（reasons／relations／contexts／constructs／dispositions がすべて空で、全 origin が source・name／token 精度・transformation なし・related／reasons 空、かつ全既知 mapping の copied == origin.primary を満たすもの）は、mappings と origins を空配列とし、代わりに次の2フィールドでトークン列を出す。source は複数でもよい（後述のレコード形式が source 数で切り替わる）。
+
+| フィールド | 契約 |
+| --- | --- |
+| tokenNames | 初出順の名前綴りプール（JSON 文字列配列）。非名前トークンは含まない |
+| tokens | トークンごとの配列レコード。単一 source では `[generatedStart, sourceStart, sourceEnd, nameId]`、nameId は tokenNames への index、非名前トークンは -1。generatedEnd は generatedStart + (sourceEnd - sourceStart) から復元する |
+
+リネームされたトークン（origin が元の綴りを primary に名指しするが生成側の長さが異なるもの）は、末尾に generatedEnd を追加したレコードで表す（単一 source では5要素）。複数 source の map ではレコードの第2要素に source index を挿入する（完全 copy が5要素 `[generatedStart, source, sourceStart, sourceEnd, nameId]`、リネームが6要素）。レイアウトは source 数だけで決まるため、単一 source の既存レコードの意味は変わらず、複数 source のトークン表は単一 source 前提の旧読手では「単一 source でない」として棄却される（fail-closed）。schemaVersion は 2 のまま据え置く（schema 2 は未リリースであり、書手・読手・型・本仕様を同時に更新する）。
+
+トークン間の未知ギャップ（および先頭・末尾の余白）はワイヤから省き、読手の展開時に字句 copy と同じ cursor 走査で未知 mapping として復元する。展開時の検査：トークンの生成順・非重複・範囲内・名前綴りと原文 slice の一致・source index の範囲内。simple_copy 経路ではさらに「全 origin が1件以上の mapping から参照されていること」「初出順が origin 順と一致すること」「(source, primary, 名前, 精度) が一意であること」「mapping が生成コード全体を連続して覆うこと」を満たす場合に限りトークン表を使い、満たさない場合は schemaVersion 2 のまま従来レイアウトで出す。トークン表を持たない字句形（トークン0件など）も従来レイアウトで出す。
+
+### 混在形（トークン表＋残余 origins）
+
+origin の大半が上記の単純形で、非単純な origin（synthetic／derived、変換や理由を持つもの等）が少数混ざる map は、混在形で出すことができる。条件：contexts／constructs／dispositions が空、mapping が生成コード全体を連続して覆う、非単純（残余）origin が256件以下かつ単純 origin の件数以下、単純部分が純粋形と同じ一意性・初出順・名前 slice 条件を満たす。ワイヤでは tokens／tokenNames が単純部分を、origins／mappings が残余部分だけを（origin 参照は残余配列への index に振り直して）担い、reasons／relations プールは共有のまま残る。読手はトークン表を展開し、残余 mapping が展開の未知ギャップの内部に完全に収まり互いに重ならないことを検査したうえで、ギャップを分割して残余 mapping を差し込む。最終 origin 列は「展開された単純 origin＋残余 origin」で、残余 mapping の origin 参照には単純 origin 件数のオフセットが付く。ギャップを跨ぐ・トークン区間と重なる残余 mapping は棄却する（検査の追加であり緩和ではない）。linker の compose は、変換後も単純形を保つ mapping については origin を mapping 部品ごとに複製せず単一のまま保持する（部分保存）ため、テンプレート由来の非単純 origin が混ざる lifeboat の map でも単純部分が混在形に届く。条件を満たさない一般形の map では tokenNames と tokens を空配列で出す。
+
+integrity の計算方法は不変（integrity 自身を空文字列にした canonical JSON 全体の SHA-256）。digest 照合はワイヤ形のまま行い、照合後に tokens を mappings＋origins へ展開して返す。展開後の mappings／origins は schema 1 の字句形と同一になるため、TS 側を含む既存消費者の mappings／origins に関する契約は変わらない。返される構造体は正規化済みの実体化形であり、tokens／tokenNames は消費済みとして空になる（返却値を再エンコードすると従来レイアウトになり、再検証で同一の詳細に展開される）。canonical writer のキー順は辞書順を維持し、新キーは sources の後、tokenNames → tokens の順に置く。
 
 ## 位置・copy・文脈
 

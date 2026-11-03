@@ -63,6 +63,9 @@ pub trait SizeNameResolver {
 struct SizeCtx<'a, 'n> {
     ast: &'a Ast,
     names: Option<&'n dyn SizeNameResolver>,
+    /// `measure_size_with_empty_if_check` 用: 空の arms を持つ if 文を
+    /// 走査中に見つけたら立つ（他の計測では常に false のまま）。
+    empty_if: std::cell::Cell<bool>,
 }
 
 impl<'a, 'n> SizeCtx<'a, 'n> {
@@ -371,7 +374,12 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
                     && matches!(self.ast.node(args[0]), Node::Str(_) | Node::Table(_))
                 {
                     return if let Some(m) = method {
-                        self.concat_segs(&[fn_s, self.seg_of(":"), self.seg_of(m), j])
+                        self.concat_segs(&[
+                            fn_s,
+                            self.seg_of(":"),
+                            self.seg_of(self.ast.strings.get(*m)),
+                            j,
+                        ])
                     } else {
                         self.concat_segs(&[fn_s, j])
                     };
@@ -380,7 +388,7 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
                     self.concat_segs(&[
                         fn_s,
                         self.seg_of(":"),
-                        self.seg_of(m),
+                        self.seg_of(self.ast.strings.get(*m)),
                         self.seg_of("("),
                         j,
                         self.seg_of(")"),
@@ -445,6 +453,12 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
                 self.cat_seg(head, tail)
             }
             Node::If(arms, eb) => {
+                if arms.is_empty() {
+                    // 空 if は不変条件違反として呼び出し側が検出できるよう
+                    // 記録して打ち切る（arms[0] を引くとここで panic する）。
+                    self.empty_if.set(true);
+                    return Seg::ZERO;
+                }
                 let c0 = arms[0].cond;
                 let b0 = arms[0].body;
                 let head = self.cat_seg(self.seg_of("if"), self.expr_seg(c0, 0));
@@ -546,19 +560,51 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
     }
 }
 
+/// `measure_size` と同時に、空の arms を持つ if 文が木に残っていないかも
+/// 返す。サイズ計測は到達可能な全ての文を走査するため、不変条件検査を
+/// 同じ走査に同乗させられる（従来は `walk` による独立した全木走査で
+/// 検査していた）。空 if がある場合のサイズ値は不変条件違反で呼び出し側が
+/// 破棄するため、意味を持たない。
+pub fn measure_size_with_empty_if_check(ast: &Ast, root: NodeId) -> (usize, bool) {
+    let ctx = SizeCtx {
+        ast,
+        names: None,
+        empty_if: std::cell::Cell::new(false),
+    };
+    let size = ctx.measure_size(root);
+    (size, ctx.empty_if.get())
+}
+
 /// measureSize 相当。root は block ノードであること。
 pub fn measure_size(ast: &Ast, root: NodeId) -> usize {
-    SizeCtx { ast, names: None }.measure_size(root)
+    SizeCtx {
+        ast,
+        names: None,
+        empty_if: std::cell::Cell::new(false),
+    }
+    .measure_size(root)
 }
 
 /// measureExpr 相当。単一式のサイズを返す。
 pub fn measure_expr(ast: &Ast, id: NodeId) -> usize {
-    SizeCtx { ast, names: None }.expr_seg(id, 0).len
+    SizeCtx {
+        ast,
+        names: None,
+        empty_if: std::cell::Cell::new(false),
+    }
+    .expr_seg(id, 0)
+    .len
 }
 
 /// 文単位のサイズ（デバッグ・テスト用）。
 pub fn measure_stmt(ast: &Ast, id: NodeId) -> usize {
-    SizeCtx { ast, names: None }.stat_seg(id).len
+    SizeCtx {
+        ast,
+        names: None,
+        empty_if: std::cell::Cell::new(false),
+    }
+    .stat_seg(id)
+    .len
 }
 
 /// Exact size using alternate spellings for selected identifier occurrences.
@@ -567,6 +613,7 @@ pub fn measure_size_with_names(ast: &Ast, root: NodeId, names: &dyn SizeNameReso
     SizeCtx {
         ast,
         names: Some(names),
+        empty_if: std::cell::Cell::new(false),
     }
     .measure_size(root)
 }
@@ -576,6 +623,7 @@ pub fn measure_stmt_with_names(ast: &Ast, node: NodeId, names: &dyn SizeNameReso
     SizeCtx {
         ast,
         names: Some(names),
+        empty_if: std::cell::Cell::new(false),
     }
     .stat_seg(node)
     .len
@@ -585,7 +633,49 @@ pub fn measure_expr_with_names(ast: &Ast, node: NodeId, names: &dyn SizeNameReso
     SizeCtx {
         ast,
         names: Some(names),
+        empty_if: std::cell::Cell::new(false),
     }
     .expr_seg(node, 0)
     .len
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::ast::Node;
+    use crate::parser::parse_source;
+
+    #[test]
+    fn empty_if_check_matches_measure_size_on_valid_trees() {
+        for source in [
+            "if true then return 1 end",
+            "local x = 1\nif x then x = 2 else x = 3 end\nreturn x",
+            "while true do if false then break end end",
+        ] {
+            let (ast, root) = parse_source(source).expect("parse ok");
+            let (size, empty) = measure_size_with_empty_if_check(&ast, root);
+            assert_eq!(size, measure_size(&ast, root), "{source}");
+            assert!(!empty, "{source}");
+        }
+    }
+
+    #[test]
+    fn empty_if_check_detects_emptied_if_without_panicking() {
+        let (mut ast, root) = parse_source("if true then return 1 end").expect("parse ok");
+        let mut targets = vec![];
+        crate::ast_utils::walk(&ast, root, &mut |id| {
+            if matches!(ast.node(id), Node::If(_, _)) {
+                targets.push(id);
+            }
+        });
+        assert_eq!(targets.len(), 1);
+        let eb = match ast.node(targets[0]) {
+            Node::If(_, eb) => *eb,
+            _ => unreachable!(),
+        };
+        ast.nodes[targets[0] as usize] = Node::If(vec![], eb);
+        let (_size, empty) = measure_size_with_empty_if_check(&ast, root);
+        assert!(empty);
+    }
 }

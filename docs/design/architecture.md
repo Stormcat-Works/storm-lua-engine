@@ -6,12 +6,12 @@
 |---|---|---|
 | `storm-lua-syntax` | Lua syntax/AST/visitor, numeric literals, printing and size | none |
 | `storm-lua-analysis` | binding/effect analysis, project validation, lint and property scanning | syntax |
-| `storm-lua-minify` | optimization passes, deterministic candidate search and cost | syntax, analysis |
-| `storm-lua-build` | logical project linking, source maps and coarse compiler API | syntax, analysis, minify |
+| `storm-lua-minify` | optimization passes, deterministic candidate search and cost | syntax, analysis, vm (load-legality contracts only) |
+| `storm-lua-build` | logical project linking, source maps and coarse compiler API | syntax, analysis, minify, vm (load-legality contracts only) |
 | `storm-lua-compiler-wasm` | compiler-only wasm-bindgen adapter, no VM initialization | analysis, minify, build |
 | `storm-lua-spec` | I/O・property・draw types、ScreenSink、binary batch、API catalog、ABI constants | none |
 | `storm-screen-raster` | 画面契約の幾何/文字/色をpixelへ展開、同梱font | spec |
-| `storm-lua-vm` | Lua backend、sandbox、制限・continuation・debugger、owned values、構造化log | none |
+| `storm-lua-vm` | Lua backend（`backend-mlua` feature の背後）、sandbox、制限・continuation・debugger、owned values、構造化log、方言変換とロード合法性契約 | spec, syntax |
 | `storm-lua-microcontroller` | Lua API登録、tick/draw phase、signal/property/command状態 | spec, vm |
 | `storm-lua-addon` | Addon lifecycle、menu property、savedata、server登録、matrix、HTTP | spec, vm |
 | `storm-lua-bridge` | adapter間で共有する世代付きhandle、upload/response/errorの所有権 | spec |
@@ -40,7 +40,7 @@ worldに作用するserver関数、HTTPクライアント、地形データ、�
 
 ## Compiler integration branch
 
-The compiler owners are implemented on the development branch; see the [compiler guide](../guide/compiler.md) and [verification](../verification/compiler-integration-20260926.md). Runtime-only consumers do not depend on compiler crates; compiler-only consumers do not normally depend on the VM. The conformance package combines them through dev dependencies.
+The compiler owners are implemented on the development branch; see the [compiler guide](../guide/compiler.md) and [verification](../verification/compiler-integration-20260926.md). Runtime-only consumers do not depend on compiler crates. Compiler-only consumers depend on the VM crate only for its backend-free contracts (dialect rewrite and load legality) and must not enable `backend-mlua`: the VM's execution backend is an optional dependency behind that feature, and the transitive purity of the compiler-only dependency graphs (no C build dependencies such as lua-src on wasm32-unknown-unknown) is machine-checked by the target-graph rules in architecture.json. The conformance package combines them through dev dependencies.
 
 The syntax visitor and dependency-graph validator have one owner each. Analysis does not depend on the linker or minifier. `storm-lua-build` composes shared services rather than becoming a new implementation core. Low-level implementation modules needed by sibling crates are distinguished from documented host-level entry points.
 

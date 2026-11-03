@@ -17,7 +17,7 @@
     "crates/storm-lua-compiler-wasm/src/lib.rs": "1478eccab49a7003f37ff3ec1d622f8f63fe21110e0dd51bd01110da764f9aea"
   },
   "environment": {
-    "cpu": "Intel Core i5-13400F",
+    "cpu": "開発ホストのCPU",
     "host": "Linux KVM VM",
     "node": "v22.22.1",
     "compilerBuild": "release; opt-level=3, thin LTO, codegen-units=1; wasm-opt"

@@ -19,6 +19,17 @@ fn clone_ast(source: &Ast) -> Ast {
     ast
 }
 
+/// A converted declaration becomes a single assignment statement, and
+/// the Lua parser consumes an assignment's target list recursively:
+/// each target costs roughly one parser C level against a limit of
+/// 200, and each enclosing function costs about one more (measured:
+/// a 199-target conversion inside a top-level function fails to load
+/// in plain Lua while 198 loads; one more enclosing function lowers
+/// the boundary to 198). Cap the targets per converted declaration
+/// well below the boundary so the generated assignment stays loadable
+/// at any realistic nesting depth (candidate J, w9 cycle 64).
+const MAX_GLOBALIZED_DECLARATION_TARGETS: usize = 150;
+
 fn is_compiler_scratch_name(name: &str) -> bool {
     let suffix = name
         .strip_prefix("__fs")
@@ -55,6 +66,59 @@ struct GraphInfo {
     unknown_call_owners: HashSet<ScopeId>,
 }
 
+/// Record one invocation of the callable value produced by `function` from
+/// `owner`: an edge when it resolves to a chunk-defined function that cannot
+/// have been reassigned, silence for builtin references, and an unknown-call
+/// mark otherwise. Used for both explicit Call nodes and the implicit
+/// iterator call of a generic-for, which interleaves with the loop body
+/// exactly like an explicit call.
+fn scan_call_target(
+    ast: &Ast,
+    resolution: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
+    function: NodeId,
+    owner: ScopeId,
+    graph: &mut GraphInfo,
+) {
+    let mut known = false;
+    if matches!(ast.node(function), Node::Name(_)) {
+        if let Some(bid) = resolution
+            .node_bid
+            .get(function as usize)
+            .copied()
+            .flatten()
+        {
+            let binding = resolution.binding(bid);
+            // A function declaration is not a call-target proof once that
+            // binding can be reassigned to a different function.
+            let definition_writes = u32::from(binding.kind == BindingKind::Global);
+            if let Some(function_node) = binding
+                .function_node
+                .filter(|_| resolution.binding_write_counts[bid as usize] == definition_writes)
+            {
+                if let Some(callee) = resolution
+                    .node_scope_id
+                    .get(function_node as usize)
+                    .copied()
+                    .flatten()
+                {
+                    insert_unique(graph.calls.entry(owner).or_default(), callee);
+                    known = true;
+                }
+            } else if analyzer.resolve_builtin_reference(function).is_some() {
+                known = true;
+            }
+        } else if analyzer.resolve_builtin_reference(function).is_some() {
+            known = true;
+        }
+    } else if analyzer.resolve_builtin_reference(function).is_some() {
+        known = true;
+    }
+    if !known {
+        graph.unknown_call_owners.insert(owner);
+    }
+}
+
 fn scan_graph(
     ast: &Ast,
     resolution: &Resolution,
@@ -81,42 +145,34 @@ fn scan_graph(
     }
 
     if let Node::Call(function, _, _) = ast.node(node) {
-        let mut known = false;
-        if matches!(ast.node(*function), Node::Name(_)) {
-            if let Some(bid) = resolution
-                .node_bid
-                .get(*function as usize)
-                .copied()
-                .flatten()
-            {
-                let binding = resolution.binding(bid);
-                // A function declaration is not a call-target proof once that
-                // binding can be reassigned to a different function.
-                let definition_writes = u32::from(binding.kind == BindingKind::Global);
-                if let Some(function_node) = binding
-                    .function_node
-                    .filter(|_| resolution.binding_write_counts[bid as usize] == definition_writes)
-                {
-                    if let Some(callee) = resolution
-                        .node_scope_id
-                        .get(function_node as usize)
-                        .copied()
-                        .flatten()
-                    {
-                        insert_unique(graph.calls.entry(owner).or_default(), callee);
-                        known = true;
+        scan_call_target(ast, resolution, analyzer, *function, owner, graph);
+    }
+
+    if let Node::Forin(_, expressions, _) = ast.node(node) {
+        // The generic-for protocol calls the iterator value once per step.
+        // Without recording that hidden call, the caller looks
+        // non-interfering with the iterator's owner, and slot packing can
+        // merge a caller local that is live across the loop with one of the
+        // iterator's own globalized locals.
+        if let Some(iterator) = expressions.first() {
+            if matches!(ast.node(*iterator), Node::Call(..)) {
+                // A call result used as the iterator is an arbitrary
+                // function value; the call node itself is recorded when
+                // the walk reaches it, but invoking its result is unknown
+                // unless the call is a builtin whose result is a standard
+                // iterator (pairs and friends).
+                let builtin = match ast.node(*iterator) {
+                    Node::Call(function, _, _) => {
+                        analyzer.resolve_builtin_reference(*function).is_some()
                     }
-                } else if analyzer.resolve_builtin_reference(*function).is_some() {
-                    known = true;
+                    _ => false,
+                };
+                if !builtin {
+                    graph.unknown_call_owners.insert(owner);
                 }
-            } else if analyzer.resolve_builtin_reference(*function).is_some() {
-                known = true;
+            } else {
+                scan_call_target(ast, resolution, analyzer, *iterator, owner, graph);
             }
-        } else if analyzer.resolve_builtin_reference(*function).is_some() {
-            known = true;
-        }
-        if !known {
-            graph.unknown_call_owners.insert(owner);
         }
     }
 
@@ -423,7 +479,10 @@ pub fn globalize_function_locals(
                 .get(node as usize)
                 .cloned()
                 .unwrap_or_default();
-            if !bids.is_empty() && bids.iter().all(|bid| preliminary.contains(bid)) {
+            if !bids.is_empty()
+                && bids.len() <= MAX_GLOBALIZED_DECLARATION_TARGETS
+                && bids.iter().all(|bid| preliminary.contains(bid))
+            {
                 targets.extend(bids);
             }
         }
@@ -585,11 +644,70 @@ mod tests {
     }
 
     #[test]
+    fn generic_for_iterator_locals_get_distinct_slots_from_caller() {
+        // The caller invokes the iterator once per step through the
+        // generic-for protocol while its own accumulator is live across
+        // the loop. That invocation is not a Call node; a call graph
+        // built from Call nodes alone judges the two owners
+        // non-interfering and merges their slots into one scratch
+        // global, so the iterator's local corrupts the accumulator.
+        let output = run(
+            "function onTick() local t = { 0 } local function it() local x = t[1] + 1 t[1] = x if t[1] > 1 then return nil end return x end local s = 0 for v in it do s = s + 1 end output.setNumber(1, s) end",
+            0,
+        );
+        assert!(output.contains("__fs0"), "{output}");
+        assert!(output.contains("__fs1"), "{output}");
+        assert!(!output.contains("local s"), "{output}");
+        assert!(!output.contains("local x"), "{output}");
+    }
+
+    #[test]
+    fn builtin_iterator_generic_for_still_globalizes() {
+        // A generic-for over a builtin iterator (pairs) performs no
+        // user-code call, so globalization is unaffected.
+        let output = run(
+            "function onTick() local t = { a = 1 } local s = 0 for k, v in pairs(t) do s = s + 1 end output.setNumber(1, s) end",
+            0,
+        );
+        assert!(output.contains("__fs0"), "{output}");
+        assert!(!output.contains("local s"), "{output}");
+    }
+
+    #[test]
     fn recursive_function_locals_stay_local() {
         let output = run(
             "function f(n)local x=n if n>0 then return f(n-1)+x end return x end",
             0,
         );
         assert!(output.contains("local x"), "{output}");
+    }
+
+    // Candidate J (w9 cycle 64): a converted declaration is emitted as
+    // one assignment whose target list the Lua parser consumes
+    // recursively (~1 C level per target, limit 200). A declaration
+    // above the cap keeps its locals instead of becoming an unloadable
+    // assignment.
+    #[test]
+    fn oversized_declaration_stays_local() {
+        let names = (0..160)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let source =
+            format!("local function f(t) local {names};return t.a+t.b end return f({{a=2,b=3}})");
+        let output = run(&source, 0);
+        assert!(output.contains("local p0"), "{output}");
+    }
+
+    #[test]
+    fn declaration_at_cap_still_globalizes() {
+        let names = (0..150)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let source =
+            format!("local function f(t) local {names};return t.a+t.b end return f({{a=2,b=3}})");
+        let output = run(&source, 0);
+        assert!(!output.contains("local p0"), "{output}");
     }
 }

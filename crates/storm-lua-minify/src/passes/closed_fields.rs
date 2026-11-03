@@ -517,15 +517,16 @@ impl Scan<'_> {
             }
             Node::Call(receiver, args, Some(method)) => {
                 // Strings also have methods supplied by the host string library.
-                let builtin = format!("string.{method}");
-                if method == "dump" {
+                let builtin = format!("string.{}", self.ast.strings.get(*method));
+                if self.ast.strings.get(*method) == "dump" {
                     return Err("bytecode reflection");
                 }
                 if supported_builtin(&builtin) {
-                    self.preserved.insert(method.clone());
+                    self.preserved
+                        .insert(self.ast.strings.get(*method).to_owned());
                     self.produces_strings |= string_producer(&builtin);
                 }
-                self.key(method.clone());
+                self.key(self.ast.strings.get(*method).to_owned());
                 self.visit(*receiver, Context::Value, function_depth)?;
                 for arg in args {
                     self.visit(*arg, Context::Value, function_depth)?;
@@ -671,7 +672,7 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
                         .as_ref()
                         .and_then(|key| mapping.get(key))
                     {
-                        let renamed_key = trial.str(quote_lua(short));
+                        let renamed_key = trial.str(&quote_lua(short));
                         trial
                             .nodes
                             .finish_rename(renamed_key, ast.nodes.capture_origin(*key));
@@ -724,9 +725,9 @@ pub fn rename_closed_fields(ast: &mut Ast, root: NodeId) -> PassResult {
                 }
             }
             Node::Call(object, args, Some(method)) => {
-                if let Some(short) = mapping.get(method) {
+                if let Some(short) = mapping.get(ast.strings.get(*method)) {
                     trial.nodes[node as usize] =
-                        Node::Call(*object, args.clone(), Some(short.clone()));
+                        Node::Call(*object, args.clone(), Some(trial.strings.intern(short)));
                     trial
                         .nodes
                         .finish_rename(node, ast.nodes.capture_origin(node));

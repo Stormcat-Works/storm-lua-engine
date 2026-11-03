@@ -185,6 +185,13 @@ pub struct CandidateJob {
     exact_safe_constant_folding: bool,
     zero_cost_newlines: bool,
     order_base: usize,
+    /// True only for target-size compilation. Target-free compilation must
+    /// never see the speed layouts, so its winner is unchanged.
+    target_speed: bool,
+    /// Target character budget for target-size compilation, if any. Used
+    /// only for winner-preserving layout pruning in
+    /// evaluate_candidate_with_verifier; target-free jobs carry None.
+    target_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,16 +342,39 @@ fn prepare_lexical(
     root: NodeId,
     options: &CompileOptions,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
+    // Local-only renaming applies only to the _ENV lexical reason: the
+    // other lexical reasons (host bindings, Extended environment) exist
+    // precisely to preserve tokens, so they keep the unrenamed output.
+    // Globals stay fixed (they can be observed through _ENV); only
+    // locals are renamed, at the token level, with a re-lex verification
+    // inside the renamed emitter and a fallback to the unrenamed output.
+    let rename_plan = if options.environment
+        != storm_lua_spec::environment::EnvironmentProfile::Extended
+        && options.host_bindings.is_empty()
+        && ast.strings.contains("_ENV")
+    {
+        crate::lexical_rename::lexical_rename_plan(source).filter(|plan| !plan.is_empty())
+    } else {
+        None
+    };
     let (code, lexical_origins) = if let Some(name) = &options.origin_source {
-        let (code, origins) =
-            storm_lua_syntax::print::lexical_minify_with_compact_origins(name, source)
-                .map_err(|error| error.to_string())?;
+        let (code, origins) = match &rename_plan {
+            Some(plan) => storm_lua_syntax::print::lexical_minify_renamed_with_compact_origins(
+                name, source, plan,
+            )
+            .map_err(|error| error.to_string())?,
+            None => storm_lua_syntax::print::lexical_minify_with_compact_origins(name, source)
+                .map_err(|error| error.to_string())?,
+        };
         (code, Some(origins))
     } else {
-        (
-            storm_lua_syntax::print::lexical_minify(source).map_err(|error| error.to_string())?,
-            None,
-        )
+        let code = match &rename_plan {
+            Some(plan) => storm_lua_syntax::print::lexical_minify_renamed(source, plan)
+                .map_err(|error| error.to_string())?,
+            None => storm_lua_syntax::print::lexical_minify(source)
+                .map_err(|error| error.to_string())?,
+        };
+        (code, None)
     };
     // `parse_for_search` already accepted the original program. The lexical
     // emitter then re-lexes its output and requires the exact same token kind,
@@ -377,6 +407,8 @@ fn prepare_lexical(
             exact_safe_constant_folding: false,
             zero_cost_newlines: false,
             order_base: 0,
+            target_speed: false,
+            target_size: None,
         }],
     ))
 }
@@ -404,6 +436,11 @@ fn prepare_search_from_parsed(
         options.environment,
         &options.host_bindings,
     )?;
+    // Load legality is judged on the source program, before any pass can
+    // remove or move the constructs it depends on (candidates S10/S14).
+    // The verdict mirrors the project VM's load path (dialect rewrite +
+    // PUC parse), so programs the VM accepts pass unchanged.
+    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
     if storm_lua_analysis::environment_checks::lexical_reason(
         &parsed_ast,
         options.environment,
@@ -599,8 +636,24 @@ fn prepare_search_from_base(
         .map(|variant| variant.name.clone())
         .collect::<Vec<_>>();
     let job_toggles = PassMask::from_toggles(&toggles);
+    // Extra layouts exist only in target-size mode: the localized
+    // alias layout and, on top of it, the LICM layout, each with a full
+    // S1 variant, a first-group-only partial S1 variant, an MR
+    // variant, an SMC variant, a first-group-only partial SMC
+    // variant, composite S1+SMC / MR+SMC variants (SMC on top of
+    // the S1 / MR layout, offered only when both passes fire), and
+    // partial composite variants (full S1 / MR with first-group-only
+    // SMC, offered only when the full composite cached more than
+    // one SMC group).
+    // Order bases
+    // must stay disjoint across jobs even when a job produces no LICM
+    // layout.
     let layouts_per_job = if job_toggles.enabled("api-alias-optimization") {
-        2
+        if options.target_size.is_some() {
+            20
+        } else {
+            2
+        }
     } else {
         1
     };
@@ -617,6 +670,8 @@ fn prepare_search_from_base(
             exact_safe_constant_folding,
             zero_cost_newlines: options.zero_cost_newlines,
             order_base: index * layouts_per_job,
+            target_speed: options.target_size.is_some(),
+            target_size: options.target_size,
         })
         .collect::<Vec<_>>();
     Ok((
@@ -684,6 +739,8 @@ fn evaluate_candidate_with_verifier(
         exact_safe_constant_folding,
         zero_cost_newlines,
         order_base,
+        target_speed,
+        target_size,
     } = job;
     let structural_name = structural_candidate.name;
     let structural_passes = structural_candidate.passes;
@@ -716,6 +773,18 @@ fn evaluate_candidate_with_verifier(
     if toggles.enabled("ordered-screen-loop-synthesis") {
         let periodic = toggles.enabled("periodic-screen-loop-synthesis");
         let r = passes::screen_loops::synthesize_screen_loops(&mut ast, root, periodic);
+        root = r.root;
+    }
+    if toggles.enabled("redundant-output-store-elimination") {
+        let r = passes::output_stores::eliminate_redundant_output_stores(&mut ast, root);
+        root = r.root;
+    }
+    if toggles.enabled("negated-comparison-inversion") {
+        let r = passes::negated_comparison::invert_negated_comparisons(&mut ast, root);
+        root = r.root;
+    }
+    if toggles.enabled("straightline-arithmetic-cse") {
+        let r = passes::arithmetic_cse::cse_straightline_arithmetic(&mut ast, root);
         root = r.root;
     }
     if toggles.enabled("output-sequence-loop-synthesis") {
@@ -758,6 +827,10 @@ fn evaluate_candidate_with_verifier(
         let r = passes::available_expressions::reuse_available_expressions(&mut ast, root);
         root = r.root;
     }
+    if toggles.enabled("pure-call-carrier-synthesis") {
+        let r = passes::available_expressions::synthesize_pure_call_carriers(&mut ast, root);
+        root = r.root;
+    }
     if toggles.enabled("literal-call-folding") {
         let r = passes::inline_functions::fold_literal_function_calls(&mut ast, root, aggressive);
         root = r.root;
@@ -784,6 +857,32 @@ fn evaluate_candidate_with_verifier(
     let phase_ast = ast;
     let phase_root = root;
     let mut layouts = Vec::<(&'static str, Ast, NodeId, Vec<String>)>::new();
+    // Target-size only: the joint-api layout and the localized layout
+    // run the alias pass over the same phase tree (the localized base is
+    // the phase tree unless relaxed carrier synthesis replaces it
+    // below), so the pass's first analysis — origin-less clone,
+    // resolution, effect analysis, builtin-use scan — is built once
+    // here and shared by both calls. The analysis is a deterministic
+    // pure function of the source tree and root, and a deep clone
+    // carries identical node/symbol tables, so the shared values equal
+    // what each call would compute on its own; no selection or output
+    // changes (see passes::api_aliases::ApiAliasAnalysis).
+    let alias_shared_source = if target_speed && toggles.enabled("api-alias-optimization") {
+        Some(storm_lua_syntax::ast_utils::clone_without_origins(
+            &phase_ast,
+        ))
+    } else {
+        None
+    };
+    let alias_shared_resolution = alias_shared_source
+        .as_ref()
+        .map(|source| storm_lua_analysis::resolver::resolve(source, phase_root));
+    let alias_analysis = match (&alias_shared_source, &alias_shared_resolution) {
+        (Some(source), Some(resolution)) => Some(passes::api_aliases::ApiAliasAnalysis::new(
+            source, resolution, phase_root,
+        )),
+        _ => None,
+    };
     if toggles.enabled("scope-renaming") {
         let renamed = scope_rename_fast(&phase_ast, phase_root);
         layouts.push(("none", renamed.ast, renamed.root, Vec::new()));
@@ -792,14 +891,707 @@ fn evaluate_candidate_with_verifier(
     }
     if toggles.enabled("api-alias-optimization") {
         let mut alias_ast = phase_ast.clone();
-        let alias = passes::api_aliases::optimize_api_aliases(&mut alias_ast, phase_root);
+        let alias = match &alias_analysis {
+            Some(analysis) => passes::api_aliases::optimize_api_aliases_with_analysis(
+                &mut alias_ast,
+                phase_root,
+                analysis,
+            ),
+            None => passes::api_aliases::optimize_api_aliases(&mut alias_ast, phase_root),
+        };
         let aliases = alias.details.clone().unwrap_or_default();
         layouts.push(("joint-api", alias_ast, alias.root, aliases));
     }
+    // Target-free only: barrier-relaxed carrier synthesis as *additional*
+    // layout candidates, not as a phase replacement. Cycles 42/44 showed
+    // that relaxing the strict synthesis barrier in place perturbs
+    // downstream alias selection and moves the size-minimal winner
+    // (+14 characters on two corpus files, -6 on one). The scratch clone
+    // is adopted only when synthesis fires, and target-free selection is
+    // plain size minimization (see select_best_candidates), so the new
+    // candidates can only win when they are smaller; the previous layouts
+    // stay available and the winner size never regresses. Ties keep the
+    // earlier layout (the new layouts are pushed last), so same-size
+    // speed wins are deliberately left for a later decision. In
+    // target-size mode this block is skipped: the target layouts already
+    // run the relaxed-barrier synthesis on their scratch clones.
+    if !target_speed && toggles.enabled("pure-call-carrier-synthesis") {
+        let mut relaxed_ast = phase_ast.clone();
+        let relaxed = passes::available_expressions::synthesize_pure_call_carriers_barrier_relaxed(
+            &mut relaxed_ast,
+            phase_root,
+        );
+        let relaxed_count = relaxed
+            .details
+            .as_ref()
+            .and_then(|details| details.first())
+            .and_then(|detail| detail.strip_prefix("synthesized="))
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(0);
+        if relaxed_count > 0 {
+            if toggles.enabled("scope-renaming") {
+                let renamed = scope_rename_fast(&relaxed_ast, relaxed.root);
+                layouts.push((
+                    "none-barrier-relaxed",
+                    renamed.ast,
+                    renamed.root,
+                    Vec::new(),
+                ));
+            } else {
+                layouts.push((
+                    "none-barrier-relaxed",
+                    relaxed_ast.clone(),
+                    relaxed.root,
+                    Vec::new(),
+                ));
+            }
+            if toggles.enabled("api-alias-optimization") {
+                let mut alias_ast = relaxed_ast.clone();
+                let alias = passes::api_aliases::optimize_api_aliases(&mut alias_ast, relaxed.root);
+                let aliases = alias.details.clone().unwrap_or_default();
+                layouts.push(("joint-api-barrier-relaxed", alias_ast, alias.root, aliases));
+            }
+        }
+    }
+    // Target-size only: the same alias selection, rerun under local costs,
+    // with definitions emitted as chunk locals. This layout is longer than
+    // the global one; it can only win through target-size winner selection
+    // (see select_best_candidates), never through size minimization.
+    // Before aliasing, relaxed carrier synthesis runs on a scratch clone:
+    // groups the strict gate rejected (positive character delta) are
+    // synthesized here, because within the target budget speed outranks
+    // size. Barrier-stable reuse and relaxed-barrier synthesis run on
+    // the same scratch clone, so barrier-split screen-size / literal-math
+    // duplicates also collapse here without touching the target-free
+    // winner. The scratch clone is adopted only when either step fires,
+    // so inputs without an opportunity keep exactly the previous layout.
+    if target_speed && toggles.enabled("api-alias-optimization") {
+        let mut alias_ast = phase_ast.clone();
+        let mut alias_root = phase_root;
+        let mut alias_base_shared = alias_analysis.is_some();
+        if toggles.enabled("pure-call-carrier-synthesis") {
+            let mut relaxed_ast = phase_ast.clone();
+            let mut reused_count = 0;
+            if toggles.enabled("available-expression-reuse") {
+                let reuse =
+                    passes::available_expressions::reuse_available_expressions_barrier_relaxed(
+                        &mut relaxed_ast,
+                        phase_root,
+                    );
+                reused_count = reuse
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("reused="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+            }
+            let relaxed =
+                passes::available_expressions::synthesize_pure_call_carriers_relaxed_barrier(
+                    &mut relaxed_ast,
+                    phase_root,
+                );
+            let relaxed_count = relaxed
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("synthesized="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if reused_count > 0 || relaxed_count > 0 {
+                alias_ast = relaxed_ast;
+                alias_root = relaxed.root;
+                alias_base_shared = false;
+            }
+        }
+        let alias = match &alias_analysis {
+            Some(analysis) if alias_base_shared => {
+                passes::api_aliases::optimize_api_aliases_localized_with_analysis(
+                    &mut alias_ast,
+                    alias_root,
+                    analysis,
+                )
+            }
+            _ => passes::api_aliases::optimize_api_aliases_localized(&mut alias_ast, alias_root),
+        };
+        let aliases = alias.details.clone().unwrap_or_default();
+        // Shared first analyses for the speed passes on this base
+        // (S1 / MR / SMC each used to rebuild the same resolve +
+        // EffectAnalyzer + mutated set; see passes::speed_analysis).
+        // The analyses are pure and side-effect free, and every pass
+        // still applies its own non-Block early return, so building
+        // them here changes no pass result.
+        let speed_resolution = storm_lua_analysis::resolver::resolve(&alias_ast, alias.root);
+        let speed_effects = storm_lua_analysis::effects::EffectAnalyzer::new(
+            &alias_ast,
+            &speed_resolution,
+            alias.root,
+            true,
+        );
+        let speed_mutated = storm_lua_analysis::effects::mutated_builtin_roots(
+            &alias_ast,
+            &speed_resolution,
+            alias.root,
+        );
+        let speed_analysis = passes::speed_analysis::SpeedAnalysis {
+            resolution: &speed_resolution,
+            effects: &speed_effects,
+            mutated: &speed_mutated,
+        };
+        // Target-size only: single member-call caching on top of the
+        // localized layout (see passes::single_member_cache). The
+        // scratch clone is adopted only when caching fires, so inputs
+        // without an S1 opportunity keep exactly the previous layout.
+        let mut s1_ast = alias_ast.clone();
+        let s1 = passes::single_member_cache::cache_single_member_calls_post_alias_with_analysis(
+            &mut s1_ast,
+            alias.root,
+            &speed_analysis,
+        );
+        let s1_cached = s1
+            .details
+            .as_ref()
+            .and_then(|details| details.first())
+            .and_then(|detail| detail.strip_prefix("cached="))
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(0);
+        let s1_aliases = aliases.clone();
+        let s1_partial_aliases = s1_aliases.clone();
+        layouts.push(("joint-api-local", alias_ast.clone(), alias.root, aliases));
+        if s1_cached > 0 {
+            let mut s1_smc_ast = s1_ast.clone();
+            let s1_smc = passes::straightline_member_reads::cache_straightline_member_reads(
+                &mut s1_smc_ast,
+                alias.root,
+            );
+            let s1_smc_cached = s1_smc
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if s1_smc_cached > 0 {
+                layouts.push((
+                    "joint-api-local-s1-smc",
+                    s1_smc_ast,
+                    alias.root,
+                    s1_aliases.clone(),
+                ));
+            }
+            // Partial composite: S1 in full, SMC first-group-only.
+            // Offered only when the full composite cached more than
+            // one SMC group, so it differs from the full composite.
+            // It ranks directly below the full composite, so it can
+            // only win when the full composite exceeds the target
+            // while this layout still fits.
+            if s1_smc_cached > 1 {
+                let mut s1_smc_partial_ast = s1_ast.clone();
+                let s1_smc_partial =
+                    passes::straightline_member_reads::cache_straightline_member_reads_partial(
+                        &mut s1_smc_partial_ast,
+                        alias.root,
+                    );
+                let s1_smc_partial_cached = s1_smc_partial
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if s1_smc_partial_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-s1-smc-partial",
+                        s1_smc_partial_ast,
+                        alias.root,
+                        s1_aliases.clone(),
+                    ));
+                }
+            }
+            layouts.push(("joint-api-local-s1", s1_ast, alias.root, s1_aliases));
+        }
+        // Partial S1: only when the full run cached more than one
+        // group, so this layout differs from the full one. It ranks
+        // below the full S1 layout but above the base layout, so it
+        // can only win when the full layout exceeds the target while
+        // the single-group layout still fits.
+        if s1_cached > 1 {
+            let mut s1_partial_ast = alias_ast.clone();
+            let s1_partial = passes::single_member_cache::cache_single_member_calls_post_alias_partial_with_analysis(
+                    &mut s1_partial_ast,
+                    alias.root,
+                    &speed_analysis,
+                );
+            let s1_partial_cached = s1_partial
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if s1_partial_cached > 0 {
+                layouts.push((
+                    "joint-api-local-s1-partial",
+                    s1_partial_ast,
+                    alias.root,
+                    s1_partial_aliases,
+                ));
+            }
+        }
+        // Target-size only: loop member-read caching on top of the
+        // localized layout (see passes::loop_member_reads). Adopted
+        // only when caching fires, as with S1.
+        let mut mr_ast = alias_ast.clone();
+        let mr = passes::loop_member_reads::cache_loop_member_reads_with_analysis(
+            &mut mr_ast,
+            alias.root,
+            &speed_analysis,
+        );
+        let mr_cached = mr
+            .details
+            .as_ref()
+            .and_then(|details| details.first())
+            .and_then(|detail| detail.strip_prefix("cached="))
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(0);
+        if mr_cached > 0 {
+            let mut mr_smc_ast = mr_ast.clone();
+            let mr_smc = passes::straightline_member_reads::cache_straightline_member_reads(
+                &mut mr_smc_ast,
+                alias.root,
+            );
+            let mr_smc_cached = mr_smc
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if mr_smc_cached > 0 {
+                layouts.push((
+                    "joint-api-local-mr-smc",
+                    mr_smc_ast,
+                    alias.root,
+                    alias.details.clone().unwrap_or_default(),
+                ));
+            }
+            // Partial composite: MR in full, SMC first-group-only.
+            // Same gating and ranking convention as the S1 partial
+            // composite above.
+            if mr_smc_cached > 1 {
+                let mut mr_smc_partial_ast = mr_ast.clone();
+                let mr_smc_partial =
+                    passes::straightline_member_reads::cache_straightline_member_reads_partial(
+                        &mut mr_smc_partial_ast,
+                        alias.root,
+                    );
+                let mr_smc_partial_cached = mr_smc_partial
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if mr_smc_partial_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-mr-smc-partial",
+                        mr_smc_partial_ast,
+                        alias.root,
+                        alias.details.clone().unwrap_or_default(),
+                    ));
+                }
+            }
+            layouts.push((
+                "joint-api-local-mr",
+                mr_ast,
+                alias.root,
+                alias.details.clone().unwrap_or_default(),
+            ));
+        }
+        // Target-size only: straight-line member-read caching on top of
+        // the localized layout (see passes::straightline_member_reads).
+        // Adopted only when caching fires, as with S1/MR.
+        let mut smc_ast = alias_ast.clone();
+        let smc =
+            passes::straightline_member_reads::cache_straightline_member_reads_with_resolution(
+                &mut smc_ast,
+                alias.root,
+                speed_analysis.resolution,
+            );
+        let smc_cached = smc
+            .details
+            .as_ref()
+            .and_then(|details| details.first())
+            .and_then(|detail| detail.strip_prefix("cached="))
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(0);
+        if smc_cached > 0 {
+            layouts.push((
+                "joint-api-local-smc",
+                smc_ast,
+                alias.root,
+                alias.details.clone().unwrap_or_default(),
+            ));
+        }
+        // Partial SMC: only when the full run cached more than one
+        // group, so this layout differs from the full one. It ranks
+        // below the full SMC layout but above the base layout, so it
+        // can only win when the full layout exceeds the target while
+        // the single-group layout still fits.
+        if smc_cached > 1 {
+            let mut smc_partial_ast = alias_ast.clone();
+            let smc_partial = passes::straightline_member_reads::cache_straightline_member_reads_partial_with_resolution(
+                    &mut smc_partial_ast,
+                    alias.root,
+                    speed_analysis.resolution,
+                );
+            let smc_partial_cached = smc_partial
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if smc_partial_cached > 0 {
+                layouts.push((
+                    "joint-api-local-smc-partial",
+                    smc_partial_ast,
+                    alias.root,
+                    alias.details.clone().unwrap_or_default(),
+                ));
+            }
+        }
+    }
+    // Target-size only: loop-invariant pure host reads and total
+    // arithmetic hoisted out of loops, then localized aliases on top. The LICM pass runs
+    // first so it sees the original host names; the alias pass then
+    // shortens the remaining references, including hoist definitions.
+    // The layout is only added when at least one call was hoisted, so
+    // inputs without a LICM opportunity keep the previous candidate set.
+    if target_speed && toggles.enabled("api-alias-optimization") {
+        let mut licm_ast = phase_ast.clone();
+        let licm =
+            passes::loop_invariant::hoist_loop_invariant_host_reads(&mut licm_ast, phase_root);
+        let hoisted = licm
+            .details
+            .as_ref()
+            .and_then(|details| details.first())
+            .and_then(|detail| detail.strip_prefix("hoisted="))
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(0);
+        if hoisted > 0 {
+            // Relaxed carrier synthesis on top of LICM, for the same
+            // reason as the localized layout: LICM runs first so
+            // loop-invariant reads are hoisted before any remaining
+            // straight-line duplicate is given a carrier, and the
+            // scratch clone is adopted only when a step fires.
+            // Barrier-stable reuse and relaxed-barrier synthesis run
+            // here too, matching the localized layout.
+            let mut licm_root = licm.root;
+            if toggles.enabled("pure-call-carrier-synthesis") {
+                let mut relaxed_ast = licm_ast.clone();
+                let mut reused_count = 0;
+                if toggles.enabled("available-expression-reuse") {
+                    let reuse =
+                        passes::available_expressions::reuse_available_expressions_barrier_relaxed(
+                            &mut relaxed_ast,
+                            licm.root,
+                        );
+                    reused_count = reuse
+                        .details
+                        .as_ref()
+                        .and_then(|details| details.first())
+                        .and_then(|detail| detail.strip_prefix("reused="))
+                        .and_then(|count| count.parse::<usize>().ok())
+                        .unwrap_or(0);
+                }
+                let relaxed =
+                    passes::available_expressions::synthesize_pure_call_carriers_relaxed_barrier(
+                        &mut relaxed_ast,
+                        licm.root,
+                    );
+                let relaxed_count = relaxed
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("synthesized="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if reused_count > 0 || relaxed_count > 0 {
+                    licm_ast = relaxed_ast;
+                    licm_root = relaxed.root;
+                }
+            }
+            let alias =
+                passes::api_aliases::optimize_api_aliases_localized(&mut licm_ast, licm_root);
+            let aliases = alias.details.clone().unwrap_or_default();
+            // Shared first analyses for the speed passes on the
+            // LICM base, as on the localized base above (see
+            // passes::speed_analysis).
+            let licm_speed_resolution =
+                storm_lua_analysis::resolver::resolve(&licm_ast, alias.root);
+            let licm_speed_effects = storm_lua_analysis::effects::EffectAnalyzer::new(
+                &licm_ast,
+                &licm_speed_resolution,
+                alias.root,
+                true,
+            );
+            let licm_speed_mutated = storm_lua_analysis::effects::mutated_builtin_roots(
+                &licm_ast,
+                &licm_speed_resolution,
+                alias.root,
+            );
+            let licm_speed_analysis = passes::speed_analysis::SpeedAnalysis {
+                resolution: &licm_speed_resolution,
+                effects: &licm_speed_effects,
+                mutated: &licm_speed_mutated,
+            };
+            // Target-size only: single member-call caching on top of
+            // the LICM layout, for member calls LICM did not hoist
+            // (LICM hoists whole calls; S1 caches callees). Adopted
+            // only when caching fires, as above.
+            let mut s1_ast = licm_ast.clone();
+            let s1 =
+                passes::single_member_cache::cache_single_member_calls_post_alias_with_analysis(
+                    &mut s1_ast,
+                    alias.root,
+                    &licm_speed_analysis,
+                );
+            let s1_cached = s1
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            let s1_aliases = aliases.clone();
+            let s1_partial_aliases = s1_aliases.clone();
+            layouts.push((
+                "joint-api-local-licm",
+                licm_ast.clone(),
+                alias.root,
+                aliases,
+            ));
+            if s1_cached > 0 {
+                let mut s1_smc_ast = s1_ast.clone();
+                let s1_smc = passes::straightline_member_reads::cache_straightline_member_reads(
+                    &mut s1_smc_ast,
+                    alias.root,
+                );
+                let s1_smc_cached = s1_smc
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if s1_smc_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-licm-s1-smc",
+                        s1_smc_ast,
+                        alias.root,
+                        s1_aliases.clone(),
+                    ));
+                }
+                // Partial composite: S1 in full, SMC
+                // first-group-only (same convention as the
+                // non-LICM layout above).
+                if s1_smc_cached > 1 {
+                    let mut s1_smc_partial_ast = s1_ast.clone();
+                    let s1_smc_partial =
+                        passes::straightline_member_reads::cache_straightline_member_reads_partial(
+                            &mut s1_smc_partial_ast,
+                            alias.root,
+                        );
+                    let s1_smc_partial_cached = s1_smc_partial
+                        .details
+                        .as_ref()
+                        .and_then(|details| details.first())
+                        .and_then(|detail| detail.strip_prefix("cached="))
+                        .and_then(|count| count.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if s1_smc_partial_cached > 0 {
+                        layouts.push((
+                            "joint-api-local-licm-s1-smc-partial",
+                            s1_smc_partial_ast,
+                            alias.root,
+                            s1_aliases.clone(),
+                        ));
+                    }
+                }
+                layouts.push(("joint-api-local-licm-s1", s1_ast, alias.root, s1_aliases));
+            }
+            if s1_cached > 1 {
+                let mut s1_partial_ast = licm_ast.clone();
+                let s1_partial = passes::single_member_cache::cache_single_member_calls_post_alias_partial_with_analysis(
+                        &mut s1_partial_ast,
+                        alias.root,
+                        &licm_speed_analysis,
+                    );
+                let s1_partial_cached = s1_partial
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if s1_partial_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-licm-s1-partial",
+                        s1_partial_ast,
+                        alias.root,
+                        s1_partial_aliases,
+                    ));
+                }
+            }
+            // Target-size only: loop member-read caching on top of the
+            // LICM layout (see passes::loop_member_reads). Adopted only
+            // when caching fires, as with S1.
+            let mut mr_ast = licm_ast.clone();
+            let mr = passes::loop_member_reads::cache_loop_member_reads_with_analysis(
+                &mut mr_ast,
+                alias.root,
+                &licm_speed_analysis,
+            );
+            let mr_cached = mr
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if mr_cached > 0 {
+                let mut mr_smc_ast = mr_ast.clone();
+                let mr_smc = passes::straightline_member_reads::cache_straightline_member_reads(
+                    &mut mr_smc_ast,
+                    alias.root,
+                );
+                let mr_smc_cached = mr_smc
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if mr_smc_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-licm-mr-smc",
+                        mr_smc_ast,
+                        alias.root,
+                        alias.details.clone().unwrap_or_default(),
+                    ));
+                }
+                // Partial composite: MR in full, SMC
+                // first-group-only (same convention as the
+                // non-LICM layout above).
+                if mr_smc_cached > 1 {
+                    let mut mr_smc_partial_ast = mr_ast.clone();
+                    let mr_smc_partial =
+                        passes::straightline_member_reads::cache_straightline_member_reads_partial(
+                            &mut mr_smc_partial_ast,
+                            alias.root,
+                        );
+                    let mr_smc_partial_cached = mr_smc_partial
+                        .details
+                        .as_ref()
+                        .and_then(|details| details.first())
+                        .and_then(|detail| detail.strip_prefix("cached="))
+                        .and_then(|count| count.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if mr_smc_partial_cached > 0 {
+                        layouts.push((
+                            "joint-api-local-licm-mr-smc-partial",
+                            mr_smc_partial_ast,
+                            alias.root,
+                            alias.details.clone().unwrap_or_default(),
+                        ));
+                    }
+                }
+                layouts.push((
+                    "joint-api-local-licm-mr",
+                    mr_ast,
+                    alias.root,
+                    alias.details.clone().unwrap_or_default(),
+                ));
+            }
+            // Target-size only: straight-line member-read caching on top
+            // of the LICM layout (see passes::straightline_member_reads).
+            // Adopted only when caching fires, as with S1/MR.
+            let mut smc_ast = licm_ast.clone();
+            let smc =
+                passes::straightline_member_reads::cache_straightline_member_reads_with_resolution(
+                    &mut smc_ast,
+                    alias.root,
+                    licm_speed_analysis.resolution,
+                );
+            let smc_cached = smc
+                .details
+                .as_ref()
+                .and_then(|details| details.first())
+                .and_then(|detail| detail.strip_prefix("cached="))
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if smc_cached > 0 {
+                layouts.push((
+                    "joint-api-local-licm-smc",
+                    smc_ast,
+                    alias.root,
+                    alias.details.clone().unwrap_or_default(),
+                ));
+            }
+            // Partial SMC: only when the full run cached more than one
+            // group, so this layout differs from the full one. It ranks
+            // below the full SMC layout but above the base layout, so it
+            // can only win when the full layout exceeds the target while
+            // the single-group layout still fits.
+            if smc_cached > 1 {
+                let mut smc_partial_ast = licm_ast.clone();
+                let smc_partial = passes::straightline_member_reads::cache_straightline_member_reads_partial_with_resolution(
+                        &mut smc_partial_ast,
+                        alias.root,
+                        licm_speed_analysis.resolution,
+                    );
+                let smc_partial_cached = smc_partial
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.first())
+                    .and_then(|detail| detail.strip_prefix("cached="))
+                    .and_then(|count| count.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if smc_partial_cached > 0 {
+                    layouts.push((
+                        "joint-api-local-licm-smc-partial",
+                        smc_partial_ast,
+                        alias.root,
+                        alias.details.clone().unwrap_or_default(),
+                    ));
+                }
+            }
+        }
+    }
 
+    // Best speed rank among accepted fitting candidates in this job, for
+    // winner-preserving target-size pruning (see the loop head).
+    let mut best_fitting_rank: Option<usize> = None;
     for (layout_index, (layout, mut candidate_ast, mut candidate_root, aliases)) in
         layouts.into_iter().enumerate()
     {
+        // Winner-preserving target-size pruning (option B full search):
+        // selection sorts fitting candidates by (fits, speed rank, size,
+        // order). Once this job holds an accepted fitting candidate of
+        // rank r, a later layout with a worse rank can never win: it
+        // loses on rank if it fits, and on fits if it does not. The
+        // beating candidate stays in this batch, so it also survives
+        // global selection. Nothing is pruned before a fitting candidate
+        // exists, so the nothing-fits fallback (plain size minimization)
+        // is unaffected. Evaluated layouts keep their layout-index order.
+        if target_size.is_some() {
+            if let Some(best) = best_fitting_rank {
+                if target_speed_rank(layout) > best {
+                    continue;
+                }
+            }
+        }
         let mut candidate_passes = structural_passes.clone();
         attempted += 1;
         let order = order_base + layout_index;
@@ -898,6 +1690,13 @@ fn evaluate_candidate_with_verifier(
         }
         if toggles.enabled("available-expression-reuse") {
             let r = passes::available_expressions::reuse_available_expressions(
+                &mut candidate_ast,
+                candidate_root,
+            );
+            candidate_root = r.root;
+        }
+        if toggles.enabled("pure-call-carrier-synthesis") {
+            let r = passes::available_expressions::synthesize_pure_call_carriers(
                 &mut candidate_ast,
                 candidate_root,
             );
@@ -1024,6 +1823,34 @@ fn evaluate_candidate_with_verifier(
                     if !toggles.enabled(id) {
                         continue;
                     }
+                    // A localized alias layout must not be polished back into
+                    // globals: that would silently discard the speed variant
+                    // that target-size selection is about to prefer.
+                    if target_speed
+                        && id == "root-local-globalization"
+                        && (layout == "joint-api-local"
+                            || layout == "joint-api-local-licm"
+                            || layout == "joint-api-local-s1"
+                            || layout == "joint-api-local-licm-s1"
+                            || layout == "joint-api-local-s1-partial"
+                            || layout == "joint-api-local-licm-s1-partial"
+                            || layout == "joint-api-local-mr"
+                            || layout == "joint-api-local-licm-mr"
+                            || layout == "joint-api-local-smc"
+                            || layout == "joint-api-local-licm-smc"
+                            || layout == "joint-api-local-smc-partial"
+                            || layout == "joint-api-local-licm-smc-partial"
+                            || layout == "joint-api-local-s1-smc"
+                            || layout == "joint-api-local-licm-s1-smc"
+                            || layout == "joint-api-local-mr-smc"
+                            || layout == "joint-api-local-licm-mr-smc"
+                            || layout == "joint-api-local-s1-smc-partial"
+                            || layout == "joint-api-local-licm-s1-smc-partial"
+                            || layout == "joint-api-local-mr-smc-partial"
+                            || layout == "joint-api-local-licm-mr-smc-partial")
+                    {
+                        continue;
+                    }
                     let before = target_char_size(
                         &Printer::new(&candidate_ast, false).output(candidate_root),
                     );
@@ -1066,6 +1893,22 @@ fn evaluate_candidate_with_verifier(
                 if r.saved.unwrap_or(0) > 0 {
                     candidate_passes.push(PassRecord {
                         name: "exact numeric literal pooling".into(),
+                        saved: r.saved.map(|saved| saved as i64),
+                        detail: r.details.map(|parts| parts.join(";")),
+                        elapsed_ms: None,
+                    });
+                }
+            }
+            if aggressive && toggles.enabled("exact-string-literal-pooling") {
+                let r = passes::string_pool::pool_string_literals(
+                    &mut candidate_ast,
+                    candidate_root,
+                    toggles.enabled("scope-renaming"),
+                );
+                candidate_root = r.root;
+                if r.saved.unwrap_or(0) > 0 {
+                    candidate_passes.push(PassRecord {
+                        name: "exact string literal pooling".into(),
                         saved: r.saved.map(|saved| saved as i64),
                         detail: r.details.map(|parts| parts.join(";")),
                         elapsed_ms: None,
@@ -1121,6 +1964,14 @@ fn evaluate_candidate_with_verifier(
             return Err("zero-cost newline printer changed size".into());
         }
         let (code, newline_count, origins) = output.finish(&candidate_ast);
+        if let Some(target) = target_size {
+            if size <= target {
+                let rank = target_speed_rank(layout);
+                if best_fitting_rank.is_none_or(|best| rank < best) {
+                    best_fitting_rank = Some(rank);
+                }
+            }
+        }
         candidates.push(Candidate {
             origins: origins.map(Arc::new),
             lexical_origins: None,
@@ -1148,6 +1999,36 @@ pub fn evaluate_candidate(job: CandidateJob) -> Result<CandidateBatch, String> {
     evaluate_candidate_with_verifier(job, &mut verifier)
 }
 
+/// Target-size speed rank of a layout, shared by winner selection and by
+/// winner-preserving layout pruning in evaluate_candidate_with_verifier.
+/// Lower is faster; layouts outside the speed family rank last.
+fn target_speed_rank(layout: &str) -> usize {
+    match layout {
+        "joint-api-local-licm-s1-smc" => 0,
+        "joint-api-local-licm-mr-smc" => 1,
+        "joint-api-local-licm-s1-smc-partial" => 2,
+        "joint-api-local-licm-mr-smc-partial" => 3,
+        "joint-api-local-licm-s1" => 4,
+        "joint-api-local-licm-s1-partial" => 5,
+        "joint-api-local-licm-mr" => 6,
+        "joint-api-local-licm-smc" => 7,
+        "joint-api-local-licm-smc-partial" => 8,
+        "joint-api-local-licm" => 9,
+        "joint-api-local-s1-smc" => 10,
+        "joint-api-local-mr-smc" => 11,
+        "joint-api-local-s1-smc-partial" => 12,
+        "joint-api-local-mr-smc-partial" => 13,
+        "joint-api-local-s1" => 14,
+        "joint-api-local-s1-partial" => 15,
+        "joint-api-local-mr" => 16,
+        "joint-api-local-smc" => 17,
+        "joint-api-local-smc-partial" => 18,
+        "joint-api-local" => 19,
+        "joint-api" => 20,
+        _ => 21,
+    }
+}
+
 fn select_best_candidates(
     context: SearchContext,
     mut candidates: Vec<Candidate>,
@@ -1159,7 +2040,54 @@ fn select_best_candidates(
     if candidates.is_empty() {
         return Err("No semantically valid optimization candidate survived verification.".into());
     }
-    candidates.sort_by(|a, b| a.size.cmp(&b.size).then(a.order.cmp(&b.order)));
+    // Target-size compilation (OBJ-2) prioritizes generated-code runtime
+    // speed within the target, not minimal size: among candidates that fit
+    // the target, the LICM layout beats the localized alias layout, which
+    // beats the global alias layout, which beats every other layout; the
+    // S1 layouts sit above their non-S1 counterparts (LICM+S1 above
+    // LICM, local+S1 above local), since the S1 layout is its base
+    // layout plus per-iteration table-lookup savings; a partial S1
+    // layout sits between its full S1 layout and its base layout, so
+    // it can only win when the full layout exceeds the target; the MR
+    // layouts sit above their base layouts but below the S1 layouts; the
+    // SMC layouts sit above their base layouts but below the MR layouts
+    // (an MR saving scales with trip count, an SMC saving does not); a
+    // partial SMC layout sits between its full SMC layout and its base
+    // layout, so it can only win when the full layout exceeds the
+    // target; ties fall back to size, then order. Composite S1+SMC /
+    // MR+SMC layouts sit above both of their components; a partial
+    // composite (full S1/MR with first-group-only SMC) sits directly
+    // below its full composite, so it can only win when the full
+    // composite exceeds the target.
+    // When nothing fits the target, selection is plain size minimization,
+    // exactly as in target-free compilation. This ranking is only reachable
+    // with a target: target-free contexts carry lexical_target None (the
+    // lexical path has a single candidate, so its ranking is unchanged).
+    let speed_rank = target_speed_rank;
+    // The sort key is (over-target, speed rank, size, order): fitting
+    // candidates always sort before over-target ones, so a speed variant
+    // that exceeds the target can never beat a fitting candidate. When
+    // nothing fits, the rank is ignored and plain size minimization applies.
+    if let Some(target) = context.lexical_target {
+        candidates.sort_by(|a, b| {
+            let key = |candidate: &Candidate| {
+                let over = candidate.size > target;
+                (
+                    over,
+                    if over {
+                        0
+                    } else {
+                        speed_rank(&candidate.layout)
+                    },
+                    candidate.size,
+                    candidate.order,
+                )
+            };
+            key(a).cmp(&key(b))
+        });
+    } else {
+        candidates.sort_by(|a, b| a.size.cmp(&b.size).then(a.order.cmp(&b.order)));
+    }
     let candidate_sizes = candidates
         .iter()
         .map(|candidate| CandidateSize {
@@ -1293,7 +2221,7 @@ fn build_satisficing_result(
 ) -> Result<CompileCodeResult, String> {
     let context = SearchContext {
         lexical: false,
-        lexical_target: None,
+        lexical_target: Some(target_size),
         property_reads_hardcoded,
         core_variants: 1,
         structural_variants: structural_total,
@@ -1315,40 +2243,29 @@ fn build_satisficing_result(
     Ok(result)
 }
 
-fn target_is_met(candidates: &[Candidate], target_size: usize) -> bool {
-    candidates
-        .iter()
-        .any(|candidate| target_char_size(&candidate.code) <= target_size)
-}
-
-/// Run deterministic target search. Source/base checkpoints may finish early;
-/// all later work uses the same core and candidates as target-free search.
-/// The optional checkpoint budget returns the best valid code seen so far.
-/// No wall-clock measurements affect scheduling or candidate selection.
+/// Run deterministic target search. Checkpoints record progress and honor
+/// the optional checkpoint budget, but a fitting candidate no longer ends
+/// the search: under the 2026-10-30 satisficing decision (option B) the
+/// search continues to the speed layouts and the winner is the fastest
+/// fitting candidate. All later work uses the same core and candidates as
+/// target-free search. No wall-clock measurements affect scheduling or
+/// candidate selection.
 fn try_satisficing_compact(
     source: &str,
     options: &CompileOptions,
     max_checkpoints: Option<usize>,
 ) -> Result<SatisficingAttempt, String> {
     options.validate_pass_toggles()?;
-    let target_size = options
+    // `target_size` presence is validated here; the value itself is read
+    // again by `try_satisficing_from_parsed`.
+    let _target_size = options
         .target_size
         .ok_or("try_satisficing requires target_size")?;
-    // Source-sized targets with runtime properties stop at the identity
-    // checkpoint. Parse and validate them normally, but do not construct a
-    // per-node origin table that the exact-copy result will immediately discard.
-    // Hardcoded properties can alter the input, so they retain full tracking.
-    let identity_checkpoint = options.origin_source.is_some()
-        && target_char_size(source) <= target_size
-        && options
-            .property
-            .as_ref()
-            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
-    let (parsed_ast, parsed_root) = if identity_checkpoint {
-        parse_source(source).map_err(|error| error.to_string())?
-    } else {
-        parse_for_search(source, options)?
-    };
+    // A source-fit result is no longer guaranteed to be the identity copy
+    // (option B: the fastest fitting optimized candidate wins instead), so
+    // always parse for search: the winning optimized candidate needs its
+    // tracked origins. Hardcoded properties retain full tracking as before.
+    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
     try_satisficing_from_parsed(source, options, max_checkpoints, parsed_ast, parsed_root)
 }
 pub fn try_satisficing(
@@ -1378,6 +2295,8 @@ fn try_satisficing_from_parsed(
         options.environment,
         &options.host_bindings,
     )?;
+    // Same source-legality gate as prepare_search_from_parsed (S10/S14).
+    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
     if storm_lua_analysis::environment_checks::lexical_reason(
         &parsed_ast,
         options.environment,
@@ -1426,31 +2345,12 @@ fn try_satisficing_from_parsed(
     let mut structural_names = Vec::<String>::new();
     let mut structural_total = 0usize;
 
+    // Checkpoints no longer return on a fitting candidate (option B):
+    // they only count progress and honor the caller's checkpoint budget.
+    // The final winner is selected after the full search completes.
     macro_rules! checkpoint {
         ($stage:expr) => {{
             checkpoints += 1;
-            let met = target_is_met(&explored, target_size);
-            if met {
-                let result = build_satisficing_result(
-                    property_reads_hardcoded,
-                    &explored,
-                    attempted,
-                    parse_rejected,
-                    semantic_rejected,
-                    structural_total,
-                    &structural_names,
-                    target_size,
-                    true,
-                    true,
-                    checkpoints,
-                    $stage,
-                )?;
-                return Ok(SatisficingAttempt {
-                    status: SatisficingStatus::Satisfied,
-                    result,
-                    fallback: None,
-                });
-            }
             if max_checkpoints.is_some_and(|limit| checkpoints >= limit) {
                 let result = build_satisficing_result(
                     property_reads_hardcoded,
@@ -1476,8 +2376,9 @@ fn try_satisficing_from_parsed(
     }
 
     // The source itself is the first anytime candidate when no property read had to
-    // be hardcoded. If it already satisfies the target, OBJ-2 should perform no
-    // optimization at all. Property hardcode mode instead emits the transformed
+    // be hardcoded. Fitting the target no longer ends the search: the source
+    // remains the fallback winner only when no optimized candidate fits.
+    // Property hardcode mode instead emits the transformed
     // AST first so the requested option is still honored.
     if property_reads_hardcoded == 0 {
         explored.push(Candidate {
@@ -1582,6 +2483,7 @@ fn try_satisficing_from_parsed(
     }
     let remaining_jobs = ranked.map(|(_, job)| job).collect::<Vec<_>>();
     if remaining_jobs.is_empty() {
+        context.lexical_target = Some(target_size);
         let result = finalize_satisficing_fallback(
             select_best_compact(context, Vec::new())?,
             target_size,
@@ -1667,8 +2569,10 @@ fn compile_code_obj1(source: &str, options: &CompileOptions) -> Result<CompileCo
     select_best_compact(context, batches)
 }
 
-/// Compile without an external semantic verifier. `target_size` activates the
-/// OBJ-2 checkpoints within canonical search; absence of a target preserves OBJ-1.
+/// Compile without an external semantic verifier. `target_size` activates
+/// OBJ-2 target search within canonical search (checkpoints record progress;
+/// a fitting candidate does not stop the search); absence of a target
+/// preserves OBJ-1.
 #[doc(hidden)]
 pub fn compile_code_compact(
     source: &str,
@@ -1691,8 +2595,9 @@ fn finish_target_attempt(
         SatisficingStatus::Satisfied | SatisficingStatus::Stopped => Ok(attempt.result),
         SatisficingStatus::NeedsFullSearch => {
             let prior_checkpoints = attempt.result.stats.checkpoints;
-            let (context, jobs) = take_satisficing_fallback(&mut attempt)
+            let (mut context, jobs) = take_satisficing_fallback(&mut attempt)
                 .ok_or("satisficing fallback preparation missing")?;
+            context.lexical_target = Some(target_size);
             let batches = jobs
                 .into_iter()
                 .map(evaluate_candidate)
@@ -1722,17 +2627,10 @@ pub fn compile_code_with_source_inspection_compact(
     let lexical_options = options.environment
         == storm_lua_spec::environment::EnvironmentProfile::Extended
         || !options.host_bindings.is_empty();
-    let identity_checkpoint = options
-        .target_size
-        .is_some_and(|target| target_char_size(source) <= target)
-        && options
-            .property
-            .as_ref()
-            .is_none_or(|p| p.mode == crate::config::PropertyMode::Runtime);
     let (ast, root, positions) = if let Some(name) = options
         .origin_source
         .as_deref()
-        .filter(|_| !lexical_options && !identity_checkpoint)
+        .filter(|_| !lexical_options)
     {
         storm_lua_syntax::parser::parse_source_with_origin_positions(name, source, |ast| {
             storm_lua_analysis::environment_checks::lexical_reason(
@@ -1801,9 +2699,205 @@ pub fn compile_code_with_verifier(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::field_reassign_with_default
+)]
 mod phase7_serialization_tests {
     use super::*;
+
+    const TARGET_PROBE_SOURCE: &str = "function onTick()output.setNumber(1,1)output.setNumber(2,2)output.setNumber(3,3)output.setNumber(4,4)output.setBool(1,true)output.setBool(2,false)output.setBool(3,true)output.setBool(4,false)end";
+
+    /// Target-size compilation evaluates one extra layout (the localized
+    /// alias layout) per api-alias job. Tests that compare a target-mode
+    /// result against the target-free candidate set must therefore strip
+    /// the localized entries and add the extra attempts back.
+    fn without_local_layouts(sizes: &[CandidateSize]) -> Vec<CandidateSize> {
+        sizes
+            .iter()
+            .filter(|size| size.layout != "joint-api-local")
+            .cloned()
+            .collect()
+    }
+
+    fn alias_job_count(source: &str, options: &CompileOptions) -> usize {
+        prepare_search(source, options)
+            .unwrap()
+            .1
+            .iter()
+            .filter(|job| job.toggles.enabled("api-alias-optimization"))
+            .count()
+    }
+
+    #[test]
+    fn target_size_prefers_localized_aliases_within_budget() {
+        let free = compile_code(TARGET_PROBE_SOURCE, &CompileOptions::default()).unwrap();
+        let free_size = target_char_size(&free.code);
+        assert_eq!(free.stats.winner_layout, "joint-api");
+        // A target that fits the localized layout selects it, even though
+        // it is longer than the global-alias winner.
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size + 12);
+        let localized = compile_code(TARGET_PROBE_SOURCE, &options).unwrap();
+        assert_eq!(localized.stats.winner_layout, "joint-api-local");
+        assert!(target_char_size(&localized.code) <= free_size + 12);
+        // Zero-cost newlines put a newline after the `local` keyword.
+        assert!(localized.code.starts_with("local"));
+        assert!(localized.stats.target_met);
+        // A target that fits only the global layout must not select the
+        // localized layout, even though it ranks first on speed: the
+        // target is a hard budget cap.
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size);
+        let capped = compile_code(TARGET_PROBE_SOURCE, &options).unwrap();
+        assert_eq!(capped.stats.winner_layout, "joint-api");
+        assert!(target_char_size(&capped.code) <= free_size);
+        assert!(capped.stats.target_met);
+        // Target-free compilation is unchanged: the localized layout is
+        // never generated, so the winner stays the global alias layout.
+        assert!(!free.code.starts_with("local"));
+    }
+
+    /// Relaxed carrier synthesis inside the target-size localized
+    /// layout: three straight-line `screen.getHeight()` calls are
+    /// rejected by the strict gate (their aliased form is only three
+    /// characters, so the carrier definition costs more characters
+    /// than it saves), but within a target budget speed outranks
+    /// size, so the localized layout synthesizes one carrier and
+    /// calls it once instead of three times. The capped case checks
+    /// that the relaxed layout, at one character over the free
+    /// winner, never beats a fitting candidate.
+    #[test]
+    fn target_size_relaxed_carrier_layout_within_budget() {
+        let source = "function onTick()output.setNumber(1,screen.getHeight()+screen.getHeight()+screen.getHeight())end";
+        let free = compile_code(source, &CompileOptions::default()).unwrap();
+        assert_eq!(free.stats.winner_layout, "joint-api");
+        let free_size = target_char_size(&free.code);
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size + 5);
+        let relaxed = compile_code(source, &options).unwrap();
+        assert_eq!(relaxed.stats.winner_layout, "joint-api-local");
+        assert!(relaxed.stats.target_met);
+        assert!(target_char_size(&relaxed.code) <= free_size + 5);
+        assert_eq!(relaxed.code.matches("getHeight()").count(), 1);
+        parse_source(&relaxed.code).expect("relaxed carrier winner reparses");
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size);
+        let capped = compile_code(source, &options).unwrap();
+        assert_eq!(capped.stats.winner_layout, "joint-api");
+        assert!(capped.stats.target_met);
+        assert!(target_char_size(&capped.code) <= free_size);
+    }
+
+    /// Target-size barrier relaxation (reuse): two straight-line
+    /// `screen.getWidth()` calls separated by an unknown call keep two
+    /// calls in the target-free winner (the alias definition is the only
+    /// `screen.getWidth` text), but the target-size localized layout
+    /// reuses the carrier across the barrier and wins with a single
+    /// direct call inside the budget.
+    #[test]
+    fn target_size_barrier_relaxed_reuse_wins_within_budget() {
+        let source = "function onDraw()local w=screen.getWidth()foo()local h=screen.getWidth()screen.drawRect(0,0,w,h)end";
+        let free = compile_code(source, &CompileOptions::default()).unwrap();
+        assert_eq!(free.stats.winner_layout, "joint-api");
+        assert_eq!(free.code.matches("screen.getWidth()").count(), 0);
+        let free_size = target_char_size(&free.code);
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size + 2);
+        let relaxed = compile_code(source, &options).unwrap();
+        assert_eq!(relaxed.stats.winner_layout, "joint-api-local");
+        assert!(relaxed.stats.target_met);
+        assert!(target_char_size(&relaxed.code) <= free_size + 2);
+        assert_eq!(relaxed.code.matches("screen.getWidth()").count(), 1);
+        parse_source(&relaxed.code).expect("barrier-relaxed winner reparses");
+    }
+
+    /// Target-size barrier relaxation (synthesis): two straight-line
+    /// `math.fmod` calls separated by a stateful call keep two calls in
+    /// the target-free winner, but the target-size localized layout
+    /// synthesizes one barrier-stable carrier and wins with a single
+    /// call inside the budget.
+    #[test]
+    fn target_size_barrier_relaxed_synth_wins_within_budget() {
+        let source = "function onTick()x=math.fmod(5.5,2)a=math.random(10)y=math.fmod(5.5,2)output.setNumber(1,x+y)end";
+        let free = compile_code(source, &CompileOptions::default()).unwrap();
+        assert_eq!(free.stats.winner_layout, "joint-api");
+        assert_eq!(free.code.matches("math.fmod(5.5,2)").count(), 0);
+        let free_size = target_char_size(&free.code);
+        let mut options = CompileOptions::default();
+        options.target_size = Some(free_size + 3);
+        let relaxed = compile_code(source, &options).unwrap();
+        assert_eq!(relaxed.stats.winner_layout, "joint-api-local");
+        assert!(relaxed.stats.target_met);
+        assert!(target_char_size(&relaxed.code) <= free_size + 3);
+        assert_eq!(relaxed.code.matches("math.fmod(5.5,2)").count(), 1);
+        parse_source(&relaxed.code).expect("barrier-relaxed winner reparses");
+    }
+
+    /// Target-free barrier-relaxed synthesis as an additional candidate
+    /// (cycle 45): three straight-line `math.fmod` calls separated by
+    /// unknown calls keep three calls in the target-free winner without
+    /// the new layouts (joint-api, 97 characters), but the
+    /// barrier-relaxed candidate collapses them into one carrier and
+    /// wins at 91 characters. The previous layouts stay available, so a
+    /// candidate like this can only win when it is smaller.
+    #[test]
+    fn target_free_barrier_relaxed_synth_candidate_wins() {
+        let source = "function onTick()x=math.fmod(5.5,2)foo()y=math.fmod(5.5,2)foo()z=math.fmod(5.5,2)output.setNumber(1,x+y+z)end";
+        let free = compile_code(source, &CompileOptions::default()).unwrap();
+        assert_eq!(free.stats.winner_layout, "none-barrier-relaxed");
+        assert_eq!(target_char_size(&free.code), 91);
+        assert_eq!(free.code.matches("math.fmod(5.5,2)").count(), 1);
+        parse_source(&free.code).expect("barrier-relaxed winner reparses");
+    }
+
+    /// Full-search winner selection for the LICM+S1 layout: with a
+    /// generous target every candidate fits, so the combined layout
+    /// (speed rank 0: LICM hoists the host reads and S1 caches the
+    /// single math.min callee) beats the LICM-only layout. The
+    /// capped case below checks that an over-target LICM layout never
+    /// beats a fitting candidate.
+    #[test]
+    fn target_size_prefers_licm_layout_within_budget() {
+        let source = "local s=0 function onTick() local t=0 for i=1,200 do t=t+input.getNumber(1)*2+input.getNumber(2)*3+math.min(i,50)*0.5 end s=t output.setNumber(1,t) output.setBool(1,t>100) end";
+        let mut options = CompileOptions::default();
+        options.target_size = Some(1000);
+        let (mut context, jobs) = prepare_search(source, &options).unwrap();
+        let batches = jobs
+            .into_iter()
+            .map(evaluate_candidate)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        context.lexical_target = Some(1000);
+        let result = select_best_compact(context, batches).unwrap();
+        assert_eq!(result.stats.winner_layout, "joint-api-local-licm-s1");
+        assert!(result.stats.target_met);
+        parse_source(&result.code).expect("licm winner reparses");
+    }
+
+    #[test]
+    fn target_size_cap_excludes_licm_layout_over_budget() {
+        let source = "local s=0 function onTick() local t=0 for i=1,200 do t=t+input.getNumber(1)*2+input.getNumber(2)*3+math.min(i,50)*0.5 end s=t output.setNumber(1,t) output.setBool(1,t>100) end";
+        // The localized alias layout for this source is 146 characters;
+        // every LICM layout is longer, so at this target the localized
+        // layout must win and the LICM layout must not, even though it
+        // ranks first on speed among fitting candidates.
+        let mut options = CompileOptions::default();
+        options.target_size = Some(146);
+        let (mut context, jobs) = prepare_search(source, &options).unwrap();
+        let batches = jobs
+            .into_iter()
+            .map(evaluate_candidate)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        context.lexical_target = Some(146);
+        let result = select_best_compact(context, batches).unwrap();
+        assert_eq!(result.stats.winner_layout, "joint-api-local");
+        assert!(target_char_size(&result.code) <= 146);
+        assert!(result.stats.target_met);
+    }
 
     #[test]
     fn candidate_size_uses_the_public_utf16_billing_unit() {
@@ -1830,32 +2924,36 @@ mod phase7_serialization_tests {
     }
 
     #[test]
-    fn satisficing_returns_source_when_input_already_meets_target() {
+    fn satisficing_source_fit_continues_to_full_search() {
         let source = "function onTick()end\n";
         let options = CompileOptions {
             target_size: Some(source.encode_utf16().count()),
             ..CompileOptions::default()
         };
         let result = compile_code(source, &options).expect("already satisfied");
-        assert_eq!(result.code, source);
+        // Option B: the fitting source does not stop the search; the
+        // winner is the printed form and the search runs to completion.
+        assert_eq!(result.code, "function\nonTick()end");
         assert!(result.stats.target_met);
-        assert!(result.stats.stopped_early);
-        assert_eq!(result.stats.stage.as_deref(), Some("source"));
-        assert_eq!(result.stats.checkpoints, 1);
+        assert!(!result.stats.stopped_early);
+        assert_eq!(result.stats.stage.as_deref(), Some("full-search"));
+        assert!(result.stats.checkpoints >= 2);
     }
 
     #[test]
-    fn satisficing_reaches_small_target_without_full_search() {
+    fn satisficing_continues_past_fitting_checkpoint_to_full_search() {
         let source = "function onTick()output.setNumber(1,1+2)end";
         let options = CompileOptions {
             target_size: Some(41),
             ..CompileOptions::default()
         };
         let result = compile_code(source, &options).expect("target compile");
-        assert_eq!(result.code, "function onTick()output.setNumber(1,3)end");
+        // Option B: the fitting structural candidate does not stop the
+        // search, but it still wins here because no speed layout fits 41.
+        assert_eq!(result.code, "function\nonTick()output.setNumber(1,3)end");
         assert!(result.stats.target_met);
-        assert!(result.stats.stopped_early);
-        assert_ne!(result.stats.stage.as_deref(), Some("full-search"));
+        assert!(!result.stats.stopped_early);
+        assert_eq!(result.stats.stage.as_deref(), Some("full-search"));
     }
 
     #[test]
@@ -1870,7 +2968,7 @@ mod phase7_serialization_tests {
         assert!(!result.stats.stopped_early);
         assert_eq!(result.stats.stage.as_deref(), Some("full-search"));
         assert!(result.stats.checkpoints >= 1);
-        assert_eq!(result.code, "function onTick()output.setNumber(1,3)end");
+        assert_eq!(result.code, "function\nonTick()output.setNumber(1,3)end");
     }
 
     const RESUME_SOURCE: &str = "local total=0
@@ -1969,6 +3067,13 @@ mod phase7_serialization_tests {
                         },
                     )
                     .unwrap();
+                    let alias_jobs = alias_job_count(
+                        &source,
+                        &CompileOptions {
+                            target_size: Some(0),
+                            ..options.clone()
+                        },
+                    );
                     let target = compile_code(
                         &source,
                         &CompileOptions {
@@ -1981,8 +3086,14 @@ mod phase7_serialization_tests {
                         target.code, baseline.code,
                         "{numeric_mode:?}/{mode:?}/{search_mode:?}"
                     );
-                    assert_eq!(target.stats.candidate_sizes, baseline.stats.candidate_sizes);
-                    assert_eq!(target.stats.attempted, baseline.stats.attempted);
+                    assert_eq!(
+                        without_local_layouts(&target.stats.candidate_sizes),
+                        baseline.stats.candidate_sizes
+                    );
+                    assert_eq!(
+                        target.stats.attempted,
+                        baseline.stats.attempted + alias_jobs
+                    );
                     assert_eq!(
                         target.property_reads_hardcoded,
                         baseline.property_reads_hardcoded
@@ -2013,10 +3124,17 @@ mod phase7_serialization_tests {
                     search_beam_width: beam,
                     ..fast.clone()
                 };
+                let alias_jobs = alias_job_count(RESUME_SOURCE, &options);
                 let actual = compile_code(RESUME_SOURCE, &options).unwrap();
                 assert_eq!(actual.code, expected.code);
-                assert_eq!(actual.stats.candidate_sizes, expected.stats.candidate_sizes);
-                assert_eq!(actual.stats.attempted, expected.stats.attempted);
+                assert_eq!(
+                    without_local_layouts(&actual.stats.candidate_sizes),
+                    expected.stats.candidate_sizes
+                );
+                assert_eq!(
+                    actual.stats.attempted,
+                    expected.stats.attempted + alias_jobs
+                );
                 assert!(!actual.stats.target_met);
                 assert!(!actual.stats.stopped_early);
             }
@@ -2035,24 +3153,30 @@ mod phase7_serialization_tests {
         assert!(take_satisficing_fallback(&mut attempt).is_none());
         let baseline = compile_code(source, &CompileOptions::default()).unwrap();
         assert_eq!(attempt.result.code, baseline.code);
-        assert_eq!(attempt.result.stats.attempted, baseline.stats.attempted);
+        let alias_jobs = alias_job_count(source, &options);
+        assert_eq!(
+            attempt.result.stats.attempted,
+            baseline.stats.attempted + alias_jobs
+        );
         assert_eq!(attempt.result.stats.stage.as_deref(), Some("full-search"));
         assert!(!attempt.result.stats.stopped_early);
     }
 
     #[test]
-    fn target_source_checkpoint_reports_utf16_and_honors_property_transform() {
+    fn target_search_winner_reports_utf16_size() {
         let source = "-- 日本語😀\nfunction onTick()end";
         let options = CompileOptions {
             target_size: Some(source.encode_utf16().count()),
-            ..Default::default()
+            ..CompileOptions::default()
         };
         let result = compile_code(source, &options).unwrap();
+        // Option B: the comment is stripped by the winning candidate, so
+        // the reported size is the winner's UTF-16 length, not the source's.
+        assert_eq!(result.code, "function\nonTick()end");
         assert_eq!(
             result.stats.candidate_sizes[0].size,
-            source.encode_utf16().count()
+            result.code.encode_utf16().count()
         );
-        assert_eq!(result.code, source);
         assert!(result.stats.target_met);
     }
 
@@ -2083,7 +3207,10 @@ mod phase7_serialization_tests {
         )
         .unwrap();
         assert_eq!(actual.code, expected.code);
-        assert_eq!(actual.stats.candidate_sizes, expected.stats.candidate_sizes);
+        assert_eq!(
+            without_local_layouts(&actual.stats.candidate_sizes),
+            expected.stats.candidate_sizes
+        );
         assert!(actual.stats.target_met);
         assert!(!actual.stats.stopped_early);
         assert_eq!(actual.stats.stage.as_deref(), Some("full-search"));
@@ -2121,7 +3248,12 @@ mod identity_origin_tests {
     use crate::config::{PropertyConfig, PropertyMode};
 
     #[test]
-    fn source_sized_target_keeps_the_exact_identity_contract_and_validation() {
+    fn source_sized_target_continues_to_fastest_fitting_winner() {
+        // Option B: a fitting source is no longer returned unexamined.
+        // The winner must fit, its origins must validate for the winner
+        // code, and it is the identity copy only when no optimized
+        // candidate fits (the fallback). The folded first input pins that
+        // optimization actually happens instead of an identity return.
         for source in [
             "function onTick()output.setNumber(1,2*3)end",
             "-- 😀雪\r\nfunction onTick()\r\n output.setNumber(1,2)\r\nend\r\n",
@@ -2136,12 +3268,17 @@ mod identity_origin_tests {
                     ..Default::default()
                 };
                 let result = try_satisficing(source, &config, None).unwrap().result;
-                assert_eq!(result.code, source);
                 assert!(result.stats.target_met);
-                assert_eq!(result.stats.winner_structural, "target:source");
+                assert!(!result.stats.stopped_early);
+                if !zero && source == "function onTick()output.setNumber(1,2*3)end" {
+                    assert_eq!(result.code, "function onTick()output.setNumber(1,6)end");
+                }
                 let origins = result.origins.unwrap();
-                origins.validate_for_code(source).unwrap();
-                assert_eq!(origins, GeneratedOrigins::identity("input.lua", source));
+                origins.validate_for_code(&result.code).unwrap();
+                if result.stats.winner_structural == "target:source" {
+                    assert_eq!(result.code, source);
+                    assert_eq!(origins, GeneratedOrigins::identity("input.lua", source));
+                }
             }
         }
         let config = CompileOptions {
@@ -2172,17 +3309,21 @@ mod identity_origin_tests {
         let result = try_satisficing(source, &config, None).unwrap().result;
         assert_ne!(result.code, source);
         assert!(!result.code.contains("getNumber"));
-        assert_eq!(result.stats.winner_structural, "target:property");
         let origins = result.origins.unwrap();
         origins.validate_for_code(&result.code).unwrap();
         assert_eq!(origins.unknown_bytes(), 0);
         config.property.as_mut().unwrap().mode = PropertyMode::Runtime;
         let result = try_satisficing(source, &config, None).unwrap().result;
-        assert_eq!(result.code, source);
-        assert_eq!(
-            result.origins.unwrap(),
-            GeneratedOrigins::identity("input.lua", source)
-        );
+        // Option B: the fitting source no longer wins by default; the
+        // winner must still fit and its origins must validate for it.
+        assert!(result.stats.target_met);
+        assert!(!result.stats.stopped_early);
+        let origins = result.origins.unwrap();
+        origins.validate_for_code(&result.code).unwrap();
+        if result.stats.winner_structural == "target:source" {
+            assert_eq!(result.code, source);
+            assert_eq!(origins, GeneratedOrigins::identity("input.lua", source));
+        }
         config.property = None;
         let source = "local _ENV=_ENV -- not identity\nfunction onTick()output.setNumber(1,2)end";
         let result = try_satisficing(source, &config, None).unwrap().result;
@@ -2343,5 +3484,83 @@ mod owned_lexical_candidate_tests {
             assert!(batch.candidates.is_empty());
             assert_eq!(batch.semantic_rejected, 1);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::field_reassign_with_default
+)]
+mod load_legality_gate_tests {
+    use super::*;
+
+    // 候補S10 の真の核: ラベル後にバリア局所変数を使う形は VM も拒否する。
+    const USED_BARRIER: &str = "local a = 1 goto done local b = 2 ::done:: return a + b";
+    // 第210ラウンドの方言規則: ラベル後に参照されないバリアは VM が受理する。
+    const UNUSED_BARRIER: &str = "local a = 1 goto done local b = 2 ::done:: return a";
+    // 候補S14: 死んだ関数の `...` 誤用（洗浄前は VM が拒否する）。
+    const DEADFN_VARARG: &str = "local function f() return ... end return 1";
+    // 候補S14 機構B: ループ内で一度だけ呼ばれる関数の break。
+    const FUSION_BREAK: &str =
+        "local i = 0 while i < 1 do i = i + 1 local function f() break end f() end return i";
+    // 候補S14 機構Bの vararg 版: 呼ばれた非可変長関数の `return ...`。
+    const FUSION_VARARG: &str = "local function f(a) return ... end return f(1)";
+
+    fn locals_201() -> String {
+        let mut s = String::from("local function f() local ");
+        s.push_str(
+            &(1..=201)
+                .map(|i| format!("v{i}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        s.push_str(" = 1 return v201 end return f()");
+        s
+    }
+
+    #[test]
+    fn gate_rejects_vm_illegal_sources() {
+        for src in [USED_BARRIER, DEADFN_VARARG, FUSION_BREAK, FUSION_VARARG] {
+            assert!(
+                compile_code(src, &CompileOptions::default()).is_err(),
+                "expected rejection: {src}"
+            );
+        }
+        let s = locals_201();
+        assert!(
+            compile_code(&s, &CompileOptions::default()).is_err(),
+            "expected rejection: 201 locals"
+        );
+    }
+
+    #[test]
+    fn gate_accepts_vm_legal_sources() {
+        for src in [
+            UNUSED_BARRIER,
+            "local a = 1 return a",
+            "local function f() goto l local x = 5 ::l:: end return f()",
+        ] {
+            assert!(
+                compile_code(src, &CompileOptions::default()).is_ok(),
+                "expected acceptance: {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn gate_applies_on_target_path() {
+        let mut options = CompileOptions::default();
+        options.target_size = Some(64);
+        assert!(
+            compile_code(USED_BARRIER, &options).is_err(),
+            "target path must reject too"
+        );
+        assert!(
+            compile_code(UNUSED_BARRIER, &options).is_ok(),
+            "target path must accept dialect-legal sources"
+        );
     }
 }

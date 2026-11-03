@@ -81,11 +81,12 @@ export async function sourceMapBrowser({page,browser,name,url,evidence}){
   assert.equal(await other.locator('#map-tick').isDisabled(),true);
   assert.match(await other.locator('#map-detail').textContent(),/constant-folding/);
  }finally{await fresh.close();}
- // A verbatim/identity artifact may contain one copy range for the entire
- // program. Selection and runtime lines must project only their exact overlap.
+ // A non-minified module-less build copies the entry verbatim, so its map may
+ // contain one copy range for the entire program. Selection and runtime lines
+ // must project only their exact overlap.
  const identitySource='-- 😀雪\r\nfunction onTick()\r\n output.setNumber(1,7)\r\n output.setNumber(2,8)\r\nend\r\n';
  await page.locator('#steps-tab').click();
- await page.locator('#steps').fill(JSON.stringify([{op:'minify',source:identitySource,options:{sourceMap:true,sourceName:'identity.lua',targetSize:8192}}]));
+ await page.locator('#steps').fill(JSON.stringify([{op:'build',project:{entry:'identity.lua',modules:{'identity.lua':identitySource}},options:{sourceMap:true,minify:false}}]));
  await page.locator('#run').click();await complete(page);
  assert.equal(await page.locator('#map-generated').inputValue(),identitySource.replaceAll('\r\n','\n'));
  await select(page,'generated','output');
@@ -162,7 +163,7 @@ export async function sourceMapBrowser({page,browser,name,url,evidence}){
   await page.setViewportSize({width:1440,height:1100});
  }
  if(name==='chromium'){
-  // A real compiler-generated identity artifact larger than localStorage's usual
+  // A real compiler-generated artifact larger than localStorage's usual
   // capacity. It is imported for inspection, never executed or used as an input recipe.
   const isolated=await browser.newContext({acceptDownloads:true});const largePage=await isolated.newPage();
   try{
@@ -183,8 +184,8 @@ export async function sourceMapBrowser({page,browser,name,url,evidence}){
    await complete(largePage);await select(largePage,'generated','1');assert.match(await largePage.locator('#map-detail').textContent(),/Unknown.*由来未取得/);
    const largeArtifact=await largePage.evaluate(async()=>{
     const api=await import(new URL('./engine/compiler/compiler.js',document.baseURI).href);
-    const source='-- '+ 'source map snapshot '.repeat(170000)+'\nfunction onTick()end';
-    const result=api.compile(source,{sourceMap:true,sourceName:'large-identity.lua',targetSize:10000000});
+    const source='payload=\''+'source map snapshot '.repeat(170000)+'\'\nfunction onTick() output.setNumber(1,#payload) end';
+    const result=api.compile(source,{sourceMap:true,sourceName:'large-payload.lua'});
     if(!result.ok||!result.map)throw new Error(JSON.stringify(result.diagnostics));
     return {kind:'storm-lua-artifact',version:1,code:result.code,map:result.map};
    });

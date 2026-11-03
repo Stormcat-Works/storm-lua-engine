@@ -67,7 +67,8 @@ pub(super) fn emit_helper(
     let rest = ast.push(Node::Bin("*".into(), remainder, radix));
     let d = name(ast, data);
     let i = name(ast, index);
-    let last = ast.push(Node::Call(d, vec![i], Some("byte".into())));
+    let byte_sym = ast.strings.intern("byte");
+    let last = ast.push(Node::Call(d, vec![i], Some(byte_sym)));
     let joined = ast.push(Node::Bin("+".into(), rest, last));
     let decoded = offset(ast, joined, cutoff - 35);
     let lhs = name(ast, packed);

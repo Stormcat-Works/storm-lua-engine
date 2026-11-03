@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::pass::PassResult;
+use storm_lua_analysis::effects::EffectAnalyzer;
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 
@@ -128,7 +129,14 @@ fn normalized_body(
     body: NodeId,
     replacements: &HashMap<BindingId, Option<NodeId>>,
 ) -> String {
-    let mut ast = storm_lua_syntax::ast_utils::inherit_ast(source);
+    // Trial bodies are compared only by their printed text, and provenance
+    // is never read from them. Build them without an origin table: the
+    // previous inherit_ast arena tracked origins, so every constant_fold
+    // over a discarded trial body paid capture/finish allocations.
+    let mut ast = Ast {
+        nodes: Default::default(),
+        strings: source.strings.clone(),
+    };
     let body = copy_with_bindings(&mut ast, source, res, body, replacements);
     for _ in 0..3 {
         super::literal_folding::constant_fold(&mut ast, body, false);
@@ -165,7 +173,18 @@ fn can_omit(
 pub fn omit_equivalent_trailing_arguments(ast: &mut Ast, root: NodeId) -> PassResult {
     let source = clone_ast(ast);
     let res = resolve(&source, root);
+    let analyzer = EffectAnalyzer::new(&source, &res, root, true);
     let functions = functions(&source, &res);
+    // `normalized_body` folds a trial copy of the body in a fragment
+    // arena, where chunk-level redefinitions or shadowing of a builtin
+    // root (a Funcstat or assignment writing `math.max`, a write through
+    // an alias, a shadowing local named `math`) are invisible: the fold
+    // can evaluate such a call with the standard builtin's value and
+    // simplify the body past a branch that really depends on the omitted
+    // argument (candidate I, w9 cycle 64). Omit only for functions whose
+    // every fragment-evaluable builtin callee resolves to that same
+    // builtin under the chunk-level analyzer.
+    let mut fragment_safe: HashMap<BindingId, bool> = HashMap::new();
     let mut omitted = 0usize;
     // Nil-substitution depends on the function and omitted suffix, not on the
     // particular literal values at hundreds of other call sites.
@@ -190,6 +209,12 @@ pub fn omit_equivalent_trailing_arguments(ast: &mut Ast, root: NodeId) -> PassRe
         let Some(info) = functions.get(&bid) else {
             continue;
         };
+        let safe = *fragment_safe.entry(bid).or_insert_with(|| {
+            super::inline_functions::fragment_fold_builtin_safe(&source, &analyzer, info.body)
+        });
+        if !safe {
+            continue;
+        }
         if info.variadic || arguments.len() > info.parameter_bids.len() {
             continue;
         }
@@ -229,7 +254,7 @@ pub fn omit_equivalent_trailing_arguments(ast: &mut Ast, root: NodeId) -> PassRe
                 omitted += arguments.len() - keep;
                 ast.nodes.rewrite(
                     node,
-                    Node::Call(function, arguments[..keep].to_vec(), method.clone()),
+                    Node::Call(function, arguments[..keep].to_vec(), method),
                     "trailing-argument-omission",
                 );
                 break;
@@ -345,5 +370,82 @@ mod tests {
         let before = Printer::new(&ast, false).output(root);
         omit_equivalent_trailing_arguments(&mut ast, root);
         assert_eq!(Printer::new(&ast, false).output(root), before);
+    }
+
+    // Candidate I (w9 cycle 64): `normalized_body` folds a trial copy of
+    // the body in a fragment arena, where a chunk-level redefinition of
+    // `math.max` is invisible. The fold evaluates `math.max(1, 2)` with
+    // the standard builtin, decides the branch, and the trailing argument
+    // looks omittable even though the real condition selects the branch
+    // that returns it.
+    #[test]
+    fn redefined_builtin_condition_blocks_omission() {
+        let (mut ast, root) = parse_source(
+            "local function f(a)if math.max(1,2)==2 then return 0 else return a end end function math.max(x,y)return 3 end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f(7)"), "{out}");
+        assert!(out.contains("f(9)"), "{out}");
+    }
+
+    #[test]
+    fn builtin_member_assignment_blocks_omission() {
+        let (mut ast, root) = parse_source(
+            "local function f(a)if math.max(1,2)==2 then return 0 else return a end end math.max=function(x,y)return 3 end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f(7)"), "{out}");
+        assert!(out.contains("f(9)"), "{out}");
+    }
+
+    #[test]
+    fn shadowed_builtin_root_blocks_omission() {
+        let (mut ast, root) = parse_source(
+            "local math={max=function(x,y)return 3 end} local function f(a)if math.max(1,2)==2 then return 0 else return a end end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f(7)"), "{out}");
+        assert!(out.contains("f(9)"), "{out}");
+    }
+
+    #[test]
+    fn redefined_builtin_expression_condition_blocks_omission() {
+        let (mut ast, root) = parse_source(
+            "local function f(a)return math.max(1,2)==2 and 0 or a end function math.max(x,y)return 3 end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f(7)"), "{out}");
+        assert!(out.contains("f(9)"), "{out}");
+    }
+
+    #[test]
+    fn redefined_string_format_blocks_omission() {
+        let (mut ast, root) = parse_source(
+            "local function f(a)if string.format('%02d',3)=='03' then return 0 else return a end end function string.format(x,y)return 'x' end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f(7)"), "{out}");
+        assert!(out.contains("f(9)"), "{out}");
+    }
+
+    #[test]
+    fn unmodified_builtin_condition_still_omits() {
+        let (mut ast, root) = parse_source(
+            "local function f(a)if math.max(1,2)==2 then return 0 else return a end end function onTick()output.setNumber(1,f(7))output.setNumber(2,f(9))end",
+        )
+        .unwrap();
+        omit_equivalent_trailing_arguments(&mut ast, root);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("f()"), "{out}");
     }
 }

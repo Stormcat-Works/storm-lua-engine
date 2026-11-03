@@ -60,7 +60,7 @@ fn verify(shape: &Shape, payload: &Payload, values: &[Vec<Atom>]) {
     };
     let calls = statements
         .iter()
-        .map(|&stmt| classifier.call(stmt).unwrap())
+        .map(|&stmt| classifier.data.call(&source, &resolution, stmt).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(calls.len(), values.len() * 2);
     let mut ast = source.clone();
@@ -140,12 +140,17 @@ fn grouped_words_replay_complete_groups_and_never_add_padding_calls() {
             let columns = vec![(0..count)
                 .map(|i| ((i * 73 + i / 7) % range) as i64 - 51)
                 .collect()];
-            for (codec, text) in grouped::payloads(&columns, count) {
+            let source = Arc::new(columns);
+            for (codec, recipe) in grouped::payloads(&source, count) {
                 let Codec::GroupedBytes { rows, .. } = codec else {
                     unreachable!()
                 };
                 assert_eq!(count % rows, 0);
-                verify(&shape(codec, 1), &Payload::Bytes(text), &numbers(&columns));
+                verify(
+                    &shape(codec, 1),
+                    &Payload::Bytes(BytesPayload::Recipe(recipe)),
+                    &numbers(&source),
+                );
                 exercised += 1;
             }
         }
@@ -154,8 +159,8 @@ fn grouped_words_replay_complete_groups_and_never_add_padding_calls() {
 }
 #[test]
 fn grouped_model_rejects_overflow_and_nondivisible_tails() {
-    assert!(grouped::payloads(&[vec![-1_000_000_001, 1_000_000_001]], 2).is_empty());
-    assert!(grouped::payloads(&[vec![0, 1, 0, 1, 0]], 5)
+    assert!(grouped::payloads(&Arc::new(vec![vec![-1_000_000_001, 1_000_000_001]]), 2).is_empty());
+    assert!(grouped::payloads(&Arc::new(vec![vec![0, 1, 0, 1, 0]]), 5)
         .iter()
         .all(|(c, _)| matches!(c, Codec::GroupedBytes { rows: 5, .. })));
 }
@@ -181,7 +186,11 @@ fn prefix_records_cover_short_long_boundaries_and_wide_words() {
             };
             let columns = vec![values.into_iter().map(|n| n - 17).collect::<Vec<_>>()];
             let text = shared::fixed_payload(&codec, &columns, values.len()).unwrap();
-            verify(&shape(codec, 1), &Payload::Bytes(text), &numbers(&columns));
+            verify(
+                &shape(codec, 1),
+                &Payload::Bytes(BytesPayload::Literal(text)),
+                &numbers(&columns),
+            );
         }
     }
 }
@@ -212,7 +221,9 @@ fn scalar_palettes_keep_float_bits_nil_strings_booleans_and_argument_count() {
         Arg::Constant(Atom::Num("7".into())),
         Arg::Constant(Atom::Nil),
     ]];
-    let proposals = palette::proposals(&base, &[0], &[column], values.len());
+    let ints = column_ints(std::slice::from_ref(&column));
+    let lens = column_lens(std::slice::from_ref(&column));
+    let proposals = palette::proposals(&base, &[0], &[column], &ints, &lens, values.len());
     assert!(!proposals.is_empty());
     for (shape, _, payload) in proposals {
         verify(&shape, &payload, &values);
@@ -237,7 +248,8 @@ fn shared_tuple_model_preserves_cross_argument_correlations() {
         })
         .collect::<String>();
     let (mut ast, root) = crate::provenance_audit_support::parse_source(&source).unwrap();
-    assert!(shared::synthesize(&mut ast, root, true) > 0);
+    let input = SharedInput::from_input(ast.clone(), root);
+    assert!(shared::synthesize(&mut ast, root, true, &input) > 0);
     let after = crate::provenance_audit_support::Printer::new(&ast, false).output(root);
     assert_eq!(trace(&source), trace(&after));
 }
@@ -254,7 +266,8 @@ fn shared_tuple_planner_refuses_mutation_and_dynamic_arguments() {
         let (mut ast, root) =
             crate::provenance_audit_support::parse_source(&format!("{source}{calls}")).unwrap();
         let before = crate::provenance_audit_support::Printer::new(&ast, false).output(root);
-        assert_eq!(shared::synthesize(&mut ast, root, true), 0);
+        let input = SharedInput::from_input(ast.clone(), root);
+        assert_eq!(shared::synthesize(&mut ast, root, true, &input), 0);
         assert_eq!(
             before,
             crate::provenance_audit_support::Printer::new(&ast, false).output(root)
@@ -262,7 +275,8 @@ fn shared_tuple_planner_refuses_mutation_and_dynamic_arguments() {
     }
     let source = "function onDraw()screen.drawText(input.getNumber(1),2,3,4)end";
     let (mut ast, root) = crate::provenance_audit_support::parse_source(source).unwrap();
-    assert_eq!(shared::synthesize(&mut ast, root, true), 0);
+    let input = SharedInput::from_input(ast.clone(), root);
+    assert_eq!(shared::synthesize(&mut ast, root, true, &input), 0);
 }
 
 #[test]
@@ -275,7 +289,18 @@ fn all_scalar_record_encodings_retain_data_origins_and_exact_replay() {
         .iter()
         .map(|c| c.iter().map(|v| Atom::Num(v.to_string().into())).collect())
         .collect::<Vec<_>>();
-    let proposals = encode_columns(shape(Codec::Counter, 2), vec![0], atoms, 64, true, true);
+    let ints = column_ints(&atoms);
+    let lens = column_lens(&atoms);
+    let proposals = encode_columns(
+        shape(Codec::Counter, 2),
+        vec![0],
+        atoms,
+        ints,
+        &lens,
+        64,
+        true,
+        true,
+    );
     let mut kinds = BTreeSet::new();
     for (shape, _, payload) in proposals {
         kinds.insert(match shape.codec {
@@ -302,7 +327,7 @@ fn all_scalar_record_encodings_retain_data_origins_and_exact_replay() {
         .collect::<String>();
     verify(
         &shape(Codec::Bytes(vec![-9]), 1),
-        &Payload::Bytes(bytes),
+        &Payload::Bytes(BytesPayload::Literal(bytes)),
         &numbers(&byte_columns),
     );
 }
@@ -354,8 +379,26 @@ fn every_draw_portfolio_is_checked_instead_of_only_its_winning_candidate() {
             .enumerate()
         {
             let (mut a, mut p) = (original.clone(), plain.clone());
-            let actual = pack_impl(&mut a, root, true, enhanced, dense);
-            let expected = pack_impl(&mut p, plain_root, true, enhanced, dense);
+            let a_input = SharedInput::from_input(a.clone(), root);
+            let actual = pack_impl(
+                &mut a,
+                root,
+                true,
+                enhanced,
+                dense,
+                &mut std::collections::BTreeMap::new(),
+                &a_input,
+            );
+            let p_input = SharedInput::from_input(p.clone(), plain_root);
+            let expected = pack_impl(
+                &mut p,
+                plain_root,
+                true,
+                enhanced,
+                dense,
+                &mut std::collections::BTreeMap::new(),
+                &p_input,
+            );
             assert_eq!(actual.saved, expected.saved);
             assert!(a == p);
             transforms[index] += usize::from(actual.saved.unwrap_or(0) > 0);
@@ -367,15 +410,17 @@ fn every_draw_portfolio_is_checked_instead_of_only_its_winning_candidate() {
             assert_eq!(trace(&source), trace(&printed.code));
         }
         for (index, f) in [
-            regular::synthesize as fn(&mut Ast, NodeId, bool) -> usize,
+            regular::synthesize as fn(&mut Ast, NodeId, bool, &SharedInput) -> usize,
             shared::synthesize,
         ]
         .into_iter()
         .enumerate()
         {
             let (mut a, mut p) = (original.clone(), plain.clone());
-            let count = f(&mut a, root, true);
-            assert_eq!(count, f(&mut p, plain_root, true));
+            let a_input = SharedInput::from_input(a.clone(), root);
+            let count = f(&mut a, root, true, &a_input);
+            let p_input = SharedInput::from_input(p.clone(), plain_root);
+            assert_eq!(count, f(&mut p, plain_root, true, &p_input));
             assert!(a == p);
             transforms[index + 3] += usize::from(count > 0);
             let printed = storm_lua_syntax::Printer::new(&a, false).output_with_positions(root);
@@ -389,4 +434,27 @@ fn every_draw_portfolio_is_checked_instead_of_only_its_winning_candidate() {
         transforms.iter().all(|n| *n > 0),
         "unexercised transform {transforms:?}"
     );
+}
+
+#[test]
+fn decimal_spelling_round_trips_through_atom_integer() {
+    // Pins the round-trip lemma relied on when delta columns and palette
+    // index columns hand their integer view to encode_columns directly
+    // instead of re-parsing the constructed atoms: for every value those
+    // constructors can produce (|v| <= 2e9 for deltas, small positive
+    // indices for palettes), Atom::integer of the decimal spelling is the
+    // value itself.
+    for v in [
+        0i64,
+        1,
+        -1,
+        17,
+        1_000_000_000,
+        -1_000_000_000,
+        2_000_000_000,
+        -2_000_000_000,
+    ] {
+        let atom = Atom::Num(v.to_string().into());
+        assert_eq!(atom.integer(), Some(v), "round trip failed for {v}");
+    }
 }

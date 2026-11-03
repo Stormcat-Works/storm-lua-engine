@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-v0.3.1ではコンパイルとSource Map生成を高速化し、入れ子条件分岐の最適化・map読取り・Addon実行の不具合を修正しました。Addon専用の非短縮ビルドも利用できます。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.3.1.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)で確認できます。
+v0.4.0では敵対的レビューで確認された正確性問題を修正し、最適化後Source Mapをschema 2へ更新し、コンパイルを高速化しました。方言としてロード違法なソースは、最適化で無言に修復せずコンパイル時に拒否します。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.4.0.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.4.0)で確認できます。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,11 +14,11 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.3.1`。新しい版のJavaScript・型定義・WASMを一組で使用してください。
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.4.0`。新しい版のJavaScript・型定義・WASMを一組で使用してください。
 
 実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
-Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.3.1" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
+Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.4.0" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
 
 ## できること
 

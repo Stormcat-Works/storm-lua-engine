@@ -13,7 +13,8 @@ pub(super) struct Column {
 
 const MAX_UNARY: i64 = 128;
 
-pub(super) fn payload(columns: &[Vec<i64>], count: usize) -> Option<(Codec, String)> {
+pub(super) fn payload(source: &Arc<Vec<Vec<i64>>>, count: usize) -> Option<(Codec, BytesRecipe)> {
+    let columns: &[Vec<i64>] = source;
     if !(32..=8192).contains(&count) || columns.is_empty() {
         return None;
     }
@@ -70,39 +71,76 @@ pub(super) fn payload(columns: &[Vec<i64>], count: usize) -> Option<(Codec, Stri
         specs.push(spec);
         encoded.push(values);
     }
-    let mut bytes = String::new();
-    let (mut digit, mut used) = (0u8, 0u8);
-    let mut bit = |value: bool| {
-        digit |= u8::from(value) << used;
-        used += 1;
-        if used == 6 {
-            bytes.push((digit + 35) as char);
-            digit = 0;
-            used = 0;
-        }
-    };
-    for row in 0..count {
-        for (column, spec) in encoded.iter().zip(&specs) {
-            let value = column[row];
-            for _ in 0..(value >> spec.low_bits) {
-                bit(true);
-            }
-            bit(false);
-            for i in (0..spec.low_bits).rev() {
-                bit(value >> i & 1 != 0);
-            }
-        }
-    }
-    if used != 0 {
-        bytes.push((digit + 35) as char);
-    }
+    let mut features = PrintableFeatures::new();
+    walk_rice_bytes(&encoded, &specs, count, &mut |b| features.push(b));
     Some((
         Codec::Rice {
-            columns: specs,
+            columns: specs.clone(),
             count,
         },
-        bytes,
+        BytesRecipe::Rice {
+            specs,
+            values: encoded,
+            count,
+            features,
+        },
     ))
+}
+
+/// The rice byte walk: each value emits its unary quotient as one
+/// bits, a zero bit, then its `low_bits` low bits, packed six bits per
+/// byte (digit + 35, least-significant bit first within each byte).
+/// The codec's only byte generation; building the payload string and
+/// accumulating its size features are two sinks over the walk.
+pub(super) fn walk_rice_bytes(
+    values: &[Vec<i64>],
+    specs: &[Column],
+    count: usize,
+    sink: &mut impl FnMut(u8),
+) {
+    let mut bits = RiceBits {
+        digit: 0,
+        used: 0,
+        sink,
+    };
+    for row in 0..count {
+        for (column, spec) in values.iter().zip(specs) {
+            let value = column[row];
+            for _ in 0..(value >> spec.low_bits) {
+                bits.push(true);
+            }
+            bits.push(false);
+            for i in (0..spec.low_bits).rev() {
+                bits.push(value >> i & 1 != 0);
+            }
+        }
+    }
+    bits.finish();
+}
+
+/// Six-bit digit accumulator for the rice walk.
+struct RiceBits<'a, S: FnMut(u8)> {
+    digit: u8,
+    used: u8,
+    sink: &'a mut S,
+}
+
+impl<S: FnMut(u8)> RiceBits<'_, S> {
+    fn push(&mut self, value: bool) {
+        self.digit |= u8::from(value) << self.used;
+        self.used += 1;
+        if self.used == 6 {
+            (self.sink)(self.digit + 35);
+            self.digit = 0;
+            self.used = 0;
+        }
+    }
+
+    fn finish(self) {
+        if self.used != 0 {
+            (self.sink)(self.digit + 35);
+        }
+    }
 }
 
 fn bin(ast: &mut Ast, op: &str, a: NodeId, b: NodeId) -> NodeId {
@@ -120,7 +158,8 @@ fn read_bit(ast: &mut Ast, data: SymbolId, cursor: SymbolId) -> NodeId {
     let six = num(ast, 6);
     let byte_index = bin(ast, "//", at, six);
     let byte_index = offset(ast, byte_index, 1);
-    let byte = ast.push(Node::Call(d, vec![byte_index], Some("byte".into())));
+    let byte_sym = ast.strings.intern("byte");
+    let byte = ast.push(Node::Call(d, vec![byte_index], Some(byte_sym)));
     let digit = offset(ast, byte, -35);
     let at = name(ast, cursor);
     let six = num(ast, 6);
@@ -241,11 +280,12 @@ mod tests {
                     columns,
                     count: actual,
                 },
-                bytes,
-            ) = payload(&values, count).unwrap()
+                recipe,
+            ) = payload(&Arc::new(values.clone()), count).unwrap()
             else {
                 panic!()
             };
+            let bytes = recipe.build();
             assert_eq!(actual, count);
             let mut bit_index = 0;
             let mut bit = || {
@@ -275,7 +315,7 @@ mod tests {
             }
             assert!(bytes.len() * 6 - bit_index < 6);
         }
-        assert!(payload(&[vec![i64::MIN; 32]], 32).is_none());
-        assert!(payload(&[vec![1; 31]], 31).is_none());
+        assert!(payload(&Arc::new(vec![vec![i64::MIN; 32]]), 32).is_none());
+        assert!(payload(&Arc::new(vec![vec![1; 31]]), 31).is_none());
     }
 }

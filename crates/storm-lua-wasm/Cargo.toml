@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 storm-lua-addon = { workspace = true }
-storm-lua-vm = { workspace = true }
+storm-lua-vm = { workspace = true, features = ["backend-mlua"] }
 serde_json = { workspace = true }
 storm-lua-bridge = { workspace = true }
 storm-lua-spec = { workspace = true }

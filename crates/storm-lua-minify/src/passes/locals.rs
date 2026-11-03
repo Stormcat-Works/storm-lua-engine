@@ -3,7 +3,7 @@
 use crate::pass::PassResult;
 use storm_lua_analysis::effects::{count_binding_uses, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, Resolution};
-use storm_lua_syntax::ast::{Ast, Node, NodeId};
+use storm_lua_syntax::ast::{Ast, Node, NodeId, TableField};
 use storm_lua_syntax::size::measure_size;
 
 #[allow(clippy::too_many_arguments)]
@@ -74,7 +74,7 @@ fn rewrite_dead_block(
             .filter_map(|(index, bid)| {
                 let removable = reads.get(bid).copied().unwrap_or(0) == 0
                     && writes.get(bid).copied().unwrap_or(0) == 0
-                    && effects.is_movable(expressions[index]);
+                    && effects.is_droppable(expressions[index]);
                 if removable {
                     *changed = true;
                     None
@@ -94,7 +94,7 @@ fn rewrite_dead_block(
                             ("removedBindings", names.len().to_string()),
                             ("reads", "0".into()),
                             ("writes", "0".into()),
-                            ("initializerCheck", "EffectAnalyzer::is_movable".into()),
+                            ("initializerCheck", "EffectAnalyzer::is_droppable".into()),
                         ],
                     ),
                 );
@@ -283,6 +283,63 @@ mod tests {
     }
 
     #[test]
+    fn keeps_dead_local_whose_initializer_may_throw_on_dynamic_argument() {
+        // Candidate O (w9 cycle 66): math.min is a TOTAL_API member,
+        // but with a dynamically typed argument (an undefined global,
+        // nil at run time) the call throws, so the declaration is not
+        // droppable even though the local is never read.
+        let out = output("local x = math.min(g, 2)", true);
+        assert!(out.contains("local x="), "{out}");
+    }
+
+    #[test]
+    fn keeps_dead_local_whose_constructor_key_may_throw() {
+        // Q03: the constructor's own store throws for a nil key (and
+        // may throw for a dynamically typed key), so the declaration
+        // is not droppable even though the local is never read.
+        let out = output("local t = {[nil]=1}", true);
+        assert!(out.contains("local t="), "{out}");
+        let out = output("local t = {[k]=1}", true);
+        assert!(out.contains("local t="), "{out}");
+        // A literal-key constructor cannot throw and stays droppable.
+        let out = output("local t = {a=1}", true);
+        assert!(!out.contains("local t="), "{out}");
+    }
+
+    #[test]
+    fn keeps_dead_local_whose_initializer_is_a_recursive_call() {
+        // Candidate W (w9 cycle 67): the summary fixpoint starts from
+        // optimistic initial values, so a self-recursive function could
+        // "prove" its own totality and its recursive call was dropped
+        // here as droppable. The call may not return (unbounded
+        // recursion ends in a stack overflow), so it stays.
+        let out = output(
+            "local function f() local v = f() output.setNumber(1, 1) end local x = f()",
+            true,
+        );
+        assert!(out.contains("local v=f()"), "{out}");
+        // Mutual recursion is downgraded the same way.
+        let out = output(
+            "local function f() local v = g() end local function g() local w = f() end local x = f()",
+            true,
+        );
+        assert!(out.contains("local v=g()"), "{out}");
+        // An acyclic call chain keeps its proven totality and is still
+        // eliminated.
+        let out = output(
+            "local function g() return 1 end local function h() local v = g() return 2 end local x = h()",
+            true,
+        );
+        assert!(!out.contains("local v="), "{out}");
+        assert!(!out.contains("local x="), "{out}");
+    }
+
+    #[test]
+    fn still_removes_dead_local_with_statically_total_call_initializer() {
+        assert_eq!(output("local x = math.min(1, 2)", true), "");
+    }
+
+    #[test]
     fn removes_dead_local_chains_across_rounds() {
         assert_eq!(output("local a=1 local b=a", true), "");
     }
@@ -322,6 +379,15 @@ fn clone_ast(source: &Ast) -> Ast {
 fn remove_statement_from_blocks(ast: &mut Ast, statement: NodeId) {
     ast.nodes
         .retain_block_statements(|id| id != statement, "unused-local-declaration-removal");
+}
+
+fn remove_statement_from_blocks_with_code(
+    ast: &mut Ast,
+    statement: NodeId,
+    code: &std::sync::Arc<str>,
+) {
+    ast.nodes
+        .retain_block_statements_with_code(|id| id != statement, code);
 }
 
 fn remove_local_binding(ast: &mut Ast, source: &Ast, res: &Resolution, bid: u32) -> bool {
@@ -371,17 +437,59 @@ fn remove_local_binding(ast: &mut Ast, source: &Ast, res: &Resolution, bid: u32)
     true
 }
 
+/// Node ids of `self` occurrences inside a method body. At run
+/// time they denote the method's implicit receiver parameter, not
+/// the enclosing `self` binding the resolver attached them to (the
+/// AST binds no implicit self parameter). Value-substitution passes
+/// must never rewrite them (candidate S1, sibling of the phantom
+/// implicit-self binding fixed for scalarization / flattening /
+/// renaming in R277).
+fn phantom_self_nodes(ast: &Ast, root: NodeId) -> std::collections::HashSet<NodeId> {
+    fn collect(
+        ast: &Ast,
+        node: NodeId,
+        method_depth: usize,
+        out: &mut std::collections::HashSet<NodeId>,
+    ) {
+        if method_depth > 0 {
+            if let Node::Name(symbol) = ast.node(node) {
+                if ast.strings.get(*symbol) == "self" {
+                    out.insert(node);
+                }
+            }
+        }
+        if let Node::Funcstat(target, function) = ast.node(node) {
+            collect(ast, *target, method_depth, out);
+            let inner = if matches!(ast.node(*target), Node::Methodname(..)) {
+                method_depth + 1
+            } else {
+                method_depth
+            };
+            collect(ast, *function, inner, out);
+            return;
+        }
+        storm_lua_analysis::resolver::for_each_child(ast, node, &mut |child| {
+            collect(ast, child, method_depth, out);
+        });
+    }
+    let mut out = std::collections::HashSet::new();
+    collect(ast, root, 0, &mut out);
+    out
+}
+
 fn replace_binding_with_literal(
     ast: &mut Ast,
     source: &Ast,
     res: &Resolution,
     bid: u32,
     literal: NodeId,
+    phantom_self: &std::collections::HashSet<NodeId>,
 ) {
     let replacement = ast.node(literal).clone();
     let ids = (0..ast.nodes.len() as NodeId).collect::<Vec<_>>();
     for id in ids {
         if matches!(ast.node(id), Node::Name(_))
+            && !phantom_self.contains(&id)
             && res.node_bid.get(id as usize).copied().flatten() == Some(bid)
         {
             ast.nodes[id as usize] = replacement.clone();
@@ -398,14 +506,54 @@ fn replace_binding_with_literal(
     }
 }
 
+/// Binding ids that appear as the root name of a `function a.b()` /
+/// `function a:b()` definition target anywhere below `root`.
+///
+/// A definition target must stay rooted at a name: substituting a literal
+/// for its root name produces a target the printer renders unparenthesized
+/// (`function 0.run()`), which no longer parses. Value-substitution passes
+/// must therefore never replace these bindings' names (candidate K).
+fn funcstat_target_root_bids(
+    ast: &Ast,
+    res: &Resolution,
+    root: NodeId,
+) -> std::collections::HashSet<u32> {
+    let mut out = std::collections::HashSet::new();
+    let mut nodes = Vec::new();
+    storm_lua_syntax::ast_utils::walk(ast, root, &mut |id| nodes.push(id));
+    for id in nodes {
+        let Node::Funcstat(target, _) = ast.node(id) else {
+            continue;
+        };
+        let mut node = *target;
+        loop {
+            match ast.node(node) {
+                Node::Index(object, _, _) => node = *object,
+                Node::Methodname(object, _) => node = *object,
+                _ => break,
+            }
+        }
+        if matches!(ast.node(node), Node::Name(_)) {
+            if let Some(bid) = res.node_bid.get(node as usize).copied().flatten() {
+                out.insert(bid);
+            }
+        }
+    }
+    out
+}
+
 pub fn inline_tiny_literal_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
     let original = measure_size(ast, root);
     for _ in 0..64 {
         let source = clone_ast(ast);
         let res = resolve(&source, root);
         let (reads, writes) = count_binding_uses(&source, &res, root);
+        let funcstat_roots = funcstat_target_root_bids(&source, &res, root);
+        let phantom_self = phantom_self_nodes(&source, root);
         let before = measure_size(&source, root);
-        let mut best: Option<(usize, storm_lua_syntax::node_arena::NodeArena)> = None;
+        // Candidate enumeration is unchanged (same walk,
+        // same order, same filters); only trial evaluation changes.
+        let mut candidates: Vec<(u32, NodeId)> = Vec::new();
         let mut nodes = Vec::new();
         storm_lua_syntax::ast_utils::walk(&source, root, &mut |id| nodes.push(id));
         for statement in nodes {
@@ -422,7 +570,8 @@ pub fn inline_tiny_literal_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
             }
             for (index, bid) in bids.iter().enumerate() {
                 let literal = expressions[index];
-                if writes.get(bid).copied().unwrap_or(0) != 0
+                if funcstat_roots.contains(bid)
+                    || writes.get(bid).copied().unwrap_or(0) != 0
                     || !matches!(
                         source.node(literal),
                         Node::Num(_) | Node::Bool(_) | Node::Nil | Node::Str(_)
@@ -432,27 +581,94 @@ pub fn inline_tiny_literal_bindings(ast: &mut Ast, root: NodeId) -> PassResult {
                 {
                     continue;
                 }
-                let mut trial = clone_ast(&source);
-                replace_binding_with_literal(&mut trial, &source, &res, *bid, literal);
-                if !remove_local_binding(&mut trial, &source, &res, *bid) {
-                    continue;
-                }
-                let after = measure_size(&trial, root);
-                let gain = before.saturating_sub(after);
-                if gain > 0 && best.as_ref().is_none_or(|(current, _)| gain > *current) {
-                    best = Some((gain, trial.nodes));
-                }
+                candidates.push((*bid, literal));
             }
         }
-        let Some((_, nodes)) = best else {
+        if candidates.is_empty() {
+            break;
+        }
+        // One recycled trial arena for the whole round. A
+        // trial is applied in place, measured, then every slot it wrote
+        // is restored from the pristine round source (node values only;
+        // the trial arena is never committed, so its provenance history
+        // is irrelevant -- the winner is replayed onto `ast` below).
+        let mut work = clone_ast(&source);
+        let mut best: Option<(usize, u32, NodeId)> = None;
+        for (bid, literal) in candidates {
+            let touched = tiny_trial_touched_slots(&source, &res, root, bid, &phantom_self);
+            replace_binding_with_literal(&mut work, &source, &res, bid, literal, &phantom_self);
+            if !remove_local_binding(&mut work, &source, &res, bid) {
+                restore_tiny_trial(&mut work, &source, &touched);
+                continue;
+            }
+            let after = measure_size(&work, root);
+            restore_tiny_trial(&mut work, &source, &touched);
+            let gain = before.saturating_sub(after);
+            if gain > 0 && best.as_ref().is_none_or(|(current, _, _)| gain > *current) {
+                best = Some((gain, bid, literal));
+            }
+        }
+        let Some((_, bid, literal)) = best else {
             break;
         };
-        ast.nodes = nodes;
+        // Replay the winning trial onto the live arena.
+        // The edit functions are deterministic in (arena values, source,
+        // res), and `ast` holds exactly the round source values, so the
+        // committed arena -- nodes and provenance alike -- equals the
+        // fresh-clone trial the unmodified pass would have committed.
+        replace_binding_with_literal(ast, &source, &res, bid, literal, &phantom_self);
+        remove_local_binding(ast, &source, &res, bid);
     }
     PassResult {
         root,
         saved: Some(original.saturating_sub(measure_size(ast, root)) as u64),
         details: None,
+    }
+}
+
+/// Every arena slot a tiny-literal trial for `bid` can
+/// write, computed on the pristine round source: the read sites
+/// `replace_binding_with_literal` rewrites (same predicate it uses),
+/// the declaration statement `remove_local_binding` rewrites, and the
+/// block(s) whose statement list contains the declaration (rewritten
+/// by `retain_block_statements` when the declaration is removed
+/// outright). Provenance-only writes (derive / relate / copy_name)
+/// need no entry: the trial arena is discarded.
+fn tiny_trial_touched_slots(
+    source: &Ast,
+    res: &Resolution,
+    root: NodeId,
+    bid: u32,
+    phantom_self: &std::collections::HashSet<NodeId>,
+) -> Vec<NodeId> {
+    let mut touched: Vec<NodeId> = Vec::new();
+    for id in 0..source.nodes.len() as NodeId {
+        if matches!(source.node(id), Node::Name(_))
+            && !phantom_self.contains(&id)
+            && res.node_bid.get(id as usize).copied().flatten() == Some(bid)
+        {
+            touched.push(id);
+        }
+    }
+    if let Some(statement) = res.binding(bid).decl_node {
+        touched.push(statement);
+        let mut all = Vec::new();
+        storm_lua_syntax::ast_utils::walk(source, root, &mut |id| all.push(id));
+        for id in all {
+            if let Node::Block(statements) = source.node(id) {
+                if statements.contains(&statement) {
+                    touched.push(id);
+                }
+            }
+        }
+    }
+    touched
+}
+
+/// Restore trial-written slots from the pristine source.
+fn restore_tiny_trial(work: &mut Ast, source: &Ast, touched: &[NodeId]) {
+    for id in touched {
+        work.nodes[*id as usize] = source.node(*id).clone();
     }
 }
 
@@ -490,6 +706,122 @@ fn nested_block_frontier(ast: &Ast, node: NodeId, output: &mut Vec<NodeId>) {
     }
 }
 
+/// Whether evaluating `node` up to (but not including) the sole read
+/// of `bid` can throw.  `node` must contain that read.  Subtrees that
+/// evaluation reaches strictly before the read contribute their full
+/// may_throw bit; subtrees reached only afterwards contribute nothing;
+/// a function body is never entered (creating the closure evaluates
+/// nothing inside it).  Children are visited in Lua evaluation order.
+fn prefix_may_throw(
+    ast: &Ast,
+    res: &Resolution,
+    effects: &EffectAnalyzer<'_>,
+    node: NodeId,
+    bid: u32,
+) -> bool {
+    let contains = |id: NodeId| storm_lua_analysis::effects::contains_binding(ast, res, id, bid);
+    if matches!(ast.node(node), Node::Name(_))
+        && res.node_bid.get(node as usize).copied().flatten() == Some(bid)
+    {
+        return false;
+    }
+    // A sequence of subexpressions evaluated in order: accumulate the
+    // may_throw bits of the items before the one holding the read.
+    let seq = |items: &[NodeId]| -> bool {
+        let mut acc = false;
+        for &item in items {
+            if contains(item) {
+                return acc || prefix_may_throw(ast, res, effects, item, bid);
+            }
+            acc |= effects.effects_for_expr(item).may_throw;
+        }
+        acc
+    };
+    match ast.node(node) {
+        Node::Function(..) => false,
+        Node::Paren(inner) | Node::Un(_, inner) => prefix_may_throw(ast, res, effects, *inner, bid),
+        Node::Methodname(obj, _) => prefix_may_throw(ast, res, effects, *obj, bid),
+        Node::Bin(_, l, r) => {
+            if contains(*l) {
+                prefix_may_throw(ast, res, effects, *l, bid)
+            } else {
+                effects.effects_for_expr(*l).may_throw
+                    || prefix_may_throw(ast, res, effects, *r, bid)
+            }
+        }
+        Node::Index(obj, key, _) => seq(&[*obj, *key]),
+        Node::Call(function, args, _) => {
+            let mut items = Vec::with_capacity(args.len() + 1);
+            items.push(*function);
+            items.extend(args.iter().copied());
+            seq(&items)
+        }
+        Node::Table(fields) => {
+            let mut items = Vec::new();
+            for field in fields {
+                match field {
+                    storm_lua_syntax::TableField::Arr(value) => items.push(*value),
+                    storm_lua_syntax::TableField::Name(_, value) => items.push(*value),
+                    storm_lua_syntax::TableField::KVar(key, value) => {
+                        items.push(*key);
+                        items.push(*value);
+                    }
+                }
+            }
+            seq(&items)
+        }
+        Node::Local(_, expressions) | Node::Return(expressions) => seq(expressions),
+        Node::Assign(targets, expressions) => {
+            // A read inside a target's base/key expression is evaluated
+            // interleaved with the right-hand side in ways this walk
+            // does not model; stay conservative there.
+            if targets.iter().any(|target| contains(*target)) {
+                return effects.effects_for_statement(node).may_throw;
+            }
+            targets
+                .iter()
+                .any(|target| effects.effects_for_expr(*target).may_throw)
+                || seq(expressions)
+        }
+        _ => {
+            // Any other shape (a statement kind or an expression form
+            // without a modeled evaluation order): the whole node's
+            // may_throw bit, the safe direction.
+            if matches!(ast.node(node), Node::Block(_)) {
+                false
+            } else if is_statement_node(ast.node(node)) {
+                effects.effects_for_statement(node).may_throw
+            } else {
+                effects.effects_for_expr(node).may_throw
+            }
+        }
+    }
+}
+
+/// Whether `node` is a statement (as opposed to an expression), for the
+/// conservative fallback in [`prefix_may_throw`].
+fn is_statement_node(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::Block(_)
+            | Node::Local(..)
+            | Node::Localfunc(..)
+            | Node::Assign(..)
+            | Node::Callstat(..)
+            | Node::Return(..)
+            | Node::If(..)
+            | Node::While(..)
+            | Node::Repeat(..)
+            | Node::Fornum(..)
+            | Node::Forin(..)
+            | Node::Do(..)
+            | Node::Break
+            | Node::Goto(..)
+            | Node::Label(..)
+            | Node::Funcstat(..)
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_single_use_replacements(
     ast: &Ast,
@@ -505,6 +837,7 @@ fn collect_single_use_replacements(
     let Node::Block(statements) = ast.node(block) else {
         return;
     };
+    let mut scratch = storm_lua_analysis::effects::empty_effects();
     for window in statements.windows(2) {
         let statement = window[0];
         let target = window[1];
@@ -535,18 +868,55 @@ fn collect_single_use_replacements(
             // different value when it runs before that read, e.g.
             // `output.setNumber(g(), local_value)`.  The local snapshot must
             // remain before the call in that case.
-            let target_effect = effects.effects_for_statement(target);
+            //
+            // The same ordering argument applies to errors: aggressive
+            // sinking may move a may-throw initializer into the target,
+            // but only when no evaluation inside the target that
+            // precedes the read can throw.  If such an evaluation
+            // throws, that error surfaces instead and the initializer's
+            // own error is lost (candidate V, w9 cycle 67).  Throws at
+            // or after the read position are unaffected: the sunk
+            // initializer still evaluates first there.
+            effects.effects_for_statement_into(target, &mut scratch);
+            let target_effect = &scratch;
             if target_effect.calls || target_effect.ordered {
                 continue;
             }
-            let effect = effects.effects_for_expr(expression);
+            let target_prefix_may_throw = prefix_may_throw(ast, res, effects, target, *bid);
+            effects.effects_for_expr_into(expression, &mut scratch);
+            let effect = &scratch;
             if effect.ordered
                 || effect.calls
                 || !effect.writes.is_empty()
-                || (!aggressive && effect.may_throw)
+                || (effect.may_throw && (!aggressive || target_prefix_may_throw))
                 || !effect.stable
             {
                 continue;
+            }
+            // A component of a multi-value declaration is evaluated in
+            // source order together with its siblings. Sinking it into
+            // the target moves it after every sibling that stays in the
+            // declaration, so when the candidate itself can throw, each
+            // sibling must be unobservable (no throw, call, write, or
+            // ordered effect): a sibling that originally evaluated after
+            // the candidate -- and never ran when the candidate threw --
+            // would otherwise run first and surface its own error or
+            // effects instead (candidate AB, w9 cycle 68).
+            if effect.may_throw && expressions.len() > 1 {
+                let mut sibling_scratch = storm_lua_analysis::effects::empty_effects();
+                let siblings_quiet = expressions.iter().enumerate().all(|(other, sibling)| {
+                    if other == index {
+                        return true;
+                    }
+                    effects.effects_for_expr_into(*sibling, &mut sibling_scratch);
+                    !sibling_scratch.may_throw
+                        && !sibling_scratch.calls
+                        && !sibling_scratch.ordered
+                        && sibling_scratch.writes.is_empty()
+                });
+                if !siblings_quiet {
+                    continue;
+                }
             }
             // Literal values and a proven builtin reference do not sample
             // changing runtime state. Preserve those existing safe reductions
@@ -597,6 +967,123 @@ fn collect_single_use_replacements(
     }
 }
 
+/// A direct multi-value slot of the parent: the last argument of a call, the
+/// last positional field of a constructor, the last value of a return list,
+/// the last initializer of a local/assign, or the last iterator expression of
+/// a generic for. Any deeper nesting (operands, indexes, non-last slots,
+/// parentheses) already adjusts to one value, so only the direct slot
+/// matters, and each level recomputes it for its own children. This mirrors
+/// the expanding-slot guard in single-use global forwarding: a sunk local
+/// held exactly one adjusted value, so a multi-value-capable definition
+/// (a call or `...`) substituted into an expanding slot must be
+/// parenthesized, or it would yield more values than the original
+/// (e.g. `local x = pair(); local c, d = x` becoming `local c, d = pair()`
+/// with `d` taking the second value instead of nil).
+fn parenthesize_if_multi_value(
+    target: &mut Ast,
+    source: &Ast,
+    id: NodeId,
+    copied: NodeId,
+    expanding: bool,
+) -> NodeId {
+    if expanding && matches!(target.node(copied), Node::Call(..) | Node::Vararg) {
+        let paren = target.push(Node::Paren(copied));
+        // A synthetic paren has no origin of its own; derive it from the
+        // replaced read so the provenance audit covers "(" and ")" (the
+        // same capture-then-finish pattern single-use global forwarding
+        // uses for its parenthesized replacements).
+        target
+            .nodes
+            .derive_from(paren, &source.nodes, id, "single-use-local-substitution");
+        paren
+    } else {
+        copied
+    }
+}
+
+fn map_expanding_children(node: &Node, f: &mut dyn FnMut(NodeId, bool) -> NodeId) -> Node {
+    match node {
+        Node::Call(function, arguments, method) => {
+            let last = arguments.len().saturating_sub(1);
+            Node::Call(
+                f(*function, false),
+                arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(index, argument)| f(*argument, index == last))
+                    .collect(),
+                *method,
+            )
+        }
+        Node::Table(fields) => {
+            let last = fields.len().saturating_sub(1);
+            Node::Table(
+                fields
+                    .iter()
+                    .enumerate()
+                    .map(|(index, field)| match field {
+                        TableField::Arr(value) => TableField::Arr(f(*value, index == last)),
+                        TableField::Name(key, value) => TableField::Name(*key, f(*value, false)),
+                        TableField::KVar(key, value) => {
+                            TableField::KVar(f(*key, false), f(*value, false))
+                        }
+                    })
+                    .collect(),
+            )
+        }
+        Node::Return(values) => {
+            let last = values.len().saturating_sub(1);
+            Node::Return(
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| f(*value, index == last))
+                    .collect(),
+            )
+        }
+        Node::Local(names, expressions) => {
+            let last = expressions.len().saturating_sub(1);
+            Node::Local(
+                names.clone(),
+                expressions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| f(*value, index == last))
+                    .collect(),
+            )
+        }
+        Node::Assign(targets, expressions) => {
+            let last = expressions.len().saturating_sub(1);
+            Node::Assign(
+                targets.iter().map(|target| f(*target, false)).collect(),
+                expressions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| f(*value, index == last))
+                    .collect(),
+            )
+        }
+        Node::Forin(bindings, expressions, body) => {
+            let last = expressions.len().saturating_sub(1);
+            Node::Forin(
+                bindings.clone(),
+                expressions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| f(*value, index == last))
+                    .collect(),
+                f(*body, false),
+            )
+        }
+        other => {
+            let (mapped, _) =
+                storm_lua_syntax::ast_utils::map_children(other, &mut |child| f(child, false));
+            mapped
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn clone_expanded(
     target: &mut Ast,
     source: &Ast,
@@ -604,6 +1091,8 @@ fn clone_expanded(
     replacements: &std::collections::HashMap<u32, NodeId>,
     id: NodeId,
     seen: &std::collections::HashSet<u32>,
+    expanding: bool,
+    read_code: &std::sync::Arc<str>,
 ) -> NodeId {
     if matches!(source.node(id), Node::Name(_)) {
         if let Some(bid) = res.node_bid.get(id as usize).copied().flatten() {
@@ -611,13 +1100,22 @@ fn clone_expanded(
                 if !seen.contains(&bid) {
                     let mut next = seen.clone();
                     next.insert(bid);
-                    let copied =
-                        clone_expanded(target, source, res, replacements, *replacement, &next);
-                    target.nodes.relate_from_role(
+                    let copied = clone_expanded(
+                        target,
+                        source,
+                        res,
+                        replacements,
+                        *replacement,
+                        &next,
+                        expanding,
+                        read_code,
+                    );
+                    let copied = parenthesize_if_multi_value(target, source, id, copied, expanding);
+                    target.nodes.relate_from_role_code(
                         copied,
                         &source.nodes,
                         id,
-                        "single-use-local-read",
+                        read_code,
                         storm_lua_syntax::explanation::RelationRole::UseSite,
                     );
                     return copied;
@@ -626,11 +1124,24 @@ fn clone_expanded(
         }
     }
     let node = source.node(id).clone();
-    let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
-        clone_expanded(target, source, res, replacements, child, seen)
+    let mapped = map_expanding_children(&node, &mut |child, child_expanding| {
+        clone_expanded(
+            target,
+            source,
+            res,
+            replacements,
+            child,
+            seen,
+            child_expanding,
+            read_code,
+        )
     });
     let copied = target.push(mapped);
-    target.nodes.derive_from(
+    // A clone, not a replacement: replaced subtrees shift later child IDs, so
+    // the value-equality fast path in `derive_from` would miss almost every
+    // node after the first replacement. Replaced nodes above keep
+    // `relate_from_role` so they still record their use-site relation.
+    target.nodes.derive_from_clone(
         copied,
         &source.nodes,
         id,
@@ -639,12 +1150,16 @@ fn clone_expanded(
     copied
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_tree(
     target: &mut Ast,
     source: &Ast,
     res: &Resolution,
     replacements: &std::collections::HashMap<u32, NodeId>,
     id: NodeId,
+    expanding: bool,
+    substitution_code: &std::sync::Arc<str>,
+    read_code: &std::sync::Arc<str>,
 ) -> NodeId {
     if matches!(source.node(id), Node::Name(_)) {
         if let Some(bid) = res.node_bid.get(id as usize).copied().flatten() {
@@ -656,12 +1171,15 @@ fn expand_tree(
                     replacements,
                     *replacement,
                     &std::collections::HashSet::from([bid]),
+                    expanding,
+                    read_code,
                 );
-                target.nodes.relate_from_role(
+                let copied = parenthesize_if_multi_value(target, source, id, copied, expanding);
+                target.nodes.relate_from_role_code(
                     copied,
                     &source.nodes,
                     id,
-                    "single-use-local-read",
+                    read_code,
                     storm_lua_syntax::explanation::RelationRole::UseSite,
                 );
                 return copied;
@@ -669,12 +1187,21 @@ fn expand_tree(
         }
     }
     let node = source.node(id).clone();
-    let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&node, &mut |child| {
-        expand_tree(target, source, res, replacements, child)
+    let mapped = map_expanding_children(&node, &mut |child, child_expanding| {
+        expand_tree(
+            target,
+            source,
+            res,
+            replacements,
+            child,
+            child_expanding,
+            substitution_code,
+            read_code,
+        )
     });
     target
         .nodes
-        .rewrite(id, mapped, "single-use-local-substitution");
+        .rewrite_with_code(id, mapped, substitution_code);
     id
 }
 
@@ -683,6 +1210,7 @@ fn strip_removed_locals(
     source: &Ast,
     res: &Resolution,
     remove: &std::collections::HashSet<u32>,
+    removal_code: &std::sync::Arc<str>,
 ) {
     let ids = (0..source.nodes.len() as NodeId).collect::<Vec<_>>();
     for statement in ids {
@@ -706,7 +1234,7 @@ fn strip_removed_locals(
             continue;
         }
         if keep.is_empty() {
-            remove_statement_from_blocks(ast, statement);
+            remove_statement_from_blocks_with_code(ast, statement, removal_code);
         } else {
             ast.nodes.rewrite(
                 statement,
@@ -738,6 +1266,17 @@ pub fn inline_single_use_locals_with_options(
     max_rounds: usize,
 ) -> PassResult {
     let original = measure_size(ast, root);
+    // One shared code string per rule for the whole pass: the recorded
+    // origins are identical by string content; only the per-node fresh
+    // `Arc<str>` allocations are removed (same pattern as the
+    // root-local-globalization reason sharing).
+    let substitution_code: std::sync::Arc<str> =
+        std::sync::Arc::from("single-use-local-substitution");
+    let read_code: std::sync::Arc<str> = std::sync::Arc::from("single-use-local-read");
+    // Shared with every strip call in this pass (same pattern as the two
+    // codes above): the removal reason string is identical by content.
+    let removal_code: std::sync::Arc<str> =
+        std::sync::Arc::from("unused-local-declaration-removal");
     for _ in 0..max_rounds {
         let source = clone_ast(ast);
         let res = resolve(&source, root);
@@ -761,8 +1300,17 @@ pub fn inline_single_use_locals_with_options(
         }
         let before = measure_size(&source, root);
         let mut trial = clone_ast(&source);
-        expand_tree(&mut trial, &source, &res, &replacements, root);
-        strip_removed_locals(&mut trial, &source, &res, &remove);
+        expand_tree(
+            &mut trial,
+            &source,
+            &res,
+            &replacements,
+            root,
+            false,
+            &substitution_code,
+            &read_code,
+        );
+        strip_removed_locals(&mut trial, &source, &res, &remove, &removal_code);
         let after = measure_size(&trial, root);
         if after >= before {
             break;
@@ -810,6 +1358,47 @@ mod inline_tests {
     }
 
     #[test]
+    fn tiny_literal_keeps_funcstat_target_root() {
+        // Candidate K: the base of a definition target must stay a name;
+        // substituting the literal made every candidate unparseable.
+        let out = output("local a=0 function a.b() return 1 end", true);
+        assert!(out.contains("function a.b()"), "{out}");
+        let out = output("local abc=\"\" function abc.b() return 1 end", true);
+        assert!(out.contains("function abc.b()"), "{out}");
+        let out = output("local a=0 function a:b() return 1 end", true);
+        assert!(out.contains("function a:b()"), "{out}");
+        // An unrelated binding used only in reads is still inlined.
+        let out = output("local a=0 local b={} function b.c() return a end", true);
+        assert!(out.contains("return 0"), "{out}");
+        assert!(out.contains("function b.c()"), "{out}");
+    }
+
+    #[test]
+    fn tiny_literal_never_substitutes_phantom_self() {
+        // Candidate S1 (w6 cycle 65; sibling of candidate AA / R277):
+        // a `self` read inside a method body denotes the implicit
+        // receiver, not the enclosing tiny-literal `self` binding the
+        // resolver attaches it to. Substituting the literal made the
+        // method compare the literal against its own table.
+        let out = output(
+            "local self=42 local t={} function t:m() return self==t end return self",
+            true,
+        );
+        assert!(out.contains("self==t"), "{out}");
+        assert!(!out.contains("42==t"), "{out}");
+        // The genuine chunk-level read is still inlined.
+        assert!(out.ends_with("return 42"), "{out}");
+        // A closure nested inside the method captures the receiver
+        // the same way.
+        let out = output(
+            "local self=42 local t={} function t:m() local f=function() return self end return f() end",
+            true,
+        );
+        assert!(out.contains("return self"), "{out}");
+        assert!(!out.contains("return 42"), "{out}");
+    }
+
+    #[test]
     fn sinks_adjacent_single_use_local() {
         assert_eq!(output("local x=a+b y=x*2", false), "y=(a+b)*2");
     }
@@ -818,6 +1407,90 @@ mod inline_tests {
     fn does_not_sink_across_control_flow() {
         let out = output("local x=a+b if c then y=x end", false);
         assert!(out.starts_with("local x="), "{out}");
+    }
+
+    #[test]
+    fn does_not_sink_may_throw_initializer_into_throwing_target() {
+        // Candidate V (w9 cycle 67): the string.format initializer
+        // throws (the %d conversion has no argument).  Sinking it into
+        // the second operand of the target expression lets the first
+        // operand (`a * i`, a boolean times a number) throw a different
+        // error first, so the format error was lost.  The declaration
+        // must stay in place.
+        let out = output(
+            "for i = 1, 5 do local a, b = true, string.format(\"%s-%d\", (not false)) local c = a * i + b * i end",
+            false,
+        );
+        assert!(out.contains("local b=string.format"), "{out}");
+        // A may-throw initializer still sinks into a target that cannot
+        // throw: its error then surfaces at the read, unchanged.
+        let out = output(
+            "local b = string.format(\"%s-%d\", (not false)) local c = b",
+            false,
+        );
+        assert!(!out.contains("local b="), "{out}");
+        assert!(out.contains("string.format"), "{out}");
+    }
+
+    #[test]
+    fn does_not_sink_may_throw_component_past_throwing_sibling() {
+        // Candidate AB (w9 cycle 68): in a multi-value declaration the
+        // components evaluate in source order.  Sinking the first
+        // component (may-throw: `#T` on a nil global) into its use moved
+        // it after the second component (`T .. "x"`, also may-throw),
+        // so the concatenation error surfaced instead of the length
+        // error.  The declaration must stay in place.
+        let out = output(
+            "local a, b, c = math.max(2, #T), (T .. \"x\"), math.max(3, 4) local d = a * c + c",
+            false,
+        );
+        assert!(out.contains("local a,b,c=math.max(2,#T)"), "{out}");
+        // A may-throw component still sinks when every sibling is
+        // unobservable.
+        let out = output("local a, b = math.max(2, #T), 4 local d = a + b", false);
+        assert!(!out.contains("local a="), "{out}");
+    }
+
+    #[test]
+    fn sinks_call_into_expanding_local_parenthesized() {
+        // A sunk local held exactly one adjusted value; in a multi-name
+        // local list the bare call would expand to all its values.
+        let out = output(
+            "local function pair() return 7,8,9 end local x=pair() local c,d=x",
+            false,
+        );
+        assert!(out.contains("local c,d=(pair())"), "{out}");
+        assert!(!out.contains("local x="), "{out}");
+    }
+
+    #[test]
+    fn sinks_call_into_non_expanding_position_bare() {
+        // A non-last slot already adjusts to one value, so no parens
+        // are needed there.
+        let out = output(
+            "local function pair() return 7,8,9 end local x=pair() local y=x+1",
+            false,
+        );
+        assert!(out.contains("pair()+1"), "{out}");
+        assert!(!out.contains("(pair())"), "{out}");
+    }
+
+    #[test]
+    fn sinks_call_into_expanding_return_parenthesized() {
+        let out = output(
+            "local function pair() return 7,8,9 end local x=pair() return x",
+            false,
+        );
+        assert!(out.contains("return(pair())"), "{out}");
+    }
+
+    #[test]
+    fn sinks_vararg_into_expanding_local_parenthesized() {
+        let out = output(
+            "local function f(...) local x=... local c,d=x return c end",
+            false,
+        );
+        assert!(out.contains("local c,d=(...)"), "{out}");
     }
 }
 

@@ -962,6 +962,24 @@ pub fn compile_project(
     if let Err(error) = prepared.exclude_removed_ranges(&mut link) {
         return ApiProjectCompileResult::compile_failure(error);
     }
+    // Load legality is judged per used module on its source, before any
+    // pass can launder it (candidate S14, project path). Link wrapping
+    // preserves the legality classes, and the linked source is gated again
+    // by the minify funnel below. Link-only builds (minify=false) pass
+    // through without this gate: they do not claim to compile.
+    if options.minify.unwrap_or(true) {
+        for key in &link.used_modules {
+            if let Some(module_source) = prepared.project.modules.get(key) {
+                if let Err(error) =
+                    storm_lua_vm::load_legality::check_load_legality(module_source.as_bytes())
+                {
+                    return ApiProjectCompileResult::compile_failure(format!(
+                        "module `{key}` is not loadable: {error}"
+                    ));
+                }
+            }
+        }
+    }
     link.diagnostics.extend(restrictions);
     #[expect(
         clippy::expect_used,
@@ -1181,8 +1199,13 @@ mod tests {
             (range.end_line, range.end_col),
             (Some(1), Some(range.col + 11))
         );
+        // 生成 glue（ラッパ定義の代入行）の位置は、元モジュールへ snap されず
+        // module/range なしに落ちること。
         let (function_line, _) = index
-            .byte_position(code.find("function() local").unwrap())
+            .byte_position(
+                code.find("__stormmin_link_modules[\"lib\"] = { function()")
+                    .unwrap(),
+            )
             .unwrap();
         let glue = Diagnostic::warning("probe", "generated prefix")
             .with_range(Some(Range::point(function_line, 1)));
@@ -1296,8 +1319,9 @@ mod tests {
         assert_eq!(search.mode, "satisficing");
         assert_eq!(search.target_size, Some(41));
         assert_eq!(search.target_met, Some(true));
-        assert_eq!(search.stopped_early, Some(true));
-        assert_ne!(search.stage.as_deref(), Some("full-search"));
+        // Option B: the fitting candidate does not stop the search.
+        assert_eq!(search.stopped_early, Some(false));
+        assert_eq!(search.stage.as_deref(), Some("full-search"));
     }
 
     #[test]
@@ -1909,5 +1933,76 @@ mod shared_public_source_tests {
             assert!(result.code.is_none());
             assert!(result.map.is_none());
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod load_legality_gate_tests {
+    use super::*;
+
+    fn project(entry: &str, modules: &[(&str, &str)]) -> LuaProject {
+        LuaProject {
+            entry: entry.to_string(),
+            modules: modules
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ambient: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn project_rejects_load_illegal_module() {
+        // 候補S14 のプロジェクト経路: 違法モジュールを含むと ok=false。
+        let p = project(
+            "main",
+            &[
+                ("main", "local m = require(\"bad\") return m"),
+                ("bad", "local function f() return ... end return {}"),
+            ],
+        );
+        let result = compile_project(
+            &p,
+            &ApiProjectCompileOptions {
+                minify: Some(true),
+                ..ApiProjectCompileOptions::default()
+            },
+        );
+        assert!(!result.ok, "expected rejection: {:?}", result.error);
+    }
+
+    #[test]
+    fn project_accepts_dialect_legal_module() {
+        // 第210ラウンドの方言規則で VM が受理するモジュールは通る。
+        let p = project(
+            "main",
+            &[
+                ("main", "local m = require(\"ok\") return m"),
+                ("ok", "local a = 1 goto done local b = 2 ::done:: return a"),
+            ],
+        );
+        let result = compile_project(
+            &p,
+            &ApiProjectCompileOptions {
+                minify: Some(true),
+                ..ApiProjectCompileOptions::default()
+            },
+        );
+        assert!(result.ok, "expected acceptance: {:?}", result.error);
+    }
+
+    #[test]
+    fn single_compile_gate_matches_vm_verdict() {
+        let used = compile(
+            "local a = 1 goto done local b = 2 ::done:: return a + b",
+            &ApiCompileOptions::default(),
+        );
+        assert!(!used.ok, "used barrier must reject");
+        let unused = compile(
+            "local a = 1 goto done local b = 2 ::done:: return a",
+            &ApiCompileOptions::default(),
+        );
+        assert!(unused.ok, "unused barrier must accept: {:?}", unused.error);
     }
 }

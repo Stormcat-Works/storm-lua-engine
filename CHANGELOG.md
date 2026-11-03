@@ -1,11 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-11-04
 
+### Source Map schema 2（非互換変更）
+
+- 最適化後Source Mapのx_storm形式を`schemaVersion: 2`へ更新した。字句短縮mapで重複していたmappings／originsの二重記録（約282B/token）をトークン表へ置き換えてmap容量を削減し、複数ソース・リネーム済みトークン・プロジェクト合成mapでもトークン表を適用する。schema 1のreaderでは読めないため、生成側と利用側の版を揃えること。詳細は[検証記録](docs/verification/schema-2-token-table-20261029.md)と[複数ソース対応の検証記録](docs/verification/token-table-multisource-mixed-20261030.md)。
+
+### 正確性の修正
+
+- 敵対的レビューで確認された一連の正確性問題（S1〜S11・S14）を修正した。対象はminifyの意味保存（数値リテラルの厳密さの向き、評価順序の保存、goto/labelを跨ぐ利用可能式の再利用、tickを跨ぐinput.*の安定性の前提ほか）、VM sandboxの整数強制、リンク時のロードエラー帰属など。詳細は`docs/verification/`の各検証記録。
+- 方言としてロード違法なソースを、最適化で無言に修復せずコンパイル時に拒否するようになった（非vararg関数内の`...`など）。従来は受理されていた違法ソースがエラーになる。実世界コーパスでは2件が該当した。詳細は[検証記録](docs/verification/candidate-s10-s14-cycle73-20261102.md)。
 - minifyのLua byte文字列・hex/64bit数値・型/overflow・スコープ/capture・API差し替え・描画helperの意味保存を修正。深すぎる構文はNative/WASMとも診断を返す。未存在tableキー、色候補探索、format候補割り当ての無駄を削減。安全な適用条件への限定で文字数が増える場合がある。詳細は[実装検証](docs/verification/minify-review-fixes-20261013.md)。
 - Rust syntax utilityの`decode_lua_string`はバイナリ値を失わないよう`Option<String>`を返す。byte列は`source_tools::string_bytes`を使用する。
-
 - `metadataTag`・`minify:false`・`sourceMap:true`を同時指定した通常/LifeBoatビルドがexact-copy検査に失敗する不具合を修正。空白化した範囲をコピー区間から除き、元のsourcesContentと残存コードの位置を保持する。Addonと標準mapも同じ除去範囲を使用し、metadataだけのmoduleでも元snapshotを保持する。
+
+### 性能
+
+- コンパイル時の候補試行と由来構築の割り当てを削減した（pool実体化の削減、fusion述語の試行前評価、tiny-literal試行のin-place化ほか）。決定的計数で試行のdetach総量は約2.59億要素から約2.02億要素へ減少した。これらの変更では生成Lua・Source Map・診断は不変であり、実世界コーパス全件（4,155ファイル×4条件）でバイト同一を検証した。
+- targetモードでは、目標内に収まる候補が現れても速度レイアウトまで探索を続ける（部分複合レイアウトを含む）。targetなしの最高圧縮の挙動は変えていない。
 
 ## 0.3.1 — 2026-10-12
 

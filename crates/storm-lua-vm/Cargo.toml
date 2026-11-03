@@ -12,9 +12,10 @@ workspace = true
 
 [dependencies]
 storm-lua-spec = { workspace = true }
-mlua = { workspace = true }
+storm-lua-syntax = { workspace = true }
+mlua = { workspace = true, optional = true }
 
 [features]
 default = []
-debug = []
-backend-mlua = []
+debug = ["backend-mlua"]
+backend-mlua = ["dep:mlua"]

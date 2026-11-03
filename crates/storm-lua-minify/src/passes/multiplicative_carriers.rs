@@ -381,7 +381,10 @@ mod tests {
     #[test]
     fn respects_shadowed_factor_bindings() {
         let source = "tau=math.pi*2 function onTick()local math={pi=3}local x=input.getNumber(1)output.setNumber(1,x*math.pi*2)end";
-        assert_eq!(output(source), source);
+        assert_eq!(
+            output(source),
+            "tau=math.pi*2 function onTick()local math,x={pi=3},input.getNumber(1)output.setNumber(1,x*math.pi*2)end"
+        );
     }
 
     #[test]

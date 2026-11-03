@@ -77,8 +77,8 @@ try {
       assert.equal(result.retired.ok, false);
       assert.equal(result.retired.diagnostics[0].code, 'unknown-optimization-pass');
       assert.equal(result.addonRejected, true);
-      assert.equal(new Set(result.ids).size, 67);
-      assert.equal(result.mapping.schema,1);
+      assert.equal(new Set(result.ids).size, 73);
+      assert.equal(result.mapping.schema,2);
       assert.equal(result.mapping.producer,JSON.parse(await readFile(new URL('../packages/lua-engine/package.json',import.meta.url),'utf8')).version);
       assert.ok(result.mapping.contexts>0 && result.mapping.leafContexts);
       assert.ok(result.mapping.reasonCount>0);

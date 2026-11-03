@@ -313,7 +313,7 @@ fn dump_annotated(ast: &Ast, res: &Resolution, nid: NodeId, out: &mut String) {
             }
             out.push_str("],method:");
             match method {
-                Some(m) => out.push_str(&esc(m)),
+                Some(m) => out.push_str(&esc(ast.strings.get(*m))),
                 None => out.push_str("null"),
             }
             out.push(')');

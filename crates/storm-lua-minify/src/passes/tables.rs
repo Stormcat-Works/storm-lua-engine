@@ -349,13 +349,31 @@ fn static_table_key(ast: &Ast, node: NodeId) -> Option<StaticTableKey> {
     }
 }
 
+/// A constructor entry only evaluates without raising when its key is
+/// neither nil nor NaN: inserting such a key raises "table index is
+/// nil" / "table index is NaN". A key is provably valid when it has a
+/// static key form (string / integer / non-NaN number) or is a boolean
+/// literal. Any other expression — a name, a compound expression whose
+/// value is not a static key — may be nil or NaN at runtime (e.g. a
+/// local bound to `0 / 0`), so a table containing it does not evaluate
+/// purely and must not be flattened away.
+fn key_is_valid_table_key(ast: &Ast, key: NodeId) -> bool {
+    static_table_key(ast, key).is_some() || matches!(ast.node(key), Node::Bool(_))
+}
+
 fn table_literal_pure(ast: &Ast, node: NodeId) -> bool {
     match ast.node(node) {
         Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil => true,
-        Node::Un(_, expression) => table_literal_pure(ast, *expression),
-        Node::Bin(_, left, right) => {
-            table_literal_pure(ast, *left) && table_literal_pure(ast, *right)
-        }
+        // A compound expression over literals can still raise when
+        // the constructor evaluates it: arithmetic or concatenation
+        // on nil, integer division or modulo by zero, arithmetic on
+        // a non-numeric string, length of nil, comparing nil with a
+        // number, and so on. Any compound value the constant folder
+        // could prove finite has already been materialized into a
+        // literal before this pass runs in the pipeline, so a Bin/Un
+        // value that survives to here is one whose evaluation is not
+        // provably safe: the table is not a pure literal.
+        Node::Un(..) | Node::Bin(..) => false,
         Node::Table(fields) => {
             // Lua flushes array entries with SETLIST in batches; textual order
             // does not determine the winner of mixed array/index duplicates.
@@ -366,7 +384,8 @@ fn table_literal_pure(ast: &Ast, node: NodeId) -> bool {
             fields.iter().all(|field| match field {
                 TableField::Arr(value) | TableField::Name(_, value) => table_literal_pure(ast, *value),
                 TableField::KVar(key, value) => {
-                    !matches!(static_table_key(ast, *key), Some(StaticTableKey::Int(index)) if (1..=array_len).contains(&index))
+                    key_is_valid_table_key(ast, *key)
+                        && !matches!(static_table_key(ast, *key), Some(StaticTableKey::Int(index)) if (1..=array_len).contains(&index))
                         && table_literal_pure(ast, *key) && table_literal_pure(ast, *value)
                 }
             })
@@ -446,14 +465,6 @@ fn index_root_info(ast: &Ast, res: &Resolution, mut node: NodeId) -> Option<(u32
     }
 }
 
-fn static_table_chain_value(ast: &Ast, table: NodeId, keys: &[StaticTableKey]) -> Option<NodeId> {
-    let mut current = table;
-    for key in keys {
-        current = table_get(ast, current, key)?;
-    }
-    Some(current)
-}
-
 #[derive(Clone)]
 struct ImmutableTableInit {
     statement_index: usize,
@@ -466,6 +477,39 @@ enum TableScanCtx {
     Other,
     IndexObj,
     AssignTarget,
+}
+
+/// Whether `rewrite_static_table_chains` can replace a read of this
+/// chain: the walk must end at a scalar literal (copied into the read
+/// site) or miss at the final key (replaced by nil). A table/function
+/// value is substitutable only as the object of an enclosing index,
+/// whose own chain is checked separately. Every other outcome -- a
+/// compound pure value such as `0 / 0` (whose non-finite result the
+/// constant folder refuses to materialize, so it survives as an
+/// expression), or a missing intermediate key -- leaves the read in
+/// place, so removing the binding would leave the read dangling
+/// against a nil global of the same name.
+fn static_chain_substitutable(
+    ast: &Ast,
+    table: NodeId,
+    keys: &[StaticTableKey],
+    parent_ctx: TableScanCtx,
+) -> bool {
+    let mut current = table;
+    for (index, key) in keys.iter().enumerate() {
+        if !matches!(ast.node(current), Node::Table(_)) {
+            return false;
+        }
+        match table_get(ast, current, key) {
+            Some(value) => current = value,
+            None => return index + 1 == keys.len(),
+        }
+    }
+    match ast.node(current) {
+        Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil => true,
+        Node::Table(_) | Node::Function(..) => parent_ctx == TableScanCtx::IndexObj,
+        _ => false,
+    }
 }
 
 fn scan_immutable_table_uses(
@@ -485,7 +529,18 @@ fn scan_immutable_table_uses(
     if let Node::Name(_) = ast.node(node) {
         if let Some(bid) = bid_of(res, node) {
             if let Some(info) = init.get(&bid) {
-                let allowed = parent_ctx == TableScanCtx::IndexObj
+                // A global init only takes effect when its statement
+                // executes. A use that textually precedes the init (or
+                // sits in the init statement's own right-hand side,
+                // which evaluates before the assignment) still sees the
+                // previous value on first execution, so folding it to
+                // the init literal changes meaning. Locals cannot be
+                // referenced before their declaration under the same bid,
+                // so only globals need this order guard; uses inside
+                // functions defined before the init are conservatively
+                // rejected too (they may run before the init).
+                let allowed = (parent_ctx == TableScanCtx::IndexObj
+                    && (info.kind_local || top_statement > info.statement_index))
                     || (top_statement == info.statement_index
                         && !info.kind_local
                         && parent_ctx == TableScanCtx::AssignTarget);
@@ -502,10 +557,7 @@ fn scan_immutable_table_uses(
     }
     if let Some((bid, keys)) = static_index_chain(ast, res, node) {
         if let Some(info) = init.get(&bid) {
-            if static_table_chain_value(ast, info.table, &keys).is_some_and(|value| {
-                parent_ctx != TableScanCtx::IndexObj
-                    && matches!(ast.node(value), Node::Table(_) | Node::Function(..))
-            }) {
+            if !static_chain_substitutable(ast, info.table, &keys, parent_ctx) {
                 bad.insert(bid);
             }
         }
@@ -681,8 +733,48 @@ fn rewrite_static_table_chains(
         .rewrite(node, mapped, "immutable-table-flattening");
 }
 
+/// Syntactic pre-filter for immutable-table flattening: a block can only
+/// contribute an `init` entry when one of its direct statements binds a table
+/// literal (a `local` with matching arity, or an assignment pairing a name
+/// target with a table literal). Blocks without such a statement always break
+/// out of the round loop with an empty `init`, so cloning and resolving them
+/// is pure overhead -- including one tracked-only allocation per block for
+/// the cloned origin table. The condition is necessary, not sufficient
+/// (purity and binding ids may still leave `init` empty), so skipping a block
+/// here can never change the outcome.
+fn block_has_table_binding(ast: &Ast, root: NodeId) -> bool {
+    let Node::Block(statements) = ast.node(root) else {
+        return false;
+    };
+    statements
+        .iter()
+        .copied()
+        .any(|statement| match ast.node(statement) {
+            Node::Local(names, expressions) => {
+                names.len() == expressions.len()
+                    && expressions
+                        .iter()
+                        .any(|expression| matches!(ast.node(*expression), Node::Table(_)))
+            }
+            Node::Assign(targets, expressions) => {
+                targets.len() == expressions.len()
+                    && targets
+                        .iter()
+                        .zip(expressions.iter())
+                        .any(|(target, expression)| {
+                            matches!(ast.node(*target), Node::Name(_))
+                                && matches!(ast.node(*expression), Node::Table(_))
+                        })
+            }
+            _ => false,
+        })
+}
+
 fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: usize) {
     for _ in 0..max_rounds {
+        if !block_has_table_binding(ast, root) {
+            break;
+        }
         let source = clone_table_ast(ast);
         let res = resolve(&source, root);
         let Node::Block(statements) = source.node(root).clone() else {
@@ -714,27 +806,14 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
                         }
                     }
                 }
-                Node::Assign(targets, expressions) if targets.len() == expressions.len() => {
-                    for (target, expression) in
-                        targets.iter().copied().zip(expressions.iter().copied())
-                    {
-                        if matches!(source.node(target), Node::Name(_))
-                            && matches!(source.node(expression), Node::Table(_))
-                            && table_literal_pure(&source, expression)
-                        {
-                            if let Some(bid) = bid_of(&res, target) {
-                                init.insert(
-                                    bid,
-                                    ImmutableTableInit {
-                                        statement_index,
-                                        table: expression,
-                                        kind_local: false,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                }
+                // Globals are never candidates: a global binding can be read
+                // or written from any block (other functions, outer blocks,
+                // later ticks), which this per-block scan cannot see, so
+                // neither folding its uses nor removing its binding is sound.
+                // (A global assigned in one function and read in another was
+                // miscompiled: the defining block removed the binding while
+                // the reading block still referenced it.)
+                Node::Assign(..) => {}
                 _ => {}
             }
         }
@@ -753,10 +832,17 @@ fn flatten_immutable_tables_in_block(ast: &mut Ast, root: NodeId, max_rounds: us
                 &mut bad,
             );
         }
+        // `self` is never a candidate: occurrences of the name inside a
+        // method body resolve to this binding but denote the implicit
+        // receiver parameter, so folding those uses to the table's
+        // literal fields would substitute this table's values for the
+        // receiver's (candidate AA, w9 cycle 68).
         let candidates = init
             .keys()
             .copied()
-            .filter(|bid| !bad.contains(bid))
+            .filter(|bid| {
+                !bad.contains(bid) && source.strings.get(res.bindings[*bid as usize].name) != "self"
+            })
             .collect::<std::collections::HashSet<_>>();
         if candidates.is_empty() {
             break;
@@ -881,6 +967,18 @@ fn scan_closed_namespace(
         if matches!(ast.node(*object), Node::Name(_)) {
             if let Some(bid) = bid_of(res, *object) {
                 if init.contains_key(&bid) {
+                    // The initializer may not have run yet when this access
+                    // executes: an access in an earlier top-level statement
+                    // runs before the initializer, and a function defined
+                    // earlier may be called before it too. Rewriting such an
+                    // access to a scalar would turn a nil-table error (or an
+                    // older value) into a nil scalar read, so reject the
+                    // candidate.
+                    if let Some(info) = init.get(&bid) {
+                        if top_statement < info.statement_index {
+                            bad.insert(bid);
+                        }
+                    }
                     if let Node::Str(value) = ast.node(*key) {
                         let Some(value) = decode_lua_string(value) else {
                             bad.insert(bid);
@@ -1018,6 +1116,54 @@ fn namespace_table_values_safe(ast: &Ast, table: NodeId) -> bool {
     })
 }
 
+fn collect_chunk_labels(
+    ast: &Ast,
+    node: NodeId,
+    statement_index: usize,
+    labels: &mut std::collections::HashMap<storm_lua_syntax::ast::SymbolId, usize>,
+) {
+    if let Node::Label(name) = ast.node(node) {
+        labels.entry(*name).or_insert(statement_index);
+    }
+    if matches!(ast.node(node), Node::Function(..)) {
+        return;
+    }
+    let mut children = Vec::new();
+    storm_lua_analysis::resolver::for_each_child(ast, node, &mut |child| {
+        children.push(child);
+    });
+    for child in children {
+        collect_chunk_labels(ast, child, statement_index, labels);
+    }
+}
+
+fn chunk_prefix_skips_initializer(
+    ast: &Ast,
+    node: NodeId,
+    init_index: usize,
+    labels: &std::collections::HashMap<storm_lua_syntax::ast::SymbolId, usize>,
+) -> bool {
+    match ast.node(node) {
+        Node::Return(_) => return true,
+        Node::Goto(name) => {
+            if let Some(label_index) = labels.get(name) {
+                if *label_index > init_index {
+                    return true;
+                }
+            }
+        }
+        Node::Function(..) => return false,
+        _ => {}
+    }
+    let mut children = Vec::new();
+    storm_lua_analysis::resolver::for_each_child(ast, node, &mut |child| {
+        children.push(child);
+    });
+    children
+        .iter()
+        .any(|child| chunk_prefix_skips_initializer(ast, *child, init_index, labels))
+}
+
 pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usize) -> PassResult {
     let original_size = measure_size(ast, root);
     for _ in 0..max_rounds {
@@ -1111,10 +1257,98 @@ pub fn scalarize_closed_namespaces(ast: &mut Ast, root: NodeId, max_rounds: usiz
                 &mut bad,
             );
         }
+        // A global initializer runs only if chunk execution reaches it. A
+        // `return` in an earlier top-level statement, or a forward `goto`
+        // jumping over it, leaves every field scalar unassigned while later
+        // reads would still be rewritten, so reject such candidates.
+        // Locals are exempt: jumping over a local declaration into its scope
+        // is a parse error, and a later `return` cannot precede a local that
+        // later code reads under the same binding.
+        {
+            let mut labels = std::collections::HashMap::new();
+            for (index, statement) in statements.iter().copied().enumerate() {
+                collect_chunk_labels(&source, statement, index, &mut labels);
+            }
+            for (bid, info) in init.iter() {
+                if info.kind_local || bad.contains(bid) {
+                    continue;
+                }
+                for (index, statement) in statements.iter().copied().enumerate() {
+                    if index >= info.statement_index {
+                        break;
+                    }
+                    if chunk_prefix_skips_initializer(
+                        &source,
+                        statement,
+                        info.statement_index,
+                        &labels,
+                    ) {
+                        bad.insert(*bid);
+                        break;
+                    }
+                }
+            }
+        }
+        // The rewrite below discards every other initializer of a
+        // candidate binding: the part a `local` declaration gives it
+        // and any assignment that is not the recorded initializer.
+        // Discarding is sound only when the discarded expression's
+        // evaluation is unobservable, so a candidate whose other
+        // initializer is not a pure table literal is rejected
+        // (candidate S, w9 cycle 66: a fused function body supplied
+        // the pure initializer while the declaration still held a
+        // constructor whose array part called a nil global, and the
+        // call's error vanished with the declaration).
+        for (index, statement) in statements.iter().copied().enumerate() {
+            match source.node(statement) {
+                Node::Local(_, expressions) => {
+                    let bids = res
+                        .node_bids
+                        .get(statement as usize)
+                        .cloned()
+                        .unwrap_or_default();
+                    for (part, bid) in bids.into_iter().enumerate() {
+                        if init.contains_key(&bid) {
+                            if let Some(expression) = expressions.get(part).copied() {
+                                if !table_literal_pure(&source, expression) {
+                                    bad.insert(bid);
+                                }
+                            }
+                        }
+                    }
+                }
+                Node::Assign(targets, expressions)
+                    if targets.len() == 1
+                        && expressions.len() == 1
+                        && matches!(source.node(targets[0]), Node::Name(_)) =>
+                {
+                    if let Some(bid) = bid_of(&res, targets[0]) {
+                        if let Some(info) = init.get(&bid) {
+                            if info.statement_index != index
+                                && !table_literal_pure(&source, expressions[0])
+                            {
+                                bad.insert(bid);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // `self` is never a candidate: the AST does not bind the implicit
+        // method parameter, so occurrences of the name inside a method body
+        // resolve to this binding even though they denote the receiver, not
+        // the namespace table. Scalarizing would rewrite those reads and
+        // writes to the namespace's field scalars (candidate AA, w9
+        // cycle 68; the same phantom resolution as candidate X).
         let candidates = init
             .keys()
             .copied()
-            .filter(|bid| !bad.contains(bid) && !fields[bid].is_empty())
+            .filter(|bid| {
+                !bad.contains(bid)
+                    && !fields[bid].is_empty()
+                    && source.strings.get(res.bindings[*bid as usize].name) != "self"
+            })
             .collect::<std::collections::HashSet<_>>();
         if candidates.is_empty() {
             break;
@@ -1556,6 +1790,30 @@ pub fn scalarize_table_literal_parameters(
                 if bad || keys.is_empty() {
                     continue;
                 }
+                // Local budget: scalarization replaces this parameter
+                // with one parameter per key, and parameters are
+                // locals no later pass can globalize. The widened peak
+                // is the function's whole-function simultaneous-local
+                // maximum (parameters *and* body locals), minus the
+                // removed parameter, plus one parameter per key. Skip
+                // when that peak would exceed the VM's 200
+                // simultaneous-local limit. Counting only the parameter
+                // list undercounts functions whose bodies declare
+                // locals: their scalarized form fails to load whenever
+                // no later pass happens to globalize those locals.
+                // (Method definitions are never candidates here: their
+                // call sites are method calls, which this pass does not
+                // rewrite, so no implicit self is involved.)
+                if super::single_member_cache::max_active_locals(
+                    &source,
+                    info.parameters.len(),
+                    info.body,
+                ) - 1
+                    + keys.len()
+                    > super::single_member_cache::MAX_LOCALS
+                {
+                    continue;
+                }
 
                 let mut trial = clone_table_ast(&source);
                 let mut replacements = Vec::<(StaticTableKey, SymbolId)>::new();
@@ -1686,6 +1944,303 @@ mod scalarization_tests {
     }
 
     #[test]
+    fn immutable_table_with_nil_key_is_not_flattened() {
+        // A nil constructor key raises "table index is nil" when the
+        // constructor evaluates, so the table is not a pure literal:
+        // flattening must not fold the reads or remove the binding.
+        let (mut ast, root) =
+            parse_source("local t={[nil]=1,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("[nil]"), "{out}");
+        assert!(out.contains("t.b"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_nan_key_is_not_flattened() {
+        // Same for a NaN key ("table index is NaN"): `0 / 0` only
+        // becomes NaN at runtime, so the constructor is effectful.
+        let (mut ast, root) =
+            parse_source("local t={[0/0]=1,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("[0/0]"), "{out}");
+        assert!(out.contains("t.b"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_name_key_is_not_flattened() {
+        // A name key carries no proof here: its value may be nil or
+        // NaN at runtime even when the reads are all static.
+        let (mut ast, root) = parse_source(
+            "local k=\"x\" local t={[k]=1,b=2}function onTick()output.setBool(1,t.b==2)end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("[k]"), "{out}");
+        assert!(out.contains("t.b"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_bool_key_is_still_flattened() {
+        // Boolean keys are always valid table keys, so the flattening
+        // remains available for them (and for static string keys).
+        let (mut ast, root) =
+            parse_source("local t={[true]=1,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(!out.contains("t.b"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_nan_value_read_is_not_flattened() {
+        // A NaN *value* is legal, but it is not a scalar literal the
+        // rewrite can copy into the read site (the constant folder
+        // refuses to materialize non-finite results), so the read
+        // cannot be substituted and the binding must stay.
+        let (mut ast, root) = parse_source(
+            "local t={a=0/0,b=2}function onTick()output.setBool(1,t.a~=t.a)output.setBool(2,t.b==2)end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.a"), "{out}");
+        assert!(out.contains("0/0"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_inf_value_read_is_not_flattened() {
+        // Same for an infinite value (`1 / 0`).
+        let (mut ast, root) =
+            parse_source("local t={a=1/0,b=2}function onTick()output.setBool(1,t.a>0)end").unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.a"), "{out}");
+        assert!(out.contains("1/0"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_missing_intermediate_key_is_not_flattened() {
+        // `t.inner.b` with no `inner` field cannot be substituted
+        // (only a missing *final* key becomes nil), so the binding
+        // must stay for the remaining reads.
+        let (mut ast, root) = parse_source(
+            "local t={b=2}function onTick()output.setBool(1,t.b==2)output.setBool(2,t.inner.b==2)end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.inner.b"), "{out}");
+        assert!(out.contains("t={"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_nan_value_unread_is_not_flattened() {
+        // A compound field value keeps the whole table out of the
+        // flattening even when that field is never read: evaluating
+        // the value is part of evaluating the constructor, and a
+        // compound expression over literals can raise (see
+        // immutable_table_with_raising_value_is_not_flattened). The
+        // folder materializes provably finite compound values into
+        // literals before this pass runs in the pipeline, so this
+        // only costs the rare non-finite / unprovable shapes.
+        let (mut ast, root) =
+            parse_source("local t={a=0/0,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.b"), "{out}");
+        assert!(out.contains("t={"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_raising_value_is_not_flattened() {
+        // `1 + nil` raises when the constructor evaluates, so the
+        // constructor must not be dropped even though the field is
+        // never read and the remaining reads are all scalar.
+        let (mut ast, root) =
+            parse_source("local t={a=1+nil,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.b"), "{out}");
+        assert!(out.contains("t={"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_with_int_div_zero_value_is_not_flattened() {
+        // Integer division by zero raises as well.
+        let (mut ast, root) =
+            parse_source("local t={a=1//0,b=2}function onTick()output.setBool(1,t.b==2)end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("t.b"), "{out}");
+        assert!(out.contains("t={"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_global_use_before_init_is_not_folded() {
+        let (mut ast, root) = parse_source(
+            "g = {f = function() return 7 end} local done = false function onTick() if not done then output.setNumber(1, g.f()) g = {f = 5} done = true end end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.f"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_global_use_in_init_rhs_is_not_folded() {
+        let (mut ast, root) =
+            parse_source("g, x = {f = 5}, g.f function onTick() output.setNumber(1, x) end")
+                .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.f"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_global_use_after_init_is_not_folded() {
+        let (mut ast, root) =
+            parse_source("g = {v = 42} function onTick() output.setNumber(1, g.v) end").unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.v"), "{out}");
+        assert!(out.contains("g={"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_global_binding_is_not_removed_across_functions() {
+        let (mut ast, root) = parse_source(
+            "function onTick() g = {v = 42} end function onDraw() output.setNumber(1, g.v) end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g={"), "{out}");
+        assert!(out.contains("g.v"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_pre_init_read_is_not_scalarized() {
+        let (mut ast, root) = parse_source(
+            "output.setNumber(1, g.verylongfieldnameforscalar) g = {verylongfieldnameforscalar = 42, otherfieldnameforscalar = 7} function onTick() output.setNumber(2, g.verylongfieldnameforscalar) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_impure_local_init_is_not_scalarized() {
+        // Candidate S (w9 cycle 66): the pure assignment is the
+        // recorded initializer, but the local declaration's own
+        // initializer is a constructor with an effectful array
+        // element. Scalarization discards the declaration part, so it
+        // must refuse: the element's evaluation must survive.
+        let (mut ast, root) =
+            parse_source("local v = {F37()} v = {x = 100} v.x = 7 output.setNumber(1, v.x)")
+                .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("F37()"), "{out}");
+        assert!(out.contains("v.x"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_pre_init_call_is_not_scalarized() {
+        let (mut ast, root) = parse_source(
+            "function show() output.setNumber(1, g.verylongfieldnameforscalar) end show() g = {verylongfieldnameforscalar = 42, otherfieldnameforscalar = 7} function onTick() output.setNumber(2, g.verylongfieldnameforscalar) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_goto_skipped_init_is_not_scalarized() {
+        let (mut ast, root) = parse_source(
+            "goto done g = {verylongfieldnameforscalar = 42, otherfieldnameforscalar = 7} ::done:: function onTick() output.setNumber(1, g.verylongfieldnameforscalar) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_return_before_init_is_not_scalarized() {
+        let (mut ast, root) = parse_source(
+            "function onTick() output.setNumber(1, g.verylongfieldnameforscalar) end do return end g = {verylongfieldnameforscalar = 42, otherfieldnameforscalar = 7}",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("g.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn immutable_table_local_self_is_not_flattened_into_methods() {
+        // Candidate AA (w9 cycle 68): the method body's `self.x`
+        // resolves to this local but denotes the receiver; folding it
+        // to the local's literal field would change the method's result.
+        let (mut ast, root) = parse_source(
+            "local self = {x = 111} local T = {x = 222} function T:m() return self.x end function onTick() output.setNumber(1, T:m()) end",
+        )
+        .unwrap();
+        flatten_immutable_tables(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("self.x"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_global_self_is_not_scalarized() {
+        // Candidate AA (w9 cycle 68): occurrences of `self` inside a
+        // method body resolve to the global binding but denote the
+        // receiver; scalarizing the global would substitute the
+        // namespace's field values for the receiver's.
+        let (mut ast, root) = parse_source(
+            "self = {verylongfieldnameforscalar = 1000, otherfieldnameforscalar = 7} local T = {verylongfieldnameforscalar = 11} function T:m() return self.verylongfieldnameforscalar end function onTick() output.setNumber(1, T:m()) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("self.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_local_self_is_not_scalarized() {
+        // Candidate AA, local form: a chunk local named `self` is the
+        // resolution target of method-body occurrences in its scope,
+        // which still denote the receiver, not this table.
+        let (mut ast, root) = parse_source(
+            "local self = {verylongfieldnameforscalar = 111, otherfieldnameforscalar = 7} local T = {verylongfieldnameforscalar = 222} function T:m() return self.verylongfieldnameforscalar end function onTick() output.setNumber(1, T:m()) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("self.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
+    fn closed_namespace_global_post_init_still_scalarized() {
+        let (mut ast, root) = parse_source(
+            "g = {verylongfieldnameforscalar = 42, otherfieldnameforscalar = 7} function onTick() output.setNumber(1, g.verylongfieldnameforscalar) output.setNumber(2, g.verylongfieldnameforscalar) output.setNumber(3, g.otherfieldnameforscalar) end",
+        )
+        .unwrap();
+        scalarize_closed_namespaces(&mut ast, root, 8);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(!out.contains("g.verylongfieldnameforscalar"), "{out}");
+    }
+
+    #[test]
     fn closed_namespace_becomes_scalar_bindings() {
         let (mut ast, root) = parse_source(
             "local t={verylongfield=1,other=2}function onTick()t.verylongfield=t.verylongfield+1 output.setNumber(1,t.verylongfield+t.other)end",
@@ -1704,5 +2259,88 @@ mod scalarization_tests {
         let out = Printer::new(&ast, false).output(root);
         assert!(out.contains("side()"), "{out}");
         assert!(out.contains("{x=1,y=side()}"), "{out}");
+    }
+    #[test]
+    fn table_parameter_scalarization_respects_the_parameter_limit() {
+        // 196 parameters + the table parameter widen to 201: skip.
+        let params = (1..=196)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let args = (1..=196)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!(
+            "local function f({params},t)return t.a+t.b+t.c+t.d+t.e+(p1 or 0) end return f({args},{{a=1,b=2,c=3,d=4,e=5}})"
+        );
+        let (mut ast, root) = parse_source(&source).unwrap();
+        scalarize_table_literal_parameters(&mut ast, root, 16);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(!out.contains("__tp"), "{out}");
+    }
+
+    #[test]
+    fn table_parameter_scalarization_counts_body_locals() {
+        // 194 parameters + the table parameter + 2 body locals: the
+        // parameter count alone widens to 199, but the true peak is
+        // (195 + 2) - 1 + 5 = 201, so scalarization must skip.
+        let params = (1..=194)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let args = (1..=194)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!(
+            "local function f({params},t) local alpha = p1 local beta = p2 return alpha + beta + t.a+t.b+t.c+t.d+t.e+(p3 or 0) end return f({args},{{a=1,b=2,c=3,d=4,e=5}})"
+        );
+        let (mut ast, root) = parse_source(&source).unwrap();
+        scalarize_table_literal_parameters(&mut ast, root, 16);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(!out.contains("__tp"), "{out}");
+    }
+
+    #[test]
+    fn table_parameter_scalarization_with_body_locals_at_the_limit() {
+        // 193 parameters + the table parameter + 2 body locals: the true
+        // peak is (194 + 2) - 1 + 5 = 200, exactly at the limit, so
+        // scalarization still applies.
+        let params = (1..=193)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let args = (1..=193)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!(
+            "local function f({params},t) local alpha = p1 local beta = p2 return alpha + beta + t.a+t.b+t.c+t.d+t.e+(p3 or 0) end return f({args},{{a=1,b=2,c=3,d=4,e=5}})"
+        );
+        let (mut ast, root) = parse_source(&source).unwrap();
+        scalarize_table_literal_parameters(&mut ast, root, 16);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("__tp"), "{out}");
+    }
+
+    #[test]
+    fn table_parameter_scalarization_below_the_parameter_limit() {
+        // 195 parameters + the table parameter widen to exactly 200.
+        let params = (1..=195)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let args = (1..=195)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!(
+            "local function f({params},t)return t.a+t.b+t.c+t.d+t.e+(p1 or 0) end return f({args},{{a=1,b=2,c=3,d=4,e=5}})"
+        );
+        let (mut ast, root) = parse_source(&source).unwrap();
+        scalarize_table_literal_parameters(&mut ast, root, 16);
+        let out = Printer::new(&ast, false).output(root);
+        assert!(out.contains("__tp"), "{out}");
     }
 }

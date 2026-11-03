@@ -249,9 +249,12 @@ impl Vm {
     pub fn execute(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
         crate::source::validate_source(source, name)?;
+        let source = crate::dialect::rewrite(source)
+            .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
+        crate::source::validate_source(&source, name)?;
         let function = self
             .lua
-            .load(source)
+            .load(source.as_ref())
             .set_name(name)
             .set_mode(ChunkMode::Text)
             .set_environment(self.environment.clone())

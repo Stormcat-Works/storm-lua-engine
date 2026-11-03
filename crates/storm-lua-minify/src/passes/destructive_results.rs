@@ -146,6 +146,7 @@ fn contains_binding(ast: &Ast, res: &Resolution, node: NodeId, bid: BindingId) -
 fn find_candidates(ast: &Ast, root: NodeId, res: &Resolution) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     let analyzer = storm_lua_analysis::effects::EffectAnalyzer::new(ast, res, root, true);
+    let mut effects_pool: Vec<storm_lua_analysis::effects::Effects> = Vec::new();
     for (function_bid, binding) in res.bindings.iter().enumerate().skip(1) {
         let function_bid = function_bid as BindingId;
         let Some(function_node) = binding.function_node else {
@@ -204,12 +205,13 @@ fn find_candidates(ast: &Ast, root: NodeId, res: &Resolution) -> Vec<Candidate> 
         {
             continue;
         }
-        let effects = storm_lua_analysis::effects::merge_effects(
-            &statements
-                .iter()
-                .map(|&statement| analyzer.effects_for_statement(statement))
-                .collect::<Vec<_>>(),
-        );
+        while effects_pool.len() < statements.len() {
+            effects_pool.push(storm_lua_analysis::effects::empty_effects());
+        }
+        for (index, &statement) in statements.iter().enumerate() {
+            analyzer.effects_for_statement_into(statement, &mut effects_pool[index]);
+        }
+        let effects = storm_lua_analysis::effects::merge_effects(&effects_pool[..statements.len()]);
         if effects.reads.contains(&target_bid)
             || effects.writes.contains(&target_bid)
             || effects.calls

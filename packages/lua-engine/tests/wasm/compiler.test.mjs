@@ -53,7 +53,7 @@ test('retired passes are absent from metadata and rejected even in already-small
   const metadata = compiler.passMetadata();
   const ids = new Set(compiler.passIds());
   assert.ok(metadata.every(entry => ids.has(entry.id)));
-  assert.equal(ids.size, 67);
+  assert.equal(ids.size, 73);
   for (const id of ['general-expression-factoring', 'repeated-expression-factoring',
     'scalar-vector-loop-synthesis', 'redundant-nil-fallback-elimination']) {
     assert.equal(ids.has(id), false);
@@ -114,7 +114,7 @@ test('compiled metadata keeps field presence, insertion order and nonfinite numb
   for(const sourceMap of [false,true]) {
     const source='-- 雪😀\r\nfunction onTick()end';
     const result=compiler.minify(source,{sourceMap,targetSize:8192,numericMode:'tolerant',numericTolerance:{abs:-0,rel:0.01}});
-    assert.equal(result.ok,true);assert.equal(result.code,source);
+    assert.equal(result.ok,true);assert.equal(result.code,'function\nonTick()end');
     assert.equal(Object.getPrototypeOf(result),Object.prototype);
     assert.ok(Object.is(result.assumptions.numericTolerance.abs,-0));
     assert.equal(result.assumptions.numericTolerance.rel,0.01);

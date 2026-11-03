@@ -40,6 +40,14 @@ impl HostCall<'_> {
     pub fn is_function(&self, index: usize) -> Result<bool, VmError> {
         Ok(matches!(self.argument(index)?, Value::Function(_)))
     }
+    /// Lua truthiness without invoking code or decoding tables/functions into
+    /// owned data. Only nil and boolean false are false, including for cyclic tables.
+    pub fn truthy(&self, index: usize) -> Result<bool, VmError> {
+        Ok(!matches!(
+            self.argument(index)?,
+            Value::Nil | Value::Boolean(false)
+        ))
+    }
     /// Lua's native number/string coercion, preserving string bytes. Other types
     /// return None; they are not formatted through host-language Display.
     pub fn string(&self, index: usize) -> Result<Option<Vec<u8>>, VmError> {
@@ -104,6 +112,45 @@ impl HostCall<'_> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truthiness_reads_live_values_without_decoding_or_invoking_them() -> Result<(), VmError> {
+        let vm = crate::runner::Vm::new(Default::default())?;
+        let mut args: MultiValue = vm
+            .lua
+            .load(
+                r#"
+            local cyclic={} cyclic.self=cyclic
+            return nil,false,true,0,-0.0,0/0,'',cyclic,
+                function() error('must not run') end
+        "#,
+            )
+            .eval()?;
+        args.push_back(Value::Thread(
+            vm.lua
+                .create_thread(vm.lua.create_function(|_, ()| Ok(()))?)?,
+        ));
+        let call = HostCall {
+            lua: &vm.lua,
+            args: &args,
+            control: &vm.control,
+        };
+        for (index, expected) in [false, false, true, true, true, true, true, true, true, true]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(call.truthy(index)?, expected, "argument {index}");
+        }
+        assert!(call.decode(7).is_err());
+        assert!(call.decode(8).is_err());
+        assert!(call.truthy(10).is_err());
+        Ok(())
     }
 }
 

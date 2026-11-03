@@ -14,6 +14,7 @@ workspace = true
 storm-lua-spec = { workspace = true }
 storm-lua-syntax = { workspace = true }
 storm-lua-analysis = { workspace = true }
+storm-lua-vm = { workspace = true }
 serde = { workspace = true }
 bincode = "1.3"
 web-time = "1"

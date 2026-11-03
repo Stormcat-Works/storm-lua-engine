@@ -7,14 +7,19 @@
 //! be rebound by that replay. Simple root-level forwarding wrappers (H/V -> R)
 //! can be normalized without expanding R's dynamic coordinate transformations.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::pass::PassResult;
+use crate::scope_rename::measure_renamed_size;
 use crate::scope_rename::scope_rename_fast;
 use storm_lua_analysis::resolver::{resolve, BindingId, BindingKind, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId, TableField};
-use storm_lua_syntax::numeric::{integer_literal_value, quote_lua};
+use storm_lua_syntax::numeric::{
+    integer_literal_value, qstr, qstr_len, quote_lua, quoted_bytes_len, PrintableFeatures,
+};
+use storm_lua_syntax::print::render_num;
 use storm_lua_syntax::size::{measure_expr, measure_size, measure_stmt};
 
 mod dictionary;
@@ -142,45 +147,47 @@ struct Call {
     origin_arguments: Vec<NodeId>,
 }
 
-struct Classifier<'a> {
-    ast: &'a Ast,
-    res: &'a Resolution,
+/// Facts about one input AST derived from its content and resolution
+/// alone: API aliases, drawing wrappers, lexical order and definition
+/// sites. The data owns no reference to the AST or the resolution, so it
+/// can be stored next to the input it was derived from (see
+/// `InputAnalysis`) without threading borrows through every consumer.
+struct ClassifierData {
     aliases: HashMap<BindingId, String>,
     wrappers: BTreeSet<BindingId>,
     order: HashMap<NodeId, usize>,
     definitions: HashMap<NodeId, usize>,
 }
-impl<'a> Classifier<'a> {
-    fn new(ast: &'a Ast, res: &'a Resolution, root: NodeId) -> Self {
+
+impl ClassifierData {
+    fn build(ast: &Ast, res: &Resolution, root: NodeId) -> Self {
         let mut out = Self {
-            ast,
-            res,
             aliases: super::closed_fields::api_aliases(ast, res, root),
             wrappers: BTreeSet::new(),
             order: HashMap::new(),
             definitions: HashMap::new(),
         };
-        fn visit(c: &mut Classifier<'_>, node: NodeId, top: bool) {
-            let index = c.order.len();
-            c.order.entry(node).or_insert(index);
+        fn visit(ast: &Ast, data: &mut ClassifierData, node: NodeId, top: bool) {
+            let index = data.order.len();
+            data.order.entry(node).or_insert(index);
             if top {
-                if let Node::Funcstat(_, f) | Node::Localfunc(_, f) = c.ast.node(node) {
-                    c.definitions.entry(*f).or_insert(index);
+                if let Node::Funcstat(_, f) | Node::Localfunc(_, f) = ast.node(node) {
+                    data.definitions.entry(*f).or_insert(index);
                 }
             }
-            match c.ast.node(node) {
+            match ast.node(node) {
                 Node::Block(stmts) => {
                     for &s in stmts {
-                        visit(c, s, top);
+                        visit(ast, data, s, top);
                     }
                 }
-                Node::Do(b) => visit(c, *b, top),
-                _ => storm_lua_analysis::resolver::for_each_child(c.ast, node, &mut |n| {
-                    visit(c, n, false)
+                Node::Do(b) => visit(ast, data, *b, top),
+                _ => storm_lua_analysis::resolver::for_each_child(ast, node, &mut |n| {
+                    visit(ast, data, n, false)
                 }),
             }
         }
-        visit(&mut out, root, true);
+        visit(ast, &mut out, root, true);
         loop {
             let mut changed = false;
             for (bid, binding) in res.bindings.iter().enumerate().skip(1) {
@@ -216,7 +223,7 @@ impl<'a> Classifier<'a> {
                 let Node::Call(f, _, _) = ast.node(call) else {
                     unreachable!()
                 };
-                if out.is_draw(*f) {
+                if out.is_draw(ast, res, *f) {
                     out.wrappers.insert(b);
                     changed = true;
                 }
@@ -227,44 +234,45 @@ impl<'a> Classifier<'a> {
         }
         out
     }
-    fn is_draw(&self, node: NodeId) -> bool {
-        if super::closed_fields::builtin_reference(self.ast, self.res, &self.aliases, node)
+
+    fn is_draw(&self, ast: &Ast, res: &Resolution, node: NodeId) -> bool {
+        if super::closed_fields::builtin_reference(ast, res, &self.aliases, node)
             .is_some_and(|name| draw_builtin(&name))
         {
             return true;
         }
-        matches!(self.ast.node(node), Node::Name(_))
-            && self.res.node_bid[node as usize].is_some_and(|b| self.wrappers.contains(&b))
+        matches!(ast.node(node), Node::Name(_))
+            && res.node_bid[node as usize].is_some_and(|b| self.wrappers.contains(&b))
     }
-    fn total_callee_read(&self, node: NodeId) -> bool {
-        match self.ast.node(node) {
+    fn total_callee_read(&self, ast: &Ast, res: &Resolution, node: NodeId) -> bool {
+        match ast.node(node) {
             Node::Name(_) => true,
-            Node::Paren(inner) => self.total_callee_read(*inner),
+            Node::Paren(inner) => self.total_callee_read(ast, res, *inner),
             Node::Index(object, _, _) => {
                 // Only the immutable host screen itself is unconditionally
                 // initialized. S=screen may occur after this callback or not at
                 // all. The closed-key-space gate excludes mutation/reflection.
-                matches!(self.ast.node(*object), Node::Name(_))
-                    && self.res.node_bid[*object as usize].is_some_and(|b| {
-                        let binding = self.res.binding(b);
+                matches!(ast.node(*object), Node::Name(_))
+                    && res.node_bid[*object as usize].is_some_and(|b| {
+                        let binding = res.binding(b);
                         binding.kind == BindingKind::Global
-                            && self.ast.strings.get(binding.name) == "screen"
-                            && self.res.binding_write_counts[b as usize] == 0
+                            && ast.strings.get(binding.name) == "screen"
+                            && res.binding_write_counts[b as usize] == 0
                     })
             }
             _ => false,
         }
     }
-    fn same_visible_binding(&self, target: BindingId, at: NodeId) -> bool {
-        let binding = self.res.binding(target);
-        let mut scope = self.res.node_scope_id[at as usize];
+    fn same_visible_binding(&self, res: &Resolution, target: BindingId, at: NodeId) -> bool {
+        let binding = res.binding(target);
+        let mut scope = res.node_scope_id[at as usize];
         while let Some(s) = scope {
-            let current = self.res.scope(s);
+            let current = res.scope(s);
             let candidates = current
                 .bindings
                 .iter()
                 .copied()
-                .filter(|&b| self.res.binding(b).name == binding.name)
+                .filter(|&b| res.binding(b).name == binding.name)
                 .collect::<Vec<_>>();
             if !candidates.is_empty() {
                 return candidates.iter().all(|&b| b == target);
@@ -273,19 +281,19 @@ impl<'a> Classifier<'a> {
         }
         binding.kind == BindingKind::Global
     }
-    fn normalize(&self, call: &mut Call) {
+    fn normalize(&self, ast: &Ast, res: &Resolution, call: &mut Call) {
         let mut seen = HashSet::new();
         loop {
-            if !matches!(self.ast.node(call.callee), Node::Name(_)) {
+            if !matches!(ast.node(call.callee), Node::Name(_)) {
                 break;
             }
-            let Some(b) = self.res.node_bid[call.callee as usize] else {
+            let Some(b) = res.node_bid[call.callee as usize] else {
                 break;
             };
             if !self.wrappers.contains(&b) || !seen.insert(b) {
                 break;
             }
-            let binding = self.res.binding(b);
+            let binding = res.binding(b);
             let Some(function) = binding.function_node else {
                 break;
             };
@@ -298,49 +306,49 @@ impl<'a> Classifier<'a> {
             {
                 break;
             }
-            let Some(inner) = wrapper_call(self.ast, function) else {
+            let Some(inner) = wrapper_call(ast, function) else {
                 break;
             };
-            let Node::Call(target, args, None) = self.ast.node(inner) else {
+            let Node::Call(target, args, None) = ast.node(inner) else {
                 break;
             };
-            if !matches!(self.ast.node(*target), Node::Name(_)) {
+            if !matches!(ast.node(*target), Node::Name(_)) {
                 break;
             }
-            let Some(target_bid) = self.res.node_bid[*target as usize] else {
+            let Some(target_bid) = res.node_bid[*target as usize] else {
                 break;
             };
             // Stop at the terminal drawing wrapper; do not expand its dynamic
             // expressions (rotation, scaling, scrolling) or a host API access.
             if !self.wrappers.contains(&target_bid)
-                || !self.same_visible_binding(target_bid, call.statement)
+                || !self.same_visible_binding(res, target_bid, call.statement)
             {
                 break;
             }
-            let Node::Function(params, false, _) = self.ast.node(function) else {
+            let Node::Function(params, false, _) = ast.node(function) else {
                 break;
             };
             if call.args.len() != params.len() {
                 break;
             }
-            let param_bids = &self.res.node_bids[function as usize];
+            let param_bids = &res.node_bids[function as usize];
             let mut mapped = Vec::new();
             let mut origin_arguments = Vec::new();
             for &arg in args {
-                if let Some(atom) = Atom::read(self.ast, arg) {
+                if let Some(atom) = Atom::read(ast, arg) {
                     mapped.push(atom);
-                    if self.ast.nodes.tracks_origins() {
+                    if ast.nodes.tracks_origins() {
                         origin_arguments.push(arg);
                     }
-                } else if matches!(self.ast.node(arg), Node::Name(_)) {
-                    let pos = self.res.node_bid[arg as usize]
+                } else if matches!(ast.node(arg), Node::Name(_)) {
+                    let pos = res.node_bid[arg as usize]
                         .and_then(|b| param_bids.iter().position(|&p| p == b));
                     let Some(pos) = pos else { return };
                     let Some(value) = call.args.get(pos) else {
                         return;
                     };
                     mapped.push(value.clone());
-                    if self.ast.nodes.tracks_origins() {
+                    if ast.nodes.tracks_origins() {
                         origin_arguments.push(call.origin_arguments[pos]);
                     }
                 } else {
@@ -352,19 +360,19 @@ impl<'a> Classifier<'a> {
             call.origin_arguments = origin_arguments;
         }
     }
-    fn call(&self, statement: NodeId) -> Option<Call> {
-        let Node::Callstat(expression) = self.ast.node(statement) else {
+    fn call(&self, ast: &Ast, res: &Resolution, statement: NodeId) -> Option<Call> {
+        let Node::Callstat(expression) = ast.node(statement) else {
             return None;
         };
-        let Node::Call(f, args, None) = self.ast.node(*expression) else {
+        let Node::Call(f, args, None) = ast.node(*expression) else {
             return None;
         };
-        if args.len() > 8 || !self.is_draw(*f) {
+        if args.len() > 8 || !self.is_draw(ast, res, *f) {
             return None;
         }
         let atoms = args
             .iter()
-            .map(|&n| Atom::read(self.ast, n))
+            .map(|&n| Atom::read(ast, n))
             .collect::<Option<Vec<_>>>()?;
         let mut call = Call {
             statement,
@@ -373,16 +381,39 @@ impl<'a> Classifier<'a> {
             total_read: false,
             args: atoms,
             origin_call: *expression,
-            origin_arguments: if self.ast.nodes.tracks_origins() {
+            origin_arguments: if ast.nodes.tracks_origins() {
                 args.clone()
             } else {
                 Vec::new()
             },
         };
-        self.normalize(&mut call);
-        call.total_read = self.total_callee_read(call.callee);
-        call.key = super::immutable_values::expression_key(self.ast, self.res, call.callee);
+        self.normalize(ast, res, &mut call);
+        call.total_read = self.total_callee_read(ast, res, call.callee);
+        call.key = super::immutable_values::expression_key(ast, res, call.callee);
         Some(call)
+    }
+}
+
+/// Borrowing view for the standalone consumers that already hold an AST
+/// and its resolution (global literal draw calls, forwarder removal, and
+/// the classifier tests). The shared setup path goes through
+/// `SharedInput`, which owns the input and its `InputAnalysis`.
+struct Classifier<'a> {
+    ast: &'a Ast,
+    res: &'a Resolution,
+    data: ClassifierData,
+}
+
+impl<'a> Classifier<'a> {
+    fn new(ast: &'a Ast, res: &'a Resolution, root: NodeId) -> Self {
+        Self {
+            ast,
+            res,
+            data: ClassifierData::build(ast, res, root),
+        }
+    }
+    fn is_draw(&self, node: NodeId) -> bool {
+        self.data.is_draw(self.ast, self.res, node)
     }
 }
 
@@ -449,27 +480,453 @@ struct Shape {
 #[derive(Clone)]
 enum Payload {
     Count(usize),
-    Values(Vec<Atom>),
-    Bytes(String),
+    /// Table payload kept in its source columns, with its precomputed
+    /// `size()`: the encoder sums the per-column lengths (see
+    /// `column_lens`); the total equals the direct scan in `values_size`
+    /// of the flattened values because the summands are the same and
+    /// addition commutes. Most generated table candidates are priced
+    /// and discarded, so the row-major flattening is built only if the
+    /// candidate is adopted (in `emit`), which reproduces the exact
+    /// field order.
+    Columns(Vec<Vec<Atom>>, usize, usize),
+    Bytes(BytesPayload),
 }
 impl Payload {
     fn emit(&self, ast: &mut Ast) -> NodeId {
         match self {
             Self::Count(n) => num(ast, *n as i64),
-            Self::Values(values) => {
-                let fields = values
-                    .iter()
+            Self::Columns(columns, count, _) => {
+                let fields = (0..*count)
+                    .flat_map(|r| columns.iter().map(move |c| &c[r]))
                     .map(|v| TableField::Arr(v.emit(ast)))
                     .collect();
                 ast.push(Node::Table(fields))
             }
-            Self::Bytes(s) => ast.push(Node::Str(quote_lua(s).into())),
+            Self::Bytes(b) => ast.push(Node::Str(quote_lua(&*b.text()).into())),
         }
     }
+    /// A table payload measured by the direct scan (`values_size`):
+    /// one single-row column per value, whose row-major flattening is
+    /// exactly `values`.
+    #[cfg(test)]
+    fn values(values: Vec<Atom>) -> Self {
+        let size = values_size(&values);
+        let columns = values.into_iter().map(|v| vec![v]).collect();
+        Self::Columns(columns, 1, size)
+    }
     fn size(&self) -> usize {
-        let mut ast = Ast::new();
-        let n = self.emit(&mut ast);
-        measure_expr(&ast, n)
+        // Direct length computation: no fresh Ast is built and no measure
+        // traversal runs. Each arm mirrors exactly what measure_expr
+        // computes for the node emit() would have produced.
+        match self {
+            // emit() casts to i64 first (see num()), so keep that cast:
+            // for counts above i64::MAX the emitted literal is negative.
+            Self::Count(n) => render_num(&(*n as i64).to_string()).len(),
+            Self::Columns(_, _, size) => *size,
+            // The emitted node is Str(quote_lua(s)); measure_expr on it
+            // is qstr_shape(quote_lua(s)).0. quoted_bytes_len computes
+            // exactly that length from the payload itself, so neither
+            // the quote_lua string nor its decode round trip is built
+            // here; quote_lua is still built where emit() needs it.
+            Self::Bytes(b) => b.size(),
+        }
+    }
+
+    /// The payload's byte string, when it is a byte payload: the
+    /// plan-stage sharing of repeated payloads is the one pricing-side
+    /// consumer that needs the text, and asking for it is an
+    /// adoption-side operation (a recipe builds its string here).
+    fn bytes_text(&self) -> Option<Cow<'_, str>> {
+        match self {
+            Self::Bytes(b) => Some(b.text()),
+            _ => None,
+        }
+    }
+}
+
+/// A byte-string payload: the encoded form of a numeric column set.
+///
+/// Most generated byte candidates are priced by size and discarded, so
+/// codec payloads are kept as their generation recipe: the rendered
+/// size comes from the byte features accumulated while the recipe was
+/// built, and the string itself is materialized only when the
+/// candidate is adopted (`emit`, or the plan-stage payload sharing via
+/// `Payload::bytes_text`). Literal strings cover producers without a
+/// codec recipe and keep the exact previous behavior.
+#[derive(Clone)]
+enum BytesPayload {
+    Literal(String),
+    Recipe(BytesRecipe),
+}
+
+impl BytesPayload {
+    fn size(&self) -> usize {
+        match self {
+            Self::Literal(s) => quoted_bytes_len(s.as_bytes()),
+            Self::Recipe(recipe) => recipe.size(),
+        }
+    }
+
+    fn text(&self) -> Cow<'_, str> {
+        match self {
+            Self::Literal(s) => Cow::Borrowed(s),
+            Self::Recipe(recipe) => Cow::Owned(recipe.build()),
+        }
+    }
+}
+
+/// The generation recipe of one codec byte payload: the ingredients
+/// needed to rebuild the exact byte string, plus the
+/// [`PrintableFeatures`] of those bytes, accumulated by the same byte
+/// walk that builds the string, so the reported size cannot diverge
+/// from the built bytes.
+///
+/// The integer source is shared by every candidate one encoder call
+/// derives from the same column set, so a recipe never copies the
+/// integers it encodes. The ingredients are private and no operation
+/// combines a recipe with another input's columns: pricing code can
+/// only ask for the size, and the text is reachable only through the
+/// adoption-side operations on `BytesPayload`.
+#[derive(Clone)]
+enum BytesRecipe {
+    Bias {
+        source: Arc<Vec<Vec<i64>>>,
+        biases: Vec<i64>,
+        count: usize,
+        features: PrintableFeatures,
+    },
+    Packed {
+        source: Arc<Vec<Vec<i64>>>,
+        biases: Vec<i64>,
+        radices: Vec<i64>,
+        width: usize,
+        count: usize,
+        features: PrintableFeatures,
+    },
+    Grouped {
+        source: Arc<Vec<Vec<i64>>>,
+        biases: Vec<i64>,
+        radices: Vec<i64>,
+        width: usize,
+        rows: usize,
+        count: usize,
+        features: PrintableFeatures,
+    },
+    Fixed {
+        source: Arc<Vec<Vec<i64>>>,
+        biases: Vec<i64>,
+        radices: Vec<i64>,
+        width: usize,
+        prefixes: Option<usize>,
+        count: usize,
+        features: PrintableFeatures,
+    },
+    Rice {
+        specs: Vec<rice::Column>,
+        values: Vec<Vec<i64>>,
+        count: usize,
+        features: PrintableFeatures,
+    },
+}
+
+impl BytesRecipe {
+    fn features(&self) -> &PrintableFeatures {
+        match self {
+            Self::Bias { features, .. }
+            | Self::Packed { features, .. }
+            | Self::Grouped { features, .. }
+            | Self::Fixed { features, .. }
+            | Self::Rice { features, .. } => features,
+        }
+    }
+
+    /// The rendered size of the payload string. The feature aggregates
+    /// determine it for every realistic byte string; the pathological
+    /// case (at least 65 distinct long-bracket patterns blocked) falls
+    /// back to building the string and measuring it, which stays exact.
+    fn size(&self) -> usize {
+        self.features()
+            .quoted_len()
+            .unwrap_or_else(|| quoted_bytes_len(self.build().as_bytes()))
+    }
+
+    /// Build the exact byte string the original constructor produced.
+    /// Each arm replays the codec's single byte walk with a string
+    /// sink — the same walk the features were accumulated with.
+    #[expect(
+        clippy::expect_used,
+        reason = "The fixed-width walk succeeded on these same ingredients when the recipe was constructed, so re-walking them cannot fail"
+    )]
+    fn build(&self) -> String {
+        let mut out = String::with_capacity(self.features().len());
+        match self {
+            Self::Bias {
+                source,
+                biases,
+                count,
+                ..
+            } => walk_bias_bytes(source, biases, *count, &mut |b| out.push(b as char)),
+            Self::Packed {
+                source,
+                biases,
+                radices,
+                width,
+                count,
+                ..
+            } => walk_packed_bytes(source, biases, radices, *width, *count, &mut |b| {
+                out.push(b as char)
+            }),
+            Self::Grouped {
+                source,
+                biases,
+                radices,
+                width,
+                rows,
+                count,
+                ..
+            } => grouped::walk_grouped_bytes(
+                source,
+                biases,
+                radices,
+                *width,
+                *rows,
+                radices.iter().product(),
+                *count,
+                &mut |b| out.push(b as char),
+            ),
+            Self::Fixed {
+                source,
+                biases,
+                radices,
+                width,
+                prefixes,
+                count,
+                ..
+            } => {
+                // The walk succeeded on these same ingredients when
+                // the recipe was constructed, so it cannot fail here.
+                shared::walk_fixed_bytes(
+                    biases,
+                    radices,
+                    *width,
+                    *prefixes,
+                    source,
+                    *count,
+                    &mut |b| out.push(b as char),
+                )
+                .expect("recipe ingredients re-walk");
+            }
+            Self::Rice {
+                specs,
+                values,
+                count,
+                ..
+            } => rice::walk_rice_bytes(values, specs, *count, &mut |b| out.push(b as char)),
+        }
+        out
+    }
+}
+
+/// The biased one-byte-per-column byte walk, row-major: one byte per
+/// value, `(value - bias + 35)`. This is the bias codec's only byte
+/// generation; building the payload string and accumulating its size
+/// features are two sinks over the walk, so they cannot diverge.
+fn walk_bias_bytes(columns: &[Vec<i64>], biases: &[i64], count: usize, sink: &mut impl FnMut(u8)) {
+    for r in 0..count {
+        for (c, bias) in columns.iter().zip(biases) {
+            sink((c[r] - bias + 35) as u8);
+        }
+    }
+}
+
+/// The whole-row packing byte walk: each row's values compose into
+/// one mixed-radix number, emitted as `width` base-92 digits offset by
+/// 35. The packed codec's only byte generation (see `walk_bias_bytes`
+/// for the sink discipline).
+fn walk_packed_bytes(
+    columns: &[Vec<i64>],
+    biases: &[i64],
+    radices: &[i64],
+    width: usize,
+    count: usize,
+    sink: &mut impl FnMut(u8),
+) {
+    let capacity = 92_i64.pow(width as u32);
+    for row in 0..count {
+        let mut value = 0i64;
+        for ((column, bias), radix) in columns.iter().zip(biases).zip(radices) {
+            value = value * radix + column[row] - bias;
+        }
+        let mut divisor = capacity / 92;
+        for _ in 0..width {
+            sink((value / divisor % 92 + 35) as u8);
+            divisor /= 92;
+        }
+    }
+}
+
+/// The biased one-byte-per-column form, as a recipe: a column's bias
+/// is 0 when the column already fits 0..=91 and its minimum otherwise.
+/// Returns the biases (for the codec) and the recipe, or None when any
+/// column escapes the +-1e9 window or spans more than 92 values.
+fn bias_recipe(source: &Arc<Vec<Vec<i64>>>, count: usize) -> Option<(Vec<i64>, BytesRecipe)> {
+    let biases = source
+        .iter()
+        .map(|c| {
+            let min = *c.iter().min()?;
+            let max = *c.iter().max()?;
+            if min < -1_000_000_000 || max > 1_000_000_000 || max - min > 91 {
+                return None;
+            }
+            Some(if min >= 0 && max <= 91 { 0 } else { min })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut features = PrintableFeatures::new();
+    walk_bias_bytes(source, &biases, count, &mut |b| features.push(b));
+    let recipe = BytesRecipe::Bias {
+        source: source.clone(),
+        biases: biases.clone(),
+        count,
+        features,
+    };
+    Some((biases, recipe))
+}
+
+/// The recipe for one computed packed layout.
+fn packed_recipe_from_layout(
+    source: &Arc<Vec<Vec<i64>>>,
+    layout: &PackedLayout,
+    count: usize,
+) -> BytesRecipe {
+    let mut features = PrintableFeatures::new();
+    walk_packed_bytes(
+        source,
+        &layout.biases,
+        &layout.radices,
+        layout.width,
+        count,
+        &mut |b| features.push(b),
+    );
+    BytesRecipe::Packed {
+        source: source.clone(),
+        biases: layout.biases.clone(),
+        radices: layout.radices.clone(),
+        width: layout.width,
+        count,
+        features,
+    }
+}
+
+/// The whole-row packing as codec + recipe, under a byte-width limit.
+fn packed_recipe(
+    source: &Arc<Vec<Vec<i64>>>,
+    count: usize,
+    max_bytes: u32,
+) -> Option<(Codec, BytesRecipe)> {
+    let layout = packed_layout(source, max_bytes)?;
+    let recipe = packed_recipe_from_layout(source, &layout, count);
+    Some((packed_codec(layout), recipe))
+}
+
+/// Length of a table payload's values as emitted fields: "{" + fields
+/// joined by "," + "}". measure_expr on a Table does exactly this
+/// (join_comma_segs adds one comma per field after the first; no
+/// separator is added next to the braces). Each field contributes
+/// `atom_len(atom, 0)`, a pure function of the atom, so a payload
+/// flattened from columns measures the same as the sum of the
+/// per-column lengths (see `column_lens`).
+#[cfg(test)]
+fn values_size(values: &[Atom]) -> usize {
+    let mut total = 2;
+    for (i, value) in values.iter().enumerate() {
+        if i > 0 {
+            total += 1;
+        }
+        total += atom_len(value, 0);
+    }
+    total
+}
+
+/// Length of an Atom as an expression, mirroring size::expr_seg for the
+/// Atom subset only. `parent` is the size-model precedence context
+/// (0 at the top level / in a table field, 12 inside a unary minus).
+fn atom_len(atom: &Atom, parent: u8) -> usize {
+    // At precedence 15 expr_seg wraps every Atom form (none is
+    // Name/Paren/Index/Call) in "(" ... ")".
+    if parent == 15 {
+        return atom_len(atom, 0) + 2;
+    }
+    match atom {
+        Atom::Num(s) => {
+            let text = render_num(s);
+            let mut len = text.len();
+            if (text.contains('/') && parent > 11) || (text.starts_with('-') && parent >= 14) {
+                len += 2;
+            }
+            len
+        }
+        Atom::Str(s) => qstr_len(s),
+        Atom::Bool(b) => {
+            if parent <= 3 {
+                3 // "1>0" / "1>2"
+            } else if *b {
+                4
+            } else {
+                5
+            }
+        }
+        Atom::Nil => 3,
+        Atom::Neg(inner) => {
+            // Un: join_lex_segs(["-", inner at 12]); a separator is
+            // inserted only when the inner segment starts with '-',
+            // i.e. exactly needs_len_sep('-', '-') in the size model.
+            let mut len = 1 + atom_len(inner, 12);
+            if atom_first(inner, 12) == Some('-') {
+                len += 1;
+            }
+            if 12 < parent {
+                len += 2;
+            }
+            len
+        }
+    }
+}
+
+/// First character of an Atom's size-model segment, used only for the
+/// unary-minus separator decision above. For Str this builds the quoted
+/// form, but Str never occurs inside Neg (Atom::read only builds Neg
+/// around a Num), so this path is not on any hot evaluation.
+fn atom_first(atom: &Atom, parent: u8) -> Option<char> {
+    if parent == 15 {
+        return Some('(');
+    }
+    match atom {
+        Atom::Num(s) => {
+            let text = render_num(s);
+            if (text.contains('/') && parent > 11) || (text.starts_with('-') && parent >= 14) {
+                Some('(')
+            } else {
+                text.chars().next()
+            }
+        }
+        Atom::Str(s) => qstr(s).chars().next(),
+        Atom::Bool(b) => {
+            if parent <= 3 {
+                Some('1')
+            } else if *b {
+                Some('t')
+            } else {
+                Some('f')
+            }
+        }
+        Atom::Nil => Some('n'),
+        Atom::Neg(_) => {
+            if 12 < parent {
+                Some('(')
+            } else {
+                Some('-')
+            }
+        }
     }
 }
 struct Plan {
@@ -507,6 +964,37 @@ fn offset(ast: &mut Ast, base: NodeId, value: i64) -> NodeId {
         base,
         magnitude,
     ))
+}
+
+/// Integer view of a column set, computed once per `proposals` call and
+/// shared by every encoding path (projection, palette, encoders) instead of
+/// re-parsing `Atom::integer` per path. `Atom::integer` is a pure function
+/// of the atom, so the shared values are by definition identical to
+/// per-path recomputation.
+/// A projected column set: the rewritten shape, the kept columns, and
+/// their shared integer views and length sums (aligned with the kept
+/// columns).
+type ProjectedColumns = (Shape, Vec<Vec<Atom>>, Vec<Option<Vec<i64>>>, Vec<usize>);
+
+/// Sum of `atom_len(atom, 0)` per column, computed once per
+/// `proposals` call and shared by every encoding path, mirroring
+/// `column_ints`. A table payload flattened from these columns (in
+/// row-major order) measures `2 + (n - 1) + lens.iter().sum()`: the
+/// same total `values_size` computes on the flattened values, since
+/// both sum `atom_len(atom, 0)` over the same atoms and count one
+/// comma per field after the first.
+fn column_lens(columns: &[Vec<Atom>]) -> Vec<usize> {
+    columns
+        .iter()
+        .map(|c| c.iter().map(|a| atom_len(a, 0)).sum())
+        .collect()
+}
+
+fn column_ints(columns: &[Vec<Atom>]) -> Vec<Option<Vec<i64>>> {
+    columns
+        .iter()
+        .map(|c| c.iter().map(Atom::integer).collect())
+        .collect()
 }
 
 fn proposals(
@@ -560,29 +1048,44 @@ fn proposals(
         repeats: 1,
         translations: Vec::new(),
     };
+    let ints = column_ints(&columns);
+    let lens = column_lens(&columns);
     let canonical = if enhanced && columns.len() < arguments_width(&shape) {
         let mut all = Vec::new();
+        let mut all_ints = Vec::new();
+        let mut all_lens = Vec::new();
         let mut canonical = shape.clone();
         for (slot, args) in canonical.args.iter_mut().enumerate() {
             for (arg, value) in args.iter_mut().enumerate() {
                 *value = Arg::Column(all.len());
-                all.push(
-                    (0..count)
-                        .map(|row| calls[row * period + slot].args[arg].clone())
-                        .collect(),
-                );
+                let column = (0..count)
+                    .map(|row| calls[row * period + slot].args[arg].clone())
+                    .collect::<Vec<_>>();
+                // Most canonical columns are the deduplicated `columns`
+                // themselves; constant columns appear only here and are
+                // parsed directly.
+                let (shared, shared_len) = match columns.iter().position(|c| *c == column) {
+                    Some(at) => (ints[at].clone(), lens[at]),
+                    None => (
+                        column.iter().map(Atom::integer).collect(),
+                        column.iter().map(|a| atom_len(a, 0)).sum(),
+                    ),
+                };
+                all.push(column);
+                all_ints.push(shared);
+                all_lens.push(shared_len);
             }
         }
         canonical.columns = all.len();
-        Some((canonical, all))
+        Some((canonical, all, all_ints, all_lens))
     } else {
         None
     };
     let projected = enhanced
-        .then(|| project_columns(&shape, &columns))
+        .then(|| project_columns(&shape, &columns, &ints, &lens))
         .flatten();
     let mut out = if dense {
-        palette::proposals(&shape, &targets, &columns, count)
+        palette::proposals(&shape, &targets, &columns, &ints, &lens, count)
     } else {
         Vec::new()
     };
@@ -590,22 +1093,28 @@ fn proposals(
         shape,
         targets.clone(),
         columns,
+        ints,
+        &lens,
         count,
         enhanced,
         dense,
     ));
-    if let Some((shape, columns)) = projected {
+    if let Some((shape, columns, kept_ints, kept_lens)) = projected {
         out.extend(encode_columns(
             shape,
             targets.clone(),
             columns,
+            kept_ints,
+            &kept_lens,
             count,
             enhanced,
             dense,
         ));
     }
-    if let Some((shape, columns)) = canonical {
-        out.extend(encode_columns(shape, targets, columns, count, false, false));
+    if let Some((shape, columns, all_ints, all_lens)) = canonical {
+        out.extend(encode_columns(
+            shape, targets, columns, all_ints, &all_lens, count, false, false,
+        ));
     }
     out
 }
@@ -614,12 +1123,18 @@ fn arguments_width(shape: &Shape) -> usize {
     shape.args.iter().map(Vec::len).sum()
 }
 
-fn project_columns(shape: &Shape, columns: &[Vec<Atom>]) -> Option<(Shape, Vec<Vec<Atom>>)> {
+fn project_columns(
+    shape: &Shape,
+    columns: &[Vec<Atom>],
+    ints: &[Option<Vec<i64>>],
+    lens: &[usize],
+) -> Option<ProjectedColumns> {
     let mut kept = Vec::<Vec<Atom>>::new();
     let mut integers = Vec::<Option<Vec<i64>>>::new();
+    let mut kept_lens = Vec::new();
     let mut mapping = Vec::new();
-    for column in columns {
-        let numbers = column.iter().map(Atom::integer).collect::<Option<Vec<_>>>();
+    for (index, column) in columns.iter().enumerate() {
+        let numbers = ints[index].clone();
         if let Some(series) = numbers.as_ref().and_then(|c| predictors::fit(c)) {
             mapping.push(Arg::Series(series));
             continue;
@@ -636,6 +1151,7 @@ fn project_columns(shape: &Shape, columns: &[Vec<Atom>]) -> Option<(Shape, Vec<V
             mapping.push(Arg::Column(kept.len()));
             kept.push(column.clone());
             integers.push(numbers);
+            kept_lens.push(lens[index]);
         }
     }
     if kept.len() == columns.len() {
@@ -648,13 +1164,16 @@ fn project_columns(shape: &Shape, columns: &[Vec<Atom>]) -> Option<(Shape, Vec<V
             *arg = mapping[*i].clone();
         }
     }
-    Some((projected, kept))
+    Some((projected, kept, integers, kept_lens))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_columns(
     mut shape: Shape,
     targets: Vec<NodeId>,
     columns: Vec<Vec<Atom>>,
+    ints: Vec<Option<Vec<i64>>>,
+    lens: &[usize],
     count: usize,
     enhanced: bool,
     dense: bool,
@@ -670,21 +1189,33 @@ fn encode_columns(
     // unless nil is a constant column, which is passed directly in the helper.
     if columns.iter().flatten().all(|v| *v != Atom::Nil) {
         shape.codec = Codec::Table;
-        let values = (0..count)
-            .flat_map(|r| columns.iter().map(move |c| c[r].clone()))
-            .collect();
-        out.push((shape.clone(), targets.clone(), Payload::Values(values)));
+        // The size is the `values_size` total rearranged: the sum of
+        // the per-column lengths plus one comma per field after the
+        // first (see `column_lens`). The payload keeps the columns and
+        // flattens only if adopted (see `Payload::Columns`); the field
+        // count is `count * columns.len()` either way.
+        debug_assert_eq!(lens.len(), columns.len());
+        let size = 2 + (count * columns.len()).saturating_sub(1) + lens.iter().sum::<usize>();
+        out.push((
+            shape.clone(),
+            targets.clone(),
+            Payload::Columns(columns, count, size),
+        ));
     }
-    let numbers = columns
-        .iter()
-        .map(|c| c.iter().map(Atom::integer).collect::<Option<Vec<_>>>())
-        .collect::<Option<Vec<_>>>();
+    let numbers = ints.into_iter().collect::<Option<Vec<_>>>();
     if let Some(numbers) = numbers {
+        // The byte candidates below share this one integer source
+        // through their recipes instead of copying it per candidate.
+        let numbers = Arc::new(numbers);
         if dense {
-            if let Some((codec, bytes)) = rice::payload(&numbers, count) {
+            if let Some((codec, recipe)) = rice::payload(&numbers, count) {
                 let mut candidate = shape.clone();
                 candidate.codec = codec;
-                out.push((candidate, targets.clone(), Payload::Bytes(bytes)));
+                out.push((
+                    candidate,
+                    targets.clone(),
+                    Payload::Bytes(BytesPayload::Recipe(recipe)),
+                ));
             }
         }
         if dense
@@ -694,10 +1225,14 @@ fn encode_columns(
                 .flatten()
                 .any(|a| matches!(a, Arg::Series(_)))
         {
-            for (codec, bytes) in grouped::payloads(&numbers, count) {
+            for (codec, recipe) in grouped::payloads(&numbers, count) {
                 let mut candidate = shape.clone();
                 candidate.codec = codec;
-                out.push((candidate, targets.clone(), Payload::Bytes(bytes)));
+                out.push((
+                    candidate,
+                    targets.clone(),
+                    Payload::Bytes(BytesPayload::Recipe(recipe)),
+                ));
             }
         }
         if enhanced && count >= 8 {
@@ -713,77 +1248,112 @@ fn encode_columns(
                     {
                         return None;
                     }
-                    let mut values = vec![Atom::Num("0".into())];
+                    let mut delta_ints = vec![0];
                     for pair in column.windows(2) {
-                        values.push(Atom::Num(pair[1].checked_sub(pair[0])?.to_string().into()));
+                        delta_ints.push(pair[1].checked_sub(pair[0])?);
                     }
-                    Some(values)
+                    Some(delta_ints)
                 })
                 .collect::<Option<Vec<_>>>();
-            if let Some(deltas) = deltas {
-                for (mut candidate, targets, payload) in
-                    encode_columns(shape.clone(), targets.clone(), deltas, count, false, false)
-                {
-                    if matches!(candidate.codec, Codec::Bytes(_) | Codec::PackedBytes { .. }) {
-                        candidate.codec = Codec::Delta {
-                            firsts: numbers.iter().map(|c| c[0]).collect(),
-                            inner: Box::new(candidate.codec),
-                        };
-                        out.push((candidate, targets, payload));
-                    }
+            if let Some(delta_ints) = deltas {
+                let delta_ints = Arc::new(delta_ints);
+                // The candidates over the deltas used to come from a
+                // recursive encode whose table candidate the codec filter
+                // around it always discarded. Build exactly the two forms
+                // that survived that filter, in the same order, directly
+                // from the delta integers; the delta atoms and their
+                // flattened table are never materialized.
+                let firsts: Vec<i64> = numbers.iter().map(|c| c[0]).collect();
+                if let Some((codec, recipe)) = packed_recipe(&delta_ints, count, 6) {
+                    let mut candidate = shape.clone();
+                    candidate.codec = Codec::Delta {
+                        firsts: firsts.clone(),
+                        inner: Box::new(codec),
+                    };
+                    out.push((
+                        candidate,
+                        targets.clone(),
+                        Payload::Bytes(BytesPayload::Recipe(recipe)),
+                    ));
+                }
+                if let Some((biases, recipe)) = bias_recipe(&delta_ints, count) {
+                    let mut candidate = shape.clone();
+                    candidate.codec = Codec::Delta {
+                        firsts,
+                        inner: Box::new(Codec::Bytes(biases)),
+                    };
+                    out.push((
+                        candidate,
+                        targets.clone(),
+                        Payload::Bytes(BytesPayload::Recipe(recipe)),
+                    ));
                 }
             }
         }
         // Try whole-row packing independently of the one-byte-per-column
         // codec. Wider coordinates can still beat a decimal literal table.
         if enhanced {
-            if let Some((codec @ Codec::PackedBytes { width: 7..=8, .. }, bytes)) =
-                packed_payload_with_limit(&numbers, count, 8)
-            {
-                let mut packed_shape = shape.clone();
-                packed_shape.codec = codec;
-                out.push((packed_shape, targets.clone(), Payload::Bytes(bytes)));
+            if let Some(layout) = packed_layout(&numbers, 8) {
+                // Only widths 7..=8 are candidates here; the layout is
+                // computed first so narrower packings (already covered
+                // by the packed candidate below) never build their bytes.
+                if (7..=8).contains(&layout.width) {
+                    let recipe = packed_recipe_from_layout(&numbers, &layout, count);
+                    let mut packed_shape = shape.clone();
+                    packed_shape.codec = packed_codec(layout);
+                    out.push((
+                        packed_shape,
+                        targets.clone(),
+                        Payload::Bytes(BytesPayload::Recipe(recipe)),
+                    ));
+                }
             }
         }
-        if let Some((codec, bytes)) = packed_payload(&numbers, count) {
+        if let Some((codec, recipe)) = packed_recipe(&numbers, count, 6) {
             let mut packed_shape = shape.clone();
             packed_shape.codec = codec;
-            out.push((packed_shape, targets.clone(), Payload::Bytes(bytes)));
+            out.push((
+                packed_shape,
+                targets.clone(),
+                Payload::Bytes(BytesPayload::Recipe(recipe)),
+            ));
         }
-        let biases = numbers
-            .iter()
-            .map(|c| {
-                let min = *c.iter().min()?;
-                let max = *c.iter().max()?;
-                if min < -1_000_000_000 || max > 1_000_000_000 || max - min > 91 {
-                    return None;
-                }
-                Some(if min >= 0 && max <= 91 { 0 } else { min })
-            })
-            .collect::<Option<Vec<_>>>();
-        if let Some(biases) = biases {
-            let mut bytes = String::with_capacity(count * columns.len());
-            for r in 0..count {
-                for (c, bias) in numbers.iter().zip(&biases) {
-                    bytes.push((c[r] - bias + 35) as u8 as char);
-                }
-            }
+        if let Some((biases, recipe)) = bias_recipe(&numbers, count) {
             shape.codec = Codec::Bytes(biases);
-            out.push((shape, targets, Payload::Bytes(bytes)));
+            out.push((shape, targets, Payload::Bytes(BytesPayload::Recipe(recipe))));
         }
     }
     out
 }
 
+#[cfg(test)]
 fn packed_payload(columns: &[Vec<i64>], count: usize) -> Option<(Codec, String)> {
     packed_payload_with_limit(columns, count, 6)
 }
 
+#[cfg(test)]
 fn packed_payload_with_limit(
     columns: &[Vec<i64>],
     count: usize,
     max_bytes: u32,
 ) -> Option<(Codec, String)> {
+    let layout = packed_layout(columns, max_bytes)?;
+    let bytes = packed_bytes(columns, count, &layout);
+    Some((packed_codec(layout), bytes))
+}
+
+/// The mixed-radix layout of a whole-row packing — per-column biases
+/// and radices plus the byte width their cardinality implies — computed
+/// without building the payload bytes. Callers that only need the codec
+/// (grouped and shared forms) or that gate on the width (the enhanced
+/// 7..=8 form) never pay for a string they would discard.
+struct PackedLayout {
+    biases: Vec<i64>,
+    radices: Vec<i64>,
+    width: usize,
+}
+
+fn packed_layout(columns: &[Vec<i64>], max_bytes: u32) -> Option<PackedLayout> {
     debug_assert!(max_bytes <= 8);
     let max_cardinality = 92_i64.pow(max_bytes);
     let mut biases = Vec::with_capacity(columns.len());
@@ -809,26 +1379,33 @@ fn packed_payload_with_limit(
         width += 1;
         capacity *= 92;
     }
-    let mut bytes = String::with_capacity(count * width);
-    for row in 0..count {
-        let mut value = 0i64;
-        for ((column, bias), radix) in columns.iter().zip(&biases).zip(&radices) {
-            value = value * radix + column[row] - bias;
-        }
-        let mut divisor = capacity / 92;
-        for _ in 0..width {
-            bytes.push((value / divisor % 92 + 35) as u8 as char);
-            divisor /= 92;
-        }
+    Some(PackedLayout {
+        biases,
+        radices,
+        width,
+    })
+}
+
+fn packed_codec(layout: PackedLayout) -> Codec {
+    Codec::PackedBytes {
+        biases: layout.biases,
+        radices: layout.radices,
+        width: layout.width,
     }
-    Some((
-        Codec::PackedBytes {
-            biases,
-            radices,
-            width,
-        },
-        bytes,
-    ))
+}
+
+#[cfg(test)]
+fn packed_bytes(columns: &[Vec<i64>], count: usize, layout: &PackedLayout) -> String {
+    let mut bytes = String::with_capacity(count * layout.width);
+    walk_packed_bytes(
+        columns,
+        &layout.biases,
+        &layout.radices,
+        layout.width,
+        count,
+        &mut |b| bytes.push(b as char),
+    );
+    bytes
 }
 
 fn copy_callee(source: &Ast, target: &mut Ast, node: NodeId) -> NodeId {
@@ -844,9 +1421,13 @@ fn copy_callee(source: &Ast, target: &mut Ast, node: NodeId) -> NodeId {
         other => other,
     };
     let copy = target.push(rewritten);
+    // Pure copy: only child numbering differs from the source chain, so the
+    // clone attribution shares the source slot instead of recording a
+    // rewrite reason for each Index/Paren node. Falls back to derive_from
+    // when kinds differ or source snapshots are not shared.
     target
         .nodes
-        .derive_from(copy, &source.nodes, node, "draw-record-callee-copy");
+        .derive_from_clone(copy, &source.nodes, node, "draw-record-callee-copy");
     copy
 }
 fn fresh(ast: &mut Ast, taken: &mut HashSet<String>, stem: &str, serial: &mut usize) -> SymbolId {
@@ -885,22 +1466,167 @@ pub fn pack_draw_records(ast: &mut Ast, root: NodeId, rename: bool) -> PassResul
 // A bounded portfolio retains the old encoding strategy. Local greedy gains
 // are not a proof that shared-helper selection yields a smaller whole program.
 // The public pipeline compares both after its existing final-stage cleanup.
+/// Guard predicates of one variant input, each a pure function of the
+/// input's content. Computed once per distinct input and shared by every
+/// consumer (the record planner and the regular/shared synthesizers used
+/// to re-derive them with separate walks). Thresholds stay at the
+/// consumers; only the predicates are shared.
+struct InputFacts {
+    screen: bool,
+    potential: usize,
+    jumps: bool,
+}
+
+impl InputFacts {
+    fn compute(ast: &Ast, root: NodeId) -> Self {
+        let mut facts = Self {
+            screen: false,
+            potential: 0,
+            jumps: false,
+        };
+        storm_lua_syntax::ast_utils::walk(ast, root, &mut |n| {
+            facts.screen |= matches!(ast.node(n), Node::Name(s) if ast.strings.get(*s) == "screen");
+            facts.jumps |= matches!(ast.node(n), Node::Goto(_) | Node::Label(_));
+            if let Node::Callstat(c) = ast.node(n) {
+                if let Node::Call(_, args, None) = ast.node(*c) {
+                    if args.len() <= 8 && args.iter().all(|&a| Atom::read(ast, a).is_some()) {
+                        facts.potential += 1;
+                    }
+                }
+            }
+        });
+        facts
+    }
+}
+
+/// The most inherited (non-global) bindings visible in any one scope of
+/// the resolution: a pure function of the resolution, thresholded
+/// differently by each consumer.
+fn max_inherited_locals(res: &Resolution) -> usize {
+    let mut inherited = vec![0usize; res.scopes.len()];
+    for scope in &res.scopes {
+        inherited[scope.id as usize] = scope.parent.map_or(0, |p| inherited[p as usize])
+            + scope
+                .bindings
+                .iter()
+                .filter(|&&b| res.binding(b).kind != BindingKind::Global)
+                .count();
+    }
+    inherited.into_iter().max().unwrap_or(0)
+}
+
+/// Everything the variant consumers derive from one input: its
+/// resolution, classifier data, block list and the inherited-locals
+/// maximum. Built only from the owning `SharedInput`'s private clone, so
+/// the derived data belongs to that input by construction.
+struct InputAnalysis {
+    res: Resolution,
+    data: ClassifierData,
+    blocks: Vec<NodeId>,
+    max_inherited: usize,
+}
+
+impl InputAnalysis {
+    fn build(input: &Ast, root: NodeId) -> Self {
+        let res = resolve(input, root);
+        let data = ClassifierData::build(input, &res, root);
+        let mut blocks = Vec::new();
+        storm_lua_syntax::ast_utils::walk(input, root, &mut |n| {
+            if matches!(input.node(n), Node::Block(_)) {
+                blocks.push(n);
+            }
+        });
+        let max_inherited = max_inherited_locals(&res);
+        Self {
+            res,
+            data,
+            blocks,
+            max_inherited,
+        }
+    }
+}
+
+/// One variant input plus everything the consumers share about it. The
+/// bundle owns a clone of the input; the heavier predicates (closed key
+/// space, chunk locals) and the full analysis are computed lazily, at
+/// most once, on first demand, so an input no consumer accepts still
+/// costs no resolution. Consumers query the analysis only through this
+/// bundle, whose methods pair the derived data with the bundle's own
+/// input: there is no API for applying one input's analysis to another
+/// input, which is what makes the sharing sound by construction rather
+/// than by a documented precondition.
+struct SharedInput {
+    input: Ast,
+    root: NodeId,
+    facts: InputFacts,
+    closed_key_space: std::cell::OnceCell<bool>,
+    chunk_locals: std::cell::OnceCell<usize>,
+    analysis: std::cell::OnceCell<InputAnalysis>,
+}
+
+impl SharedInput {
+    fn new(input: Ast, root: NodeId, facts: InputFacts) -> Self {
+        Self {
+            input,
+            root,
+            facts,
+            closed_key_space: std::cell::OnceCell::new(),
+            chunk_locals: std::cell::OnceCell::new(),
+            analysis: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn from_input(input: Ast, root: NodeId) -> Self {
+        let facts = InputFacts::compute(&input, root);
+        Self::new(input, root, facts)
+    }
+
+    fn facts(&self) -> &InputFacts {
+        &self.facts
+    }
+
+    fn closed_key_space(&self) -> bool {
+        *self
+            .closed_key_space
+            .get_or_init(|| super::closed_fields::has_closed_key_space(&self.input, self.root))
+    }
+
+    fn chunk_locals(&self) -> usize {
+        *self
+            .chunk_locals
+            .get_or_init(|| chunk_locals(&self.input, self.root))
+    }
+
+    /// The bundle's own input. Consumers treat it as read-only: rewrites
+    /// go to a separate clone, as they did with their private setups.
+    fn source(&self) -> &Ast {
+        &self.input
+    }
+
+    fn analysis(&self) -> &InputAnalysis {
+        self.analysis
+            .get_or_init(|| InputAnalysis::build(&self.input, self.root))
+    }
+
+    fn blocks(&self) -> &[NodeId] {
+        &self.analysis().blocks
+    }
+
+    fn max_inherited(&self) -> usize {
+        self.analysis().max_inherited
+    }
+
+    fn call(&self, statement: NodeId) -> Option<Call> {
+        let analysis = self.analysis();
+        analysis.data.call(&self.input, &analysis.res, statement)
+    }
+}
+
 pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast, PassResult)> {
     // Most onTick programs contain no eligible drawing input. Do not pay
     // for several resolvers, planners and final cleanups on that path.
-    let mut has_screen = false;
-    let mut literals = 0;
-    storm_lua_syntax::ast_utils::walk(ast, root, &mut |n| {
-        has_screen |= matches!(ast.node(n), Node::Name(s) if ast.strings.get(*s) == "screen");
-        if let Node::Callstat(c) = ast.node(n) {
-            if let Node::Call(_, args, None) = ast.node(*c) {
-                if args.len() <= 8 && args.iter().all(|&a| Atom::read(ast, a).is_some()) {
-                    literals += 1;
-                }
-            }
-        }
-    });
-    if !has_screen || literals < 4 {
+    let facts = InputFacts::compute(ast, root);
+    if !facts.screen || facts.potential < 4 {
         return vec![(
             ast.clone(),
             PassResult {
@@ -910,19 +1636,47 @@ pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast
             },
         )];
     }
+    let input = SharedInput::new(ast.clone(), root, facts);
+    let mut shared_costs = BTreeMap::<Shape, usize>::new();
     let mut legacy = ast.clone();
-    let result = pack_impl(&mut legacy, root, rename, false, false);
+    let result = pack_impl(
+        &mut legacy,
+        root,
+        rename,
+        false,
+        false,
+        &mut shared_costs,
+        &input,
+    );
     let mut enhanced = ast.clone();
-    let extra = pack_impl(&mut enhanced, root, rename, true, false);
+    let extra = pack_impl(
+        &mut enhanced,
+        root,
+        rename,
+        true,
+        false,
+        &mut shared_costs,
+        &input,
+    );
     let mut out = vec![(legacy, result)];
     if enhanced.nodes != out[0].0.nodes || !enhanced.strings.same_symbols(&out[0].0.strings) {
         out.push((enhanced, extra));
     }
     let mut regular = ast.clone();
-    let loops = regular::synthesize(&mut regular, root, rename);
+    let loops = regular::synthesize(&mut regular, root, rename, &input);
     let dense_regular = (loops > 0).then(|| regular.clone());
-    if loops > 0 {
-        let mut result = pack_impl(&mut regular, root, rename, true, false);
+    // Both packs below run on the synthesized content, so they share one bundle.
+    let reg_input = (loops > 0).then(|| SharedInput::from_input(regular.clone(), root));
+    if let Some(reg_input) = &reg_input {
+        let mut result = pack_impl(
+            &mut regular,
+            root,
+            rename,
+            true,
+            false,
+            &mut shared_costs,
+            reg_input,
+        );
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&regular, root)) as u64);
         result
@@ -932,15 +1686,31 @@ pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast
         out.push((regular, result));
     }
     let mut dense = ast.clone();
-    let result = pack_impl(&mut dense, root, rename, true, true);
+    let result = pack_impl(
+        &mut dense,
+        root,
+        rename,
+        true,
+        true,
+        &mut shared_costs,
+        &input,
+    );
     if !out
         .iter()
         .any(|(a, _)| a.nodes == dense.nodes && a.strings.same_symbols(&dense.strings))
     {
         out.push((dense, result));
     }
-    if let Some(mut dense_regular) = dense_regular {
-        let mut result = pack_impl(&mut dense_regular, root, rename, true, true);
+    if let (Some(mut dense_regular), Some(reg_input)) = (dense_regular, &reg_input) {
+        let mut result = pack_impl(
+            &mut dense_regular,
+            root,
+            rename,
+            true,
+            true,
+            &mut shared_costs,
+            reg_input,
+        );
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&dense_regular, root)) as u64);
         if !out.iter().any(|(a, _)| {
@@ -950,9 +1720,18 @@ pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast
         }
     }
     let mut shared = ast.clone();
-    let dictionaries = shared::synthesize(&mut shared, root, rename);
+    let dictionaries = shared::synthesize(&mut shared, root, rename, &input);
     if dictionaries > 0 {
-        let mut result = pack_impl(&mut shared, root, rename, true, true);
+        let shared_input = SharedInput::from_input(shared.clone(), root);
+        let mut result = pack_impl(
+            &mut shared,
+            root,
+            rename,
+            true,
+            true,
+            &mut shared_costs,
+            &shared_input,
+        );
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&shared, root)) as u64);
         result
@@ -964,45 +1743,32 @@ pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast
     out
 }
 
-fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: bool) -> PassResult {
+fn pack_impl(
+    ast: &mut Ast,
+    root: NodeId,
+    rename: bool,
+    enhanced: bool,
+    dense: bool,
+    costs: &mut BTreeMap<Shape, usize>,
+    input: &SharedInput,
+) -> PassResult {
     let unchanged = || PassResult {
         root,
         saved: Some(0),
         details: None,
     };
-    let mut potential = 0;
-    let mut jumps = false;
-    storm_lua_syntax::ast_utils::walk(ast, root, &mut |n| {
-        jumps |= matches!(ast.node(n), Node::Goto(_) | Node::Label(_));
-        if let Node::Callstat(c) = ast.node(n) {
-            if let Node::Call(_, args, None) = ast.node(*c) {
-                if args.len() <= 8 && args.iter().all(|&n| Atom::read(ast, n).is_some()) {
-                    potential += 1;
-                }
-            }
-        }
-    });
-    if potential < 4 || jumps || !super::closed_fields::has_closed_key_space(ast, root) {
+    if input.facts().potential < 4 || input.facts().jumps || !input.closed_key_space() {
         return unchanged();
     }
-    let source = ast.clone();
-    let res = resolve(&source, root);
-    let classifier = Classifier::new(&source, &res, root);
-    let mut blocks = Vec::new();
-    storm_lua_syntax::ast_utils::walk(&source, root, &mut |n| {
-        if matches!(source.node(n), Node::Block(_)) {
-            blocks.push(n)
-        }
-    });
+    let source = input.source();
     let mut helpers = Vec::<Helper>::new();
     let mut by_shape = BTreeMap::<Shape, usize>::new();
-    let mut costs = BTreeMap::<Shape, usize>::new();
     let mut plans = BTreeMap::<NodeId, Vec<Plan>>::new();
-    let helper_budget = MAX_HELPERS.min(175usize.saturating_sub(chunk_locals(&source, root)));
+    let helper_budget = MAX_HELPERS.min(175usize.saturating_sub(input.chunk_locals()));
     if helper_budget == 0 {
         return unchanged();
     }
-    for block in blocks {
+    for block in input.blocks().iter().copied() {
         let Node::Block(stmts) = source.node(block) else {
             unreachable!()
         };
@@ -1010,7 +1776,7 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
         while cursor < stmts.len() {
             let mut calls = Vec::new();
             for &stmt in &stmts[cursor..] {
-                if let Some(call) = classifier.call(stmt) {
+                if let Some(call) = input.call(stmt) {
                     calls.push(call)
                 } else {
                     break;
@@ -1021,6 +1787,16 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                 continue;
             }
             let cluster_start = cursor;
+            // Prefix sums of per-statement sizes: every `old` total below
+            // covers a contiguous range of this cluster, so measure each
+            // statement once instead of re-measuring per (period, width).
+            let mut stmt_prefix = Vec::with_capacity(calls.len() + 1);
+            let mut stmt_acc = 0usize;
+            stmt_prefix.push(stmt_acc);
+            for call in &calls {
+                stmt_acc += measure_stmt(source, call.statement);
+                stmt_prefix.push(stmt_acc);
+            }
             let mut at = 0;
             while at < calls.len() {
                 let mut best = None::<Proposal>;
@@ -1045,10 +1821,7 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                         if count < 2 || count * period < 4 {
                             continue;
                         }
-                        let old = slice[..count * period]
-                            .iter()
-                            .map(|c| measure_stmt(&source, c.statement))
-                            .sum::<usize>();
+                        let old = stmt_prefix[at + count * period] - stmt_prefix[at];
                         for (shape, targets, payload) in
                             proposals(slice, period, count, enhanced, dense)
                         {
@@ -1058,17 +1831,24 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                             }
                             let definition = if exists {
                                 0
+                            } else if let Some(&cached) = costs.get(&shape) {
+                                cached + 1
                             } else {
-                                *costs
-                                    .entry(shape.clone())
-                                    .or_insert_with(|| helper_cost(&shape))
-                                    + 1
+                                let computed = helper_cost(&shape);
+                                costs.insert(shape.clone(), computed);
+                                computed + 1
                             };
+                            // call_size is always positive, so a definition
+                            // that alone reaches `old` can never win; skip
+                            // measuring the call in that case.
+                            if definition >= old {
+                                continue;
+                            }
                             let call_size = 3
                                 + payload.size()
                                 + targets
                                     .iter()
-                                    .map(|&n| measure_expr(&source, n) + 1)
+                                    .map(|&n| measure_expr(source, n) + 1)
                                     .sum::<usize>();
                             let cost = definition + call_size;
                             if cost >= old {
@@ -1095,23 +1875,25 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                         if !exists && helpers.len() >= helper_budget {
                             continue;
                         }
-                        let old = calls[at..at + stop]
-                            .iter()
-                            .map(|c| measure_stmt(&source, c.statement))
-                            .sum::<usize>();
+                        let old = stmt_prefix[at + stop] - stmt_prefix[at];
                         let definition = if exists {
                             0
+                        } else if let Some(&cached) = costs.get(&shape) {
+                            cached + 1
                         } else {
-                            *costs
-                                .entry(shape.clone())
-                                .or_insert_with(|| helper_cost(&shape))
-                                + 1
+                            let computed = helper_cost(&shape);
+                            costs.insert(shape.clone(), computed);
+                            computed + 1
                         };
+                        // Same short-circuit as the main proposal loop.
+                        if definition >= old {
+                            continue;
+                        }
                         let call_size = 3
                             + payload.size()
                             + targets
                                 .iter()
-                                .map(|&n| measure_expr(&source, n) + 1)
+                                .map(|&n| measure_expr(source, n) + 1)
                                 .sum::<usize>();
                         let cost = definition + call_size;
                         if cost < old && best.as_ref().is_none_or(|b| old - cost > b.gain) {
@@ -1157,17 +1939,8 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
     if plans.is_empty() {
         return unchanged();
     }
-    let mut inherited = vec![0usize; res.scopes.len()];
-    for scope in &res.scopes {
-        inherited[scope.id as usize] = scope.parent.map_or(0, |p| inherited[p as usize])
-            + scope
-                .bindings
-                .iter()
-                .filter(|&&b| res.binding(b).kind != BindingKind::Global)
-                .count();
-    }
     // Include a pessimistic allowance for pooled payloads below.
-    if inherited.into_iter().max().unwrap_or(0) + helpers.len() + 24 > 245 {
+    if input.max_inherited() + helpers.len() + 24 > 245 {
         return unchanged();
     }
     let mut target = source.clone();
@@ -1201,7 +1974,7 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
             &mut trace,
         );
         if let Some(trace) = trace {
-            trace.finish(&mut target, &source, first, definition);
+            trace.finish(&mut target, source, first, definition);
         }
         definitions.push(definition);
     }
@@ -1209,37 +1982,43 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
     // one immutable string. No table allocation or identity is shared.
     let mut payload_counts = BTreeMap::<String, usize>::new();
     for plan in plans.values().flatten() {
-        if let Payload::Bytes(s) = &plan.payload {
-            *payload_counts.entry(s.clone()).or_default() += 1;
+        if let Some(text) = plan.payload.bytes_text() {
+            *payload_counts.entry(text.into_owned()).or_default() += 1;
         }
     }
     let mut payload_symbols = BTreeMap::new();
     let mut symbols = Vec::new();
     let mut values = Vec::new();
     for (bytes, count) in payload_counts {
-        if symbols.len() >= 24 || chunk_locals(&source, root) + helpers.len() + symbols.len() >= 180
-        {
+        if symbols.len() >= 24 || input.chunk_locals() + helpers.len() + symbols.len() >= 180 {
             break;
         }
-        let size = Payload::Bytes(bytes.clone()).size();
+        // The shared payload's rendered size, identical to the size
+        // the payload itself reported when priced: for a recipe that
+        // is the feature-computed length of this same string.
+        let size = quoted_bytes_len(bytes.as_bytes());
         if count < 2 || count * (size.saturating_sub(2)) <= size + 10 {
             continue;
         }
         let symbol = fresh(&mut target, &mut taken, "draw_data", &mut serial);
         symbols.push(symbol);
-        let payload = Payload::Bytes(bytes.clone()).emit(&mut target);
+        let payload = Payload::Bytes(BytesPayload::Literal(bytes.clone())).emit(&mut target);
         if target.nodes.tracks_origins() {
             let originals = plans
                 .values()
                 .flatten()
-                .filter(|p| matches!(&p.payload,Payload::Bytes(v) if *v==bytes))
+                .filter(|p| {
+                    p.payload
+                        .bytes_text()
+                        .is_some_and(|text| text.as_ref() == bytes.as_str())
+                })
                 .flat_map(|p| p.origins.iter())
                 .flat_map(|c| c.origin_arguments.iter().copied())
                 .collect::<Vec<_>>();
             provenance::derive(
                 &mut target,
                 payload,
-                &source,
+                source,
                 &originals,
                 "draw-record-shared-payload",
             );
@@ -1270,22 +2049,19 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
             let mut args = plan
                 .targets
                 .iter()
-                .map(|&n| copy_callee(&source, &mut target, n))
+                .map(|&n| copy_callee(source, &mut target, n))
                 .collect::<Vec<_>>();
-            let payload = if let Payload::Bytes(s) = &plan.payload {
-                payload_symbols
-                    .get(s)
-                    .copied()
-                    .map(|s| name(&mut target, s))
-            } else {
-                None
-            };
+            let payload = plan
+                .payload
+                .bytes_text()
+                .and_then(|text| payload_symbols.get(text.as_ref()).copied())
+                .map(|symbol| name(&mut target, symbol));
             let emitted = payload.unwrap_or_else(|| plan.payload.emit(&mut target));
             if target.nodes.tracks_origins() {
                 provenance::payload(
                     &mut target,
                     emitted,
-                    &source,
+                    source,
                     &plan.origins,
                     &helpers[plan.helper].shape,
                 );
@@ -1306,17 +2082,11 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
                     .iter()
                     .map(|c| c.origin_call)
                     .collect::<Vec<_>>();
-                provenance::derive(
-                    &mut target,
-                    c,
-                    &source,
-                    &originals,
-                    "draw-record-batch-call",
-                );
+                provenance::derive(&mut target, c, source, &originals, "draw-record-batch-call");
                 provenance::derive(
                     &mut target,
                     stmt,
-                    &source,
+                    source,
                     &originals,
                     "draw-record-batch-call",
                 );
@@ -1343,7 +2113,7 @@ fn pack_impl(ast: &mut Ast, root: NodeId, rename: bool, enhanced: bool, dense: b
     if rename {
         target = scope_rename_fast(&target, root).ast;
     }
-    let before = measure_size(&source, root);
+    let before = measure_size(source, root);
     let after = measure_size(&target, root);
     if after >= before {
         return unchanged();
@@ -1422,7 +2192,9 @@ fn remove_unused_forwarders(ast: &mut Ast, root: NodeId) {
                     _ => None,
                 };
                 !b.is_some_and(|b| {
-                    classifier.wrappers.contains(&b) && !res.binding(b).fixed && !reads.contains(&b)
+                    classifier.data.wrappers.contains(&b)
+                        && !res.binding(b).fixed
+                        && !reads.contains(&b)
                 })
             })
             .collect::<Vec<_>>();
@@ -1485,3 +2257,279 @@ mod encoding_tests {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod round3_tests;
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod payload_size_tests {
+    use super::*;
+
+    /// The pre-change computation, kept as a test oracle only: build the
+    /// node emit() would have produced in a fresh Ast and measure it.
+    fn old_size(payload: &Payload) -> usize {
+        let mut ast = Ast::new();
+        let n = payload.emit(&mut ast);
+        measure_expr(&ast, n)
+    }
+
+    fn num_atom(s: &str) -> Atom {
+        Atom::Num(Arc::from(s))
+    }
+
+    fn str_atom(s: &str) -> Atom {
+        Atom::Str(Arc::from(s))
+    }
+
+    #[test]
+    fn payload_size_matches_ast_measure() {
+        let nums = [
+            "0",
+            "1",
+            "9",
+            "10",
+            "99",
+            "100",
+            "123456789012345",
+            "1234567890123456",
+            "0.5",
+            ".5",
+            "1.5",
+            "1e5",
+            "0xFF",
+            "0x10",
+            "100000",
+            "4290772991",
+            "0.0000396",
+            "3.96e-5",
+            "0.0",
+            "00",
+            "01",
+        ];
+        // Raw string-literal texts, as stored in Node::Str (with quotes).
+        let strs = [
+            "\"abc\"",
+            "\"a\\\"b\"",
+            "'abc'",
+            "'it\\'s'",
+            "\"\\065\\0\"",
+            "\"\"",
+            "''",
+            "\"a\\nb\"",
+            "\"a\\rb\"",
+            "\"a\\tb\"",
+            "\"a\\\\b\"",
+            "\"\\a\\v\\b\\f\"",
+            "\"雪😀\"",
+            "\"'\\\"\\\\\"",
+            "[[abc]]",
+            "[=[a]]b]=]",
+            "\"x\"",
+            "\"a\\u{2028}b\"",
+        ];
+        let mut payloads: Vec<Payload> = Vec::new();
+        for n in [0usize, 1, 9, 10, 99, 160, 1_000_000, usize::MAX] {
+            payloads.push(Payload::Count(n));
+        }
+        payloads.push(Payload::values(vec![]));
+        for s in nums {
+            payloads.push(Payload::values(vec![num_atom(s)]));
+            payloads.push(Payload::values(vec![Atom::Neg(Box::new(num_atom(s)))]));
+            payloads.push(Payload::values(vec![Atom::Neg(Box::new(Atom::Neg(
+                Box::new(num_atom(s)),
+            )))]));
+        }
+        for s in strs {
+            payloads.push(Payload::values(vec![str_atom(s)]));
+        }
+        payloads.push(Payload::values(vec![
+            num_atom("12"),
+            str_atom("\"hi\""),
+            Atom::Bool(true),
+            Atom::Bool(false),
+            Atom::Nil,
+            Atom::Neg(Box::new(num_atom("7"))),
+        ]));
+        let mixed: Vec<Atom> = nums
+            .iter()
+            .map(|s| num_atom(s))
+            .chain(strs.iter().map(|s| str_atom(s)))
+            .collect();
+        payloads.push(Payload::values(mixed));
+        // Byte payloads: the emitted Str is quote_lua(s), so s ranges over
+        // decoded values, including control characters, quotes, backslash,
+        // unicode, CR/LF and long-bracket candidates.
+        let byte_values = [
+            "",
+            "a",
+            "abc",
+            "a\"b",
+            "a'b",
+            "a\\b",
+            "a\nb",
+            "a\rb",
+            "a\tb",
+            "a\u{7}b",
+            "a\u{b}b",
+            "a\u{0}b",
+            "a\u{1b}b",
+            "雪😀",
+            "'\"\\",
+            "[[x]]",
+            "]]",
+            "]=]",
+            "a]]b",
+            "\nabc",
+            "a\r\nb",
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        ];
+        for s in byte_values {
+            payloads.push(Payload::Bytes(BytesPayload::Literal(s.to_string())));
+        }
+        for (i, payload) in payloads.iter().enumerate() {
+            assert_eq!(
+                payload.size(),
+                old_size(payload),
+                "payload size mismatch at index {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn bytes_recipes_build_and_size_match_the_string_constructors() {
+        // Bias and packed recipes over one shared source: the built
+        // bytes and the feature-computed sizes agree with the string
+        // constructors and with `quoted_bytes_len` of the built text.
+        let source = Arc::new(vec![
+            vec![3, 40, 91, 0, 17, 88, 12, 65],
+            vec![-5, 20, 7, 33, -40, 2, 19, 51],
+        ]);
+        let (biases, recipe) = bias_recipe(&source, 8).expect("bias form");
+        assert_eq!(biases, vec![0, -40]);
+        let built = recipe.build();
+        assert_eq!(built.len(), 16);
+        assert_eq!(recipe.size(), quoted_bytes_len(built.as_bytes()));
+        let (codec, text) = packed_payload(&source, 8).expect("packed form");
+        let (recipe_codec, recipe) = packed_recipe(&source, 8, 6).expect("packed recipe");
+        let Codec::PackedBytes {
+            biases: want_biases,
+            radices: want_radices,
+            width: want_width,
+        } = &codec
+        else {
+            panic!("packed codec expected")
+        };
+        let Codec::PackedBytes {
+            biases: got_biases,
+            radices: got_radices,
+            width: got_width,
+        } = &recipe_codec
+        else {
+            panic!("packed recipe codec expected")
+        };
+        assert_eq!(
+            (want_biases, want_radices, want_width),
+            (got_biases, got_radices, got_width)
+        );
+        assert_eq!(recipe.build(), text);
+        assert_eq!(recipe.size(), quoted_bytes_len(text.as_bytes()));
+        // A payload priced through the recipe reports the same size
+        // as the literal payload of the same bytes.
+        let via_recipe = Payload::Bytes(BytesPayload::Recipe(recipe));
+        let via_literal = Payload::Bytes(BytesPayload::Literal(text));
+        assert_eq!(via_recipe.size(), via_literal.size());
+        // Every byte payload encode_columns returns over these columns
+        // (packed, bias and both delta forms) prices exactly what the
+        // emit-and-measure oracle computes for it.
+        let columns: Vec<Vec<i64>> = vec![
+            (0..16).map(|i| 100 + i * 37).collect(),
+            (0..16).map(|i| 5000 - i * 91).collect(),
+            (0..16).map(|i| 300 + i * 3).collect(),
+        ];
+        let atoms: Vec<Vec<Atom>> = columns
+            .iter()
+            .map(|c| c.iter().map(|v| Atom::Num(v.to_string().into())).collect())
+            .collect();
+        let ints = column_ints(&atoms);
+        let lens = column_lens(&atoms);
+        let shape = Shape {
+            targets: vec![0],
+            args: vec![vec![Arg::Column(0), Arg::Column(1), Arg::Column(2)]],
+            columns: 3,
+            codec: Codec::Counter,
+            repeats: 1,
+            translations: Vec::new(),
+        };
+        let out = encode_columns(shape, vec![0], atoms, ints, &lens, 16, true, true);
+        let mut byte_payloads = 0;
+        for (_, _, payload) in &out {
+            if matches!(payload, Payload::Bytes(_)) {
+                byte_payloads += 1;
+                assert_eq!(payload.size(), old_size(payload));
+            }
+        }
+        assert!(byte_payloads >= 3);
+    }
+
+    #[test]
+    fn column_lens_sum_matches_flattened_scan() {
+        // The lens-derived size used by encode_columns must equal the
+        // direct scan over the row-major flattening, for any columns.
+        let columns: Vec<Vec<Atom>> = vec![
+            vec![num_atom("12"), num_atom("-3"), num_atom("100000")],
+            vec![str_atom("\"hi\""), Atom::Bool(true), Atom::Nil],
+            vec![
+                Atom::Neg(Box::new(num_atom("7"))),
+                num_atom("0"),
+                num_atom("42"),
+            ],
+        ];
+        let lens = column_lens(&columns);
+        let flat: Vec<Atom> = (0..3)
+            .flat_map(|r| columns.iter().map(move |c| c[r].clone()))
+            .collect();
+        assert_eq!(
+            2 + flat.len().saturating_sub(1) + lens.iter().sum::<usize>(),
+            values_size(&flat)
+        );
+        assert_eq!(values_size(&[]), 2);
+        assert_eq!(column_lens(&[]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn encode_columns_stored_sizes_match_scan() {
+        // Every values payload encode_columns returns — base, packed
+        // and delta paths included — must store the size the direct
+        // scan computes for its atoms; the column form is checked
+        // against the scan of its flattening.
+        let columns: Vec<Vec<i64>> = vec![
+            (0..16).map(|i| 100 + i * 37).collect(),
+            (0..16).map(|i| 5000 - i * 91).collect(),
+            (0..16).map(|i| 300 + i * 3).collect(),
+        ];
+        let atoms: Vec<Vec<Atom>> = columns
+            .iter()
+            .map(|c| c.iter().map(|v| Atom::Num(v.to_string().into())).collect())
+            .collect();
+        let ints = column_ints(&atoms);
+        let lens = column_lens(&atoms);
+        let shape = Shape {
+            targets: vec![0],
+            args: vec![vec![Arg::Column(0), Arg::Column(1), Arg::Column(2)]],
+            columns: 3,
+            codec: Codec::Counter,
+            repeats: 1,
+            translations: Vec::new(),
+        };
+        let out = encode_columns(shape, vec![0], atoms, ints, &lens, 16, true, true);
+        assert!(out
+            .iter()
+            .any(|(s, _, _)| matches!(s.codec, Codec::Delta { .. })));
+        for (_, _, payload) in &out {
+            if let Payload::Columns(columns, count, size) = payload {
+                let flat: Vec<Atom> = (0..*count)
+                    .flat_map(|r| columns.iter().map(move |c| c[r].clone()))
+                    .collect();
+                assert_eq!(*size, values_size(&flat));
+            }
+        }
+    }
+}

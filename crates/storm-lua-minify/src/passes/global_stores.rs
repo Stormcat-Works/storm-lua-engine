@@ -167,6 +167,9 @@ pub(crate) fn total_numeric_expression(
             ) {
                 return true;
             }
+            // 引数ゼロは all() で素通りしてしまうが、PUC の math.* は
+            // 引数が無いとエラーになる（Q04: `math.max()` 等）。下の
+            // math.* 分岐では空でないことを全域性の条件に含める。
             matches!(
                 builtin.as_deref(),
                 Some(
@@ -180,9 +183,10 @@ pub(crate) fn total_numeric_expression(
                         | "math.atan"
                         | "math.sqrt"
                 )
-            ) && arguments
-                .iter()
-                .all(|argument| total_numeric_expression(ast, analyzer, *argument))
+            ) && !arguments.is_empty()
+                && arguments
+                    .iter()
+                    .all(|argument| total_numeric_expression(ast, analyzer, *argument))
         }
         _ => false,
     }
@@ -223,16 +227,16 @@ fn cleanup_read_counts(ast: &Ast, res: &Resolution, root: NodeId) -> Vec<u32> {
 fn cleanup_transfer_effects(
     live: &mut std::collections::HashSet<u32>,
     scratch: &std::collections::HashSet<u32>,
-    effect: storm_lua_analysis::effects::Effects,
+    effect: &storm_lua_analysis::effects::Effects,
 ) {
-    for bid in effect.writes {
-        if scratch.contains(&bid) {
-            live.remove(&bid);
+    for bid in &effect.writes {
+        if scratch.contains(bid) {
+            live.remove(bid);
         }
     }
-    for bid in effect.reads {
-        if scratch.contains(&bid) {
-            live.insert(bid);
+    for bid in &effect.reads {
+        if scratch.contains(bid) {
+            live.insert(*bid);
         }
     }
 }
@@ -248,13 +252,14 @@ fn cleanup_transfer_assignment(
 ) {
     let mut writes = Vec::new();
     let mut reads = Vec::new();
+    let mut effect = storm_lua_analysis::effects::empty_effects();
     for (target, expression) in targets.iter().zip(expressions) {
         if let Some(bid) = res.node_bid.get(*target as usize).copied().flatten() {
             writes.push(bid);
         }
-        let effect = analyzer.effects_for_expr(*expression);
-        writes.extend(effect.writes);
-        reads.extend(effect.reads);
+        analyzer.effects_for_expr_into(*expression, &mut effect);
+        writes.extend_from_slice(&effect.writes);
+        reads.extend_from_slice(&effect.reads);
     }
     for bid in writes {
         if scratch.contains(&bid) {
@@ -278,7 +283,8 @@ fn cleanup_droppable(
     let effect = analyzer.effects_for_expr(expression);
     !effect.calls
         && !effect.ordered
-        && (!effect.may_throw
+        && effect.writes.is_empty()
+        && (analyzer.is_droppable(expression)
             || (aggressive && total_numeric_expression(ast, analyzer, expression)))
 }
 
@@ -297,6 +303,8 @@ fn cleanup_block(
     let Node::Block(statements) = source.node(block).clone() else {
         unreachable!("cleanup_block requires block")
     };
+    let mut rhs_pool: Vec<storm_lua_analysis::effects::Effects> = Vec::new();
+    let mut effect = storm_lua_analysis::effects::empty_effects();
     let mut live = live_out.clone();
     let mut output = Vec::with_capacity(statements.len());
     for statement in statements.into_iter().rev() {
@@ -306,16 +314,32 @@ fn cleanup_block(
                     .iter()
                     .all(|target| matches!(source.node(*target), Node::Name(_)))
             {
-                let rhs_effects = expressions
+                while rhs_pool.len() < expressions.len() {
+                    rhs_pool.push(storm_lua_analysis::effects::empty_effects());
+                }
+                for (index, expression) in expressions.iter().enumerate() {
+                    analyzer.effects_for_expr_into(*expression, &mut rhs_pool[index]);
+                }
+                let rhs_effects = &rhs_pool[..expressions.len()];
+                let target_bids = targets
                     .iter()
-                    .map(|expression| analyzer.effects_for_expr(*expression))
+                    .map(|target| res.node_bid.get(*target as usize).copied().flatten())
                     .collect::<Vec<_>>();
                 let mut keep = Vec::new();
                 for index in 0..targets.len() {
                     let target = targets[index];
                     let expression = expressions[index];
                     let bid = res.node_bid.get(target as usize).copied().flatten();
-                    let self_assignment = matches!(source.node(expression), Node::Name(_))
+                    // The self-assignment shortcut is valid only when
+                    // the bid has no other part in this statement: the
+                    // stores of one assignment run right-to-left, so
+                    // with a repeated target the self-assigned part is
+                    // the store that executes LAST and decides the
+                    // binding's final value (candidate R, third
+                    // consumer, w9 cycle 66).
+                    let self_assignment = target_bids.iter().filter(|other| **other == bid).count()
+                        == 1
+                        && matches!(source.node(expression), Node::Name(_))
                         && bid.is_some()
                         && res.node_bid.get(expression as usize).copied().flatten() == bid
                         && !rhs_effects.iter().enumerate().any(|(rhs_index, effect)| {
@@ -397,9 +421,10 @@ fn cleanup_block(
                     merged.extend(input);
                 }
                 for arm in &arms {
-                    for bid in analyzer.effects_for_expr(arm.cond).reads {
-                        if scratch.contains(&bid) {
-                            merged.insert(bid);
+                    analyzer.effects_for_expr_into(arm.cond, &mut effect);
+                    for bid in &effect.reads {
+                        if scratch.contains(bid) {
+                            merged.insert(*bid);
                         }
                     }
                 }
@@ -425,23 +450,20 @@ fn cleanup_block(
                 // Loop bodies may execute zero times; retain values written in
                 // the loop as live at entry rather than treating them as
                 // unconditional overwrites.
-                let effect = analyzer.effects_for_statement(statement);
-                cleanup_transfer_effects(&mut live, scratch, effect);
+                analyzer.effects_for_statement_into(statement, &mut effect);
+                cleanup_transfer_effects(&mut live, scratch, &effect);
                 live.extend(
-                    analyzer
-                        .effects_for_statement(statement)
+                    effect
                         .writes
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .filter(|bid| scratch.contains(bid)),
                 );
                 output.push(statement);
             }
             _ => {
-                cleanup_transfer_effects(
-                    &mut live,
-                    scratch,
-                    analyzer.effects_for_statement(statement),
-                );
+                analyzer.effects_for_statement_into(statement, &mut effect);
+                cleanup_transfer_effects(&mut live, scratch, &effect);
                 output.push(statement);
             }
         }
@@ -724,6 +746,51 @@ mod tests {
     use super::*;
     use crate::provenance_audit_support::parse_source;
     use crate::provenance_audit_support::Printer;
+
+    #[test]
+    fn keeps_unread_global_store_whose_rhs_may_throw_on_dynamic_argument() {
+        // Candidate O (w9 cycle 66), global-store path: the store is
+        // never read back, but evaluating `math.min(g, 2)` throws when
+        // the dynamically typed `g` is nil, so the store is not
+        // droppable. (The local form is covered by the dead-local
+        // tests; this is the same predicate at the cleanup consumer.)
+        let (mut ast, root) = parse_source("v = math.min(g, 2) v = 1 return 0").expect("parse");
+        let result = cleanup_global_stores(&mut ast, root);
+        let out = Printer::new(&ast, false).output(result.root);
+        assert!(out.contains("math.min"), "{out}");
+    }
+
+    #[test]
+    fn keeps_unread_global_store_whose_rhs_is_zero_argument_math_call() {
+        // Q04: `math.max()` with no arguments is an error in PUC, so
+        // the store is not droppable even though the all-arguments
+        // totality check used to pass vacuously.
+        let (mut ast, root) = parse_source("v = math.max() v = 1 return 0").expect("parse");
+        let result = cleanup_global_stores(&mut ast, root);
+        let out = Printer::new(&ast, false).output(result.root);
+        assert!(out.contains("math.max"), "{out}");
+        let (mut ast, root) = parse_source("v = math.min() v = 1 return 0").expect("parse");
+        let result = cleanup_global_stores(&mut ast, root);
+        let out = Printer::new(&ast, false).output(result.root);
+        assert!(out.contains("math.min"), "{out}");
+    }
+
+    #[test]
+    fn keeps_self_assignment_part_of_a_repeated_target() {
+        // Candidate R, third consumer (w9 cycle 66): in
+        // `a, a, e = a, -2, s` the first part looks like a no-op
+        // self-assignment, but the stores run right-to-left, so it is
+        // the last store executed and `a` keeps its old value.
+        // Dropping the part would leave `a = -2`.
+        let (mut ast, root) =
+            parse_source("a, a, e = a, -2, tostring(\"true\") output.setNumber(1, a)")
+                .expect("parse");
+        let result = cleanup_global_stores(&mut ast, root);
+        let out = Printer::new(&ast, false).output(result.root);
+        // (The `e` part is dropped on its own merits: `e` is never
+        // read and `tostring("true")` is provably total.)
+        assert!(out.contains("a,a=a,-2"), "{out}");
+    }
 
     #[test]
     fn handles_more_bindings_than_ast_nodes() {

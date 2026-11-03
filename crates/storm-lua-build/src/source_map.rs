@@ -318,8 +318,10 @@ mod tests {
             }
             for (line, text) in generated.lines().enumerate() {
                 if text == "do"
-                    || text.starts_with("if __stormmin_link_")
                     || text.starts_with("local __stormmin_link_")
+                    || text.starts_with("if __stormmin_link_")
+                    || text.starts_with("if not __stormmin_link_")
+                    || text.starts_with("__stormmin_link_")
                 {
                     let token = map.lookup_token(line as u32, 0).unwrap();
                     assert_eq!(
@@ -385,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn same_line_module_boundaries_and_generated_return_prefix_have_exact_columns() {
+    fn same_line_module_boundaries_and_generated_definition_prefix_have_exact_columns() {
         let main = "local f=require('lib');output.setNumber(1,f())";
         let lib = "return function() return 7 end";
         let project = project("main", &[("main", main), ("lib", lib)]);
@@ -395,16 +397,16 @@ mod tests {
             generate_source_map(&project, &link).unwrap().as_bytes(),
         )
         .unwrap();
-        assert_token_origin(&map, code, "function()", "lib.lua", lib);
+        assert_token_origin(&map, code, "return function()", "lib.lua", lib);
         assert_token_origin(&map, code, "return 7", "lib.lua", lib);
         assert_token_origin(&map, code, "output.setNumber", "main.lua", main);
-        let (line, col) = LineIndex::new(code)
-            .utf16_position(code.find("function()").unwrap())
+        // ラッパ定義の代入行は生成 glue のみからなる行で、由来を持たない。
+        let (line, _) = LineIndex::new(code)
+            .utf16_position(
+                code.find("__stormmin_link_modules[\"lib\"] = { function()")
+                    .unwrap(),
+            )
             .unwrap();
-        assert!(
-            col > 0,
-            "fixture must have a generated prefix on the function line"
-        );
         assert_eq!(map.lookup_token(line, 0).unwrap().get_source(), None);
         let (line, col) = LineIndex::new(code).utf16_position(code.len()).unwrap();
         assert_eq!(map.lookup_token(line, col).unwrap().get_source(), None);

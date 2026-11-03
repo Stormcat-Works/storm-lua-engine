@@ -3,6 +3,12 @@
 use super::{num, offset};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 
+/// Memoized Series sizes. See Series::size for the equivalence
+/// argument; the cache is cleared when full, which only costs
+/// recomputation.
+static SIZE_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Series, usize>>> =
+    std::sync::OnceLock::new();
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum Series {
     Linear {
@@ -93,6 +99,27 @@ impl Series {
         }
     }
     fn size(&self) -> usize {
+        let cache =
+            SIZE_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        if let Some(&size) = cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(self)
+        {
+            return size;
+        }
+        let size = self.size_uncached();
+        let mut cache = cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.len() >= 65536 {
+            cache.clear();
+        }
+        cache.insert(self.clone(), size);
+        size
+    }
+
+    fn size_uncached(&self) -> usize {
         let mut ast = Ast::new();
         let i = ast.strings.intern("i");
         let row = ast.push(Node::Name(i));

@@ -405,6 +405,42 @@
       "status": "implemented",
       "notes": "Full returns and guard-return chains retain original decisions, operand branches and separate fallback-return locations.",
       "matrixTest": "provenance_pass_matrix::conditional_return_lowering"
+    },
+    {
+      "id": "redundant-output-store-elimination",
+      "status": "implemented",
+      "notes": "Straight-line output.setNumber/setBool stores with literal channels and values keep only the last store per kind and channel; pure local bindings between stores are harmless, while calls, control flow, and non-literal stores are barriers, and mutated output roots disable the pass.",
+      "matrixTest": "provenance_pass_matrix::redundant_output_store_elimination"
+    },
+    {
+      "id": "negated-comparison-inversion",
+      "status": "implemented",
+      "notes": "not (a == b) becomes a ~= b and not (a ~= b) becomes a == b; ~= is defined as the negation of == for every operand type including NaN and __eq metamethods, and a comparison always yields one value so a parenthesized operand may be stripped. Ordering comparisons are not inverted because NaN breaks their negation.",
+      "matrixTest": "provenance_pass_matrix::negated_comparison_inversion"
+    },
+    {
+      "id": "exact-string-literal-pooling",
+      "status": "implemented",
+      "notes": "Repeated string spellings are pooled into one fresh chunk-local binding; each pooled use retains its original site, the pooled value retains one original site, and new storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::exact_string_literal_pooling"
+    },
+    {
+      "id": "pure-call-carrier-synthesis",
+      "status": "implemented",
+      "notes": "Repeated pure host reads and pure math calls with literal-only operands in one straight-line segment share one synthesized fresh local before the first occurrence's statement; the outer call tree claims nested reads, unknown calls and control flow split segments, and non-integer input channels, wrong-arity math, random/modf/frexp, name operands, mutated roots, and goto/label blocks are excluded, and new storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::pure_call_carrier_synthesis"
+    },
+    {
+      "id": "redundant-setcolor-elimination",
+      "status": "implemented",
+      "notes": "Literal screen.setColor calls redundant under an earlier same-color set in the same block are removed, and a later set whose draw group is disjoint from every intervening draw is merged into the earlier set by moving its draws; the first set is never removed because the monitor background is transparent, and unknown calls, control flow, non-literal sets, unknown-region draws, and drawClear block reordering.",
+      "matrixTest": "provenance_pass_matrix::redundant_setcolor_elimination"
+    },
+    {
+      "id": "straightline-arithmetic-cse",
+      "status": "implemented",
+      "notes": "Repeated pure arithmetic expressions (addition, subtraction, multiplication, division, power, unary minus over numeric literals and proven-numeric names) in one straight-line segment of local/assignment statements share one synthesized fresh local before the first occurrence's statement; control flow, call statements, right-hand sides containing calls, and goto/label blocks split or skip segments, assignments to a name in the expression flush its group, and a group is applied only when its measured saving is positive, and new storage is synthetic.",
+      "matrixTest": "provenance_pass_matrix::straightline_arithmetic_cse"
     }
   ],
   "additionalStages": [

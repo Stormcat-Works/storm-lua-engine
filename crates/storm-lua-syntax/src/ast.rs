@@ -73,6 +73,15 @@ impl Interner {
     pub fn symbol_count(&self) -> usize {
         self.strings.len()
     }
+    /// Shared handle to the identifier strings in insertion order. Holding
+    /// the returned `Arc` keeps the buffer (and its address) alive, so
+    /// cache keys built from buffer identity cannot be confused by address
+    /// reuse after a drop. Entries are append-only: an existing `SymbolId`
+    /// always resolves to the same string within one buffer, and growth
+    /// (a larger `symbol_count`) never rewrites an existing entry.
+    pub fn strings_arc(&self) -> Arc<Vec<Arc<str>>> {
+        Arc::clone(&self.strings)
+    }
     /// Query the existing registry without copying every identifier.
     pub fn contains(&self, name: &str) -> bool {
         self.map.contains_key(name)
@@ -169,7 +178,7 @@ pub enum Node {
     /// Parenthesized expression, including single-value adjustment.
     Paren(NodeId),
     /// Function expression, arguments, and optional method name.
-    Call(NodeId, Vec<NodeId>, Option<String>),
+    Call(NodeId, Vec<NodeId>, Option<SymbolId>),
     /// Identifier reference.
     Name(SymbolId),
     /// Object, key, and original dot-syntax flag.
@@ -230,10 +239,18 @@ impl Ast {
         let s = self.sym(name);
         self.push(Node::Goto(s))
     }
+    /// Append a jump to the named label, given an already-interned symbol.
+    pub fn goto_id(&mut self, name: SymbolId) -> NodeId {
+        self.push(Node::Goto(name))
+    }
     /// Append a declaration of the named label.
     pub fn label(&mut self, name: &str) -> NodeId {
         let s = self.sym(name);
         self.push(Node::Label(s))
+    }
+    /// Append a declaration of the named label, given an already-interned symbol.
+    pub fn label_id(&mut self, name: SymbolId) -> NodeId {
+        self.push(Node::Label(name))
     }
     /// Append a scoped do block.
     pub fn do_(&mut self, b: NodeId) -> NodeId {
@@ -263,10 +280,25 @@ impl Ast {
         let s = self.sym(name);
         self.push(Node::Fornum(s, a, b, c, body))
     }
+    /// Append a numeric loop, given an already-interned binding symbol.
+    pub fn fornum_id(
+        &mut self,
+        name: SymbolId,
+        a: NodeId,
+        b: NodeId,
+        c: Option<NodeId>,
+        body: NodeId,
+    ) -> NodeId {
+        self.push(Node::Fornum(name, a, b, c, body))
+    }
     /// Append a generic loop with iterator expressions and local bindings.
     pub fn forin(&mut self, names: Vec<String>, es: Vec<NodeId>, body: NodeId) -> NodeId {
         let s: Vec<SymbolId> = names.iter().map(|n| self.sym(n)).collect();
         self.push(Node::Forin(s, es, body))
+    }
+    /// Append a generic loop, given already-interned binding symbols.
+    pub fn forin_ids(&mut self, names: Vec<SymbolId>, es: Vec<NodeId>, body: NodeId) -> NodeId {
+        self.push(Node::Forin(names, es, body))
     }
     /// Append a function declaration for the supplied target.
     pub fn funcstat(&mut self, target: NodeId, fn_: NodeId) -> NodeId {
@@ -277,10 +309,18 @@ impl Ast {
         let s = self.sym(name);
         self.push(Node::Localfunc(s, fn_))
     }
+    /// Append a recursive local function declaration, given an already-interned symbol.
+    pub fn localfunc_id(&mut self, name: SymbolId, fn_: NodeId) -> NodeId {
+        self.push(Node::Localfunc(name, fn_))
+    }
     /// Append local declarations with value-adjusted initializers.
     pub fn local(&mut self, names: Vec<String>, es: Vec<NodeId>) -> NodeId {
         let s: Vec<SymbolId> = names.iter().map(|n| self.sym(n)).collect();
         self.push(Node::Local(s, es))
+    }
+    /// Append local declarations, given already-interned binding symbols.
+    pub fn local_ids(&mut self, names: Vec<SymbolId>, es: Vec<NodeId>) -> NodeId {
+        self.push(Node::Local(names, es))
     }
     /// Append a return statement preserving its expression list.
     pub fn ret(&mut self, es: Vec<NodeId>) -> NodeId {
@@ -307,17 +347,21 @@ impl Ast {
         self.push(Node::Vararg)
     }
     /// Append a numeric literal, retaining its source spelling.
-    pub fn num(&mut self, v: String) -> NodeId {
-        self.push(Node::Num(v.into()))
+    pub fn num(&mut self, v: &str) -> NodeId {
+        self.push(Node::Num(std::sync::Arc::from(v)))
     }
     /// Append an already-quoted Lua string literal.
-    pub fn str(&mut self, v: String) -> NodeId {
-        self.push(Node::Str(v.into()))
+    pub fn str(&mut self, v: &str) -> NodeId {
+        self.push(Node::Str(std::sync::Arc::from(v)))
     }
     /// Append a function value with parameters and body.
     pub fn function(&mut self, ps: Vec<String>, variadic: bool, b: NodeId) -> NodeId {
         let s: Vec<SymbolId> = ps.iter().map(|n| self.sym(n)).collect();
         self.push(Node::Function(s, variadic, b))
+    }
+    /// Append a function value, given already-interned parameter symbols.
+    pub fn function_ids(&mut self, ps: Vec<SymbolId>, variadic: bool, b: NodeId) -> NodeId {
+        self.push(Node::Function(ps, variadic, b))
     }
     /// Append an ordered table constructor.
     pub fn table(&mut self, fs: Vec<TableField>) -> NodeId {
@@ -336,13 +380,17 @@ impl Ast {
         self.push(Node::Paren(e))
     }
     /// Append a function or method call with ordered arguments.
-    pub fn call(&mut self, fn_: NodeId, args: Vec<NodeId>, method: Option<String>) -> NodeId {
+    pub fn call(&mut self, fn_: NodeId, args: Vec<NodeId>, method: Option<SymbolId>) -> NodeId {
         self.push(Node::Call(fn_, args, method))
     }
     /// Append an identifier reference, interning its name.
     pub fn name(&mut self, v: &str) -> NodeId {
         let s = self.sym(v);
         self.push(Node::Name(s))
+    }
+    /// Append an identifier reference, given an already-interned symbol.
+    pub fn name_id(&mut self, v: SymbolId) -> NodeId {
+        self.push(Node::Name(v))
     }
     /// Append an object/key access with the requested syntax flag.
     pub fn index(&mut self, obj: NodeId, key: NodeId, dot: bool) -> NodeId {
@@ -352,6 +400,10 @@ impl Ast {
     pub fn methodname(&mut self, obj: NodeId, name: &str) -> NodeId {
         let s = self.sym(name);
         self.push(Node::Methodname(obj, s))
+    }
+    /// Append a method declaration target, given an already-interned symbol.
+    pub fn methodname_id(&mut self, obj: NodeId, name: SymbolId) -> NodeId {
+        self.push(Node::Methodname(obj, name))
     }
 }
 

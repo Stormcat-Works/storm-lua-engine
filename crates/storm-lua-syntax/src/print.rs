@@ -58,6 +58,158 @@ pub(crate) fn trimmed_nil_rhs_len(
     len
 }
 
+/// Whether a condition expression is provably free of observable effects
+/// and cannot throw, so skipping its evaluation is unobservable. This
+/// mirrors the effect model's rules for these node kinds
+/// (storm-lua-analysis effects: `and`/`or`/`==`/`~=` and `not` add no
+/// throw, Index always throws, calls and arithmetic/concatenation may
+/// throw or call). A table constructor is safe only when every field is
+/// an Arr/Name field with a safe value: a computed KVar key could be nil,
+/// which throws. Function creation and vararg reads have no effects.
+/// Anything else is conservatively unsafe.
+fn is_effect_free_condition(ast: &Ast, cond: NodeId) -> bool {
+    let cond = match ast.node(cond) {
+        Node::Paren(inner) => return is_effect_free_condition(ast, *inner),
+        _ => cond,
+    };
+    match ast.node(cond) {
+        Node::Nil | Node::Bool(_) | Node::Num(_) | Node::Str(_) => true,
+        Node::Name(_) => true,
+        Node::Vararg => true,
+        Node::Function(..) => true,
+        Node::Bin(op, left, right) => {
+            matches!(op.as_str(), "and" | "or" | "==" | "~=")
+                && is_effect_free_condition(ast, *left)
+                && is_effect_free_condition(ast, *right)
+        }
+        Node::Un(op, operand) => op.as_str() == "not" && is_effect_free_condition(ast, *operand),
+        Node::Table(fields) => fields.iter().all(|field| match field {
+            TableField::Arr(value) => is_effect_free_condition(ast, *value),
+            TableField::Name(_, value) => is_effect_free_condition(ast, *value),
+            TableField::KVar(_, _) => false,
+        }),
+        _ => false,
+    }
+}
+
+/// Whether a statement is a dead `if` that printing can drop entirely: a
+/// single arm whose then block is empty, with no else block or an empty
+/// else block, and an effect-free, non-throwing condition. Dropping it
+/// evaluates nothing and executes nothing, so it is unobservable. The
+/// check runs on the AST block before printing, so no emissions are
+/// recorded for the dropped statement (like the empty-else omission).
+/// One `local` statement inside a print-time merge group: its statement
+/// node, its binding names, and the initializer prefix the printer keeps
+/// (trailing literal nils are already dropped by `trimmed_nil_rhs_len`).
+struct LocalMember {
+    stmt: NodeId,
+    names: Vec<crate::ast::SymbolId>,
+    kept: Vec<NodeId>,
+}
+
+/// One item of a block after grouping: a lone statement, or a run of
+/// consecutive `local` statements printed as one merged statement.
+enum BlockItem {
+    Single(NodeId),
+    Merged(Vec<LocalMember>),
+}
+
+/// Whether any initializer expression in `exprs` mentions (anywhere in its
+/// subtree, including nested function bodies) a name from `names`. Such a
+/// reference resolves to the new binding in the separate form but to the
+/// outer binding in the merged form, so it blocks merging.
+fn rhs_mentions(ast: &Ast, exprs: &[NodeId], names: &[crate::ast::SymbolId]) -> bool {
+    let mut stack: Vec<NodeId> = exprs.to_vec();
+    while let Some(id) = stack.pop() {
+        if let Node::Name(sym) = ast.node(id) {
+            if names.contains(sym) {
+                return true;
+            }
+        }
+        crate::ast_utils::for_each_child_key(ast, id, &mut |_, child| stack.push(child));
+    }
+    false
+}
+
+/// Mapping-aware variant of `rhs_mentions`: compare post-substitution
+/// spellings instead of stored spellings, so merge decisions on an
+/// unrenamed tree agree with the stock printer's decisions on the
+/// renamed tree (where the same occurrences print with substituted
+/// spellings). `names` are post-substitution member spellings.
+/// Every `Name` node in the walked subtree is a reference: binding
+/// names live in their declaration nodes (`Local`/`Forin`/`Function`),
+/// never as `Name` children.
+fn rhs_mentions_mapped(
+    ast: &Ast,
+    exprs: &[NodeId],
+    names: &[&str],
+    resolver: &dyn crate::size::SizeNameResolver,
+) -> bool {
+    let mut stack: Vec<NodeId> = exprs.to_vec();
+    while let Some(id) = stack.pop() {
+        if let Node::Name(sym) = ast.node(id) {
+            let spelling = resolver
+                .replacement(id, crate::parser::NameSite::Reference)
+                .unwrap_or_else(|| ast.strings.get(*sym));
+            if names.contains(&spelling) {
+                return true;
+            }
+        }
+        crate::ast_utils::for_each_child_key(ast, id, &mut |_, child| stack.push(child));
+    }
+    false
+}
+
+fn is_dead_if_statement(ast: &Ast, statement: NodeId) -> bool {
+    let Node::If(arms, else_block) = ast.node(statement) else {
+        return false;
+    };
+    if arms.len() != 1 {
+        return false;
+    }
+    let then_empty = matches!(
+        ast.node(arms[0].body),
+        Node::Block(statements) if statements.is_empty()
+    );
+    if !then_empty {
+        return false;
+    }
+    let else_empty = match else_block {
+        None => true,
+        Some(block) => matches!(
+            ast.node(*block),
+            Node::Block(statements) if statements.is_empty()
+        ),
+    };
+    else_empty && is_effect_free_condition(ast, arms[0].cond)
+}
+
+/// Whether a numeric-for step is an integer literal 1, so omitting it is
+/// exactly the default step. Lua's default step is integer 1, so the loop
+/// kind (integer vs float) is unchanged only for integer spellings: a
+/// float step such as `1.0` or `1e0` must keep printing, because dropping
+/// it would turn a float loop into an integer loop (observable via
+/// math.type, overflow, and integer division). Paren-wrapped steps are
+/// unwrapped: parentheses add no value. The printer's render_num
+/// preserves the integer/float subtype, so an integer spelling here is
+/// an integer step in the printed code too.
+fn is_int_one_step(ast: &Ast, step: NodeId) -> bool {
+    let step = match ast.node(step) {
+        Node::Paren(inner) => return is_int_one_step(ast, *inner),
+        _ => step,
+    };
+    let Node::Num(raw) = ast.node(step) else {
+        return false;
+    };
+    let raw: &str = raw.as_ref();
+    if let Some(hex) = raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
+        return !hex.is_empty()
+            && hex.bytes().all(|b| b.is_ascii_hexdigit())
+            && hex.trim_start_matches('0') == "1";
+    }
+    !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()) && raw.trim_start_matches('0') == "1"
+}
+
 fn needs_sep(a: &str, b: &str) -> bool {
     let (Some(x), Some(y)) = (a.chars().next_back(), b.chars().next()) else {
         return false;
@@ -100,22 +252,50 @@ fn lexical_boundary_may_retokenize(left: u8, right: u8) -> bool {
             // bracket opener once later '='/'[' tokens are concatenated.
             | (b'[', b'[' | b'=')
     ) || (left == b'.' && right.is_ascii_digit())
+        // A numeral ending in '.' followed by a name start is one glued
+        // token stream for the lexer (T10: keyword glue is malformed).
+        // Byte-level this also covers '.' + name member access, which
+        // simply takes the validation path; over-validation is safe,
+        // under-validation would emit unloadable text.
+        || (left == b'.' && (right.is_ascii_alphabetic() || right == b'_'))
 }
 
-// Operators use a space, not a zero-cost separator newline. Compose the actual
-// bytes and relative emission ranges together so spacing cannot shift origins.
-fn join_lex<'a>(parts: impl IntoIterator<Item = Fragment<'a>>) -> Fragment<'a> {
-    let mut out = Fragment::default();
-    for part in parts {
-        if part.text.is_empty() {
-            continue;
+// Operator gaps use a zero-cost separator newline when separator newlines are
+// uncharged, else a space. The replacement is 1 byte for 1 byte, so raw size,
+// winner selection, and recorded byte ranges are unchanged; only the reported
+// newline count grows. Newlines are pure whitespace between tokens in Lua
+// (verified: `return 5` and `return\n5` compile identically), so the token
+// stream -- and therefore the parse -- is identical.
+impl<'a> Printer<'a> {
+    /// Separator between a keyword and the following token: a counted
+    /// zero-cost newline when separator newlines are uncharged, else a space.
+    fn sep(&mut self) -> Fragment<'a> {
+        if self.zero {
+            self.newline_count += 1;
+            Fragment::literal("\n")
+        } else {
+            Fragment::literal(" ")
         }
-        if needs_sep(&out.text, &part.text) {
-            out.text.to_mut().push(' ');
-        }
-        out.append(part);
     }
-    out
+
+    fn join_lex(&mut self, parts: impl IntoIterator<Item = Fragment<'a>>) -> Fragment<'a> {
+        let mut out = Fragment::default();
+        for part in parts {
+            if part.text.is_empty() {
+                continue;
+            }
+            if needs_sep(&out.text, &part.text) {
+                if self.zero {
+                    self.newline_count += 1;
+                    out.text.to_mut().push('\n');
+                } else {
+                    out.text.to_mut().push(' ');
+                }
+            }
+            out.append(part);
+        }
+        out
+    }
 }
 
 /// Render a numeric literal without losing its integer/float interpretation.
@@ -197,18 +377,68 @@ pub struct PrintedSource {
 }
 
 // A recursive print result with relative ranges. The ordinary printer keeps the
-// range vector empty (no mapping allocation). Composition shifts ranges when it
-// appends actual bytes; formatting cannot accidentally discard the side table.
+// segment list empty (no mapping allocation). Ranges themselves live exactly once
+// in the printer's arena; a fragment only holds the root of a segment rope, so
+// composition links rope nodes instead of copying every segment, and no range
+// is shifted until the final print flattens the rope.
+//
+// A rope node is one of:
+// - a leaf: one recorded range, with its offset relative to its fragment;
+// - a concat: the left and right subtrees of an append, where the right
+//   subtree's ranges shift by the left text length at append time;
+// - a shift: a whole subtree shifted by an append into a segment-free prefix.
+//
+// Nodes live in a thread-local arena that a tracked print clears before
+// building and after flattening, so no node outlives its print and capacity
+// is reused across prints on the same thread. Plain prints never create a
+// node (their fragments have no root), so the untracked path stays
+// allocation-free for segments. Fragments never escape a print, and a print
+// never nests another print, so clearing at print boundaries is sufficient
+// even if an earlier print was abandoned.
+enum RopeNode {
+    Leaf {
+        index: usize,
+        offset: usize,
+    },
+    Concat {
+        left: usize,
+        right: usize,
+        right_offset: usize,
+    },
+    Shift {
+        child: usize,
+        offset: usize,
+    },
+}
+
+thread_local! {
+    static ROPE_NODES: std::cell::RefCell<Vec<RopeNode>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn rope_push(node: RopeNode) -> usize {
+    ROPE_NODES.with(|nodes| {
+        let mut nodes = nodes.borrow_mut();
+        let index = nodes.len();
+        nodes.push(node);
+        index
+    })
+}
+
+fn rope_clear() {
+    ROPE_NODES.with(|nodes| nodes.borrow_mut().clear());
+}
+
 #[derive(Default)]
 struct Fragment<'a> {
     text: Cow<'a, str>,
-    emissions: Vec<NodeEmission>,
+    root: Option<usize>,
 }
 impl<'a> From<String> for Fragment<'a> {
     fn from(text: String) -> Self {
         Self {
             text: Cow::Owned(text),
-            emissions: Vec::new(),
+            root: None,
         }
     }
 }
@@ -216,44 +446,72 @@ impl<'a> From<&'a str> for Fragment<'a> {
     fn from(text: &'a str) -> Self {
         Self {
             text: Cow::Borrowed(text),
-            emissions: Vec::new(),
+            root: None,
         }
     }
 }
 impl<'a> From<Cow<'a, str>> for Fragment<'a> {
     fn from(text: Cow<'a, str>) -> Self {
-        Self {
-            text,
-            emissions: Vec::new(),
-        }
+        Self { text, root: None }
     }
 }
 impl<'a> Fragment<'a> {
     fn literal(text: &'static str) -> Self {
         Self {
             text: Cow::Borrowed(text),
-            emissions: Vec::new(),
+            root: None,
+        }
+    }
+    /// Record one range covering this whole fragment. A recorded range always
+    /// starts at its fragment's start, so its leaf offset is zero even when
+    /// the fragment already holds ranges (a whole-fragment record overlays
+    /// its parts); the concat below keeps the earlier ranges first.
+    fn push_segment(&mut self, index: usize) {
+        let leaf = rope_push(RopeNode::Leaf { index, offset: 0 });
+        match self.root {
+            None => self.root = Some(leaf),
+            Some(left) => {
+                self.root = Some(rope_push(RopeNode::Concat {
+                    left,
+                    right: leaf,
+                    right_offset: 0,
+                }));
+            }
         }
     }
     fn append(&mut self, other: Self) {
         if other.text.is_empty() {
             return;
         }
-        if self.text.is_empty()
-            && self.emissions.is_empty()
-            && matches!(&self.text, Cow::Borrowed(_))
-        {
+        if self.text.is_empty() && self.root.is_none() && matches!(&self.text, Cow::Borrowed(_)) {
             *self = other;
             return;
         }
         let offset = self.text.len();
         self.text.to_mut().push_str(&other.text);
-        self.emissions
-            .extend(other.emissions.into_iter().map(|mut emission| {
-                emission.start += offset;
-                emission.end += offset;
-                emission
-            }));
+        match (self.root, other.root) {
+            (None, None) => {}
+            (None, Some(right)) => {
+                // Our own text has no ranges, so the other side's ranges all
+                // shift by the prefix we already held.
+                self.root = if offset == 0 {
+                    Some(right)
+                } else {
+                    Some(rope_push(RopeNode::Shift {
+                        child: right,
+                        offset,
+                    }))
+                };
+            }
+            (Some(_), None) => {}
+            (Some(left), Some(right)) => {
+                self.root = Some(rope_push(RopeNode::Concat {
+                    left,
+                    right,
+                    right_offset: offset,
+                }));
+            }
+        }
     }
     fn join(parts: impl IntoIterator<Item = Self>, separator: &str) -> Self {
         let mut output = Self::default();
@@ -278,6 +536,16 @@ pub struct Printer<'a> {
     zero: bool,
     newline_count: u32,
     capture_emissions: bool,
+    arena: std::cell::RefCell<Vec<NodeEmission>>,
+    /// Optional spelling substitution for identifier occurrences, keyed by
+    /// (node, site) exactly like the size walker's `SizeNameResolver`.
+    /// When set, `name()` emits the replacement spelling instead of the
+    /// AST's stored spelling, and local-merge decisions in `block()`
+    /// compare post-substitution spellings. This is the mapping-aware
+    /// print used to measure a scope-renamed size without materializing
+    /// the rename: the substitution is a scope-rename plan computed on
+    /// this same tree. `None` preserves the stock behavior exactly.
+    name_resolver: Option<&'a dyn crate::size::SizeNameResolver>,
 }
 
 impl<'a> Printer<'a> {
@@ -288,6 +556,24 @@ impl<'a> Printer<'a> {
             zero: zero_cost_newlines,
             newline_count: 0,
             capture_emissions: false,
+            arena: std::cell::RefCell::new(Vec::new()),
+            name_resolver: None,
+        }
+    }
+    /// Create a printer that emits substituted spellings for identifier
+    /// occurrences (see `name_resolver`). The resolver must outlive the print.
+    pub fn with_name_resolver(
+        ast: &'a Ast,
+        zero_cost_newlines: bool,
+        resolver: &'a dyn crate::size::SizeNameResolver,
+    ) -> Self {
+        Printer {
+            ast,
+            zero: zero_cost_newlines,
+            newline_count: 0,
+            capture_emissions: false,
+            arena: std::cell::RefCell::new(Vec::new()),
+            name_resolver: Some(resolver),
         }
     }
     /// Return the number of separator newlines emitted so far.
@@ -302,7 +588,7 @@ impl<'a> Printer<'a> {
         site: Option<crate::parser::NameSite>,
     ) -> Fragment<'a> {
         if self.capture_emissions && !fragment.text.is_empty() {
-            fragment.emissions.push(NodeEmission {
+            let emission = NodeEmission {
                 node,
                 site,
                 token: None,
@@ -313,7 +599,16 @@ impl<'a> Printer<'a> {
                 },
                 start: 0,
                 end: fragment.text.len(),
-            });
+            };
+            // The range is recorded once in the printer's arena; the fragment
+            // only keeps a rope leaf for the arena index. Composition links
+            // rope nodes, and the final print resolves absolute ranges from
+            // arena entries. record runs while no arena borrow is held, so
+            // this borrow cannot overlap another one.
+            let mut arena = self.arena.borrow_mut();
+            let index = arena.len();
+            arena.push(emission);
+            fragment.push_segment(index);
         }
         fragment
     }
@@ -323,31 +618,76 @@ impl<'a> Printer<'a> {
         text: &str,
     ) -> Option<crate::explanation::OptimizationReason> {
         use crate::explanation::{OptimizationReason, ReasonOperation};
+        // Literal spellings repeat the same rule codes, basis, and empty
+        // facts at every literal, so share one Arc per constant instead of
+        // allocating a fresh Arc for each reason (the values are identical).
+        // The string branch additionally formats its length tags into a
+        // stack buffer, so each tag costs one Arc allocation, not a String
+        // plus an Arc.
+        fn shared(
+            cell: &std::sync::OnceLock<std::sync::Arc<str>>,
+            value: &str,
+        ) -> std::sync::Arc<str> {
+            std::sync::Arc::clone(cell.get_or_init(|| std::sync::Arc::from(value)))
+        }
+        fn bytes_tag(len: usize) -> std::sync::Arc<str> {
+            const PREFIX: &[u8] = b"literal-bytes:";
+            let mut buf = [0u8; PREFIX.len() + 20];
+            buf[..PREFIX.len()].copy_from_slice(PREFIX);
+            let mut digits = [0u8; 20];
+            let mut n = len;
+            let mut count = 0;
+            loop {
+                digits[count] = b'0' + (n % 10) as u8;
+                count += 1;
+                n /= 10;
+                if n == 0 {
+                    break;
+                }
+            }
+            let start = PREFIX.len();
+            for i in 0..count {
+                buf[start + i] = digits[count - 1 - i];
+            }
+            // The buffer holds only ASCII (a fixed prefix plus decimal digits),
+            // so this is always valid UTF-8 and borrows without allocating.
+            let text = std::string::String::from_utf8_lossy(&buf[..start + count]);
+            std::sync::Arc::from(text.as_ref())
+        }
+        static NUMERIC_CODE: std::sync::OnceLock<std::sync::Arc<str>> = std::sync::OnceLock::new();
+        static STRING_CODE: std::sync::OnceLock<std::sync::Arc<str>> = std::sync::OnceLock::new();
+        static BOOLEAN_CODE: std::sync::OnceLock<std::sync::Arc<str>> = std::sync::OnceLock::new();
+        static BASIS: std::sync::OnceLock<std::sync::Arc<str>> = std::sync::OnceLock::new();
+        static EMPTY_FACTS: std::sync::OnceLock<
+            std::sync::Arc<Vec<crate::explanation::ReasonFact>>,
+        > = std::sync::OnceLock::new();
         let (code, before, after) = match self.ast.node(node) {
             Node::Num(value) if value.as_ref() != text => (
-                "numeric-literal-spelling",
-                format!("number:{value}"),
-                format!("number:{text}"),
+                shared(&NUMERIC_CODE, "numeric-literal-spelling"),
+                std::sync::Arc::from(format!("number:{value}")),
+                std::sync::Arc::from(format!("number:{text}")),
             ),
             Node::Str(value) if value.as_ref() != text => (
-                "string-literal-spelling",
-                format!("literal-bytes:{}", value.len()),
-                format!("literal-bytes:{}", text.len()),
+                shared(&STRING_CODE, "string-literal-spelling"),
+                bytes_tag(value.len()),
+                bytes_tag(text.len()),
             ),
             Node::Bool(value) if text != if *value { "true" } else { "false" } => (
-                "boolean-literal-shortening",
-                format!("boolean:{value}"),
-                format!("expression:{text}"),
+                shared(&BOOLEAN_CODE, "boolean-literal-shortening"),
+                std::sync::Arc::from(format!("boolean:{value}")),
+                std::sync::Arc::from(format!("expression:{text}")),
             ),
             _ => return None,
         };
         Some(OptimizationReason {
-            code: code.into(),
+            code,
             operation: ReasonOperation::Rewrite,
-            before: Some(before.into()),
-            after: Some(after.into()),
-            basis: Some("canonical-literal-emission".into()),
-            facts: std::sync::Arc::default(),
+            before: Some(before),
+            after: Some(after),
+            basis: Some(shared(&BASIS, "canonical-literal-emission")),
+            facts: std::sync::Arc::clone(
+                EMPTY_FACTS.get_or_init(|| std::sync::Arc::new(Vec::new())),
+            ),
         })
     }
     fn syntax(
@@ -378,7 +718,9 @@ impl<'a> Printer<'a> {
             {
                 return self.record(fragment, node, None);
             }
-            fragment.emissions.push(NodeEmission {
+            let mut arena = self.arena.borrow_mut();
+            let index = arena.len();
+            arena.push(NodeEmission {
                 node,
                 site: None,
                 token: Some(site),
@@ -386,6 +728,7 @@ impl<'a> Printer<'a> {
                 start: 0,
                 end: fragment.text.len(),
             });
+            fragment.push_segment(index);
         }
         fragment
     }
@@ -395,7 +738,28 @@ impl<'a> Printer<'a> {
         node: NodeId,
         site: crate::parser::NameSite,
     ) -> Fragment<'a> {
+        if let Some(resolver) = self.name_resolver {
+            if let Some(replacement) = resolver.replacement(node, site) {
+                return self.record(replacement.into(), node, Some(site));
+            }
+        }
         self.record(self.ast.strings.get(symbol).into(), node, Some(site))
+    }
+    /// Post-substitution spelling for one identifier occurrence: the
+    /// resolver's replacement when present, else the AST's stored spelling.
+    /// Used only by the mapping-aware merge decisions in `block()`.
+    fn mapped_spelling(
+        &self,
+        node: NodeId,
+        site: crate::parser::NameSite,
+        symbol: crate::ast::SymbolId,
+    ) -> &str {
+        if let Some(resolver) = self.name_resolver {
+            if let Some(replacement) = resolver.replacement(node, site) {
+                return replacement;
+            }
+        }
+        self.ast.strings.get(symbol)
     }
     fn member(&self, text: impl Into<Cow<'a, str>>, node: NodeId) -> Fragment<'a> {
         self.record(
@@ -410,7 +774,8 @@ impl<'a> Printer<'a> {
             let space = key.starts_with('[');
             let key = self.record(key.into(), id, None);
             return if space {
-                fragments!(Fragment::literal(" "), key)
+                let sp = self.sep();
+                fragments!(sp, key)
             } else {
                 key
             };
@@ -545,19 +910,33 @@ impl<'a> Printer<'a> {
             }
             Node::Un(op, e) => {
                 prec = 12;
-                s = join_lex([
-                    self.syntax(op, id, crate::explanation::SyntaxSite::Operator),
-                    self.expr(*e, 12),
-                ]);
+                let op_s = self.syntax(op, id, crate::explanation::SyntaxSite::Operator);
+                let e_s = self.expr(*e, 12);
+                s = self.join_lex([op_s, e_s]);
             }
             Node::Bin(op, l, r) => {
                 let (lp, rp) = bin_prec(op);
                 prec = lp;
-                s = join_lex([
-                    self.expr(*l, lp),
-                    self.syntax(op, id, crate::explanation::SyntaxSite::Operator),
-                    self.expr(*r, rp),
-                ]);
+                let mut l_s = self.expr(*l, lp);
+                // Right-associative operators (`..`, `^`): a bare left child
+                // that is itself an application of the same operator would
+                // be re-parsed right-nested from the flat text, changing
+                // evaluation order and values (e.g. `(a .. b) .. c` printed
+                // as `a..b..c` reads back as `a .. (b .. c)`). Parsed source
+                // always carries a Paren node in this position, but passes
+                // that strip or rebuild parentheses can leave the bare
+                // shape behind, so the printer parenthesizes it itself
+                // (candidate T, w9 cycle 67).
+                if matches!(op.as_str(), ".." | "^") {
+                    if let Node::Bin(child_op, ..) = self.ast.node(*l) {
+                        if child_op == op {
+                            l_s = fragments!(Fragment::literal("("), l_s, Fragment::literal(")"));
+                        }
+                    }
+                }
+                let op_s = self.syntax(op, id, crate::explanation::SyntaxSite::Operator);
+                let r_s = self.expr(*r, rp);
+                s = self.join_lex([l_s, op_s, r_s]);
             }
             Node::Call(fn_, args, method) => {
                 let fn_s = self.expr(*fn_, 15);
@@ -569,7 +948,7 @@ impl<'a> Printer<'a> {
                         fragments!(
                             fn_s,
                             Fragment::literal(":"),
-                            self.member(m.as_str(), id),
+                            self.member(self.ast.strings.get(*m), id),
                             args_s
                         )
                     }
@@ -577,7 +956,7 @@ impl<'a> Printer<'a> {
                     (Some(m), false) => fragments!(
                         fn_s,
                         Fragment::literal(":"),
-                        self.member(m.as_str(), id),
+                        self.member(self.ast.strings.get(*m), id),
                         Fragment::literal("("),
                         args_s,
                         Fragment::literal(")")
@@ -628,6 +1007,26 @@ impl<'a> Printer<'a> {
         let result = self.function(id, false);
         self.record(result, id, None)
     }
+    /// Whether an Assign target may be printed as a function-statement
+    /// target: a bare Name, or a pure dot chain rooted at a Name
+    /// (`a.b.c`). Bracket targets, calls, and parenthesized targets are
+    /// not valid function-statement names and stay as assignments.
+    fn is_funcstat_target(&self, id: NodeId) -> bool {
+        match &self.ast.nodes[id as usize] {
+            Node::Name(_) => true,
+            Node::Index(obj, key, dot) => {
+                if !dot {
+                    return false;
+                }
+                let key_ok = match &self.ast.nodes[*key as usize] {
+                    Node::Str(kv) => plain_name_from_string_literal(kv).is_some(),
+                    _ => false,
+                };
+                key_ok && self.is_funcstat_target(*obj)
+            }
+            _ => false,
+        }
+    }
     fn target(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Methodname(obj, name) = &self.ast.nodes[id as usize] {
             let result = fragments!(
@@ -651,10 +1050,14 @@ impl<'a> Printer<'a> {
         use crate::parser::NameSite;
         match &self.ast.nodes[id as usize] {
             Node::Break => self.keyword("break", id, crate::explanation::SyntaxSite::Begin),
-            Node::Goto(name) => fragments!(
-                Fragment::literal("goto "),
-                self.name(*name, id, NameSite::Label)
-            ),
+            Node::Goto(name) => {
+                let sp = self.sep();
+                fragments!(
+                    Fragment::literal("goto"),
+                    sp,
+                    self.name(*name, id, NameSite::Label)
+                )
+            }
             Node::Label(name) => fragments!(
                 Fragment::literal("::"),
                 self.name(*name, id, NameSite::Label),
@@ -724,9 +1127,18 @@ impl<'a> Printer<'a> {
                     out = self.cat(out, b);
                 }
                 if let Some(else_b) = eb {
-                    let body = self.block(*else_b);
-                    out = self.cat(out, Fragment::literal("else"));
-                    out = self.cat(out, body);
+                    // An empty else branch is a semantic no-op: dropping it
+                    // yields exactly the no-else output. Check the AST block
+                    // before printing so no emissions are recorded for it.
+                    let is_empty = matches!(
+                        self.ast.node(*else_b),
+                        Node::Block(statements) if statements.is_empty()
+                    );
+                    if !is_empty {
+                        let body = self.block(*else_b);
+                        out = self.cat(out, Fragment::literal("else"));
+                        out = self.cat(out, body);
+                    }
                 }
                 self.cat(
                     out,
@@ -734,17 +1146,28 @@ impl<'a> Printer<'a> {
                 )
             }
             Node::Fornum(name, a, b, c, body) => {
+                let sp = self.sep();
                 let mut head = fragments!(
                     self.keyword("for", id, crate::explanation::SyntaxSite::Begin),
-                    Fragment::literal(" "),
+                    sp,
                     self.name(*name, id, NameSite::Binding(0)),
                     Fragment::literal("="),
                     self.expr(*a, 0),
                     Fragment::literal(","),
                     self.expr(*b, 0)
                 );
+                // An integer-literal step of 1 is exactly the default step,
+                // so omitting it changes nothing (loop kind included). A
+                // float step (1.0, 1e0, ...) must stay: dropping it would
+                // turn a float loop into an integer loop.
+                let skip_step = match c {
+                    Some(step) => is_int_one_step(self.ast, *step),
+                    None => false,
+                };
                 if let Some(step) = c {
-                    head.append(fragments!(Fragment::literal(","), self.expr(*step, 0)));
+                    if !skip_step {
+                        head.append(fragments!(Fragment::literal(","), self.expr(*step, 0)));
+                    }
                 }
                 let head = self.cat(
                     head,
@@ -766,11 +1189,14 @@ impl<'a> Printer<'a> {
                     ",",
                 );
                 let values = Fragment::join(es.iter().map(|e| self.expr(*e, 0)), ",");
+                let sp1 = self.sep();
+                let sp2 = self.sep();
                 let head = fragments!(
                     self.keyword("for", id, crate::explanation::SyntaxSite::Begin),
-                    Fragment::literal(" "),
+                    sp1,
                     names,
-                    Fragment::literal(" in")
+                    sp2,
+                    Fragment::literal("in")
                 );
                 let head = self.cat(head, values);
                 let head = self.cat(
@@ -784,16 +1210,27 @@ impl<'a> Printer<'a> {
                     self.keyword("end", id, crate::explanation::SyntaxSite::End),
                 )
             }
-            Node::Funcstat(target, function) => fragments!(
-                Fragment::literal("function "),
-                self.target(*target),
-                self.function_tail(*function)
-            ),
-            Node::Localfunc(name, function) => fragments!(
-                Fragment::literal("local function "),
-                self.name(*name, id, NameSite::Binding(0)),
-                self.function_tail(*function)
-            ),
+            Node::Funcstat(target, function) => {
+                let sp = self.sep();
+                fragments!(
+                    Fragment::literal("function"),
+                    sp,
+                    self.target(*target),
+                    self.function_tail(*function)
+                )
+            }
+            Node::Localfunc(name, function) => {
+                let sp1 = self.sep();
+                let sp2 = self.sep();
+                fragments!(
+                    Fragment::literal("local"),
+                    sp1,
+                    Fragment::literal("function"),
+                    sp2,
+                    self.name(*name, id, NameSite::Binding(0)),
+                    self.function_tail(*function)
+                )
+            }
             Node::Local(names, es) => {
                 let ns = Fragment::join(
                     names
@@ -804,11 +1241,14 @@ impl<'a> Printer<'a> {
                 );
                 let keep = trimmed_nil_rhs_len(self.ast, names.len(), es, true);
                 if keep == 0 {
-                    fragments!(Fragment::literal("local "), ns)
+                    let sp = self.sep();
+                    fragments!(Fragment::literal("local"), sp, ns)
                 } else {
+                    let sp = self.sep();
                     let values = Fragment::join(es[..keep].iter().map(|e| self.expr(*e, 0)), ",");
                     fragments!(
-                        Fragment::literal("local "),
+                        Fragment::literal("local"),
+                        sp,
                         ns,
                         Fragment::literal("="),
                         values
@@ -828,25 +1268,197 @@ impl<'a> Printer<'a> {
             }
             Node::Callstat(e) => self.expr(*e, 0),
             Node::Assign(vs, es) => {
-                let targets = Fragment::join(vs.iter().map(|e| self.expr(*e, 0)), ",");
                 let keep = trimmed_nil_rhs_len(self.ast, vs.len(), es, false);
-                let values = Fragment::join(es[..keep].iter().map(|e| self.expr(*e, 0)), ",");
-                fragments!(targets, Fragment::literal("="), values)
+                if vs.len() == 1
+                    && keep == 1
+                    && matches!(&self.ast.nodes[es[0] as usize], Node::Function(..))
+                    && self.is_funcstat_target(vs[0])
+                {
+                    // `x = function...end` prints as `function x...end`:
+                    // the "=" is replaced by the separator after
+                    // "function", so the raw size is unchanged while the
+                    // effective size (zero-cost separators excluded) drops
+                    // by one. A function statement assigns its target
+                    // exactly like an assignment (resolver treats both
+                    // targets as lvalues), so this is a pure print form.
+                    // The keyword keeps its recorded Begin segment (as in
+                    // the assignment form) so the Source Map neither loses
+                    // nor invents a correspondence for it.
+                    let sp = self.sep();
+                    fragments!(
+                        self.keyword("function", es[0], crate::explanation::SyntaxSite::Begin),
+                        sp,
+                        self.target(vs[0]),
+                        self.function_tail(es[0])
+                    )
+                } else {
+                    let targets = Fragment::join(vs.iter().map(|e| self.expr(*e, 0)), ",");
+                    let values = Fragment::join(es[..keep].iter().map(|e| self.expr(*e, 0)), ",");
+                    fragments!(targets, Fragment::literal("="), values)
+                }
             }
             _ => panic!("unknown statement node"),
         }
     }
+    /// Print a run of merged `local` statements as one statement. Each
+    /// name keeps its own statement node and binding index, so its segment
+    /// attribution is unchanged; only the repeated `local` keywords and
+    /// the between-statement separators disappear.
+    fn merged_local(&mut self, members: &[LocalMember]) -> Fragment<'a> {
+        let mut name_parts = Vec::new();
+        for m in members {
+            for (i, n) in m.names.iter().enumerate() {
+                name_parts.push(self.name(*n, m.stmt, crate::parser::NameSite::Binding(i as u32)));
+            }
+        }
+        let ns = Fragment::join(name_parts, ",");
+        let mut value_parts = Vec::new();
+        for e in members.iter().flat_map(|m| m.kept.iter()) {
+            value_parts.push(self.expr(*e, 0));
+        }
+        if value_parts.is_empty() {
+            let sp = self.sep();
+            fragments!(Fragment::literal("local"), sp, ns)
+        } else {
+            let sp = self.sep();
+            let values = Fragment::join(value_parts, ",");
+            fragments!(
+                Fragment::literal("local"),
+                sp,
+                ns,
+                Fragment::literal("="),
+                values
+            )
+        }
+    }
     fn block(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Block(statements) = &self.ast.nodes[id as usize] {
-            let parts = statements
+            // Dead `if` statements print as nothing and are filtered here,
+            // so the remaining statements join with exactly one separator
+            // each (filtering after printing would leave a doubled one).
+            // Consecutive `local` statements are merged into one when the
+            // merge preserves Lua's value-adjustment semantics:
+            //  * every non-final member keeps exactly one initializer per
+            //    name (otherwise later values would shift into its names);
+            //  * a member's initializers never mention a name bound by an
+            //    earlier member of the group (in the separate form that
+            //    name already means the new binding, including inside
+            //    nested function bodies captured by the initializer);
+            //  * no name repeats across members;
+            //  * a member with no kept initializers may only close a group
+            //    whose last kept initializer is not a call/vararg (which
+            //    would otherwise expand into the new names).
+            // A member whose kept prefix differs in length from its names
+            // (trailing nils, or extra values) closes the group, since its
+            // trailing values are only positionally safe at the very end.
+            let ast = self.ast;
+            let live: Vec<NodeId> = statements
                 .iter()
-                .map(|statement| self.stat(*statement))
+                .copied()
+                .filter(|statement| !is_dead_if_statement(ast, *statement))
+                .collect();
+            let mut items: Vec<BlockItem> = Vec::new();
+            for stmt in live {
+                let (names, es) = match ast.node(stmt) {
+                    Node::Local(names, es) => (names.clone(), es.clone()),
+                    _ => {
+                        items.push(BlockItem::Single(stmt));
+                        continue;
+                    }
+                };
+                let keep = trimmed_nil_rhs_len(ast, names.len(), &es, true);
+                let member = LocalMember {
+                    stmt,
+                    names,
+                    kept: es[..keep].to_vec(),
+                };
+                let can_append = match items.last() {
+                    Some(BlockItem::Merged(members)) => {
+                        let open = members.iter().all(|m| m.kept.len() == m.names.len());
+                        // With a spelling substitution, merge decisions must
+                        // compare post-substitution spellings: on the renamed
+                        // tree the stock printer sees exactly those spellings,
+                        // and shadowed same-spelling members (which the stock
+                        // printer blocks on the unrenamed tree) become
+                        // distinct names there. Without a substitution the
+                        // stock path below is unchanged.
+                        let (overlap, mentions) = match self.name_resolver {
+                            Some(resolver) => {
+                                let group_spellings: Vec<&str> = members
+                                    .iter()
+                                    .flat_map(|m| {
+                                        m.names.iter().enumerate().map(|(i, n)| {
+                                            self.mapped_spelling(
+                                                m.stmt,
+                                                crate::parser::NameSite::Binding(i as u32),
+                                                *n,
+                                            )
+                                        })
+                                    })
+                                    .collect();
+                                let overlap = member.names.iter().enumerate().any(|(i, n)| {
+                                    let spelling = self.mapped_spelling(
+                                        member.stmt,
+                                        crate::parser::NameSite::Binding(i as u32),
+                                        *n,
+                                    );
+                                    group_spellings.contains(&spelling)
+                                });
+                                let mentions = rhs_mentions_mapped(
+                                    ast,
+                                    &member.kept,
+                                    &group_spellings,
+                                    resolver,
+                                );
+                                (overlap, mentions)
+                            }
+                            None => {
+                                let group_names: Vec<crate::ast::SymbolId> = members
+                                    .iter()
+                                    .flat_map(|m| m.names.iter().copied())
+                                    .collect();
+                                let overlap = member.names.iter().any(|n| group_names.contains(n));
+                                let mentions = rhs_mentions(ast, &member.kept, &group_names);
+                                (overlap, mentions)
+                            }
+                        };
+                        let expands = member.kept.is_empty()
+                            && match members.last().and_then(|m| m.kept.last()) {
+                                Some(last) => {
+                                    matches!(ast.node(*last), Node::Call(..) | Node::Vararg)
+                                }
+                                None => false,
+                            };
+                        open && !overlap && !mentions && !expands
+                    }
+                    _ => false,
+                };
+                if can_append {
+                    if let Some(BlockItem::Merged(members)) = items.last_mut() {
+                        members.push(member);
+                    }
+                } else {
+                    items.push(BlockItem::Merged(vec![member]));
+                }
+            }
+            let parts = items
+                .into_iter()
+                .map(|item| match item {
+                    BlockItem::Single(stmt) => self.stat(stmt),
+                    BlockItem::Merged(members) => {
+                        if members.len() == 1 {
+                            self.stat(members[0].stmt)
+                        } else {
+                            self.merged_local(&members)
+                        }
+                    }
+                })
                 .collect::<Vec<_>>();
             let mut out = Fragment {
                 text: Cow::Owned(String::with_capacity(
                     parts.iter().map(|p| p.text.len()).sum::<usize>() + parts.len(),
                 )),
-                emissions: Vec::new(),
+                root: None,
             };
             for (i, part) in parts.into_iter().enumerate() {
                 if i > 0 {
@@ -875,13 +1487,76 @@ impl<'a> Printer<'a> {
     /// Original provenance must belong to this exact AST; parsed NodePositions alone
     /// cannot describe a transformed arena without explicit origin propagation.
     pub fn output_with_positions(&mut self, root: NodeId) -> PrintedSource {
+        // Clear any nodes left by an abandoned print, then build this print's
+        // rope from scratch; flattening clears it again below.
+        rope_clear();
         self.capture_emissions = true;
         let result = self.block(root);
         self.capture_emissions = false;
+        // Resolve absolute ranges once. The walk is iterative: a concat tree can
+        // be as deep as the append chain that built it.
+        // Move arena entries out by leaf index instead of cloning them: each
+        // arena entry is referenced by exactly one rope leaf, so replacing a
+        // visited slot with a dummy yields the same emissions in the same
+        // order without building an intermediate Vec<Option<_>> first.
+        let mut arena_entries = {
+            let mut arena = self.arena.borrow_mut();
+            std::mem::take(&mut *arena)
+        };
+        #[cfg(debug_assertions)]
+        let mut seen = vec![false; arena_entries.len()];
+        let mut emissions = Vec::with_capacity(arena_entries.len());
+        if let Some(root_node) = result.root {
+            let mut stack = vec![(root_node, 0usize)];
+            ROPE_NODES.with(|nodes| {
+                let nodes = nodes.borrow();
+                while let Some((index, base)) = stack.pop() {
+                    match &nodes[index] {
+                        RopeNode::Leaf { index, offset } => {
+                            #[cfg(debug_assertions)]
+                            {
+                                debug_assert!(
+                                    !seen[*index],
+                                    "each arena entry is referenced by exactly one rope leaf"
+                                );
+                                seen[*index] = true;
+                            }
+                            let mut emission = std::mem::replace(
+                                &mut arena_entries[*index],
+                                NodeEmission {
+                                    node: 0,
+                                    site: None,
+                                    token: None,
+                                    reason: None,
+                                    start: 0,
+                                    end: 0,
+                                },
+                            );
+                            let shift = base + *offset;
+                            emission.start += shift;
+                            emission.end += shift;
+                            emissions.push(emission);
+                        }
+                        RopeNode::Concat {
+                            left,
+                            right,
+                            right_offset,
+                        } => {
+                            stack.push((*right, base + *right_offset));
+                            stack.push((*left, base));
+                        }
+                        RopeNode::Shift { child, offset } => {
+                            stack.push((*child, base + *offset));
+                        }
+                    }
+                }
+            });
+        }
+        rope_clear();
         PrintedSource {
             root,
             code: result.text.into_owned(),
-            emissions: result.emissions,
+            emissions,
         }
     }
     /// Print one statement, without recording positions.
@@ -1003,6 +1678,192 @@ pub fn lexical_minify_with_origins(
     Ok((code, compact.into_generated()))
 }
 
+/// Look up a rename replacement for one lexer token by its exact source
+/// span. Spans are sorted and non-overlapping (guaranteed by the caller);
+/// a span mismatch is treated as "no rename" for that token.
+fn lexical_rename_for(
+    renames: &[(usize, usize, String)],
+    start: usize,
+    end: usize,
+) -> Option<&str> {
+    let idx = renames.partition_point(|(s, _, _)| *s < start);
+    renames
+        .get(idx)
+        .filter(|(s, e, _)| *s == start && *e == end)
+        .map(|(_, _, name)| name.as_str())
+}
+
+/// Re-lex `code` and require the exact token kind / line sequence of the
+/// source tokens, with renamed identifier spellings substituted. This is
+/// the rename step's safety net: identifier character class is unchanged
+/// by renaming, but any boundary surprise falls back to the unrenamed
+/// output instead of producing a retokenized program.
+fn renamed_tokens_match<'a>(
+    renames: &[(usize, usize, String)],
+    tokens: &[crate::lexer::BorrowedToken<'a>],
+    code: &str,
+) -> bool {
+    use crate::lexer::{Lexer, TokenKind};
+    let mut actual = Lexer::new(code);
+    for expected in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+        let expected_spelling =
+            lexical_rename_for(renames, expected.p, expected.p + expected.v.len())
+                .unwrap_or(expected.v);
+        match actual.next_borrowed() {
+            Ok(token)
+                if token.k == expected.k
+                    && token.v == expected_spelling
+                    && token.line == expected.line => {}
+            _ => return false,
+        }
+    }
+    matches!(actual.next_borrowed(), Ok(token) if token.k == TokenKind::Eof)
+}
+
+/// Lexical minification with local-only identifier renaming applied to
+/// the emitted tokens (see `lexical_rename` in storm-lua-minify). Global
+/// names, field/method names, labels, string literals and comments are
+/// untouched: only tokens whose source span is in `renames` change, and
+/// every such token is an identifier occurrence of a local binding.
+/// On any anomaly (retokenization, or renaming not paying off) the
+/// result is the unrenamed lexical output, never a broken program.
+pub fn lexical_minify_renamed(
+    source: &str,
+    renames: &[(usize, usize, String)],
+) -> Result<String, crate::lexer::LexError> {
+    lexical_minify_renamed_impl(source, false, renames).map(|(code, _)| code)
+}
+
+#[doc(hidden)]
+pub fn lexical_minify_renamed_with_compact_origins(
+    name: &str,
+    source: &str,
+    renames: &[(usize, usize, String)],
+) -> Result<(String, crate::provenance::LexicalCopiedOrigins), crate::lexer::LexError> {
+    let (code, tokens) = lexical_minify_renamed_impl(source, true, renames)?;
+    let generated_len = code.len();
+    Ok((
+        code,
+        crate::provenance::LexicalCopiedOrigins::new(name, source, generated_len, tokens),
+    ))
+}
+
+/// Preserve lexical source locations for a renamed lexical output.
+pub fn lexical_minify_renamed_with_origins(
+    name: &str,
+    source: &str,
+    renames: &[(usize, usize, String)],
+) -> Result<(String, crate::provenance::GeneratedOrigins), crate::lexer::LexError> {
+    let (code, compact) = lexical_minify_renamed_with_compact_origins(name, source, renames)?;
+    Ok((code, compact.into_generated()))
+}
+
+fn lexical_minify_renamed_impl(
+    source: &str,
+    track: bool,
+    renames: &[(usize, usize, String)],
+) -> Result<(String, Vec<crate::provenance::CopiedToken>), crate::lexer::LexError> {
+    use crate::lexer::{Lexer, TokenKind};
+    let tokens = Lexer::new(source).all_borrowed()?;
+    let compact_with = |spaced: bool| {
+        let mut output = String::with_capacity(source.len());
+        let mut end = 0;
+        let mut previous = None::<u8>;
+        let mut needs_validation = false;
+        let mut copies = Vec::new();
+        for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+            let gap = &source.as_bytes()[end..token.p];
+            let before = output.len();
+            for &byte in gap {
+                if matches!(byte, b'\n' | b'\r') {
+                    output.push(byte as char);
+                }
+            }
+            let renamed_piece = lexical_rename_for(renames, token.p, token.p + token.v.len());
+            let piece = renamed_piece.unwrap_or(token.v);
+            let first = piece.as_bytes().first().copied();
+            let needs_boundary = previous.zip(first).is_some_and(|(x, y)| {
+                ((x.is_ascii_alphanumeric() || x == b'_')
+                    && (y.is_ascii_alphanumeric() || y == b'_'))
+                    || (x == b'-' && y == b'-')
+                    || (x == b'.' && y == b'.')
+                    || (x.is_ascii_digit() && y == b'.')
+            });
+            if before == output.len() && !output.is_empty() {
+                if spaced || needs_boundary {
+                    output.push(' ');
+                } else if previous
+                    .zip(first)
+                    .is_some_and(|(left, right)| lexical_boundary_may_retokenize(left, right))
+                {
+                    needs_validation = true;
+                }
+            }
+            let generated_start = output.len();
+            output.push_str(piece);
+            previous = piece.as_bytes().last().copied().or(previous);
+            end = token.p + token.v.len();
+            if track {
+                copies.push(crate::provenance::CopiedToken {
+                    start: generated_start,
+                    source_start: token.p,
+                    source_end: end,
+                    is_name: token.k == TokenKind::Id,
+                    renamed: renamed_piece.is_some(),
+                    generated_end: output.len(),
+                });
+            }
+        }
+        for &byte in &source.as_bytes()[end..] {
+            if matches!(byte, b'\n' | b'\r') {
+                output.push(byte as char);
+            }
+        }
+        (output, copies, needs_validation)
+    };
+    let (mut compact, mut copies, needs_validation) = compact_with(false);
+    let matches = !needs_validation || renamed_tokens_match(renames, &tokens, &compact);
+    if !matches {
+        let (spaced, spaced_copies, _) = compact_with(true);
+        compact = spaced;
+        copies = spaced_copies;
+    }
+    if crate::source_position::utf16_len(&compact) > crate::source_position::utf16_len(source) {
+        // The compact form grew (spacing): try the source verbatim with
+        // renames applied, which keeps the original separators. If that
+        // does not pay off either, fall back to the unrenamed output.
+        let mut verbatim = String::with_capacity(source.len());
+        let mut end = 0;
+        let mut verbatim_copies = Vec::new();
+        for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
+            verbatim.push_str(&source[end..token.p]);
+            let renamed_piece = lexical_rename_for(renames, token.p, token.p + token.v.len());
+            let piece = renamed_piece.unwrap_or(token.v);
+            let generated_start = verbatim.len();
+            verbatim.push_str(piece);
+            end = token.p + token.v.len();
+            if track {
+                verbatim_copies.push(crate::provenance::CopiedToken {
+                    start: generated_start,
+                    source_start: token.p,
+                    source_end: end,
+                    is_name: token.k == TokenKind::Id,
+                    renamed: renamed_piece.is_some(),
+                    generated_end: verbatim.len(),
+                });
+            }
+        }
+        verbatim.push_str(&source[end..]);
+        if crate::source_position::utf16_len(&verbatim) <= crate::source_position::utf16_len(source)
+            && renamed_tokens_match(renames, &tokens, &verbatim)
+        {
+            return Ok((verbatim, verbatim_copies));
+        }
+        return lexical_minify_impl(source, track);
+    }
+    Ok((compact, copies))
+}
+
 fn lexical_minify_impl(
     source: &str,
     track: bool,
@@ -1051,6 +1912,8 @@ fn lexical_minify_impl(
                     source_start: token.p,
                     source_end: end,
                     is_name: token.k == TokenKind::Id,
+                    renamed: false,
+                    generated_end: generated_start + token.v.len(),
                 });
             }
         }
@@ -1096,6 +1959,8 @@ fn lexical_minify_impl(
                     source_start: token.p,
                     source_end: token.p + token.v.len(),
                     is_name: token.k == TokenKind::Id,
+                    renamed: false,
+                    generated_end: token.p + token.v.len(),
                 })
                 .collect()
         } else {
@@ -1211,6 +2076,273 @@ mod emission_tests {
     }
 
     #[test]
+    fn empty_else_branch_prints_like_no_else() {
+        let with_empty = "if a then b() else end";
+        let without = "if a then b() end";
+        let nonempty = "if a then b() else c() end";
+        for zero in [false, true] {
+            let (ast, root, _) = parse_source_with_positions(with_empty).unwrap();
+            let empty_out = Printer::new(&ast, zero).output(root);
+            let (ast, root, _) = parse_source_with_positions(without).unwrap();
+            let no_else_out = Printer::new(&ast, zero).output(root);
+            assert_eq!(empty_out, no_else_out, "zero={zero}");
+            assert!(!empty_out.contains("else"), "zero={zero}");
+            let (ast, root, _) = parse_source_with_positions(nonempty).unwrap();
+            let kept = Printer::new(&ast, zero).output(root);
+            assert!(kept.contains("else"), "zero={zero}");
+        }
+    }
+
+    #[test]
+    fn dead_if_with_effect_free_condition_prints_like_no_statement() {
+        // Dropped: bare Name, literal, and/or/==/not chains over safe
+        // operands, and a vararg condition.
+        let dropped = [
+            "if a then end",
+            "if true then end",
+            "if a and b then end",
+            "if a == b then end",
+            "if not a then end",
+            "if ... then end",
+        ];
+        // Kept: calls, index reads (may throw on a nil base), arithmetic,
+        // concatenation, computed table keys, and non-empty branches.
+        let kept = [
+            "if f() then end",
+            "if a.b then end",
+            "if a + b then end",
+            "if a .. b then end",
+            "if {[a] = 1} then end",
+            "if a then b() end",
+            "if a then else b() end",
+        ];
+        for zero in [false, true] {
+            for source in dropped {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert_eq!(out, "", "dropped {source} zero={zero}");
+                // Tracked printing agrees and records no emissions.
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let tracked = Printer::new(&ast, zero).output_with_positions(root);
+                assert_eq!(tracked.code, "", "dropped {source} zero={zero}");
+                assert!(tracked.emissions.is_empty(), "dropped {source} zero={zero}");
+            }
+            for source in kept {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert!(!out.is_empty(), "kept {source} zero={zero}");
+                assert!(out.contains("if"), "kept {source} zero={zero}");
+            }
+        }
+        // A dead if between live statements leaves exactly one separator
+        // (here the neighbours need one: digit followed by identifier).
+        let mixed = "a=1 if b then end c=2";
+        for zero in [false, true] {
+            let (ast, root, _) = parse_source_with_positions(mixed).unwrap();
+            let out = Printer::new(&ast, zero).output(root);
+            if zero {
+                assert_eq!(out, "a=1\nc=2", "zero={zero}");
+            } else {
+                assert_eq!(out, "a=1 c=2", "zero={zero}");
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_for_step_one_prints_like_no_step() {
+        // Omitted: integer spellings of 1, including leading zeros, hex,
+        // and a parenthesized step. Each prints exactly like the no-step
+        // form in both separator modes.
+        let omitted = [
+            "for i=1,10,1 do f() end",
+            "for i=1,10,01 do f() end",
+            "for i=1,10,0x1 do f() end",
+            "for i=1,10,(1) do f() end",
+        ];
+        let no_step = "for i=1,10 do f() end";
+        for source in omitted {
+            for zero in [false, true] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                let (ast, root, _) = parse_source_with_positions(no_step).unwrap();
+                let expected = Printer::new(&ast, zero).output(root);
+                assert_eq!(out, expected, "{source} zero={zero}");
+            }
+        }
+        // Kept: float steps (dropping one would change the loop kind),
+        // other steps, and negative steps.
+        let kept = [
+            "for i=1,10,1.0 do f() end",
+            "for i=1,10,1e0 do f() end",
+            "for i=1,10,2 do f() end",
+            "for i=1,10,-1 do f() end",
+        ];
+        for source in kept {
+            for zero in [false, true] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                let (ast, root, _) = parse_source_with_positions(no_step).unwrap();
+                let plain = Printer::new(&ast, zero).output(root);
+                assert_ne!(out, plain, "{source} zero={zero}");
+                assert!(out.contains("do"), "{source} zero={zero}");
+            }
+        }
+        // The float spellings stay float: 1.0 prints with its .0, and
+        // 1e0 normalizes to the float spelling 1.0, not to integer 1.
+        for (source, step_text) in [
+            ("for i=1,10,1.0 do f() end", ",1.0"),
+            ("for i=1,10,1e0 do f() end", ",1.0"),
+        ] {
+            let (ast, root, _) = parse_source_with_positions(source).unwrap();
+            let out = Printer::new(&ast, false).output(root);
+            assert!(out.contains(step_text), "{source} -> {out}");
+        }
+    }
+
+    #[test]
+    fn consecutive_locals_merge_only_when_positionally_safe() {
+        // Merged: each eliminated statement saves its `local` keyword (5
+        // effective chars); the separator after `local` is a space or a
+        // zero-cost newline depending on the mode.
+        let merged = [
+            ("local a=1 local b=2", "local a,b=1,2", "local\na,b=1,2"),
+            (
+                "local a=1 local b=2 local c=3",
+                "local a,b,c=1,2,3",
+                "local\na,b,c=1,2,3",
+            ),
+            (
+                "local a,b=1,2 local c=3",
+                "local a,b,c=1,2,3",
+                "local\na,b,c=1,2,3",
+            ),
+            ("local a=1 local b", "local a,b=1", "local\na,b=1"),
+            (
+                "local a=f() local b=2",
+                "local a,b=f(),2",
+                "local\na,b=f(),2",
+            ),
+        ];
+        for (source, expected_space, expected_newline) in merged {
+            for (zero, expected) in [(false, expected_space), (true, expected_newline)] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert_eq!(out, expected, "merged {source} zero={zero}");
+                // Tracked printing agrees on the code.
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let tracked = Printer::new(&ast, zero).output_with_positions(root);
+                assert_eq!(tracked.code, expected, "merged {source} zero={zero}");
+            }
+        }
+        // Kept separate: the forbidden string is the exact merged form
+        // each case would have produced, so a partial match on the first
+        // statement alone (e.g. `local a,b=1`) cannot trip the check.
+        let separate = [
+            ("local a local b=2", "local a,b=2"),
+            ("local a,b=1,nil local c=2", "local a,b,c="),
+            ("local a=f() local b", "local a,b=f()"),
+            ("local a=1 local b=a", "local a,b=1,a"),
+            ("local a=1 local a=2", "local a,a="),
+            ("local a=1 local f=function() return a end", "local a,f="),
+            ("local a=1,2 local b=3", "local a,b=1,2,3"),
+            ("local a=1 b() local c=2", "local a,c="),
+        ];
+        for (source, forbidden) in separate {
+            for zero in [false, true] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert!(
+                    !out.contains(forbidden),
+                    "separate {source} zero={zero} got {out}"
+                );
+                // No statement vanished: the output still has two `local`
+                // keywords (or one `local` plus the breaker statement).
+                assert_eq!(
+                    out.matches("local").count(),
+                    source.matches("local").count(),
+                    "separate {source} zero={zero} got {out}"
+                );
+            }
+        }
+        // Merging also applies inside a nested block.
+        for (zero, expected) in [
+            (false, "do local a,b=1,2 end"),
+            (true, "do\nlocal\na,b=1,2\nend"),
+        ] {
+            let (ast, root, _) = parse_source_with_positions("do local a=1 local b=2 end").unwrap();
+            let out = Printer::new(&ast, zero).output(root);
+            assert_eq!(out, expected, "nested zero={zero}");
+        }
+    }
+
+    #[test]
+    fn function_assignment_prints_as_function_statement() {
+        // Converted: bare Name and pure dot-chain targets with a single
+        // function value. The "=" is replaced by the separator after
+        // "function", so the raw length is unchanged.
+        let converted = [
+            "g=function() return 1 end",
+            "t.m=function(x) return x end",
+            "a.b.c=function() return 2 end",
+        ];
+        for source in converted {
+            for zero in [false, true] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert!(
+                    out.starts_with("function"),
+                    "converted {source} zero={zero} got {out}"
+                );
+                assert!(
+                    !out.contains('='),
+                    "converted {source} zero={zero} got {out}"
+                );
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let tracked = Printer::new(&ast, zero).output_with_positions(root);
+                assert_eq!(tracked.code, out, "converted {source} zero={zero}");
+                // The moved `function` keyword keeps its recorded segment
+                // on the Function node, so the Source Map loses nothing.
+                let func_id = ast
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .find(|(_, n)| matches!(n, Node::Function(..)))
+                    .map(|(i, _)| i as NodeId)
+                    .expect("function node");
+                assert!(
+                    tracked
+                        .emissions
+                        .iter()
+                        .any(|e| e.node == func_id && &tracked.code[e.start..e.end] == "function"),
+                    "converted {source} zero={zero} has no keyword emission"
+                );
+            }
+        }
+        // Kept as assignments: bracket targets, a bracket link inside
+        // the chain, a parenthesized target, multiple targets or values,
+        // and a non-function value.
+        let kept = [
+            "t[\"m\"]=function() return 1 end",
+            "t[\"k\"].m=function() return 1 end",
+            "(t).m=function() return 1 end",
+            "a,b=function() return 1 end,2",
+            "g=function() return 1 end,2",
+            "g=1",
+        ];
+        for source in kept {
+            for zero in [false, true] {
+                let (ast, root, _) = parse_source_with_positions(source).unwrap();
+                let out = Printer::new(&ast, zero).output(root);
+                assert!(out.contains('='), "kept {source} zero={zero} got {out}");
+                assert!(
+                    !out.starts_with("function"),
+                    "kept {source} zero={zero} got {out}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn same_spelling_at_different_positions_is_not_resolved_by_text_search() {
         let source = "local x=1 do local x=x+1 output.setNumber(1,x)end output.setNumber(2,x)";
         let (ast, root, positions) = parse_source_with_positions(source).unwrap();
@@ -1243,8 +2375,7 @@ mod emission_tests {
         for source in fixtures() {
             let (ast, root, _) = parse_source_with_positions(source).unwrap();
             let result = Printer::new(&ast, false).block(root);
-            assert!(result.emissions.is_empty());
-            assert_eq!(result.emissions.capacity(), 0);
+            assert!(result.root.is_none());
         }
     }
 }
@@ -1364,6 +2495,8 @@ mod streamed_lexical_tests {
                         source_start: token.p,
                         source_end: end,
                         is_name: token.k == TokenKind::Id,
+                        renamed: false,
+                        generated_end: generated_start + token.v.len(),
                     });
                 }
             }
@@ -1398,6 +2531,8 @@ mod streamed_lexical_tests {
                         source_start: token.p,
                         source_end: token.p + token.v.len(),
                         is_name: token.k == TokenKind::Id,
+                        renamed: false,
+                        generated_end: token.p + token.v.len(),
                     })
                     .collect()
             } else {

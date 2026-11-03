@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use crate::ast::{Ast, IfArm, NodeId, TableField};
+use crate::ast::{Ast, IfArm, Node, NodeId, SymbolId, TableField};
 use crate::lexer::{LexError, Lexer, TokenKind};
 
 /// A syntactic failure after successful tokenization.
@@ -89,6 +89,19 @@ struct ParserToken {
 impl ParserToken {
     fn text<'a>(&self, source: &'a str) -> &'a str {
         &source[self.p..self.end]
+    }
+}
+
+impl crate::provenance::SeedToken for ParserToken {
+    fn position(&self) -> usize {
+        self.p
+    }
+    fn end(&self) -> usize {
+        self.end
+    }
+    fn spelling_is(&self, text: &str, expected: &str) -> Option<bool> {
+        text.get(self.p..self.end)
+            .map(|spelling| spelling == expected)
     }
 }
 
@@ -241,7 +254,7 @@ impl Parser {
         let t = &self.ts[self.i];
         v.is_none_or(|vv| t.text(&self.source) == vv) && k.is_none_or(|kk| t.k == kk)
     }
-    fn identifier(&mut self) -> Result<String, ParseError> {
+    fn identifier(&mut self) -> Result<SymbolId, ParseError> {
         if self.cur_k() != TokenKind::Id {
             let token = self.cur();
             return Err(ParseError(format!(
@@ -251,7 +264,9 @@ impl Parser {
                 token.col
             )));
         }
-        Ok(self.pop(None)?.text(&self.source).to_owned())
+        let token = self.pop(None)?;
+        let text = token.text(&self.source);
+        Ok(self.ast.strings.intern(text))
     }
     fn pop(&mut self, v: Option<&str>) -> Result<ParserToken, ParseError> {
         let t = self.ts[self.i];
@@ -303,7 +318,20 @@ impl Parser {
             if self.accept(";") {
                 continue;
             }
-            ss.push(self.stat()?);
+            let statement = self.stat()?;
+            let is_return = matches!(self.ast.node(statement), Node::Return(_));
+            ss.push(statement);
+            if is_return && self.cur_v() == ";" {
+                // PUC 文法では return はブロックの最終文であり、その後に
+                // 文（空文を含む）は置けない。return 自身の任意の `;` は
+                // stat() が1つだけ消費済みなので、ここでさらに `;` が
+                // 現れる形（`return 7;;`）はロードエラー（Q16）。
+                let token = self.cur();
+                return Err(ParseError(format!(
+                    "unexpected ';' after return at {}:{}",
+                    token.line, token.col
+                )));
+            }
         }
         let id = self.ast.block(ss);
         self.mark(id, line, col, start);
@@ -321,7 +349,7 @@ impl Parser {
         if self.accept("goto") {
             let token = self.i;
             let name = self.identifier()?;
-            let id = self.ast.goto(&name);
+            let id = self.ast.goto_id(name);
             self.mark(id, line, col, start);
             self.mark_name(id, NameSite::Label, token);
             return Ok(id);
@@ -330,7 +358,7 @@ impl Parser {
             let token = self.i;
             let name = self.identifier()?;
             self.pop(Some("::"))?;
-            let id = self.ast.label(&name);
+            let id = self.ast.label_id(name);
             self.mark(id, line, col, start);
             self.mark_name(id, NameSite::Label, token);
             return Ok(id);
@@ -401,7 +429,7 @@ impl Parser {
                 self.pop(Some("do"))?;
                 let body = self.block(STOPS_END)?;
                 self.pop(Some("end"))?;
-                let id = self.ast.fornum(&name, a, b, c, body);
+                let id = self.ast.fornum_id(name, a, b, c, body);
                 self.mark(id, line, col, start);
                 for (index, token) in name_tokens.into_iter().enumerate() {
                     self.mark_name(id, NameSite::Binding(index as u32), token);
@@ -418,7 +446,7 @@ impl Parser {
             self.pop(Some("do"))?;
             let body = self.block(STOPS_END)?;
             self.pop(Some("end"))?;
-            let id = self.ast.forin(names, es, body);
+            let id = self.ast.forin_ids(names, es, body);
             self.mark(id, line, col, start);
             for (index, token) in name_tokens.into_iter().enumerate() {
                 self.mark_name(id, NameSite::Binding(index as u32), token);
@@ -437,7 +465,7 @@ impl Parser {
                 let token = self.i;
                 let name = self.identifier()?;
                 let fn_ = self.func_body()?;
-                let id = self.ast.localfunc(&name, fn_);
+                let id = self.ast.localfunc_id(name, fn_);
                 self.mark(id, line, col, start);
                 self.mark_name(id, NameSite::Binding(0), token);
                 return Ok(id);
@@ -454,7 +482,7 @@ impl Parser {
             } else {
                 Vec::new()
             };
-            let id = self.ast.local(names, es);
+            let id = self.ast.local_ids(names, es);
             self.mark(id, line, col, start);
             for (index, token) in name_tokens.into_iter().enumerate() {
                 self.mark_name(id, NameSite::Binding(index as u32), token);
@@ -486,6 +514,19 @@ impl Parser {
             vs.push(self.prefix_exp()?);
         }
         self.pop(Some("="))?;
+        // 代入先は文法上の var（名前か Index 連鎖）でなければならない。
+        // 括弧式 `(x)` や呼出し `f()` を代入先として受理すると、参照
+        // 判定が拒否する文を代替判定が通してしまう（T10）。括弧で包ま
+        // れた base への Index（`(t).x`）は正当な var であり、対象は
+        // 最外のノード形状だけで判定する。
+        for target in &vs {
+            if !matches!(self.ast.node(*target), Node::Name(_) | Node::Index(..)) {
+                return Err(ParseError(format!(
+                    "invalid assignment target at {}:{}",
+                    line, col
+                )));
+            }
+        }
         let es = self.expr_list()?;
         let id = self.ast.assign(vs, es);
         self.mark(id, line, col, start);
@@ -497,7 +538,7 @@ impl Parser {
         let start = self.cur().p;
         let token = self.i;
         let name = self.identifier()?;
-        let mut e = self.ast.name(&name);
+        let mut e = self.ast.name_id(name);
         self.mark(e, line, col, start);
         self.mark_name(e, NameSite::Reference, token);
         while self.accept(".") {
@@ -505,7 +546,7 @@ impl Parser {
             let token = self.i;
             let key_start = self.cur().p;
             let name = self.identifier()?;
-            let key = self.ast.str(quote_lua(&name));
+            let key = self.dot_key(name);
             self.mark(key, line, col, key_start);
             self.mark_name(key, NameSite::Member, token);
             e = self.ast.index(e, key, true);
@@ -515,7 +556,7 @@ impl Parser {
             let (line, col) = (self.cur().line, self.cur().col);
             let token = self.i;
             let name = self.identifier()?;
-            e = self.ast.methodname(e, &name);
+            e = self.ast.methodname_id(e, name);
             self.mark(e, line, col, start);
             self.mark_name(e, NameSite::Member, token);
         }
@@ -526,7 +567,7 @@ impl Parser {
         let (line, col) = (self.cur().line, self.cur().col);
         let start = self.cur().p;
         self.pop(Some("("))?;
-        let mut ps: Vec<String> = Vec::new();
+        let mut ps: Vec<SymbolId> = Vec::new();
         let mut parameter_tokens = Vec::new();
         let mut variadic = false;
         if !self.accept(")") {
@@ -552,7 +593,7 @@ impl Parser {
         }
         let b = self.block(STOPS_END)?;
         self.pop(Some("end"))?;
-        let id = self.ast.function(ps, variadic, b);
+        let id = self.ast.function_ids(ps, variadic, b);
         self.mark(id, line, col, start);
         for (index, token) in parameter_tokens.into_iter().enumerate() {
             self.mark_name(id, NameSite::Parameter(index as u32), token);
@@ -606,11 +647,11 @@ impl Parser {
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Num {
             self.pop(None)?;
-            left = self.ast.num(tok.text(&self.source).to_owned());
+            left = self.ast.num(tok.text(&self.source));
             self.mark(left, tok.line, tok.col, tok.p);
         } else if tok.k == TokenKind::Str {
             self.pop(None)?;
-            left = self.ast.str(tok.text(&self.source).to_owned());
+            left = self.ast.str(tok.text(&self.source));
             self.mark(left, tok.line, tok.col, tok.p);
         } else if self.accept("function") {
             left = self.func_body()?;
@@ -661,7 +702,7 @@ impl Parser {
                 let k = self.identifier()?;
                 self.pop(Some("="))?;
                 let v = self.expr()?;
-                fs.push(TableField::Name(self.ast.strings.intern(&k), v));
+                fs.push(TableField::Name(k, v));
             } else {
                 let v = self.expr()?;
                 fs.push(TableField::Arr(v));
@@ -689,7 +730,7 @@ impl Parser {
         if self.at(None, Some(TokenKind::Id)) {
             let token = self.i;
             let name = self.identifier()?;
-            e = self.ast.name(&name);
+            e = self.ast.name_id(name);
             self.mark(e, line0, col0, start);
             self.mark_name(e, NameSite::Reference, token);
         } else if self.accept("(") {
@@ -717,16 +758,16 @@ impl Parser {
                 let token = self.i;
                 let key_start = self.cur().p;
                 let name = self.identifier()?;
-                let key = self.ast.str(quote_lua(&name));
+                let key = self.dot_key(name);
                 self.mark(key, line, col, key_start);
                 self.mark_name(key, NameSite::Member, token);
                 e = self.ast.index(e, key, true);
                 self.mark(e, line, col, start);
             } else if self.accept(":") {
                 let token = self.i;
-                let method = self.identifier()?;
+                let method_sym = self.identifier()?;
                 let args = self.args()?;
-                e = self.ast.call(e, args, Some(method));
+                e = self.ast.call(e, args, Some(method_sym));
                 self.mark(e, line, col, start);
                 self.mark_name(e, NameSite::Member, token);
             } else if self.at(Some("("), None)
@@ -776,6 +817,30 @@ impl Parser {
             });
         }
         Ok(root)
+    }
+    /// ドットキー `"name"` を Str ノード化する。短い識別子（128バイト以下）は
+    /// 引用符付き形をスタックバッファ上で組み立てて Arc 化するため、
+    /// `quote_lua` の一時 String 確保が不要になる。長い識別子は従来経路へ fallback する。
+    fn dot_key(&mut self, name: SymbolId) -> NodeId {
+        let s = self.ast.strings.get(name);
+        if s.len() + 2 <= 130 {
+            let mut buf = [0u8; 130];
+            buf[0] = b'"';
+            buf[1..1 + s.len()].copy_from_slice(s.as_bytes());
+            buf[1 + s.len()] = b'"';
+            // `s` は &str のためバッファ内容は必ず有効な UTF-8 だが、万一の場合は従来経路へ
+            // fallback する（expect は repo の clippy 設定で禁止されているため使わない）。
+            match std::str::from_utf8(&buf[..s.len() + 2]) {
+                Ok(quoted) => self.ast.str(quoted),
+                Err(_) => {
+                    let quoted = quote_lua(self.ast.strings.get(name));
+                    self.ast.str(&quoted)
+                }
+            }
+        } else {
+            let quoted = quote_lua(self.ast.strings.get(name));
+            self.ast.str(&quoted)
+        }
     }
 }
 
@@ -843,10 +908,19 @@ pub fn parse_source_with_origin_positions(
     source: &str,
     track: impl FnOnce(&Ast) -> bool,
 ) -> Result<(Ast, NodeId, NodePositions), String> {
-    let (mut ast, root, positions) =
-        parse_source_with_positions(source).map_err(|error| error.to_string())?;
+    let mut parser = Parser::new_capturing_positions(source)
+        .map_err(|error| ParserError::Lex(error).to_string())?;
+    let root = parser
+        .parse()
+        .map_err(|error| ParserError::Parse(error).to_string())?;
+    // The parser already lexed the whole source into its token stream; hand
+    // those tokens to seeding instead of lexing the same text a second time.
+    let tokens = std::mem::take(&mut parser.ts);
+    let (mut ast, positions) = parser.into_ast_with_positions();
     if track(&ast) {
-        let origins = crate::provenance::ArenaOrigins::seed(&ast, &positions, name, source)?;
+        let origins = crate::provenance::ArenaOrigins::seed_with_tokens(
+            &ast, &positions, name, source, &tokens,
+        )?;
         ast.nodes.set_provenance(origins);
     }
     Ok((ast, root, positions))
@@ -1246,11 +1320,13 @@ mod conditional_origin_tests {
             "-- 雪😀\r\nfunction f(x)return x+1 end\r\n",
         ] {
             let (mut expected, root, positions) = parse_source_with_positions(source).unwrap();
-            let origin = crate::provenance::ArenaOrigins::seed(
+            let tokens = Lexer::new(source).all_borrowed().unwrap();
+            let origin = crate::provenance::ArenaOrigins::seed_with_tokens(
                 &expected,
                 &positions,
                 "original.lua",
                 source,
+                &tokens,
             )
             .unwrap();
             expected.nodes.set_provenance(origin);

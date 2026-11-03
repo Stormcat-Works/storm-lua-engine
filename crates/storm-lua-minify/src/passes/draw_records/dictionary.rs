@@ -10,15 +10,12 @@ fn emit(ast: &mut Ast, bytes: &str, dictionary: &[(char, String)]) -> NodeId {
         return value;
     }
     value = ast.push(Node::Paren(value));
+    let gsub_sym = ast.strings.intern("gsub");
     for (marker, replacement) in dictionary.iter().rev() {
         let marker = ast.push(Node::Str(quote_lua(marker.to_string()).into()));
         let replacement = replacement.replace('%', "%%");
         let replacement = ast.push(Node::Str(quote_lua(&replacement).into()));
-        value = ast.push(Node::Call(
-            value,
-            vec![marker, replacement],
-            Some("gsub".into()),
-        ));
+        value = ast.push(Node::Call(value, vec![marker, replacement], Some(gsub_sym)));
     }
     ast.push(Node::Paren(value))
 }
@@ -100,7 +97,9 @@ pub(super) fn compress_literal(ast: &mut Ast, literal: NodeId) -> bool {
         // never by searching equal strings or looking at unrelated source.
         let markers = (first..ast.nodes.len())
             .filter_map(|n| match ast.node(n as NodeId) {
-                Node::Call(_, args, Some(method)) if method == "gsub" => Some(args[0]),
+                Node::Call(_, args, Some(method)) if ast.strings.get(*method) == "gsub" => {
+                    Some(args[0])
+                }
                 _ => None,
             })
             .collect::<HashSet<_>>();

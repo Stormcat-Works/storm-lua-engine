@@ -108,6 +108,28 @@ fn immutable_fresh_reference_rejection_keeps_the_unchanged_table_origins() {
     assert_eq!(o.unknown_bytes(), 0);
 }
 #[test]
+fn immutable_blocks_without_table_bindings_stay_unchanged() {
+    // Exercises the block pre-filter: no statement binds a table literal, so
+    // every block must skip cloning/resolving without changing the output.
+    let source =
+        "local a=input.getNumber(1)+2 do output.setNumber(1,a*3) end output.setNumber(2,a)";
+    let (code, o) = run(source, flatten);
+    assert_eq!(o.unknown_bytes(), 0);
+    assert!(code.contains("output.setNumber(1,a*3)"));
+    assert!(code.contains("output.setNumber(2,a)"));
+}
+#[test]
+fn immutable_flattening_still_fires_in_nested_block() {
+    // The pre-filter is per block: a nested block holding a flattenable
+    // table must still flatten even when the top-level block has no table
+    // binding of its own.
+    let source = "local a=input.getNumber(1) do local config={value=12} output.setNumber(1,config.value) end output.setNumber(2,a)";
+    let (code, o) = run(source, flatten);
+    assert_eq!(o.unknown_bytes(), 0);
+    assert!(!code.contains("config"));
+    assert!(code.contains("output.setNumber(1,12)"));
+}
+#[test]
 fn namespace_scalar_targets_belong_to_each_original_field_not_equal_values() {
     let source="local state={first_value=7,second_value=7}function onTick()state.first_value=state.first_value+1 output.setNumber(1,state.first_value+state.second_value)end";
     let (code, o) = run(source, namespace);

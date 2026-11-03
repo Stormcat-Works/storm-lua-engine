@@ -2,6 +2,16 @@
 
 リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
 
+## v0.4.0の公開前準備
+
+v0.4.0は、正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を一つの公開候補にまとめる。全入力でMap/plain比1.2以内にする研究目標は引き続き後続版へ送る。Addonのコンパイル（最適化）サポートはv0.5.0の主題とする（2026-11-02決定）。
+
+ローカル候補は統合ブランチ`muse/perf-optimization`の先端で検証した。候補の結果と制限は[公開候補の記録](verification/release-candidate-0.4.0.md)へ集約する。公開はユーザーのgo/no-go確認とpush承認を前提とし、本節の準備だけでは公開済みにしない。
+
+互換性の注意： 最適化後Source Mapのx_storm `schemaVersion`が1から2へ変わる（承認済みの非互換変更）。描画命令ABI、Composite I/O、savedata、Source Map v3自体、Playground保存形式は維持する。方言としてロード違法なソースをコンパイル時に拒否するfail-fastが入るため、従来受理されていた違法ソースはエラーになる。
+
+公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。
+
 ## v0.3.1の公開前準備
 
 v0.3.1は、検証済みのコンパイル性能改善、入れ子条件分岐のpanic/trap修正、Addon実行修正、非短縮Addon buildとmetadata除去を一つの公開候補にまとめる。追加性能研究と全入力でのMap比1.2目標はv0.3.2以降へ送る。

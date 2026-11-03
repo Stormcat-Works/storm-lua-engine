@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use crate::pass::PassResult;
 use crate::scope_rename::measure_renamed_size;
-use storm_lua_analysis::effects::EffectAnalyzer;
+use storm_lua_analysis::effects::{empty_effects, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 use storm_lua_syntax::print::Printer;
@@ -148,8 +148,9 @@ fn inspect_block(
     let Node::Block(statements) = ast.node(block) else {
         return;
     };
+    let mut effect = empty_effects();
     for (statement_index, statement) in statements.iter().copied().enumerate() {
-        let effect = analyzer.effects_for_statement(statement);
+        analyzer.effects_for_statement_into(statement, &mut effect);
         if effect.calls || effect.ordered || is_control(ast.node(statement)) {
             continue;
         }
@@ -217,7 +218,7 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
     let copied = target.push(mapped);
     target
         .nodes
-        .derive_from(copied, &source.nodes, node, "common-offset-copy");
+        .derive_from_clone(copied, &source.nodes, node, "common-offset-copy");
     copied
 }
 
@@ -354,8 +355,9 @@ fn has_definite_overwrite(
     let Node::Block(statements) = ast.node(candidate.block) else {
         return false;
     };
+    let mut effect = empty_effects();
     for statement in statements.iter().copied().skip(candidate.statement + 1) {
-        let effect = analyzer.effects_for_statement(statement);
+        analyzer.effects_for_statement_into(statement, &mut effect);
         if effect.reads.contains(&candidate.bid) {
             break;
         }

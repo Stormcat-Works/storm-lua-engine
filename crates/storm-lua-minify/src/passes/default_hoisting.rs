@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::pass::PassResult;
 use crate::scope_rename::measure_renamed_size;
-use storm_lua_analysis::effects::EffectAnalyzer;
+use storm_lua_analysis::effects::{empty_effects, EffectAnalyzer};
 use storm_lua_analysis::resolver::resolve;
 use storm_lua_syntax::ast::{Ast, Node, NodeId};
 
@@ -58,6 +58,7 @@ fn valid_site(
         return false;
     }
     let mut targets = HashSet::new();
+    let mut effect = empty_effects();
     for default_statement in default_statements {
         let Node::Assign(vs, es) = ast.node(*default_statement) else {
             return false;
@@ -74,7 +75,7 @@ fn valid_site(
             }
         }
         for expression in es {
-            let effect = analyzer.effects_for_expr(*expression);
+            analyzer.effects_for_expr_into(*expression, &mut effect);
             if effect.calls
                 || effect.ordered
                 || effect.may_throw
@@ -88,7 +89,8 @@ fn valid_site(
     if targets.is_empty() {
         return false;
     }
-    let condition_effect = analyzer.effects_for_expr(arms[0].cond);
+    analyzer.effects_for_expr_into(arms[0].cond, &mut effect);
+    let condition_effect = &effect;
     if condition_effect.calls
         || condition_effect.ordered
         || condition_effect.may_throw
@@ -108,7 +110,7 @@ fn valid_site(
         if remaining.is_empty() {
             break;
         }
-        let effect = analyzer.effects_for_statement(*item);
+        analyzer.effects_for_statement_into(*item, &mut effect);
         if effect.calls
             || effect.ordered
             || effect.may_throw

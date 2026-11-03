@@ -39,7 +39,7 @@ if (!result.ok || result.code === undefined || result.map === undefined) {
 // Store/transfer this exact pair. A stale map must not be attached to edited code.
 const artifact = {code: result.code, map: result.map};
 const details = compiler.validateSourceMap(artifact.code, artifact.map);
-assert.equal(details.schemaVersion, 1);
+assert.equal(details.schemaVersion, 2);
 assert.equal(details.producer.version, JSON.parse(await readFile(new URL('../package.json',import.meta.resolve('@stormcat-works/storm-lua-engine/compiler')),'utf8')).version);
 const standard = JSON.parse(artifact.map); // Only inspect after the SDK's validation.
 const encoder = new TextEncoder();

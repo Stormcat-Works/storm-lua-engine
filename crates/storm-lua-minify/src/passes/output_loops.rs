@@ -6,7 +6,7 @@
 //! pass uses normalized one-letter names for its profitability check; this
 //! implementation reproduces that metric exactly.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
 use storm_lua_analysis::effects::EffectAnalyzer;
@@ -99,8 +99,8 @@ fn normalized_candidate_cost(ast: &mut Ast, values: &[NodeId]) -> usize {
     let call = ast.call(function, vec![loop_index_for_channel, lookup], None);
     let call_statement = ast.callstat(call);
     let body = ast.block(vec![call_statement]);
-    let start = ast.num("1".to_string());
-    let end = ast.num(values.len().to_string());
+    let start = ast.num("1");
+    let end = ast.num(&values.len().to_string());
     let loop_statement = ast.fornum("b", start, end, None, body);
     statement_size(ast, assignment) + statement_size(ast, loop_statement)
 }
@@ -158,8 +158,8 @@ fn build_candidate(
     let call = ast.call(calls[0].function, vec![channel, lookup], None);
     let statement = ast.callstat(call);
     let body = ast.block(vec![statement]);
-    let start = ast.num("1".to_string());
-    let end = ast.num(calls.len().to_string());
+    let start = ast.num("1");
+    let end = ast.num(&calls.len().to_string());
     let loop_statement = ast.fornum(&index_name, start, end, None, body);
     if ast.nodes.tracks_origins() {
         for id in [
@@ -198,6 +198,62 @@ fn build_candidate(
     Some(vec![assignment, loop_statement])
 }
 
+/// Conservative active-local maximum of the enclosing function for
+/// every block in the chunk, keyed by block node. The chunk itself is
+/// the outermost function (zero parameters); method definitions add
+/// their implicit `self` parameter. The synthesized numeric-for loop
+/// needs four control locals (variable + limit/step/state) at the
+/// sequence's block, so synthesis is skipped when the enclosing
+/// function is already at the VM's simultaneous-local limit.
+fn block_local_budgets(source: &Ast, root: NodeId) -> HashMap<NodeId, usize> {
+    fn walk(
+        source: &Ast,
+        node: NodeId,
+        fn_body: NodeId,
+        fn_params: usize,
+        memo: &mut HashMap<NodeId, usize>,
+        budgets: &mut HashMap<NodeId, usize>,
+    ) {
+        if matches!(source.node(node), Node::Block(_)) {
+            let max = *memo.entry(fn_body).or_insert_with(|| {
+                super::single_member_cache::max_active_locals(source, fn_params, fn_body)
+            });
+            budgets.insert(node, max);
+        }
+        match source.node(node).clone() {
+            Node::Funcstat(target, function) => {
+                walk(source, target, fn_body, fn_params, memo, budgets);
+                if let Node::Function(params, _, body) = source.node(function).clone() {
+                    let extra = usize::from(matches!(source.node(target), Node::Methodname(..)));
+                    walk(source, body, body, params.len() + extra, memo, budgets);
+                } else {
+                    walk(source, function, fn_body, fn_params, memo, budgets);
+                }
+            }
+            Node::Function(params, _, body) => {
+                walk(source, body, body, params.len(), memo, budgets);
+            }
+            _ => {
+                let mut children = Vec::new();
+                storm_lua_syntax::ast_utils::for_each_child(source, node, &mut |child| {
+                    children.push(child);
+                });
+                for child in children {
+                    walk(source, child, fn_body, fn_params, memo, budgets);
+                }
+            }
+        }
+    }
+    let mut memo = HashMap::new();
+    let mut budgets = HashMap::new();
+    walk(source, root, root, 0, &mut memo, &mut budgets);
+    budgets
+}
+
+/// Locals a synthesized numeric-for loop adds at its block: the loop
+/// variable plus the three hidden control values.
+const FORNUM_LOCALS: usize = 4;
+
 #[allow(clippy::too_many_arguments)]
 fn transform_node(
     target: &mut Ast,
@@ -206,6 +262,7 @@ fn transform_node(
     analyzer: &EffectAnalyzer<'_>,
     node: NodeId,
     trusted_tables: &HashSet<String>,
+    budgets: &HashMap<NodeId, usize>,
     sequence: &mut usize,
     synthesized: &mut usize,
 ) -> NodeId {
@@ -217,6 +274,7 @@ fn transform_node(
             analyzer,
             node,
             trusted_tables,
+            budgets,
             sequence,
             synthesized,
         );
@@ -230,6 +288,7 @@ fn transform_node(
             analyzer,
             child,
             trusted_tables,
+            budgets,
             sequence,
             synthesized,
         )
@@ -248,6 +307,7 @@ fn transform_block(
     analyzer: &EffectAnalyzer<'_>,
     block: NodeId,
     trusted_tables: &HashSet<String>,
+    budgets: &HashMap<NodeId, usize>,
     sequence: &mut usize,
     synthesized: &mut usize,
 ) -> NodeId {
@@ -264,6 +324,7 @@ fn transform_block(
                 analyzer,
                 statement,
                 trusted_tables,
+                budgets,
                 sequence,
                 synthesized,
             )
@@ -289,15 +350,21 @@ fn transform_block(
             calls.push(call);
             end += 1;
         }
-        if let Some(candidate) = build_candidate(
-            target,
-            source,
-            res,
-            analyzer,
-            &calls,
-            trusted_tables,
-            sequence,
-        ) {
+        let over_budget = budgets.get(&block).copied().unwrap_or(0) + FORNUM_LOCALS
+            > super::single_member_cache::MAX_LOCALS;
+        if let Some(candidate) = if over_budget {
+            None
+        } else {
+            build_candidate(
+                target,
+                source,
+                res,
+                analyzer,
+                &calls,
+                trusted_tables,
+                sequence,
+            )
+        } {
             output.extend(candidate);
             *synthesized += 1;
         } else {
@@ -321,6 +388,7 @@ pub fn synthesize_output_loops_with_trusted_tables(
     source.nodes = ast.nodes.clone();
     let res = resolve(&source, root);
     let analyzer = EffectAnalyzer::new(&source, &res, root, true);
+    let budgets = block_local_budgets(&source, root);
     let mut sequence = 0usize;
     let mut synthesized = 0usize;
     let out = transform_block(
@@ -330,6 +398,7 @@ pub fn synthesize_output_loops_with_trusted_tables(
         &analyzer,
         root,
         &trusted_tables,
+        &budgets,
         &mut sequence,
         &mut synthesized,
     );
@@ -381,5 +450,32 @@ mod tests {
     fn rejects_effectful_values() {
         let source = "output.setNumber(1,f())output.setNumber(2,2)output.setNumber(3,3)output.setNumber(4,4)output.setNumber(5,5)output.setNumber(6,6)";
         assert!(!output(source).contains("for __stormmin_output_index"));
+    }
+    #[test]
+    fn skips_synthesis_when_function_is_at_the_local_limit() {
+        // 197 parameters + the synthesized loop's four control locals
+        // would exceed the VM's 200 simultaneous-local limit.
+        let params = (1..=197)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let calls = (1..=8)
+            .map(|i| format!("output.setNumber({i},p{i})"))
+            .collect::<String>();
+        let source = format!("local function big({params}){calls}return p1 end");
+        assert!(!output(&source).contains("__stormmin_output_index"));
+    }
+
+    #[test]
+    fn synthesizes_below_the_local_limit() {
+        let params = (1..=196)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let calls = (1..=8)
+            .map(|i| format!("output.setNumber({i},p{i})"))
+            .collect::<String>();
+        let source = format!("local function big({params}){calls}return p1 end");
+        assert!(output(&source).contains("__stormmin_output_index"));
     }
 }

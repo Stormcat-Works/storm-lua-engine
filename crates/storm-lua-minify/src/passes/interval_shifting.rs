@@ -29,9 +29,11 @@ fn clone_subtree(target: &mut Ast, source: &Ast, node: NodeId) -> NodeId {
         clone_subtree(target, source, child)
     });
     let copied = target.push(mapped);
+    // Pure clone: only child IDs may differ, so share the source origin slot
+    // instead of recording a rewrite reason per node.
     target
         .nodes
-        .derive_from(copied, &source.nodes, node, "interval-origin-copy");
+        .derive_from_clone(copied, &source.nodes, node, "interval-origin-copy");
     copied
 }
 
@@ -220,7 +222,7 @@ fn apply_candidate(source: &Ast, candidate: &Candidate) -> Ast {
     let assignment = ast.assign(vec![assign_target], vec![shifted]);
 
     let lower_for_zero = ast.name(&candidate.name);
-    let zero = ast.num("0".to_string());
+    let zero = ast.num("0");
     let first = ast.bin(">=", lower_for_zero, zero);
     let lower_for_width = ast.name(&candidate.name);
     let width = clone_subtree(&mut ast, source, candidate.width);

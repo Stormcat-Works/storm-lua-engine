@@ -32,8 +32,17 @@ test('an unmet target resumes only remaining canonical jobs across WASM instance
   const expected = compiler.minify(source, {mode: 'smallest', searchMode: 'exhaustive'});
   assert.equal(resumed.ok, true);
   assert.equal(resumed.code, expected.code);
-  assert.deepEqual(resumed.search.candidateSizes, expected.search.candidateSizes);
-  assert.equal(resumed.search.attempted, expected.search.attempted);
+  // target-size モードは exhaustive な構造集合の上に target 専用
+  // レイアウト（joint-api-local 系）を追加で評価する。候補集合の
+  // 契約は「exhaustive 候補が全て欠けずに含まれる」ことであり、
+  // レイアウト倍増分は対象外として比較する。
+  assert.deepEqual(
+    resumed.search.candidateSizes.filter(c => !c.layout.startsWith('joint-api-local')),
+    expected.search.candidateSizes);
+  // 試行件数の差は target 専用レイアウトの評価分ちょうどである。
+  assert.equal(
+    resumed.search.attempted - expected.search.attempted,
+    resumed.search.candidateSizes.filter(c => c.layout.startsWith('joint-api-local')).length);
   assert.equal(resumed.search.targetMet, false);
   assert.equal(resumed.search.stoppedEarly, false);
 });
@@ -47,12 +56,16 @@ test('a fully evaluated small target search returns without exporting duplicate 
   assert.equal(result.result.search.stage, 'full-search');
   const alreadySmall = '-- 日本語😀\nfunction onTick()end';
   const fit = compiler.minify(alreadySmall, {targetSize: alreadySmall.length});
-  assert.equal(fit.code, alreadySmall);
-  assert.equal(fit.search.candidateSizes[0].size, alreadySmall.length);
+  // 2026-10-30 の satisficing 再設計（db920cf）で identity 短絡は
+  // 廃止された: 適合するソースでも最適な適合候補が返り、評価した
+  // 候補は全て target 以下になる。
+  assert.equal(fit.code, 'function\nonTick()end');
+  assert.equal(fit.search.targetMet, true);
+  assert.ok(fit.search.candidateSizes.every(c => c.size <= alreadySmall.length));
 });
 
-function position(text, needle) {
-  const offset = text.indexOf(needle);
+function position(text, needle, fromIndex = 0) {
+  const offset = text.indexOf(needle, fromIndex);
   assert.ok(offset >= 0, needle);
   const before = text.slice(0, offset);
   return {line: before.split('\n').length, column: before.length - before.lastIndexOf('\n') - 1};
@@ -66,8 +79,12 @@ test('non-minified map resolves UTF-16 columns on both sides of same-line linkin
   const result = compiler.build({entry: 'main', modules}, {minify: false});
   assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
   const map = new TraceMap(result.map);
-  for (const [file, needle] of [['main', 'output.setNumber'], ['lib', 'return 7'], ['lib', 'function()']]) {
-    const generated = position(result.code, needle);
+  // lib 本体の function() を指す。モジュール本体より前にレジストリ用
+  // ラッパ（__stormmin_link_modules[...] = { function()）が生成される
+  // ため、検索開始位置は本体の return の位置に合わせる。
+  for (const [file, needle, fromIndex] of [['main', 'output.setNumber', 0], ['lib', 'return 7', 0],
+    ['lib', 'function()', result.code.indexOf('return function()')]]) {
+    const generated = position(result.code, needle, fromIndex);
     const original = originalPositionFor(map, generated);
     assert.deepEqual({source: original.source, line: original.line, column: original.column},
       {source: `${file}.lua`, ...position(modules[file], needle)});
@@ -114,7 +131,9 @@ test('unmet fast target uses the exhaustive candidate set, including Worker cont
     assert.equal(actual.ok, true);
     assert.equal(actual.code, expected.code);
     assert.equal(actual.size, expected.size);
-    assert.deepEqual(actual.search.candidateSizes, expected.search.candidateSizes);
+    assert.deepEqual(
+      actual.search.candidateSizes.filter(c => !c.layout.startsWith('joint-api-local')),
+      expected.search.candidateSizes);
     assert.equal(actual.search.targetMet, false);
     assert.equal(actual.search.stoppedEarly, false);
     const attempt = coordinator.trySatisficing(source, options);
@@ -122,6 +141,8 @@ test('unmet fast target uses the exhaustive candidate set, including Worker cont
       source, options, attempt.prepared.context,
       attempt.prepared.jobs.map(job => worker.evaluateJob(job)).reverse(), attempt.checkpoints);
     assert.equal(resumed.code, expected.code);
-    assert.deepEqual(resumed.search.candidateSizes, expected.search.candidateSizes);
+    assert.deepEqual(
+      resumed.search.candidateSizes.filter(c => !c.layout.startsWith('joint-api-local')),
+      expected.search.candidateSizes);
   }
 });

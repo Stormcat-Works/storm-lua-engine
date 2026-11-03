@@ -345,7 +345,8 @@ mod tests {
     fn shared_decoder_separates_generated_code_from_encoded_source_values() {
         let source = source();
         let (mut ast, root) = parse_source_with_origins("drawing.lua", &source).unwrap();
-        assert!(super::super::shared::synthesize(&mut ast, root, false) > 0);
+        let input = super::super::SharedInput::from_input(ast.clone(), root);
+        assert!(super::super::shared::synthesize(&mut ast, root, false, &input) > 0);
         let (code, origins) = print(&ast, root);
         assert_eq!(origins.unknown_bytes(), 0);
         let payloads = origins
@@ -389,7 +390,8 @@ mod tests {
             .unwrap();
         let old = ast.nodes[id].clone();
         ast.nodes[id] = old;
-        assert!(super::super::shared::synthesize(&mut ast, root, false) > 0);
+        let input = super::super::SharedInput::from_input(ast.clone(), root);
+        assert!(super::super::shared::synthesize(&mut ast, root, false, &input) > 0);
         let (code, origins) = print(&ast, root);
         assert!(origins.unknown_bytes() > 0);
         let printed = Printer::new(&ast, false).output_with_positions(root);
@@ -413,7 +415,8 @@ mod tests {
     fn source_definition_constants_survive_forwarding_wrapper_normalization() {
         let source=format!("function rect(x,y,w,h)screen.drawRectF(x,y,w,h)end function narrow(x,y,w)rect(x,y,w,2)end function onDraw(){}end",(0..96).map(|i|format!("narrow({},{},{}) ",(i*7)%127,(i*11)%61,1+i%3)).collect::<String>());
         let (mut ast, root) = parse_source_with_origins("wrapper.lua", &source).unwrap();
-        assert!(super::super::shared::synthesize(&mut ast, root, false) > 0);
+        let input = super::super::SharedInput::from_input(ast.clone(), root);
+        assert!(super::super::shared::synthesize(&mut ast, root, false, &input) > 0);
         let (code, origins) = print(&ast, root);
         assert_eq!(origins.unknown_bytes(), 0);
         let fixed = source.find("w,2)").unwrap() + 2;
@@ -429,7 +432,8 @@ mod tests {
     fn helper_source_map_roundtrip_does_not_turn_synthetic_into_source() {
         let source = source();
         let (mut ast, root) = parse_source_with_origins("data.lua", &source).unwrap();
-        assert!(super::super::shared::synthesize(&mut ast, root, false) > 0);
+        let input = super::super::SharedInput::from_input(ast.clone(), root);
+        assert!(super::super::shared::synthesize(&mut ast, root, false, &input) > 0);
         let (code, origins) = print(&ast, root);
         let decoded: GeneratedOrigins =
             serde_json::from_slice(&serde_json::to_vec(&origins).unwrap()).unwrap();
@@ -442,9 +446,11 @@ mod tests {
         let source = source();
         let (mut tracked, root) = parse_source_with_origins("code.lua", &source).unwrap();
         let (mut plain, plain_root) = storm_lua_syntax::parse_source(&source).unwrap();
+        let tracked_input = super::super::SharedInput::from_input(tracked.clone(), root);
+        let plain_input = super::super::SharedInput::from_input(plain.clone(), plain_root);
         assert_eq!(
-            super::super::shared::synthesize(&mut tracked, root, false),
-            super::super::shared::synthesize(&mut plain, plain_root, false)
+            super::super::shared::synthesize(&mut tracked, root, false, &tracked_input),
+            super::super::shared::synthesize(&mut plain, plain_root, false, &plain_input)
         );
         assert!(tracked == plain);
         assert_eq!(root, plain_root);

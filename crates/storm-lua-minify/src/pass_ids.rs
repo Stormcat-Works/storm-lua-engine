@@ -4,7 +4,7 @@
 //! 最終 TypeScript 配列は migration snapshot test でのみ参照する。
 
 // Emit the public ordered registry and the constant-string membership match
-// from the same literals. This avoids scanning all 67 IDs for every runtime
+// from the same literals. This avoids scanning all 71 IDs for every runtime
 // pass-enable check or metadata field, without maintaining another registry.
 macro_rules! optimization_pass_ids {
     ($($index:literal => $id:literal),+ $(,)?) => {
@@ -89,6 +89,12 @@ optimization_pass_ids! {
    64 => "repeated-draw-sequence-outlining",
    65 => "adjacent-local-declaration-packing",
    66 => "conditional-return-lowering",
+   67 => "redundant-output-store-elimination",
+   68 => "negated-comparison-inversion",
+   69 => "exact-string-literal-pooling",
+   70 => "pure-call-carrier-synthesis",
+   71 => "redundant-setcolor-elimination",
+   72 => "straightline-arithmetic-cse",
 }
 
 /// パス ID の型。文字列リテラルを直接使う。
@@ -137,6 +143,10 @@ pub const PASS_RECORD_NAMES: &[(&str, &str)] = &[
     (
         "exact-numeric-literal-pooling",
         "exact numeric literal pooling",
+    ),
+    (
+        "exact-string-literal-pooling",
+        "exact string literal pooling",
     ),
     ("closed-table-field-renaming", "closed table field renaming"),
     (
@@ -232,6 +242,10 @@ pub const PASS_RECORD_NAMES: &[(&str, &str)] = &[
         "ordered-screen-call-factoring",
         "ordered screen-call factoring",
     ),
+    (
+        "redundant-setcolor-elimination",
+        "redundant setColor elimination",
+    ),
     ("binding-unit-rescaling", "numeric binding unit rescaling"),
     ("interval-origin-shifting", "interval origin shifting"),
     (
@@ -244,6 +258,7 @@ pub const PASS_RECORD_NAMES: &[(&str, &str)] = &[
         "numeric-literal-approximation",
         "aggressive numeric literal approximation",
     ),
+    ("pure-call-carrier-synthesis", "pure call carrier synthesis"),
 ];
 
 /// `PASS_RECORD_NAMES` の逆引き（表示名 → id）。同じ名前が複数回登場すること
@@ -297,7 +312,7 @@ mod direct_membership_tests {
     use super::*;
     #[test]
     fn membership_matches_ordered_registry_for_exact_names_and_invalid_variants() {
-        assert_eq!(OPTIMIZATION_PASS_IDS.len(), 67);
+        assert_eq!(OPTIMIZATION_PASS_IDS.len(), 73);
         for (index, &id) in OPTIMIZATION_PASS_IDS.iter().enumerate() {
             assert!(is_valid_pass_id(id));
             assert_eq!(pass_index(id), Some(index));

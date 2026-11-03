@@ -10,9 +10,9 @@ use crate::config::{pass_enabled, NumericTolerance as ConfigTolerance, PassRecor
 use crate::pass::{PassResult, TraceEntry};
 use crate::pass_ids::PassToggles;
 use crate::passes;
-use storm_lua_syntax::ast::{Ast, Node, NodeId};
+use storm_lua_syntax::ast::{Ast, NodeId};
 use storm_lua_syntax::print::Printer;
-use storm_lua_syntax::size::measure_size;
+use storm_lua_syntax::size::{measure_size, measure_size_with_empty_if_check};
 
 fn folding_tolerance(t: Option<ConfigTolerance>) -> passes::literal_folding::NumericTolerance {
     let t = crate::config::resolve_folding_tolerance(t);
@@ -32,15 +32,6 @@ fn measured_size(ast: &Ast, root: NodeId, toggles: &PassToggles) -> usize {
     } else {
         measure_size(ast, root)
     }
-}
-
-fn assert_no_empty_if(ast: &Ast, root: NodeId, name: &str) {
-    storm_lua_syntax::ast_utils::walk(ast, root, &mut |id| {
-        assert!(
-            !matches!(ast.node(id), Node::If(arms, _) if arms.is_empty()),
-            "invalid empty if after {name}"
-        );
-    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -68,10 +59,12 @@ fn apply<F>(
     let result = f(ast, *root);
     let elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0;
     *root = result.root;
-    assert_no_empty_if(ast, *root, name);
     // Unlike TS object identity, a Rust NodeId can stay equal while its arena
     // slot changes in-place; always measuring is required for correctness.
-    let after = measure_size(ast, *root);
+    // 空 if の不変条件検査はサイズ計測の走査に同乗させる（旧実装は walk に
+    // よる独立した全木走査で検査していた。計測値・panics の文言は同一）。
+    let (after, has_empty_if) = measure_size_with_empty_if_check(ast, *root);
+    assert!(!has_empty_if, "invalid empty if after {name}");
     let saved = result
         .saved
         .map(|v| v as i64)
@@ -364,6 +357,11 @@ pub fn core_optimize_with_round_limit(
             )
         };
     }
+    final_ap!(
+        "redundant-setcolor-elimination",
+        "redundant setColor elimination",
+        |a, r| passes::screen_setcolor::eliminate_redundant_setcolors(a, r)
+    );
     final_ap!(
         "ordered-screen-call-factoring",
         "ordered screen-call factoring",

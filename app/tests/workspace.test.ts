@@ -31,7 +31,7 @@ test('CLI emits explanation maps, inspects artifact bytes and validates workspac
  try{
   const source=join(dir,'input.lua');await writeFile(source,'function onTick()output.setNumber(1,2*3)end');
   const result=cli(['minify',source,'--source-map']);assert.equal(result.status,0,result.stderr);const compiled=JSON.parse(result.stdout);
-  assert.equal(compiled.ok,true);assert.equal(typeof compiled.map,'string');assert.equal(JSON.parse(compiled.map).x_storm.schemaVersion,1);
+  assert.equal(compiled.ok,true);assert.equal(typeof compiled.map,'string');assert.equal(JSON.parse(compiled.map).x_storm.schemaVersion,2);
   const bundle={kind:'storm-lua-artifact',version:1,code:compiled.code,map:compiled.map},artifactFile=join(dir,'artifact.json');
   await writeFile(artifactFile,JSON.stringify(bundle));const inspect=cli(['map-inspect',artifactFile,String(compiled.code.indexOf('6'))]);
   assert.equal(inspect.status,0,inspect.stderr);const inspected=JSON.parse(inspect.stdout);assert.equal(inspected.kind,'map-inspection');assert.ok(inspected.hits.length>0);

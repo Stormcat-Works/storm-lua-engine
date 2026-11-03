@@ -108,7 +108,7 @@ fn make_quotient_assignment(
         .all(|&id| ast.nodes.has_origin(id))
         .then(|| ast.nodes.capture_origin(divisor_sources[0]))
         .flatten();
-    let divisor_node = ast.num(short_num(divisor));
+    let divisor_node = ast.num(&short_num(divisor));
     ast.nodes
         .finish_rewrite(divisor_node, literal, "quotient-chain-divisor");
     for &source in &divisor_sources[1..] {

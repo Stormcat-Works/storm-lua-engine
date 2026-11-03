@@ -74,7 +74,7 @@ fn rewrite_node_inner(
                 return node;
             };
             *replaced += 1;
-            target.num(short_num(*value))
+            target.num(&short_num(*value))
         }
         "property.getBool" => {
             let Some(value) = config.bools.as_ref().and_then(|values| values.get(&key)) else {
@@ -88,7 +88,7 @@ fn rewrite_node_inner(
                 return node;
             };
             *replaced += 1;
-            target.str(quote_lua(value))
+            target.str(&quote_lua(value))
         }
         _ => node,
     }

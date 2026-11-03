@@ -120,7 +120,8 @@ pub(super) fn emit_helper_recording(
                     let lookup = ast.push(Node::Index(d, at, false));
                     let d = name(ast, symbol);
                     let at = num(ast, 1);
-                    let byte = ast.push(Node::Call(d, vec![at], Some("byte".into())));
+                    let byte_sym = ast.strings.intern("byte");
+                    let byte = ast.push(Node::Call(d, vec![at], Some(byte_sym)));
                     let decoded = offset(ast, byte, low - 35);
                     let uses = shape
                         .args
@@ -189,7 +190,8 @@ pub(super) fn emit_helper_recording(
             let end_i = name(ast, index);
             let end = offset(ast, end_i, *width as i64 - 1);
             let args = if *width == 1 { vec![i] } else { vec![i, end] };
-            let bytes = ast.push(Node::Call(d, args, Some("byte".into())));
+            let byte_sym = ast.strings.intern("byte");
+            let bytes = ast.push(Node::Call(d, args, Some(byte_sym)));
             // Wide rows can use more encoded bytes than logical columns.
             let raw = (0..*width)
                 .map(|n| ast.strings.intern(&format!("__draw_b_{serial}_{n}")))
@@ -216,7 +218,8 @@ pub(super) fn emit_helper_recording(
             } else {
                 vec![i, end]
             };
-            let bytes = ast.push(Node::Call(d, args, Some("byte".into())));
+            let byte_sym = ast.strings.intern("byte");
+            let bytes = ast.push(Node::Call(d, args, Some(byte_sym)));
             body.push(ast.push(Node::Local(vars.clone(), vec![bytes])));
         }
     }
@@ -248,7 +251,8 @@ pub(super) fn emit_helper_recording(
                     let table = name(ast, symbol);
                     let index = column_value(ast, &shape.codec, *col, value_vars, packed);
                     if let Some(bias) = byte_bias {
-                        let byte = ast.push(Node::Call(table, vec![index], Some("byte".into())));
+                        let byte_sym = ast.strings.intern("byte");
+                        let byte = ast.push(Node::Call(table, vec![index], Some(byte_sym)));
                         offset(ast, byte, bias)
                     } else {
                         ast.push(Node::Index(table, index, false))
@@ -325,11 +329,39 @@ pub(super) fn emit_helper_recording(
     let f = ast.push(Node::Function(params, false, block));
     ast.push(Node::Localfunc(symbol, f))
 }
+static HELPER_COST_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<Shape, usize>>,
+> = std::sync::OnceLock::new();
+
 pub(super) fn helper_cost(shape: &Shape) -> usize {
+    let cache =
+        HELPER_COST_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Some(&cost) = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(shape)
+    {
+        return cost;
+    }
+    let cost = helper_cost_uncached(shape);
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cache.len() >= 65536 {
+        cache.clear();
+    }
+    cache.insert(shape.clone(), cost);
+    cost
+}
+
+fn helper_cost_uncached(shape: &Shape) -> usize {
     let mut ast = Ast::new();
     let symbol = ast.strings.intern("helper");
     let declaration = emit_helper(&mut ast, shape, symbol, 0);
     let root = ast.push(Node::Block(vec![declaration]));
-    let renamed = scope_rename_fast(&ast, root);
-    measure_size(&renamed.ast, renamed.root)
+    // Only the renamed size is needed here, so measure it directly
+    // instead of building the renamed AST first. This shares
+    // rename_plan with scope_rename_fast and applies the same name
+    // replacements, so the value is unchanged.
+    measure_renamed_size(&ast, root)
 }

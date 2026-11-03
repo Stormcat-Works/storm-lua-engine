@@ -523,6 +523,10 @@ pub fn decode_lua_string(raw: &str) -> Option<String> {
 }
 
 /// JSON.stringify(s) 相当（文字列のみ）。printer の qstr で使う。
+/// ただし制御文字は JSON の \uXXXX ではなく Lua で有効な形で出す。
+/// \uXXXX（括弧なし）は Lua では無効で、エンジン自身のパーサにも
+/// 拒否されるため、double-quoted 勝者がそれを含むと候補検証で全滅し
+/// コンパイル全体が失敗する。
 fn json_stringify(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -535,8 +539,12 @@ fn json_stringify(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            // \a / \v は 2 文字。その他の C0 はちょうど 3 桁の 10 進
+            // エスケープ（4 文字。3 桁は後続の数字を吸収しない）。
+            '\u{0007}' => out.push_str("\\a"),
+            '\u{000B}' => out.push_str("\\v"),
             c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
+                out.push_str(&format!("\\{:03}", c as u32));
             }
             c => out.push(c),
         }
@@ -587,6 +595,185 @@ pub fn quote_lua(s: impl AsRef<[u8]>) -> String {
 /// どちらでも同値になる。
 pub fn qstr(raw: &str) -> String {
     render_quoted(raw).into_owned()
+}
+
+/// Length of `qstr(raw)` without building the quoted string. This is
+/// exactly the `qstr_shape` length used by the size model, so callers
+/// that only need a cost can avoid constructing a quoted string and
+/// (in the caller) a fresh AST around it.
+pub fn qstr_len(raw: &str) -> usize {
+    qstr_shape(raw).0
+}
+
+/// Length of `qstr_len(&quote_lua(bytes))` without building the quoted
+/// string or decoding it back. This is the size the size model assigns
+/// to a string node whose raw text is the `quote_lua` rendering of
+/// exactly these bytes.
+///
+/// When `bytes` is valid UTF-8, decoding that rendering returns the
+/// bytes unchanged: `string_bytes` inverts every escape `quote_lua`
+/// emits byte-for-byte (the decimal escape is always three digits, so
+/// it cannot absorb a following digit), so the shape is the one
+/// `qstr_shape_with_long_overhead` computes from the value itself.
+/// When `bytes` is not valid UTF-8 the decode fails and the shape
+/// falls back to rendering, which reproduces the `quote_lua` literal
+/// itself, so the length is the literal's own length.
+pub fn quoted_bytes_len(bytes: &[u8]) -> usize {
+    match std::str::from_utf8(bytes) {
+        Ok(value) => {
+            let (quoted_len, _) = quote_shape(value);
+            match shorter_long_bracket_shape(value, quoted_len, 0) {
+                Some((long_len, _)) => long_len,
+                None => quoted_len,
+            }
+        }
+        Err(_) => quote_lua_len(bytes),
+    }
+}
+
+/// Aggregates of a byte string over the printable range `35..=126` that
+/// determine the length [`quoted_bytes_len`] assigns to it, accumulated
+/// without building the string.
+///
+/// In this range the rendered length depends on the bytes only through
+/// their count, the count of backslashes (byte 92), and the set of
+/// long-bracket levels blocked by `]`/`=` patterns: `quote_shape`'s
+/// double-quoted candidate is `len + 2 + #92` and always wins (the
+/// single-quoted candidate additionally counts byte 39, and no byte in
+/// the range needs a control escape), while
+/// `shorter_long_bracket_shape` picks the first unblocked level whose
+/// `len + 4 + 2 * level` beats the quoted length. Bytes at the start
+/// (`\n`) or anywhere (`\r`) that would suppress the long form cannot
+/// occur in the range.
+///
+/// The caller must push only bytes in `35..=126`; the draw-record
+/// codec byte generators are the intended source, and every byte they
+/// emit is a base-92 or 6-bit digit offset by 35, or a biased value
+/// offset by 35 out of a range bounded by construction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrintableFeatures {
+    len: usize,
+    backslashes: usize,
+    /// Bit `k` is set when level `k` is blocked: the byte string
+    /// contains `]` followed by exactly `k` `=` bytes and a closing
+    /// `]`. (The end-of-string form of the block is folded in at query
+    /// time from `pending`.)
+    blocked: u64,
+    /// A block exists at some level >= 64.
+    blocked_high: bool,
+    /// When the suffix since the last `]` consists solely of `=` bytes,
+    /// their count: a later `]` turns the suffix into a substring block
+    /// of that level, and at the end of the string it is itself a
+    /// suffix block of that level.
+    pending: Option<usize>,
+}
+
+impl PrintableFeatures {
+    /// An empty aggregate: no bytes pushed yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push one byte of the string (in `35..=126`, per the type
+    /// contract) into the aggregates.
+    pub fn push(&mut self, byte: u8) {
+        self.len += 1;
+        if byte == b'\\' {
+            self.backslashes += 1;
+        }
+        match byte {
+            b']' => {
+                if let Some(k) = self.pending.take() {
+                    self.block(k);
+                }
+                self.pending = Some(0);
+            }
+            b'=' => {
+                if let Some(k) = &mut self.pending {
+                    *k += 1;
+                }
+            }
+            _ => self.pending = None,
+        }
+    }
+
+    fn block(&mut self, level: usize) {
+        if level < 64 {
+            self.blocked |= 1u64 << level;
+        } else {
+            self.blocked_high = true;
+        }
+    }
+
+    /// Total byte count pushed.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether nothing has been pushed.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The length `quoted_bytes_len` returns for the pushed byte
+    /// string, or `None` when the aggregates cannot determine it: that
+    /// needs all 64 tracked levels blocked plus a block at a higher
+    /// level, which only a byte string containing at least 65 distinct
+    /// `]`/`=` bracket patterns can produce. Callers fall back to
+    /// building the string and measuring it directly in that case.
+    pub fn quoted_len(&self) -> Option<usize> {
+        let quoted = self.len + 2 + self.backslashes;
+        if self.len + 4 >= quoted {
+            return Some(quoted);
+        }
+        let mut blocked = self.blocked;
+        let mut blocked_high = self.blocked_high;
+        if let Some(t) = self.pending {
+            if t < 64 {
+                blocked |= 1u64 << t;
+            } else {
+                blocked_high = true;
+            }
+        }
+        let level = if blocked != u64::MAX {
+            blocked.trailing_ones() as usize
+        } else if !blocked_high {
+            64
+        } else {
+            return None;
+        };
+        let long = self.len + 4 + 2 * level;
+        Some(if long < quoted { long } else { quoted })
+    }
+}
+
+/// Length of `quote_lua(bytes)`, counted with the same scan: each
+/// valid UTF-8 run contributes its escaped character lengths and each
+/// invalid byte contributes the four bytes of its decimal escape.
+fn quote_lua_len(bytes: &[u8]) -> usize {
+    let mut len = 2;
+    let mut remaining = bytes;
+    while !remaining.is_empty() {
+        let valid = match std::str::from_utf8(remaining) {
+            Ok(text) => text.len(),
+            Err(error) => error.valid_up_to(),
+        };
+        // The validated prefix is valid UTF-8 by construction.
+        if let Ok(text) = std::str::from_utf8(&remaining[..valid]) {
+            for c in text.chars() {
+                len += match c {
+                    '"' | '\\' | '\n' | '\r' => 2,
+                    c => c.len_utf8(),
+                };
+            }
+        }
+        remaining = &remaining[valid..];
+        if !remaining.is_empty() {
+            len += 4;
+            remaining = &remaining[1..];
+        }
+    }
+    len
 }
 
 /// Borrow a canonical, unescaped double-quoted literal until the caller actually
@@ -679,8 +866,10 @@ fn quote_shape(value: &str) -> (usize, char) {
     let mut single = double;
     for b in value.bytes() {
         double += match b {
-            b'"' | b'\\' | 8 | 12 | b'\n' | b'\r' | b'\t' => 1,
-            0..=31 => 5,
+            // \a / \v / \b / \f / \n / \r / \t / \" / \\ は 2 文字（+1）。
+            b'"' | b'\\' | 7 | 8 | 11 | 12 | b'\n' | b'\r' | b'\t' => 1,
+            // その他の C0 は 3 桁の 10 進エスケープ（4 文字、+3）。
+            0..=31 => 3,
             _ => 0,
         };
         single += usize::from(matches!(b, b'\\' | b'\'' | b'\n' | b'\r'));
@@ -860,6 +1049,12 @@ mod tests {
         // U+2028/2029: どちらも 3 バイト（utf-8）+ クォート 2 = 5 バイトで同長 → JSON 形
         assert_eq!(qstr("\"\u{2028}\""), "\"\u{2028}\"");
         assert_eq!(qstr("\"\u{2029}\""), "\"\u{2029}\"");
+        // double-quoted 形が勝つ場合（引用符が多く long bracket が使えない。
+        // \r を含むため long bracket は除外される）も Lua で有効でなければ
+        // ならない。旧実装は \uXXXX を出し、自身のパーサに拒否されて
+        // 候補検証で全滅しコンパイル全体が失敗した。
+        assert_eq!(qstr("\"''''''''''\\001\\r\""), "\"''''''''''\\001\\r\"");
+        assert_eq!(qstr("\"''''''''''\\007\\r\""), "\"''''''''''\\a\\r\"");
     }
 
     // Keep a structurally independent candidate builder here so a shared
@@ -907,6 +1102,219 @@ mod tests {
         assert_eq!(length, expected.len(), "raw string: {raw:?}");
         assert_eq!(Some(first), expected.chars().next());
         assert_eq!(Some(last), expected.chars().next_back());
+    }
+
+    fn assert_quoted_bytes_len(bytes: &[u8]) {
+        assert_eq!(
+            quoted_bytes_len(bytes),
+            qstr_len(&quote_lua(bytes)),
+            "byte payload: {bytes:?}"
+        );
+    }
+
+    #[test]
+    fn quoted_bytes_len_matches_composition_exhaustive_small() {
+        assert_quoted_bytes_len(b"");
+        for a in 0u16..=255 {
+            assert_quoted_bytes_len(&[a as u8]);
+            for b in 0u16..=255 {
+                assert_quoted_bytes_len(&[a as u8, b as u8]);
+            }
+        }
+        // Length three over the bytes that stress each branch: control
+        // characters, the quote and backslash, long-bracket delimiters
+        // and UTF-8 lead/continuation boundaries.
+        let alphabet: &[u8] = &[
+            0, 1, 7, 8, 9, 10, 11, 12, 13, 14, 31, 32, b'"', b'\'', b'\\', b']', b'=', b'[', b'a',
+            b'0', 0x7f, 0x80, 0x9f, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xa9, 0xe0, 0xe2, 0x82, 0xac,
+            0xed, 0xa0, 0xf0, 0x9f, 0x98, 0xff,
+        ];
+        for &a in alphabet {
+            for &b in alphabet {
+                for &c in alphabet {
+                    assert_quoted_bytes_len(&[a, b, c]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quoted_bytes_len_matches_composition_generated() {
+        // Deterministic xorshift generation: uniform bytes (mostly
+        // invalid UTF-8), valid text with specials, and bracket
+        // fragments that stress the long-bracket level search.
+        let mut state = 0x2545_f491u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for _ in 0..2048 {
+            let len = (next() % 49) as usize;
+            let bytes: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+            assert_quoted_bytes_len(&bytes);
+        }
+        let chars: &[char] = &[
+            'a', 'Z', '0', '"', '\'', '\\', ']', '[', '=', '\n', '\r', '\t', '\u{0}', '\u{7}',
+            '\u{b}', '\u{1b}', '\u{7f}', '\u{80}', '\u{9f}', 'é', '雪', '😀', '\u{2028}',
+        ];
+        for _ in 0..2048 {
+            let len = (next() % 49) as usize;
+            let mut text = String::new();
+            for _ in 0..len {
+                text.push(chars[next() as usize % chars.len()]);
+            }
+            assert_quoted_bytes_len(text.as_bytes());
+        }
+        let fragments: &[&str] = &[
+            "", "]", "]]", "]=", "]=]", "]==]", "===", "a", "\n", "\r", "\"", "\\", "]]]]", "[[",
+            "abc",
+        ];
+        for _ in 0..1024 {
+            let mut text = String::new();
+            for _ in 0..(next() % 9) {
+                text.push_str(fragments[next() as usize % fragments.len()]);
+            }
+            assert_quoted_bytes_len(text.as_bytes());
+        }
+        // Long quote-heavy values where the long-bracket form wins,
+        // with embedded closers that force delimiter levels up.
+        for value in [
+            "\"".repeat(64),
+            "\\".repeat(100),
+            "\"a]\"b]]\"c]=]\"".repeat(8),
+            "x".repeat(300),
+            "\n".repeat(3),
+            "\r".repeat(3),
+            "a\rb".repeat(20),
+        ] {
+            assert_quoted_bytes_len(value.as_bytes());
+        }
+    }
+
+    fn quoted_bytes_len_features_match(bytes: &[u8]) -> PrintableFeatures {
+        let mut features = PrintableFeatures::new();
+        for &b in bytes {
+            features.push(b);
+        }
+        assert_eq!(features.len(), bytes.len());
+        features
+    }
+
+    #[test]
+    fn printable_features_match_quoted_bytes_len_exhaustive_small() {
+        // Every string up to length 4 over an alphabet containing all
+        // the bytes the rendered length can depend on: a plain byte,
+        // the single-quote byte (39), the pattern bytes (61, 93), the
+        // escape byte (92), and the top of the range.
+        let alphabet = [35u8, 39, 61, 92, 93, 126];
+        let mut current: Vec<u8> = Vec::new();
+        assert_eq!(
+            quoted_bytes_len_features_match(&[]).quoted_len(),
+            Some(quoted_bytes_len(&[]))
+        );
+        for len in 1..=4usize {
+            for mut n in 0..alphabet.len().pow(len as u32) {
+                current.clear();
+                for _ in 0..len {
+                    current.push(alphabet[n % alphabet.len()]);
+                    n /= alphabet.len();
+                }
+                assert_eq!(
+                    quoted_bytes_len_features_match(&current).quoted_len(),
+                    Some(quoted_bytes_len(&current)),
+                    "features mismatch for {current:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn printable_features_match_quoted_bytes_len_generated() {
+        // Deterministic xorshift strings over the full printable
+        // range, long enough for long-bracket forms to win when
+        // backslashes and bracket patterns pile up.
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for case in 0..512 {
+            let len = (next() % 700) as usize;
+            let backslash_heavy = case % 3 == 0;
+            let bytes: Vec<u8> = (0..len)
+                .map(|_| {
+                    let r = next();
+                    if backslash_heavy && r % 4 == 0 {
+                        92
+                    } else if r % 5 == 0 {
+                        [61u8, 93][(r >> 8) as usize % 2]
+                    } else {
+                        35 + (r % 92) as u8
+                    }
+                })
+                .collect();
+            assert_eq!(
+                quoted_bytes_len_features_match(&bytes).quoted_len(),
+                Some(quoted_bytes_len(&bytes)),
+                "features mismatch in generated case {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn printable_features_undetermined_only_past_64_blocked_levels() {
+        // Block every level 0..=64 with its own `]=^k]` pattern, with
+        // enough backslashes for long brackets to matter: the tracked
+        // aggregates can no longer determine the first free level.
+        let mut bytes = Vec::new();
+        for k in 0..=64usize {
+            bytes.push(b']');
+            bytes.extend(std::iter::repeat_n(b'=', k));
+            bytes.push(b']');
+        }
+        bytes.extend(std::iter::repeat_n(b'\\', 300));
+        assert_eq!(quoted_bytes_len_features_match(&bytes).quoted_len(), None);
+        // With the level-64 pattern absent the length is determined
+        // again, at exactly level 64.
+        let mut bytes = Vec::new();
+        for k in 0..=63usize {
+            bytes.push(b']');
+            bytes.extend(std::iter::repeat_n(b'=', k));
+            bytes.push(b']');
+        }
+        bytes.extend(std::iter::repeat_n(b'\\', 300));
+        let features = quoted_bytes_len_features_match(&bytes);
+        assert_eq!(features.quoted_len(), Some(quoted_bytes_len(&bytes)));
+        assert_eq!(features.quoted_len(), Some(bytes.len() + 4 + 128));
+    }
+
+    #[test]
+    fn quoted_bytes_len_invalid_utf8_is_quote_lua_len() {
+        // Invalid UTF-8 takes the fallback branch: the decode of the
+        // quote_lua literal fails, the shape falls back to rendering,
+        // and the render is the literal itself.
+        let samples: &[&[u8]] = &[
+            &[0xff],
+            &[0x80],
+            &[0xc3, 0x28],
+            &[0xe2, 0x82],
+            &[0xed, 0xa0, 0x80],
+            &[0xc0, 0x80],
+            b"a\xff\x80b",
+            &[0x61, 0xf0, 0x9f, 0x98],
+        ];
+        for bytes in samples {
+            assert_eq!(
+                quoted_bytes_len(bytes),
+                quote_lua(bytes).len(),
+                "byte payload: {bytes:?}"
+            );
+            assert_quoted_bytes_len(bytes);
+        }
     }
 
     #[test]

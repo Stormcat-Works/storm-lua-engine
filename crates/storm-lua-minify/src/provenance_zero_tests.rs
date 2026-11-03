@@ -414,6 +414,33 @@ fn screen_loop_provenance_distinguishes_generated_control_and_source_arguments()
 }
 
 #[test]
+fn failed_screen_loop_trials_leave_surviving_origins_intact() {
+    // Head run: 4 calls whose y values fit neither an affine nor a
+    // periodic progression, so every slice starting here fails; tail run:
+    // 12 affine calls that must synthesize. The two runs are adjacent
+    // same-builtin calls, so the pass attempts mixed slices (all failing)
+    // before accepting the affine tail. Deferred trial origins must not
+    // leak into the surviving nodes.
+    let mut calls = String::new();
+    for y in [0, 7, 13, 29] {
+        calls.push_str(&format!("screen.drawText(0,{y},'a')"));
+    }
+    for i in 0..12 {
+        calls.push_str(&format!("screen.drawText(0,{},'abcdefghijk')", i * 6));
+    }
+    let source = format!("function onDraw(){calls}end");
+    let (code, origins) = run(&source, |a, r| {
+        passes::screen_loops::synthesize_screen_loops(a, r, false)
+    });
+    assert!(code.contains("for "), "affine tail must synthesize: {code}");
+    assert!(
+        code.contains("screen.drawText(0,7"),
+        "failing head calls stay verbatim: {code}"
+    );
+    assert_eq!(origins.unknown_bytes(), 0);
+}
+
+#[test]
 fn original_unknown_block_remains_unknown_after_screen_noop() {
     let source = "first=1 second=2";
     let (mut ast, root) = parse_source_with_origins("unknown.lua", source).unwrap();

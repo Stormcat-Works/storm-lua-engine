@@ -1,7 +1,12 @@
 //! バジェット管理されたLua 5.3の実行、サンドボックス、およびオプションのホストデバッガを管理します。
-//! backend-mlua フィーチャーは、バックエンド密結合な明示的拡張／テスト用のエスケープハッチです。
+//! backend-mlua フィーチャーは、mlua バックエンドそのものへの依存ゲートであり、
+//! バックエンド密結合な明示的拡張／テスト用のエスケープハッチでもあります。
+//! 無効時は実行バックエンドを持たず、方言変換とロード合法性判定
+//! （load_legality、判定は自前パーサによる代替）だけを提供します。
 #[cfg(feature = "debug")]
 pub mod debug;
+pub mod dialect;
+pub mod load_legality;
 
 /// バックエンド密結合アクセス。通常のエンジンAPIではなく、mluaへの互換性保証でもありません。
 #[cfg(feature = "backend-mlua")]
@@ -26,11 +31,15 @@ pub mod backend {
     };
 }
 
-/// 有効なLua浮動小数点数のビット幅（すべてのビルドターゲットで検証されます）。
-pub const LUA_NUMBER_BITS: usize = std::mem::size_of::<mlua::Number>() * 8;
-/// 有効なLua整数のビット幅（ポインタ幅とは独立）。
-pub const LUA_INTEGER_BITS: usize = std::mem::size_of::<mlua::Integer>() * 8;
-const _: () = assert!(LUA_NUMBER_BITS == 64 && LUA_INTEGER_BITS == 64);
+/// 有効なLua浮動小数点数のビット幅（Lua 5.3 の既定の数値型は64bit浮動小数点）。
+pub const LUA_NUMBER_BITS: usize = 64;
+/// 有効なLua整数のビット幅（ポインタ幅とは独立。Lua 5.3 の既定の整数型は64bit）。
+pub const LUA_INTEGER_BITS: usize = 64;
+#[cfg(feature = "backend-mlua")]
+const _: () = assert!(
+    std::mem::size_of::<mlua::Number>() * 8 == LUA_NUMBER_BITS
+        && std::mem::size_of::<mlua::Integer>() * 8 == LUA_INTEGER_BITS
+);
 
 /// ホスト実行制限。タイマー、スレッド、非同期ランタイムはここでは管理しません。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +50,11 @@ pub struct ExecutionLimits {
     pub lua_memory_bytes: std::num::NonZeroUsize,
 }
 
+#[cfg(feature = "backend-mlua")]
 mod backend_support;
+#[cfg(feature = "backend-mlua")]
 pub mod runner;
+#[cfg(feature = "backend-mlua")]
 mod sandbox;
 
 impl Default for ExecutionLimits {
@@ -55,16 +67,22 @@ impl Default for ExecutionLimits {
 }
 
 /// VM単位の構造化ログ。
+#[cfg(feature = "backend-mlua")]
 pub mod logging;
 /// 損失のないホスト／イベント／セーブデータ値。
+#[cfg(feature = "backend-mlua")]
 pub mod value;
 
 /// Trusted host value/function bindings, separate from script-visible standard libraries.
+#[cfg(feature = "backend-mlua")]
 pub mod bindings;
 /// Synchronous borrowed host arguments and protected predicates.
+#[cfg(feature = "backend-mlua")]
 pub mod host;
 /// Owned source chunks and explicit development-time include loading.
+#[cfg(feature = "backend-mlua")]
 pub mod source;
 
 /// Explicit host-shared native CRT random context, separate from isolated defaults.
+#[cfg(feature = "backend-mlua")]
 pub mod random;

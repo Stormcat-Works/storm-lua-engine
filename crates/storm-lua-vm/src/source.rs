@@ -136,10 +136,18 @@ impl Vm {
                     "required sources exceed 8 MiB",
                 )));
             }
+            let source = crate::dialect::rewrite(&chunk.source)
+                .map_err(|message| mlua::Error::external(VmError::new(ErrorKind::Lua, message)))?;
+            if source.len() > MAX_PROGRAM_BYTES - bytes.get() {
+                return Err(mlua::Error::external(VmError::new(
+                    ErrorKind::Limit,
+                    "required sources exceed 8 MiB",
+                )));
+            }
             // No user code runs across this C callback. A Lua caller invokes the
             // returned function after the callback returns, allowing debug yield.
             let function = lua
-                .load(&chunk.source)
+                .load(source.as_ref())
                 .set_name(&chunk.name)
                 .set_mode(ChunkMode::Text)
                 .set_environment(environment.clone())

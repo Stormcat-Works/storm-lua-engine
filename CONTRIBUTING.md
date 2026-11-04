@@ -25,7 +25,7 @@ Cargoの生成物は利用環境のポリシーに従って`CARGO_TARGET_DIR`で
 | TypeScript and JS memory tests | `npm --prefix packages/lua-engine ci` then `npm --prefix packages/lua-engine test` |
 | WASM runtime/raster execution | `node tools/build-wasm.mjs` then `node tools/test-wasm.mjs` |
 
-Rustdoc broken intra-doc linksはCIでエラーにする。新しい依存・public API・互換挙動の変更は対応する仕様とテストを同時に変更する。ABI constantsはRustが正本であり、`cargo xtask generate`でTSとfixtureを更新する。フォントJSONからRustを生成する手順も同じコマンドに含まれる。
+Rustdocのbroken intra-doc linksはCIでエラーにする。新しい依存・public API・互換挙動の変更は対応する仕様とテストを同時に変更する。ABI constantsはRust側を正とし、`cargo xtask generate`でTSとfixtureを更新する。フォントJSONからRustを生成する手順も同じコマンドに含まれる。
 
 ## Tests and changes
 
@@ -46,6 +46,6 @@ Rustdoc broken intra-doc linksはCIでエラーにする。新しい依存・pub
 
 SDKの全WASMとTypeScriptを先にビルドし、`npm --prefix app ci`、`npm --prefix app run build`、`npm --prefix app test`、`npm --prefix app run test:browser`を実行します。SDKからappへの逆依存は作りません。配布物は`node tools/check-artifacts.mjs app/dist`で検査します。公開用Workerのdry-runは本番配備とは区別します。
 
-## v0.2.0の非短縮Source Map
+## v0.2.0で導入した非短縮Source Map
 
 `conformance/tests/source_maps.rs`は実Native VM、`packages/lua-engine/tests/wasm/source-map.test.mjs`は実WASMで原文位置を確認します。`node tools/test-package.mjs`は梱包済みSDKへ独立consumerを導入し、`examples/consumer/source-map.mjs`を実行します。trace-mappingはそのconsumerだけの依存で、SDKの実行時依存には入りません。

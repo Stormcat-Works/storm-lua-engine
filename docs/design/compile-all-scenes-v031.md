@@ -1,5 +1,7 @@
 # v0.3.1 コンパイル全経路の時間削減
 
+この文書は当時の性能改善計画です。本文の版・比較元・目標・作業指示は記録時点のものとして保持しています。現行の検証方針は[テスト・性能設計](testing-performance.md)、Source Map契約は[現行仕様](../specs/optimization-map-extension.md)、未完了項目は[TASKS](../../TASKS.md)を参照します。
+
 2026-10-04。API別名試行のMap追加時間削減に続き、**Mapあり・なしの絶対時間を共に短縮し、その上で同じ新実装のMapあり/なしを1.2倍以内、可能なら1.1倍以内に近づける**。`feat/minify-performance-v0.3.1`を維持し、独立に検証した変更ごとにcommitする。push・tag・release・本番配備は行わない。
 
 ## 固定条件

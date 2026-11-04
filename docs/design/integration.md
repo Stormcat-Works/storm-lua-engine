@@ -1,6 +1,6 @@
 # Integration patterns and migration
 
-実装済みのcompiler入口は[Compiler guide](../guide/compiler.md)、検証は[統合検証](../verification/compiler-integration-20260926.md)を参照する。全体の言語処理統合と公式フロントエンド案は[Compiler SDK統合設計](compiler-sdk.md)を参照する。以下はv0.1.0の現行consumer接続方針であり、統合済みAPIを示すものではない。
+実装済みのcompiler入口は[Compiler guide](../guide/compiler.md)、検証は[統合検証](../verification/compiler-integration-20260926.md)を参照する。全体の言語処理統合と公式フロントエンド案は[Compiler SDK統合設計](compiler-sdk.md)を参照する。以下はv0.1.0時点のconsumer接続方針であり、統合済みAPIを示すものではない。
 
 公開ガイドは特定の私有アプリや内部パスを前提にせず、用途で分類する。実行できる[組み込み例](../../examples/README.md)と、下記のconsumer移行方針を区別する。[API状況](../specs/api.md)を参照。
 
@@ -25,6 +25,6 @@
 
 ## Suggested order
 
-共有エンジンのvehicle/addon実装と独立実行例は用意済み。次は、最初の実consumerの既存APIを明示的なhost adapterへ接続し、同じscript・入力列・イベント列で比較する。ゲーム互換と汎用Luaの検証を分け、必要な独立oracleを残す。新たなserver APIを増やす場合も、まず実consumerに必要な関数から引数・戻り値・失敗条件を固定する。
+共有エンジンのvehicle/addon実装と独立実行例は用意済み。次は最初の実consumerの既存APIを明示的なhost adapterへ接続し、同じscript・入力列・イベント列で比較する。ゲーム互換と汎用Luaの検証を分け、必要な独立oracleを残す。新たなserver APIを増やす場合も、まず実consumerに必要な関数から引数・戻り値・失敗条件を固定する。
 
 旧harnessと新harnessを比較する際は、違いを必ずしも新側のバグと断定しない。正本仕様と第三のfixtureで判定する。描画の違いを解消するためにalphaやI/O精度を旧側へ戻すことはしない。

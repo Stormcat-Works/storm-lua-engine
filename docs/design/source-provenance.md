@@ -1,21 +1,22 @@
 # 最適化後ソースマップと探索処理の実装計画
 
-## 現在地（2026-10-01）
-
-P0〜P3は実装・検証済み。P4は[理由付きmapの確定設計](optimization-explanation-schema.md)に従い、標準v3＋x_storm、複数ファイル合成、Rust/WASM/TS/Workerの公開APIと内容指紋検証を実装した。[検証](../verification/optimization-explanations-20261001.md)と[実測例更新](../verification/provenance-examples-20261001.md)を参照する。以下の時系列進捗は当時の記録であり、現在の公開APIは[仕様](../specs/optimization-map-extension.md)が正本。
-
-P5の表示・双方向選択・実行位置接続とCLI/Webの検証・配布物確認も完了した。[P5完成記録](../verification/p5-playground-20261001.md)。追加の性能最適化は利用者指示で保留する。元変数の値、消えたフレーム、loop反復のruntime対応は位置マップだけでは実現しない。理由の詳細なbasis/factsは記録した規則から順次増やすもので、知らない適用根拠を出力から推測しない。
-
-
-記録日: 2026-09-30。P0/P1はv0.2.1としてnpm/GitHub/Playgroundへ公開済み。最適化後マップは専用branchのv0.3.0で開発し、公開・タグ作成は別の明示工程とする。
-
-本書は今回合意した設計・実装順序を所有する。実装済み契約は[Source maps](../specs/source-maps.md)、現在地は[STATUS](../../STATUS.md)、検証結果は別のverification記録で区別する。
+この文書は2026-09-30に作成した設計・実装計画と、その後の進捗記録を保持する。実装済み契約は[Source maps](../specs/source-maps.md)と[拡張仕様](../specs/optimization-map-extension.md)、現在地は[STATUS](../../STATUS.md)、検証結果は各verification記録を参照する。
 
 ## 現在地（2026-10-01）
 
 **P0〜P3は完了。全67パスの由来伝播はimplementedで、partial/pendingは0件。** 各登録IDに実変換・追跡ON/OFF・由来欠落の負例・転送の検証を持ち、実コンパイラ536設定と既存代表240設定を通した。[全パスの検証記録](../verification/source-origin-all-passes-20261001.md)。
 
-全パス対応は、現行の変換と由来契約に対する実装・監査・テストの到達点。任意のLuaや将来の最適化変更が無欠陥であるという証明ではない。元の位置情報が欠けた入力ではUnknownを維持する。P4の標準map/複数ファイル合成/公開API/成果物識別とP5のPlayground表示/実行位置接続も完成した。追加の追跡コスト改善は保留する。
+P4は[理由付きmapの確定設計](optimization-explanation-schema.md)に従い、標準v3＋x_storm、複数ファイル合成、Rust/WASM/TS/Workerの公開API、成果物識別と内容指紋検証を実装した。[検証](../verification/optimization-explanations-20261001.md)と[実測例更新](../verification/provenance-examples-20261001.md)を参照する。
+
+P5の表示・双方向選択・実行位置接続とCLI/Webの検証・配布物確認も完了した。[P5完成記録](../verification/p5-playground-20261001.md)。追加の性能最適化・追跡コスト改善は、この時点では利用者指示で保留した。
+
+全パス対応はこの時点の変換と由来契約に対する実装・監査・テストの到達点。任意のLuaや将来の最適化変更が無欠陥であるという証明ではない。元の位置情報が欠けた入力ではUnknownを維持する。元変数の値、消えたフレーム、loop反復のruntime対応は位置マップだけでは実現しない。理由の詳細なbasis/factsは記録した規則から順次増やすもので、知らない適用根拠を出力から推測しない。
+
+## 当初の計画と時系列記録
+
+記録日: 2026-09-30。P0/P1はv0.2.1としてnpm/GitHub/Playgroundへ公開済み。最適化後マップは専用branchのv0.3.0で開発し、公開・タグ作成は別の明示工程とする。
+
+以下の計画・時系列進捗は当時の記録であり、現在の公開APIは[仕様](../specs/optimization-map-extension.md)が正本。
 
 ## 1. 目的と到達点
 
@@ -114,7 +115,7 @@ P3は[全67パスの台帳](source-provenance-pass-audit.json)で管理する。
 
 未対応の直接mutationは該当slotの由来を失効させる。新規nodeは明示的な由来がない限りUnknown。元のnode番号が同じ、印字が似ている、近くの親に位置がある、という理由で古い位置を復活させない。既知のhelper生成だけSyntheticと明示する。
 
-P3の優先順は、局所式のコピー/置換とインライン化、名前/テーブルの再編、複数式の共通化、描画loop/data/辞書化。個別passの動作確認に加えて、複数passの連鎖で由来が消失・誤帰属しないことを検証する。単一のno-op fixtureを全変換の対応根拠にしない。
+P3の優先順は局所式のコピー/置換とインライン化、名前/テーブルの再編、複数式の共通化、描画loop/data/辞書化。個別passの動作確認に加えて、複数passの連鎖で由来が消失・誤帰属しないことを検証する。単一のno-op fixtureを全変換の対応根拠にしない。
 
 P4では標準Source Map v3と詳細由来の最終公開型を確定し、非短縮link範囲を通じて元moduleへ合成する。内部byte/外部UTF-16列、names、sourcesContent、Unknown/Syntheticの明示、code/map/元snapshotの成果物識別を一緒に扱う。現在の座標検証はfingerprintではない。高レベルRust/WASM/TSの`minify`にmapが付いたとは扱わない。
 

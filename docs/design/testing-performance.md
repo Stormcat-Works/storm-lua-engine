@@ -19,7 +19,7 @@
 | Addon / host | mode分離、同期server、保存、event、map、HTTP、ログ配送 |
 | Ownership | 不正ABI・upload・長さ、memory growth、borrowとcopy、再入 |
 | Distribution | 独立npm install、権利表示、成果物の絶対パス検査 |
-| Application example | 仮ワールドの決定性、コード編集、エラー、reload、import/export、実ブラウザ |
+| Playground | 実SDKを使うCLI/Web操作、コード編集、エラー、reload、import/export、実ブラウザ |
 
 空のtest runnerや未取得のfixtureをPASS件数に加えません。生成物がなければ必要なテストは失敗させます。通常のPython/Cargoテストはローカルの契約だけで完結し、WASM/ブラウザテストはCIの専用jobで実行します。
 

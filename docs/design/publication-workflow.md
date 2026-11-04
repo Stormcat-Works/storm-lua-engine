@@ -10,7 +10,7 @@ Releaseには検証済みSDK tarball、SHA256SUMS、release-verification.jsonを
 
 読み取り専用のverifyジョブで同じ版の隔離consumerを実行し、1日保持のartifactで次のジョブへ渡す。publishジョブは転送後のdigestを再確認して、`npm publish`を`--ignore-scripts`付きで実行する。書き込み認証は短命OIDCのみで、NPM_TOKEN/NODE_AUTH_TOKENをSecretsへ保存しない。
 
-公開後は読み取り専用の別ジョブでregistryのversionとintegrity、再取得したtarballのSHA-256を確認し、registryから取得したbytesへ隔離consumerを再実行する。既存版とintegrityが同じならpublishを省略し、異なる場合は失敗する。未公開の古い版をlatestへ戻すことは拒否する。
+公開後は読み取り専用の別ジョブでregistryのversionとintegrity、再取得したtarballのSHA-256を確認し、registryから取得したbytesへ隔離consumerを再実行する。既存版とintegrityが同じならpublishを省略し、異なる場合は失敗する。未公開の古いバージョンをlatestへ戻すことは拒否する。
 
 公開全体は一つのconcurrency groupで直列化し、進行中のregistry書き込みを新しいrunで中断しない。CIの旧revisionキャンセルとは別扱いである。
 
@@ -31,7 +31,7 @@ GitHub-hosted UbuntuとNode 24.19.0を使用する。npm Trusted Publishingはnp
 
 CLIで登録する場合は、管理者が認証した環境で`npm trust github @stormcat-works/storm-lua-engine --repo Stormcat-Works/storm-lua-engine --file publish.yml --allow-publish --yes`を使える。設定値は大文字小文字も一致させる。秘密をチャット、ログ、ソースへ書かない。
 
-既存v0.2.1は古いタグに本workflowがないため、mainからtag=v0.2.1を指定してdispatchする。`dry_run:true`は検証のみで、OIDC公開の成功を証明するものではない。認証が未設定なら実publishは失敗し、成功扱いしない。
+初回導入時のv0.2.1は古いタグに本workflowがなかったため、mainからtag=v0.2.1を指定してdispatchする手順とした。`dry_run:true`は検証のみで、OIDC公開の成功を証明するものではない。認証が未設定なら実publishは失敗し、成功扱いしない。
 
 ## npmのprovenance attestationについて
 
@@ -49,7 +49,6 @@ Engineの通常pushはmain/developだけ、作業branchはPRまたは明示dispa
 
 参考: [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)、[npm trust](https://docs.npmjs.com/cli/v12/commands/npm-trust/)、[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)。
 
+## 初回導入時の実行結果
 
-## 実行結果
-
-[2026-09-30の検証記録](../verification/publication-workflow-20260930.md)に、Hosted dry-runの成功、実際のnpm認証エラー、registry確認スクリプトの試験を分離して記録する。
+[2026-09-30の検証記録](../verification/publication-workflow-20260930.md)に、当時のHosted dry-runの成功、実際のnpm認証エラー、registry確認スクリプトの試験を分離して記録している。現在の公開状態は[STATUS](../../STATUS.md)を参照する。

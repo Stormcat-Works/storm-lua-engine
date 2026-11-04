@@ -1,14 +1,14 @@
 # Storm Lua Engine: Playground
 
-v0.4.0のSDKとPlaygroundは同じcheckoutから検証・梱包する。最終公開状態はGitHub Releaseと本番version.jsonで確認する。
+現在の公開版は[STATUS](../STATUS.md)を参照してください。v0.4.0のSDKとPlaygroundは同じcheckoutから検証・梱包します。SDKの公開状態はGitHub Release、本番の配備状態はversion.jsonで確認します。
 
 SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホスト接続を実際に試すCLI/Webです。Storm MinのCLI/Webとは併存し、置き換えません。ゲーム世界、仮物理、共同編集、クラウド保存は実装しません。
 
-v0.3.0では公開後のregistry導入・本番3ブラウザー検証まで完了しています。v0.3.1の最終公開状態は[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)で確認してください。[公開記録](../docs/verification/release-0.3.0.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKとタグは固定し、Webはreleaseブランチから更新します。
+v0.3.0では公開後のregistry導入・本番3ブラウザー検証まで完了しています。過去版v0.3.1の公開状態は[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)で確認してください。[公開記録](../docs/verification/release-0.3.0.md)。[Webを開く](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)。SDKとタグは固定し、Webはreleaseブランチから更新します。
 
-## v0.3.0のSource Map検査
+## v0.3.0で導入したSource Map検査
 
-本ブランチでは、原文と生成コードの双方向選択、複数由来・copy・理由・inline文脈・除去記録、実VMの停止/ログ/エラーとの接続を提供します。配備するSDK/アプリを同じcheckoutでビルドし、[0.3.0公開記録](../docs/verification/release-0.3.0.md)で本番更新の結果を確認してください。[アプリの契約](../docs/specs/playground-source-maps.md)。
+原文と生成コードの双方向選択、複数由来・copy・理由・inline文脈・除去記録、実VMの停止/ログ/エラーとの接続を提供します。配備するSDK/アプリは同じcheckoutでビルドします。[0.3.0公開記録](../docs/verification/release-0.3.0.md)はそのバージョンの本番更新結果を記録しています。[アプリの契約](../docs/specs/playground-source-maps.md)。
 
 「Source Map / 最適化を説明する」はコンパイルとマップ検査だけを行います。「元ファイルへ戻る」は通常/LifeBoatのmodule対応、「停止・ログ・エラー」は実SDKのpause/step/意図した失敗を実行します。入力編集後の過去成果物はsnapshotとして区別し、実行時に生成行しか分からない場合は複数候補を残します。
 
@@ -24,7 +24,7 @@ Webは`npm --prefix app run dev`（127.0.0.1:5178）で開きます。配布物�
 
 CLIのヘルプは`npm --prefix app run cli -- --help`、確認例の一覧は`npm --prefix app run cli -- --list`、実行は`npm --prefix app run cli -- --recipe vehicle`です。`--project FILE`はWebで書き出したJSONを読み込みます。`--jsonl`は同じSDKセッションへ1行ずつ操作JSONを渡します。`minify FILE`、`run FILE`にも対応し、拡張環境には`--extended`を明示します。
 
-## 利用者向けの正本
+## 利用者向けガイド
 
 通常の操作手順は[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/playground)に移設しています。以下はアプリの開発・検証に必要な操作概要です。
 

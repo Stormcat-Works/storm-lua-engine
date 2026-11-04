@@ -27,7 +27,7 @@ Addonは`load(source)`、`start()`、`tick(gameTicks)`、`dispatch(callback, arg
 
 ## ホスト機能をつなぐ
 
-`createVehicle({ mapProvider })`で`drawMap`用の同期地図rendererを指定できます。返す値は正確にwidth×height×4のRGBA bytes。未指定の地形を架空画像で代用しません。
+`createVehicle({ mapProvider })`で`drawMap`用の同期地図rendererを指定できます。返す値は正確にwidth×height×4のRGBA bytesです。未指定の地形を架空画像で代用しません。
 
 `createAddon({ server: { getPlayers: () => [playerTable] } })`のように必要なserver関数を登録します。戻り値は常に結果の配列です。Lua integerにはbigint、floatにはnumber、byte stringにはUint8Array、テーブルには`luaTable`または明示的なentry listを使用します。同期queryへPromiseを返すことはできません。
 
@@ -49,12 +49,14 @@ npm registryまたはGitHub Releasesのtarballからインストールできま�
 
 ## 名前付きソースと再初期化
 
-v0.2.0の`requireLoader`はextended専用です。ホストが同期で`{source,name}`を供給し、SDKが同じVMの継続で実行します。include-onceで戻り値を捨てる方式であり、Lua標準のmodule requireや静的buildとは別です。任意ファイルアクセスや再入は許可しません。
+v0.2.0で導入した`requireLoader`はextended専用です。ホストが同期で`{source,name}`を供給し、SDKは同じVM上で実行を継続します。include-onceで戻り値を捨てる方式であり、Lua標準のmodule requireや静的buildとは別です。任意ファイルアクセスや再入は許可しません。
 
 Vehicleのloadは別チャンクの追加実行です。resetは正常完了した全loadを再実行し、required modulesのキャッシュも再作成します。Addonのloadは初回だけとし、開発用モジュールはrequireLoader経由で利用します。詳しくは[ソース読み込み](https://docs.makkii.jp/storm-lua-engine/source-loading)を参照してください。
 
 
 ## 最適化後のソースマップ（v0.3.0）
+
+v0.3.0で導入した機能です。v0.4.0の`x_storm`拡張はschema 2を使用し、schema 1のマップは受理しません。標準Source Map v3自体の版とは独立しています。
 
 `/compiler`の`loadCompiler()`から、`compiler.minify(source, {sourceMap:true, sourceName:'controller.lua'})`を呼びます。成功時の`code`と`map`を一組で保存し、`compiler.validateSourceMap(code,map)`で検証済みの`OptimizationMap`を取得してください。標準Source Map v3と、最適化理由・関連元・inline文脈・削除記録を持つ`x_storm`が同じmap JSONに入ります。
 
@@ -66,5 +68,7 @@ Vehicleのloadは別チャンクの追加実行です。resetは正常完了し�
 
 
 ## 0.3.1の追加ビルド操作
+
+次の操作は0.3.1で追加されました。
 
 `compiler.buildAddon(project, {environment, metadataTag})`はAddon専用の非短縮include-onceリンクです。Vehicle用の最適化やサイズ目標を使いません。通常の`build`と`buildLifeboat`にも`metadataTag`を指定でき、元ソースの位置とSource MapのsourcesContentを保持します。

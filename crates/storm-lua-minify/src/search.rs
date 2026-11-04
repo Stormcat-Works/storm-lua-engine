@@ -677,7 +677,14 @@ fn prepare_search_from_base(
     Ok((
         SearchContext {
             lexical: false,
-            lexical_target: None,
+            // The target is part of the search specification: winner
+            // selection ranks by speed within the target only when the
+            // context carries it. The context crosses serialization to
+            // Worker routes, so dropping the target here silently changed
+            // the winner on the resume route (plain size minimization
+            // instead of target ranking). `prepare_lexical` already
+            // carries `options.target_size` the same way.
+            lexical_target: options.target_size,
             property_reads_hardcoded,
             core_variants: core_variants.len(),
             structural_variants: structural_total,
@@ -1616,7 +1623,12 @@ fn evaluate_candidate_with_verifier(
                 candidate_root,
             );
             candidate_root = result.root;
-            if result.saved.unwrap_or(0) > 0 {
+            // The subset fold is reported whenever it rewrote the tree,
+            // not only when it shrank it: `saved` is measured against the
+            // printed size, so a fold whose input the printer would drop
+            // anyway (a dead `if`) honestly reports 0 while still having
+            // performed the selection.
+            if result.saved.unwrap_or(0) > 0 || result.details.is_some() {
                 candidate_passes.push(PassRecord {
                     name: "constant folding".into(),
                     saved: result.saved.map(|saved| saved as i64),
@@ -3037,6 +3049,127 @@ mod phase7_serialization_tests {
         assert_eq!(actual.code, expected.code);
         assert_eq!(actual.stats, expected.stats);
         assert_eq!(actual.api_aliases, expected.api_aliases);
+    }
+
+    /// Finish a target search through the checkpoint/resume route: run the
+    /// bounded prefix, cross the same serialization boundary the Worker
+    /// route uses, evaluate the remaining jobs, and select from the decoded
+    /// context. This mirrors `finishTargetSearch` in the WASM adapter.
+    fn split_route_result(source: &str, options: &CompileOptions) -> CompileCodeResult {
+        let mut attempt = try_satisficing(source, options, None).unwrap();
+        match attempt.status {
+            SatisficingStatus::NeedsFullSearch => {
+                let prior_checkpoints = attempt.result.stats.checkpoints;
+                let (context, jobs) = take_satisficing_fallback(&mut attempt).unwrap();
+                let context =
+                    decode_search_context(&encode_search_context(&context).unwrap()).unwrap();
+                let batches = jobs
+                    .into_iter()
+                    .map(|job| {
+                        decode_and_evaluate_candidate_job(&encode_candidate_job(&job).unwrap())
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                let result = select_best(context, batches).unwrap();
+                finalize_satisficing_fallback(
+                    result,
+                    options.target_size.unwrap(),
+                    prior_checkpoints,
+                )
+            }
+            _ => attempt.result,
+        }
+    }
+
+    /// Regression: with a met target, the checkpoint/resume route selected
+    /// a different winner than one-shot compilation. The canonical context
+    /// built by `prepare_search_from_base` dropped the target, so selection
+    /// through the serialized context fell back to plain size minimization
+    /// (smallest fitting candidate) while the one-shot route, which sets
+    /// the target on the context itself, applied target ranking (fastest
+    /// fitting candidate). Same inputs must give the same winner through
+    /// every route of the public API.
+    #[test]
+    fn target_split_route_matches_one_shot_winner() {
+        let licm_source = "local s=0 function onTick() local t=0 for i=1,200 do t=t+input.getNumber(1)*2+input.getNumber(2)*3+math.min(i,50)*0.5 end s=t output.setNumber(1,t) output.setBool(1,t>100) end";
+        let cases: &[(&str, CompileOptions)] = &[
+            (
+                licm_source,
+                CompileOptions {
+                    target_size: Some(1000),
+                    ..Default::default()
+                },
+            ),
+            (
+                RESUME_SOURCE,
+                CompileOptions {
+                    target_size: Some(8192),
+                    ..Default::default()
+                },
+            ),
+            (
+                RESUME_SOURCE,
+                CompileOptions {
+                    target_size: Some(8192),
+                    mode: CompileMode::Smallest,
+                    numeric_mode: NumericMode::Tolerant,
+                    search_mode: SearchMode::Exhaustive,
+                    zero_cost_newlines: true,
+                    ..Default::default()
+                },
+            ),
+        ];
+        for (source, options) in cases {
+            // The fixture must actually split: a bounded prefix runs in the
+            // coordinator and the remaining jobs cross to the Worker route.
+            let probe = try_satisficing(source, options, None).unwrap();
+            assert_eq!(probe.status, SatisficingStatus::NeedsFullSearch);
+            let one_shot = compile_code(source, options).unwrap();
+            let split = split_route_result(source, options);
+            assert_eq!(split.code, one_shot.code, "winner code diverged");
+            assert_eq!(
+                split.stats.winner_structural, one_shot.stats.winner_structural,
+                "winner structural diverged"
+            );
+            assert_eq!(
+                split.stats.winner_layout, one_shot.stats.winner_layout,
+                "winner layout diverged"
+            );
+            assert_eq!(
+                split.stats.candidate_sizes, one_shot.stats.candidate_sizes,
+                "candidate size table diverged"
+            );
+            assert_eq!(split.stats.target_met, one_shot.stats.target_met);
+            assert_eq!(split.api_aliases, one_shot.api_aliases);
+        }
+    }
+
+    /// The canonical context returned by `prepare_search` must carry the
+    /// target so that direct `select_best` completion (the `finishSearch`
+    /// style route) applies the same winner ranking as one-shot compile.
+    #[test]
+    fn prepare_search_context_carries_the_target() {
+        let source = "local s=0 function onTick() local t=0 for i=1,200 do t=t+input.getNumber(1)*2+input.getNumber(2)*3+math.min(i,50)*0.5 end s=t output.setNumber(1,t) output.setBool(1,t>100) end";
+        let options = CompileOptions {
+            target_size: Some(1000),
+            ..Default::default()
+        };
+        let (context, jobs) = prepare_search(source, &options).unwrap();
+        let batches = jobs
+            .into_iter()
+            .map(evaluate_candidate)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let canonical = select_best(context, batches).unwrap();
+        let one_shot = compile_code(source, &options).unwrap();
+        assert_eq!(canonical.code, one_shot.code);
+        assert_eq!(canonical.stats.winner_layout, one_shot.stats.winner_layout);
+        assert_eq!(
+            canonical.stats.candidate_sizes,
+            one_shot.stats.candidate_sizes
+        );
+        assert_eq!(canonical.stats.target_size, Some(1000));
+        assert!(canonical.stats.target_met);
     }
 
     #[test]

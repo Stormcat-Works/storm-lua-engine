@@ -131,7 +131,14 @@ pub fn pack_adjacent_locals(ast: &mut Ast, root: NodeId, rename: bool) -> PassRe
     }
     let before = measure_size(ast, root);
     let after = measure_size(&target, root);
-    if after >= before {
+    // Packing is adopted unless it GROWS the program. It need not shrink
+    // the printed size by itself: the printer already renders a mergeable
+    // run of locals as one statement, so a correct size measure reports
+    // the pack as size-neutral. The pack still matters as an AST-level
+    // rewrite (one declaration node carrying every name's origin, seen as
+    // a single declaration by later passes), so neutral is adopted and
+    // only growth is rejected.
+    if after > before {
         return unchanged();
     }
     *ast = target;

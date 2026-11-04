@@ -1,6 +1,6 @@
 # Storm Lua Engine: Playground
 
-現在の公開版は[STATUS](../STATUS.md)を参照してください。v0.4.0のSDKとPlaygroundは同じcheckoutから検証・梱包します。SDKの公開状態はGitHub Release、本番の配備状態はversion.jsonで確認します。
+現在の公開版は[STATUS](../STATUS.md)を参照してください。v0.4.1のSDKとPlaygroundは同じcheckoutから検証・梱包します。SDKの公開状態はGitHub Release、本番の配備状態はversion.jsonで確認します。
 
 SDKの解析・ビルド・最適化・実行・描画・デバッグ・ホスト接続を実際に試すCLI/Webです。Storm MinのCLI/Webとは併存し、置き換えません。ゲーム世界、仮物理、共同編集、クラウド保存は実装しません。
 

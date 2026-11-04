@@ -1555,8 +1555,8 @@ mod tests {
             result
                 .details
                 .as_ref()
-                .is_some_and(|d| d.iter().any(|d| d == "factored=2")),
-            "expected both expression groups to factor: {:?}",
+                .is_some_and(|d| d.iter().any(|d| d == "factored=4")),
+            "expected all four expression groups to factor: {:?}",
             result.details
         );
         // Tree invariant: every node has at most one parent.

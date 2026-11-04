@@ -1714,10 +1714,10 @@ pub fn simplify_control_flow(ast: &Ast, root: NodeId, _aggressive: bool) -> (Ast
     (target, root)
 }
 
-fn fold_exact_safe_node(ast: &mut Ast, node: NodeId) {
+fn fold_exact_safe_node(ast: &mut Ast, node: NodeId, changed: &mut bool) {
     let origin = ast.nodes.capture_origin(node);
     let mut evidence = None;
-    fold_exact_safe_node_inner(ast, node, &mut evidence);
+    fold_exact_safe_node_inner(ast, node, &mut evidence, changed);
     ast.nodes
         .finish_rewrite(node, origin, "exact-control-flow-folding");
     if let Some(reason) = evidence {
@@ -1735,10 +1735,11 @@ fn fold_exact_safe_node_inner(
     ast: &mut Ast,
     node: NodeId,
     evidence: &mut Option<storm_lua_syntax::explanation::OptimizationReason>,
+    changed: &mut bool,
 ) {
     let original = ast.node(node).clone();
     let (mapped, _) = storm_lua_syntax::ast_utils::map_children(&original, &mut |child| {
-        fold_exact_safe_node(ast, child);
+        fold_exact_safe_node(ast, child, changed);
         child
     });
     ast.nodes.rewrite(node, mapped, "literal-folding-traversal");
@@ -1746,6 +1747,7 @@ fn fold_exact_safe_node_inner(
     match ast.node(node).clone() {
         Node::Un(op, expression) if op == "not" => {
             if let Some(value) = literal_value(ast, expression) {
+                *changed = true;
                 ast.nodes[node as usize] = Node::Bool(!lua_truth(&value));
             }
         }
@@ -1753,6 +1755,7 @@ fn fold_exact_safe_node_inner(
             if op == "or" {
                 if let Some(candidate) = boolean_coercion(ast, node) {
                     if measure_expr(ast, candidate) < measure_expr(ast, node) {
+                        *changed = true;
                         ast.nodes[node as usize] = ast.node(candidate).clone();
                         return;
                     }
@@ -1773,6 +1776,7 @@ fn fold_exact_safe_node_inner(
                 // Same single-value adjustment as the fold above: a bare
                 // call or `...` selected out of an `and`/`or` would expand
                 // in an expanding slot, so parenthesize it.
+                *changed = true;
                 if matches!(ast.node(selected), Node::Call(..) | Node::Vararg) {
                     let paren = ast.push(Node::Paren(selected));
                     ast.nodes[node as usize] = ast.node(paren).clone();
@@ -1783,6 +1787,7 @@ fn fold_exact_safe_node_inner(
         }
         Node::If(arms, else_block) => {
             *evidence = conditional_evidence(ast, node);
+            let original_arm_count = arms.len();
             let mut kept = Vec::new();
             let mut replacement_else = else_block;
             let mut unresolved = false;
@@ -1809,24 +1814,33 @@ fn fold_exact_safe_node_inner(
             if let Some(body) = selected_body {
                 // `if`/`else` bodies are lexical scopes. Keep that scope with a
                 // `do` block instead of flattening the body into its parent.
+                *changed = true;
                 ast.nodes[node as usize] = Node::Do(body);
             } else if kept.is_empty() {
+                *changed = true;
                 ast.nodes[node as usize] = if let Some(body) = replacement_else {
                     Node::Do(body)
                 } else {
                     Node::Block(Vec::new())
                 };
             } else {
+                if kept.len() != original_arm_count || replacement_else != else_block {
+                    *changed = true;
+                }
                 ast.nodes[node as usize] = Node::If(kept, replacement_else);
             }
         }
         Node::Block(statements) => {
-            let output = statements
+            let statement_count = statements.len();
+            let output: Vec<NodeId> = statements
                 .into_iter()
                 .filter(|statement| {
                     !matches!(ast.node(*statement), Node::Block(children) if children.is_empty())
                 })
                 .collect();
+            if output.len() != statement_count {
+                *changed = true;
+            }
             ast.nodes[node as usize] = Node::Block(output);
         }
         _ => {}
@@ -1841,12 +1855,17 @@ fn fold_exact_safe_node_inner(
 /// `if` disappears.
 pub fn fold_exact_safe_control_flow(ast: &mut Ast, root: NodeId) -> PassResult {
     let before = storm_lua_syntax::size::measure_size(ast, root);
-    fold_exact_safe_node(ast, root);
+    let mut changed = false;
+    fold_exact_safe_node(ast, root, &mut changed);
     let after = storm_lua_syntax::size::measure_size(ast, root);
     PassResult {
         root,
         saved: Some(before.saturating_sub(after) as u64),
-        details: None,
+        // Report whether the subset actually rewrote the tree. Size alone
+        // cannot carry that signal: a rewrite can be size-neutral, and a
+        // transformation of a statement the printer drops entirely (a
+        // dead `if`) measures as no saving even though the fold ran.
+        details: changed.then(|| vec!["exact-safe control-flow rewrite".to_string()]),
     }
 }
 

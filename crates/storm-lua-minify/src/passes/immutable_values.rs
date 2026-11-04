@@ -2453,11 +2453,14 @@ mod tests {
     #[test]
     fn reuses_closed_table_member_read() {
         // No write or escape anywhere: the table is closed, so the member
-        // read is time-invariant and reuse still fires.
-        let source = "local t={x=3} local a=t.x local f=function() return t.x end return a+f()";
+        // read is time-invariant and reuse still fires. The body reads the
+        // member twice so reuse stays profitable now that the size oracle
+        // prices the printer's own local-statement merging (a single read
+        // is cheaper left in place inside a merged declaration).
+        let source = "local t={value=3} local a=t.value local f=function() return t.value+t.value end return a+f()";
         assert_eq!(
             output(source),
-            "local t={x=3}local a=t.x local f=function()return a end return a+f()"
+            "local t={value=3}local a=t.value local f=function()return a+a end return a+f()"
         );
     }
 
@@ -2534,13 +2537,15 @@ mod tests {
 
     #[test]
     fn reuses_when_dependency_written_before_carrier() {
-        // The single write to `x` completes in an earlier top-level
+        // The single write to `value` completes in an earlier top-level
         // statement, so the expression's value is fixed from the carrier
-        // statement onward.
-        let source = "local x=1 x=2 local a=x+1 local f=function()return x+1 end return f()";
+        // statement onward. The body repeats the expression four times so
+        // reuse stays profitable now that the size oracle prices the
+        // printer's own local-statement merging.
+        let source = "local value=1 value=2 local a=value+1 local f=function()return (value+1)*(value+1)+(value+1)*(value+1) end return f()";
         assert_eq!(
             output(source),
-            "local x=1 x=2 local a=x+1 local f=function()return a end return f()"
+            "local value=1 value=2 local a=value+1 local f=function()return(a)*(a)+(a)*(a)end return f()"
         );
     }
 
@@ -2568,10 +2573,15 @@ mod tests {
     #[test]
     fn reuses_member_read_of_escaped_value_itself() {
         // Reading the escaped value itself stays sound: member writes
-        // cannot change which table `t.x` denotes, only its fields.
-        let source = "local t={x={y=3}} local inner=t.x local a=t.x local f=function()return t.x end return f()";
+        // cannot change which table `t.x` denotes, only its fields. The
+        // body repeats the read so reuse stays profitable now that the
+        // size oracle prices the printer's own local-statement merging.
+        let source = "local t={x={y=3}} local inner=t.x local a=t.x local f=function()return t.x+t.x+t.x+t.x end return f()";
         let result = output(source);
-        assert!(result.contains("return a end") || result.contains("return inner end"));
+        assert!(
+            result.contains("return a+") || result.contains("return inner+"),
+            "{result}"
+        );
     }
 
     #[test]

@@ -9,7 +9,10 @@
 use crate::ast::{Ast, Node, NodeId, TableField};
 use crate::numeric::{qstr_bracket_key_shape, qstr_shape};
 use crate::parser::NameSite;
-use crate::print::{bin_prec, plain_name_from_string_literal, render_num, trimmed_nil_rhs_len};
+use crate::print::{
+    bin_prec, block_items, plain_name_from_string_literal, render_num, trimmed_nil_rhs_len,
+    BlockItem, LocalMember,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct Seg {
@@ -191,12 +194,21 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
         let Node::Block(ss) = &self.ast.nodes[id as usize] else {
             unreachable!()
         };
+        // Shape the block exactly as the printer does: dead-`if` removal
+        // and print-time `local` merging live in `print::block_items`,
+        // shared with `Printer::block`, so the measured size of a block
+        // always equals its printed length.
+        let items = block_items(self.ast, ss, self.names);
         let mut len = 0usize;
         let mut first = None;
         let mut last = None;
         let mut previous: Option<Seg> = None;
-        for statement in ss {
-            let p = self.stat_seg(*statement);
+        for item in &items {
+            let p = match item {
+                BlockItem::Single(statement) => self.stat_seg(*statement),
+                BlockItem::Merged(members) if members.len() == 1 => self.stat_seg(members[0].stmt),
+                BlockItem::Merged(members) => self.merged_local_seg(members),
+            };
             if let Some(prev) = previous {
                 let sep = p.first == Some('(') || needs_len_sep(prev.last, p.first);
                 if sep {
@@ -214,6 +226,32 @@ impl<'a, 'n> SizeCtx<'a, 'n> {
             previous = Some(p);
         }
         Seg { len, first, last }
+    }
+
+    /// Size of a merged `local` run, mirroring `Printer::merged_local`:
+    /// one `local` keyword, every member's names joined by commas, and
+    /// every member's kept initializers joined by commas.
+    fn merged_local_seg(&self, members: &[LocalMember]) -> Seg {
+        let name_parts = members.iter().flat_map(|member| {
+            member.names.iter().enumerate().map(|(index, name)| {
+                self.name_seg(member.stmt, NameSite::Binding(index as u32), *name)
+            })
+        });
+        let value_parts = members
+            .iter()
+            .flat_map(|member| member.kept.iter())
+            .map(|expr| self.expr_seg(*expr, 0))
+            .collect::<Vec<_>>();
+        if value_parts.is_empty() {
+            self.concat_segs(&[self.seg_of("local "), self.join_comma_segs(name_parts)])
+        } else {
+            self.concat_segs(&[
+                self.seg_of("local "),
+                self.join_comma_segs(name_parts),
+                self.seg_of("="),
+                self.join_comma_segs(value_parts),
+            ])
+        }
     }
 
     fn target_seg(&self, id: NodeId) -> Seg {
@@ -677,5 +715,82 @@ mod tests {
         ast.nodes[targets[0] as usize] = Node::If(vec![], eb);
         let (_size, empty) = measure_size_with_empty_if_check(&ast, root);
         assert!(empty);
+    }
+
+    fn assert_measure_matches_print(source: &str) {
+        let (ast, root) = parse_source(source).expect("parse ok");
+        let printed = crate::print::Printer::new(&ast, false).output(root);
+        assert_eq!(
+            measure_size(&ast, root),
+            printed.len(),
+            "measure/print diverged for {source:?}: printed {printed:?}"
+        );
+    }
+
+    /// Regression: the printer merges a run of consecutive `local`
+    /// statements into one statement at block level (and drops dead `if`
+    /// statements before grouping), but size measurement counted every
+    /// statement separately, overcounting each merged run by one
+    /// `local ` per extra member (StormMin v0.4.0 regression cycle:
+    /// printed 35 / measured 41 on the minimal case). Measurement must
+    /// mirror the printer's block pipeline exactly, including every
+    /// condition that blocks a merge.
+    #[test]
+    fn measure_matches_print_for_block_level_merges() {
+        for source in [
+            // Plain mergeable runs.
+            "local a=1 local b=2 return a+b",
+            "local a=1 local b=2 local c=3 return a+b+c",
+            "local a=1 local b return a",
+            "function f() local a=1 local b=2 return a+b end return f()",
+            "do local a=1 local b=2 end return 0",
+            "if x then local a=1 local b=2 end return 0",
+            // Trailing literal nils are trimmed before the merge decision.
+            "local a=1,nil local b=2 return b",
+            // A dead `if` between locals is dropped before grouping.
+            "local a=1 if true then end local b=2 return a+b",
+            "if 1 then end return 2",
+            // Merge blocked: repeated name.
+            "local a=1 local a=2 return a",
+            // Merge blocked: an initializer mentions an earlier group name.
+            "local a=1 local b=a return b",
+            // Merge blocked: first member is not exactly one value per name.
+            "local a,b=1 local c=2 return c",
+            // Merge blocked: empty member after a call initializer.
+            "local a=f() local b return a",
+            // Runs do not cross other statements.
+            "local a=1 a=3 local b=2 return b",
+        ] {
+            assert_measure_matches_print(source);
+        }
+    }
+
+    /// The block-level transforms are the known divergence class; this
+    /// sweep pins measure == printed length across the statement and
+    /// expression constructs the size model covers, so a future printer
+    /// or size change that reopens a divergence fails here.
+    #[test]
+    fn measure_matches_print_across_constructs() {
+        for source in [
+            "local t={1,2,x=3,[\"k\"]=4} return t.x",
+            "local s=\"a\"..\"b\" return s",
+            "local s=\"a\\nb\" return s",
+            "for i=1,10,2 do print(i) end",
+            "for k,v in pairs({}) do print(k,v) end",
+            "while true do break end",
+            "repeat local x=1 until x>0",
+            "if a then return 1 elseif b then return 2 else return 3 end",
+            "local f=function(a,...) return a end return f(1,2)",
+            "goto skip ::skip:: return",
+            "local a,b,c=1,2 return a",
+            "x={f(1),g(2)} return x",
+            "a.b.c(1):d(2) return a",
+            "return 1,2,3",
+            "local a=-1 local b=2^-3 return a+b",
+            "local x=1 (print)(x)",
+            "local a=1 local b=2 return function() return a+b end",
+        ] {
+            assert_measure_matches_print(source);
+        }
     }
 }

@@ -101,15 +101,15 @@ fn is_effect_free_condition(ast: &Ast, cond: NodeId) -> bool {
 /// One `local` statement inside a print-time merge group: its statement
 /// node, its binding names, and the initializer prefix the printer keeps
 /// (trailing literal nils are already dropped by `trimmed_nil_rhs_len`).
-struct LocalMember {
-    stmt: NodeId,
-    names: Vec<crate::ast::SymbolId>,
-    kept: Vec<NodeId>,
+pub(crate) struct LocalMember {
+    pub(crate) stmt: NodeId,
+    pub(crate) names: Vec<crate::ast::SymbolId>,
+    pub(crate) kept: Vec<NodeId>,
 }
 
 /// One item of a block after grouping: a lone statement, or a run of
 /// consecutive `local` statements printed as one merged statement.
-enum BlockItem {
+pub(crate) enum BlockItem {
     Single(NodeId),
     Merged(Vec<LocalMember>),
 }
@@ -158,6 +158,143 @@ fn rhs_mentions_mapped(
         crate::ast_utils::for_each_child_key(ast, id, &mut |_, child| stack.push(child));
     }
     false
+}
+
+/// Group a block's statements exactly as printing shapes them:
+/// dead `if` statements print as nothing and are filtered out, so
+/// the remaining statements join with exactly one separator each
+/// (filtering after printing would leave a doubled one).
+/// Consecutive `local` statements are merged into one when the
+/// merge preserves Lua's value-adjustment semantics:
+///  * every non-final member keeps exactly one initializer per
+///    name (otherwise later values would shift into its names);
+///  * a member's initializers never mention a name bound by an
+///    earlier member of the group (in the separate form that
+///    name already means the new binding, including inside
+///    nested function bodies captured by the initializer);
+///  * no name repeats across members;
+///  * a member with no kept initializers may only close a group
+///    whose last kept initializer is not a call/vararg (which
+///    would otherwise expand into the new names).
+///
+/// A member whose kept prefix differs in length from its names
+/// (trailing nils, or extra values) closes the group, since its
+/// trailing values are only positionally safe at the very end.
+///
+/// Shared by `Printer::block` and size measurement (`crate::size`),
+/// so the measured size of a block always matches its printed shape.
+pub(crate) fn block_items(
+    ast: &Ast,
+    statements: &[NodeId],
+    name_resolver: Option<&dyn crate::size::SizeNameResolver>,
+) -> Vec<BlockItem> {
+    let live: Vec<NodeId> = statements
+        .iter()
+        .copied()
+        .filter(|statement| !is_dead_if_statement(ast, *statement))
+        .collect();
+    let mut items: Vec<BlockItem> = Vec::new();
+    for stmt in live {
+        let (names, es) = match ast.node(stmt) {
+            Node::Local(names, es) => (names.clone(), es.clone()),
+            _ => {
+                items.push(BlockItem::Single(stmt));
+                continue;
+            }
+        };
+        let keep = trimmed_nil_rhs_len(ast, names.len(), &es, true);
+        let member = LocalMember {
+            stmt,
+            names,
+            kept: es[..keep].to_vec(),
+        };
+        let can_append = match items.last() {
+            Some(BlockItem::Merged(members)) => {
+                let open = members.iter().all(|m| m.kept.len() == m.names.len());
+                // With a spelling substitution, merge decisions must
+                // compare post-substitution spellings: on the renamed
+                // tree the stock printer sees exactly those spellings,
+                // and shadowed same-spelling members (which the stock
+                // printer blocks on the unrenamed tree) become
+                // distinct names there. Without a substitution the
+                // stock path below is unchanged.
+                let (overlap, mentions) = match name_resolver {
+                    Some(resolver) => {
+                        let group_spellings: Vec<&str> = members
+                            .iter()
+                            .flat_map(|m| {
+                                m.names.iter().enumerate().map(|(i, n)| {
+                                    mapped_spelling_of(
+                                        ast,
+                                        name_resolver,
+                                        m.stmt,
+                                        crate::parser::NameSite::Binding(i as u32),
+                                        *n,
+                                    )
+                                })
+                            })
+                            .collect();
+                        let overlap = member.names.iter().enumerate().any(|(i, n)| {
+                            let spelling = mapped_spelling_of(
+                                ast,
+                                name_resolver,
+                                member.stmt,
+                                crate::parser::NameSite::Binding(i as u32),
+                                *n,
+                            );
+                            group_spellings.contains(&spelling)
+                        });
+                        let mentions =
+                            rhs_mentions_mapped(ast, &member.kept, &group_spellings, resolver);
+                        (overlap, mentions)
+                    }
+                    None => {
+                        let group_names: Vec<crate::ast::SymbolId> = members
+                            .iter()
+                            .flat_map(|m| m.names.iter().copied())
+                            .collect();
+                        let overlap = member.names.iter().any(|n| group_names.contains(n));
+                        let mentions = rhs_mentions(ast, &member.kept, &group_names);
+                        (overlap, mentions)
+                    }
+                };
+                let expands = member.kept.is_empty()
+                    && match members.last().and_then(|m| m.kept.last()) {
+                        Some(last) => {
+                            matches!(ast.node(*last), Node::Call(..) | Node::Vararg)
+                        }
+                        None => false,
+                    };
+                open && !overlap && !mentions && !expands
+            }
+            _ => false,
+        };
+        if can_append {
+            if let Some(BlockItem::Merged(members)) = items.last_mut() {
+                members.push(member);
+            }
+        } else {
+            items.push(BlockItem::Merged(vec![member]));
+        }
+    }
+    items
+}
+
+/// Post-substitution spelling for one identifier occurrence: the
+/// resolver's replacement when present, else the AST's stored spelling.
+fn mapped_spelling_of<'x>(
+    ast: &'x Ast,
+    resolver: Option<&'x dyn crate::size::SizeNameResolver>,
+    node: NodeId,
+    site: crate::parser::NameSite,
+    symbol: crate::ast::SymbolId,
+) -> &'x str {
+    if let Some(resolver) = resolver {
+        if let Some(replacement) = resolver.replacement(node, site) {
+            return replacement;
+        }
+    }
+    ast.strings.get(symbol)
 }
 
 fn is_dead_if_statement(ast: &Ast, statement: NodeId) -> bool {
@@ -745,22 +882,6 @@ impl<'a> Printer<'a> {
         }
         self.record(self.ast.strings.get(symbol).into(), node, Some(site))
     }
-    /// Post-substitution spelling for one identifier occurrence: the
-    /// resolver's replacement when present, else the AST's stored spelling.
-    /// Used only by the mapping-aware merge decisions in `block()`.
-    fn mapped_spelling(
-        &self,
-        node: NodeId,
-        site: crate::parser::NameSite,
-        symbol: crate::ast::SymbolId,
-    ) -> &str {
-        if let Some(resolver) = self.name_resolver {
-            if let Some(replacement) = resolver.replacement(node, site) {
-                return replacement;
-            }
-        }
-        self.ast.strings.get(symbol)
-    }
     fn member(&self, text: impl Into<Cow<'a, str>>, node: NodeId) -> Fragment<'a> {
         self.record(
             Fragment::from(text.into()),
@@ -1333,114 +1454,9 @@ impl<'a> Printer<'a> {
     }
     fn block(&mut self, id: NodeId) -> Fragment<'a> {
         if let Node::Block(statements) = &self.ast.nodes[id as usize] {
-            // Dead `if` statements print as nothing and are filtered here,
-            // so the remaining statements join with exactly one separator
-            // each (filtering after printing would leave a doubled one).
-            // Consecutive `local` statements are merged into one when the
-            // merge preserves Lua's value-adjustment semantics:
-            //  * every non-final member keeps exactly one initializer per
-            //    name (otherwise later values would shift into its names);
-            //  * a member's initializers never mention a name bound by an
-            //    earlier member of the group (in the separate form that
-            //    name already means the new binding, including inside
-            //    nested function bodies captured by the initializer);
-            //  * no name repeats across members;
-            //  * a member with no kept initializers may only close a group
-            //    whose last kept initializer is not a call/vararg (which
-            //    would otherwise expand into the new names).
-            // A member whose kept prefix differs in length from its names
-            // (trailing nils, or extra values) closes the group, since its
-            // trailing values are only positionally safe at the very end.
-            let ast = self.ast;
-            let live: Vec<NodeId> = statements
-                .iter()
-                .copied()
-                .filter(|statement| !is_dead_if_statement(ast, *statement))
-                .collect();
-            let mut items: Vec<BlockItem> = Vec::new();
-            for stmt in live {
-                let (names, es) = match ast.node(stmt) {
-                    Node::Local(names, es) => (names.clone(), es.clone()),
-                    _ => {
-                        items.push(BlockItem::Single(stmt));
-                        continue;
-                    }
-                };
-                let keep = trimmed_nil_rhs_len(ast, names.len(), &es, true);
-                let member = LocalMember {
-                    stmt,
-                    names,
-                    kept: es[..keep].to_vec(),
-                };
-                let can_append = match items.last() {
-                    Some(BlockItem::Merged(members)) => {
-                        let open = members.iter().all(|m| m.kept.len() == m.names.len());
-                        // With a spelling substitution, merge decisions must
-                        // compare post-substitution spellings: on the renamed
-                        // tree the stock printer sees exactly those spellings,
-                        // and shadowed same-spelling members (which the stock
-                        // printer blocks on the unrenamed tree) become
-                        // distinct names there. Without a substitution the
-                        // stock path below is unchanged.
-                        let (overlap, mentions) = match self.name_resolver {
-                            Some(resolver) => {
-                                let group_spellings: Vec<&str> = members
-                                    .iter()
-                                    .flat_map(|m| {
-                                        m.names.iter().enumerate().map(|(i, n)| {
-                                            self.mapped_spelling(
-                                                m.stmt,
-                                                crate::parser::NameSite::Binding(i as u32),
-                                                *n,
-                                            )
-                                        })
-                                    })
-                                    .collect();
-                                let overlap = member.names.iter().enumerate().any(|(i, n)| {
-                                    let spelling = self.mapped_spelling(
-                                        member.stmt,
-                                        crate::parser::NameSite::Binding(i as u32),
-                                        *n,
-                                    );
-                                    group_spellings.contains(&spelling)
-                                });
-                                let mentions = rhs_mentions_mapped(
-                                    ast,
-                                    &member.kept,
-                                    &group_spellings,
-                                    resolver,
-                                );
-                                (overlap, mentions)
-                            }
-                            None => {
-                                let group_names: Vec<crate::ast::SymbolId> = members
-                                    .iter()
-                                    .flat_map(|m| m.names.iter().copied())
-                                    .collect();
-                                let overlap = member.names.iter().any(|n| group_names.contains(n));
-                                let mentions = rhs_mentions(ast, &member.kept, &group_names);
-                                (overlap, mentions)
-                            }
-                        };
-                        let expands = member.kept.is_empty()
-                            && match members.last().and_then(|m| m.kept.last()) {
-                                Some(last) => {
-                                    matches!(ast.node(*last), Node::Call(..) | Node::Vararg)
-                                }
-                                None => false,
-                            };
-                        open && !overlap && !mentions && !expands
-                    }
-                    _ => false,
-                };
-                if can_append {
-                    if let Some(BlockItem::Merged(members)) = items.last_mut() {
-                        members.push(member);
-                    }
-                } else {
-                    items.push(BlockItem::Merged(vec![member]));
-                }
-            }
+            // Dead-`if` removal and `local` merging are shared with
+            // size measurement via `block_items`.
+            let items = block_items(self.ast, statements, self.name_resolver);
             let parts = items
                 .into_iter()
                 .map(|item| match item {

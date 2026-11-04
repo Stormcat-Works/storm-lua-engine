@@ -2,7 +2,7 @@
 
 ## 共通VM
 
-PUC-Lua 5.3/mlua 0.10.5のstateを所有thread/Worker内で生成・実行・破棄する。Nativeの通常APIにSend、Rayon、特定async runtimeを要求しない。各VMの乱数列は独立だが、実ゲームの未公開乱数列との一致を保証しない。
+PUC-Lua 5.3/mlua 0.10.5のstateを所有thread/Worker内で生成・実行・破棄する。Nativeの通常APIにSend、Rayon、特定async runtimeを要求しない。既定では各VMの乱数列は独立だが、実ゲームの未公開乱数列との一致を保証しない。
 
 許可environmentだけでsourceを実行し、io/os/package/load/raw debugをscriptに暗黙提供しない。requireも既定はnilであり、extendedの明示source loaderだけが提供する。string.dumpも隠す。全source/callbackにLua命令予算とheap上限を適用する。gameではpcall/xpcallはnilとし、extendedで提供する場合も命令予算の捕捉回避を防ぐ。長時間のホスト関数の途中停止を保証するwall-clock timeoutではない。
 
@@ -35,7 +35,9 @@ loggingはVM側が共通所有する。制限付きdebug.logとprintの公開は
 Luaの公開集合は[環境仕様](environments.md)を正本とする。game/extended、Vehicle/Addon、ホストdebuggerを独立して選ぶ。両環境のdebugテーブルはlogのみ。printはextended専用で、onLogを設定するだけでは追加されない。明示的なホストbindingsは高レベル生成APIから渡し、reset/reloadで再適用する。
 
 
-## ログ発生位置（未公開の後続版）
+<a id="ログ発生位置未公開の後続版"></a>
+
+## ログ発生位置
 
 発生位置はログ関数を実行した瞬間のLuaスタックからVMが記録する。onLog配送後のスタックを位置の根拠にしない。ログcallbackの上から最大16フレームを調べ、Cフレームを飛ばした最も近いLuaフレームの完全なチャンク名と正の現在行を保持する。Luaフレームがない、または最も近いLuaフレームの行を取得できない場合は位置なし。内部のline hook追加やスクリプトへのdebug.getinfo公開は不要。
 
@@ -46,7 +48,7 @@ RustのLogRecord.locationはOption<LogLocation>、構造化WASMのlocationはobj
 ログ上限は本文1行16KiB、最大128件、未配送の本文とチャンク名の合計64KiB。位置メタデータもメモリ上限へ含める。上限超過時はエラーとし、取り出し済み/残存ログを成功時以外でも検査できる。Native/WASM、停止/失敗、include/reset、Addon、位置なし、バイト列、非短縮マップ、3ブラウザで検証する。
 
 
-## 名前付きVehicle callbackと開発用状態操作（未公開）
+## 名前付きVehicle callbackと開発用状態操作
 
 ホストはcall_tick/callTickまたはcall_draw/callDrawで、任意名のグローバル関数を通常のtick/drawフェーズと同じ命令予算・I/O・画面制約で実行できる。元のonTick/onDrawを置換せず、関数名をコードへ埋め込むloadもしない。名前付き描画の一時停止・再開では同一呼び出しのコマンド列を継続する。存在しないcallbackはMissingであり、成功した描画として偽装しない。
 
@@ -59,14 +61,14 @@ control_namespace/controlNamespaceはVehicleのextended限定・明示設定。�
 アプリ固有のsim/LB API、GUIメタデータ、登録tick hook、パス解決、任意のtick/drawスケジュールはこのAPIの利用者が所有する。ゲーム環境の関数集合やデバッグAPIは追加しない。新しいsle_vehicle exportはABIの固定I/Oレイアウトを変更せず、古いSDK操作もそのまま利用できる。
 
 
-## 開発実行向けの静的診断（未公開）
+## 開発実行向けの静的診断
 
 Compilerのanalyze(project,{mode:'runtime'})は、Engineで直接実行する名前付きチャンク向けの解析である。構文・グローバル名・環境・既存lintは維持するが、ビルド用のrequire配置・静的依存グラフ・戻り値付きモジュール規則を適用しない。requireの文字列や動的式は実行ホストのloaderが実行時に解決し、その段階で未存在等のエラーを返す。runtime modeはbuild-time ambientを拒否し、開発用の名前はextendedとhostBindingsで明示する。
 
 省略時のmode:'build'は既存のリンク前解析のままであり、旧consumerのビルド契約を緩めない。runtime解析成功はゲーム向けビルド成功を意味しない。Parserは共有であり、runtime診断のために別Luaパーサーや文面フィルターを作らない。
 
 
-## Development overflow viewport (unreleased)
+## Development overflow viewport
 
 Vehicle callDraw accepts an optional integer margin. The raster remains Engine-owned, translates geometry into an expanded viewport, and keeps screen.getWidth/getHeight and host map requests at their logical sizes. Zero margin is the unchanged game frame contract. The output is GameRGBA, not premultiplied RGBA, and the frame remains subject to the same allocation limits. Normal draw delegates to zero margin; debugger continuation replays only new commands into the same viewport. Host rotation is a presentation transform of rendered pixels, not another primitive rasterizer.
 ## Explicit shared CRT random context

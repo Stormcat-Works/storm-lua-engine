@@ -1,6 +1,6 @@
 # Playground Source Map検査・実行契約
 
-対象はv0.3.0。Compilerの[理由付きmap](optimization-map-extension.md)を利用するアプリ側の契約であり、コンパイラやLua意味論を再実装しない。[P5採用方針](../design/playground-source-map-inspector.md)。
+v0.3.0で導入した機能の契約。Compilerの[理由付きmap](optimization-map-extension.md)を利用するアプリ側の契約であり、コンパイラやLua意味論を再実装しない。[P5採用方針](../design/playground-source-map-inspector.md)。
 
 ## 入力と生成物
 
@@ -12,7 +12,7 @@
 
 ## 双方向の選択
 
-生成範囲の選択は、検証済みの非重複mappingsを照合する。原文の選択はcopy/primary/型付きrelated/inline call siteの明示的な範囲を検索する。複数の対応は一覧から選ぶ。表示の候補ページングは全候補を保持し、見えていない候補を削除しない。
+生成範囲の選択は検証済みの非重複mappingsを照合する。原文の選択はcopy/primary/型付きrelated/inline call siteの明示的な範囲を検索する。複数の対応は一覧から選ぶ。表示の候補ページングは全候補を保持し、見えていない候補を削除しない。
 
 逆引きでは、同じ選択に対するより小さい元範囲や明示的なdispositionがある場合、これらを完全包含する粗い範囲を候補から外す。関数全体に対応した括弧が、その関数内の削除済みの行を実行しているかのように表示しないためである。親constructの説明は詳細欄から参照できる。この優先付けは元コードを再解析した停止可能性の判定ではない。
 

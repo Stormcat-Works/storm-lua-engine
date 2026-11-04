@@ -13,6 +13,8 @@
 | Rust addon | `Addon`のload/start/tick/dispatch/destroy、checkpoint/reload、menu property、server登録、matrix、HTTP |
 | TS main | `loadRuntime`、`fromEmscripten`、`LuaEngine`、`VehicleVm`、`AddonVm`、保存・値ヘルパー、モード別catalog |
 | TS specialized | `/raster`、`/raw`、`/commands`、`/debug`、`/canvas` |
+| Rust compiler | syntax、analysis、minify、buildの公開API。実行VMを初期化せずに利用できる |
+| TS compiler | `/compiler`、`/compiler-worker`。解析・最適化・プロジェクトビルドとWorker経由の操作 |
 
 `engine.createVehicle()`と`engine.createAddon()`は異なる型を返す。addonにはComposite I/Oと描画APIを公開しない。WASMの単一generational registryもmodeを検査し、別profileの関数を誤って呼べないようにする。曖昧なcreateVm/LuaVmの互換aliasは提供しない。
 

@@ -1,15 +1,15 @@
 # Source maps and source locations
 
-## v0.3.0 開発APIの更新
+## v0.3.0で導入したAPI
 
-最適化後mapを`sourceMap:true`で要求できるようになった。標準Source Map v3と`x_storm`の範囲・理由・原文snapshot/生成物の指紋を返す。通常/LifeBoat buildの元ファイル合成、Worker転送と`validateSourceMap`も接続済み。[現行の公開契約](optimization-map-extension.md)と[検証](../verification/optimization-explanations-20261001.md)を参照する。npmのv0.3.0リリース自体は別工程である。
+最適化後mapを`sourceMap:true`で要求できるようになった。標準Source Map v3と`x_storm`の範囲・理由・原文snapshot/生成物の指紋を返す。通常/LifeBoat buildの元ファイル合成、Worker転送と`validateSourceMap`も接続済み。[現行の公開契約](optimization-map-extension.md)と[検証](../verification/optimization-explanations-20261001.md)を参照する。現在の公開状態は[STATUS](../../STATUS.md)に記す。
 
 
-## Published and working-tree boundaries
+## Published version boundaries
 
-Published **v0.2.1** returns detailed Source Map v3 JSON `code`/`map` pairs for non-minified normal and LifeBoat builds. Token/column anchors and exact internal byte ranges identify copied original slices. Standalone `minify` and `minify: true` still do not return a post-optimization map.
+Published **v0.2.1** returned detailed Source Map v3 JSON `code`/`map` pairs for non-minified normal and LifeBoat builds. Token/column anchors and exact internal byte ranges identify copied original slices. In that release, standalone `minify` and `minify: true` did not return a post-optimization map.
 
-The **unpublished v0.3.0 work** exposes optimized maps and versioned explanations through the opt-in `sourceMap` option. Normal and LifeBoat project builds compose them back to original snapshots. `validateSourceMap` verifies content identity and the agreement between standard and detailed ranges. The public extension contract is in [Optimization map extension](optimization-map-extension.md). Published SDK tags and artifacts remain fixed.
+The **v0.3.0 release** introduced optimized maps and versioned explanations through the opt-in `sourceMap` option. Normal and LifeBoat project builds compose them back to original snapshots. `validateSourceMap` verifies content identity and the agreement between standard and detailed ranges. The public extension contract is in [Optimization map extension](optimization-map-extension.md). Published SDK tags and artifacts remain fixed.
 
 A failed build has no artifact. Hosts must check the build result before using `code` or `map`. Compilation does not create a VM or execute Lua.
 
@@ -66,7 +66,7 @@ This map does not restore optimized-away variables, original evaluation order, i
 Test existence is not a claim that a particular revision passed; executed commands and results belong in verification records. The trace-mapping package is an example/test dependency, not a runtime dependency of the SDK.
 
 
-## v0.3.0開発中: 構文/印字レイヤーの範囲記録
+## v0.3.0で導入: 構文/印字レイヤーの範囲記録
 
 `parse_source_with_positions`のNodePositionsは、同じパース済みASTの全node byte spanと、NameSiteで識別した名前出現の範囲を保持する。従来の診断用pointも保持する。位置はUTF-8バイトで、最適化後のASTにはそのまま流用できない。
 
@@ -75,7 +75,7 @@ Test existence is not a claim that a particular revision passed; executed comman
 このPrinter範囲は元の由来そのものではない。入力ASTが変換されている場合、元範囲は各変換の由来情報から取得する。高レベル`minify`/`build(minify:true)`のmapは、その由来とPrinter出力を合成して作る。
 
 
-## v0.3.0開発中: 内部の最適化由来
+## v0.3.0で導入: 内部の最適化由来
 
 低レベルRustの`CompileOptions.origin_source: Some(label)`は、原文snapshotを初期由来として、返却する`CompileCodeResult.origins: Some(GeneratedOrigins)`まで追跡する。Noneは通常の非追跡経路である。labelは表示用で、任意ファイルを開く権限や実runtime chunk IDではない。高レベルbuild/SDKの`sourceMap:true`はこの内部追跡を有効にし、`sourceName`は単一入力の表示名として使う。
 
@@ -92,7 +92,7 @@ NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブ�
 67パスの分類と未対応範囲は[台帳](../design/source-provenance-pass-audit.json)へ保存する。パスがmetadata非依存で完走し同じLuaを返せることと、その全出力を精密に原文へ戻せることを区別する。
 
 
-## v0.3.0開発中: 全最適化パスの由来契約（P3）
+## v0.3.0で導入: 全最適化パスの由来契約（P3）
 
 現行の67登録パスは[台帳](../design/source-provenance-pass-audit.json)のとおり由来伝播を実装している。変換による値・式・参照は元の寄与範囲に対応し、定義と使用、各名前出現、複数の同値入力を区別する。生成された制御構造や保存領域はSyntheticと明示する。削除された元構文に架空の生成範囲を作らない。
 
@@ -100,7 +100,7 @@ NodeArenaは既存Arenaのnode storageと独立したoptionalな由来テーブ�
 
 描画recordは通常・拡張・高密度・共有・規則列の各候補とデコーダーで、元の引数・payload/パレット・予測初期値と生成制御を区別する。静的な複数由来の保持と、実行時の特定反復を元の一命令に対応付ける処理は別機能である。
 
-実変換を必須とする67パスのテスト、JSON転送、部分/全由来欠落、各536実コンパイラ設定、代表240設定と実Lua codec比較を[検証記録](../verification/source-origin-all-passes-20261001.md)に記す。このP3検証とは別に、P4の標準v3・link合成・公開API・成果物の同一性を[理由付きmap検証](../verification/optimization-explanations-20261001.md)で確認する。Playground全体の説明UIはP5として残る。
+実変換を必須とする67パスのテスト、JSON転送、部分/全由来欠落、各536実コンパイラ設定、代表240設定と実Lua codec比較を[検証記録](../verification/source-origin-all-passes-20261001.md)に記す。このP3検証とは別に、P4の標準v3・link合成・公開API・成果物の同一性を[理由付きmap検証](../verification/optimization-explanations-20261001.md)で確認する。Playground全体の説明UIの実装・検証は、後述のP5で扱う。
 
 
 ## Playground consumer（P5）

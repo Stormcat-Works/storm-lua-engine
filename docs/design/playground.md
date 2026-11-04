@@ -1,6 +1,6 @@
 # Storm Lua Engine: Playground
 
-決定日: 2026-09-26。**CLI/Web・Worker設定を実装し、Addon Labの移行・撤去を完了。公開・配備は未実施。** 操作は[app guide](../../app/README.md)、検証は[Playground検証](../verification/playground-20260926.md)。SDKの実装状況は[STATUS](../../STATUS.md)、判断理由は[ADR 0006](../adr/0006-playground-coexistence.md)を参照する。本文はPlaygroundの責務・範囲・移行の正本であり、公開済みの利用ガイドではない。
+決定日: 2026-09-26。**CLI/Web・Worker設定を実装し、Addon Labの移行・撤去を完了。** 初回の公開・配備は[v0.2.0の公開記録](../verification/release-0.2.0.md)を参照する。操作は[app guide](../../app/README.md)、検証は[Playground検証](../verification/playground-20260926.md)。SDKの実装状況は[STATUS](../../STATUS.md)、判断理由は[ADR 0006](../adr/0006-playground-coexistence.md)を参照する。本文はPlaygroundの責務・範囲・移行の正本であり、公開済みの利用ガイドではない。
 
 ## 1. 目的とStorm Minとの併存
 
@@ -14,7 +14,7 @@ Storm Minは短縮・ゲーム向け出力に特化した既存CLI/Webを維持�
 
 | 配置 | 所有するもの |
 | --- | --- |
-| `app/` | Playgroundのアプリ、アプリ用設定、公開・配備の入口 |
+| `app/` | Playgroundのアプリ、アプリ用設定、公開・配備に使う設定と手順 |
 | `app/cli/` | Node/TypeScriptで同じWASM SDKを明示駆動するCLI。Webと操作処理を共有 |
 | `app/web/` | SDKを試すWeb画面、画面状態、ブラウザ側の接続・操作 |
 | `app/wrangler.jsonc` | makkii.jpでLua Engine / Playgroundを公開するCloudflare Workerの設定 |
@@ -36,7 +36,7 @@ SDKはサイトのホスト名・配備パスを持たない。実際の公開�
 
 ## 3. 全機能を試せることの定義
 
-公開SDKの利用者向け機能ごとに、操作入口、入力例、結果の確認方法、対応環境を用意する。成功するボタンだけでなく、未対応・誤入力・実行制限などの失敗も確認できるようにする。内部最適化パスごとに専用画面を作ったり、内部ASTの補助関数すべてをGUI化したりすることは目的にしない。
+公開SDKの利用者向け機能ごとに、操作方法、入力例、結果の確認方法、対応環境を用意する。成功するボタンだけでなく、未対応・誤入力・実行制限などの失敗も確認できるようにする。内部最適化パスごとに専用画面を作ったり、内部ASTの補助関数すべてをGUI化したりすることは目的にしない。
 
 以下は実装開始時の機能群。詳細な公開面は[利用側API](../guide/api-reference.md)、[compiler guide](../guide/compiler.md)、モード別APIカタログと実exportを照合して確定する。操作/例/テストの実装対応は[app guide](../../app/README.md)と[検証](../verification/playground-20260926.md)を参照します。低レイヤーRust専用のprobeはconformanceの独立実行例で試します。
 
@@ -54,9 +54,9 @@ SDKはサイトのホスト名・配備パスを持たない。実際の公開�
 
 一つの汎用的な入力/出力パネルや、小さな実行例で複数APIを試せてよい。GUI操作が適さない公開低レイヤー機能は、CLIや組み込みprobeで直接試せる入口を用意する。CLI/Webの能力差は明示し、試せない公開機能を黙って除外して「全機能対応」としない。未実装のSDK機能は対応外の理由を示すだけとし、Playgroundのために架空の実装を足さない。
 
-完了判定には、公開機能群と操作/実行例/テストの対応表を使う。Nativeのみ、ブラウザのみなどの対応条件と未完了項目を記録し、後からSDKの機能が追加された場合も対応表を更新する。この表はUI用の新しいゲームAPIカタログや意味論の第二正本にしない。
+完了判定には公開機能群と操作/実行例/テストの対応表を使う。Nativeのみ、ブラウザのみなどの対応条件と未完了項目を記録し、後からSDKの機能が追加された場合も対応表を更新する。この表はUI用の新しいゲームAPIカタログや意味論の第二正本にしない。
 
-現在、Addon実行は利用可能だが、Addonの解析・リンク・最適化はcompiler側が未対応として拒否する。Playgroundでもその違いを表示する。Addonコンパイラの実装をPlayground完成の前提にはしない。
+SDKではAddon実行に加え、[buildAddon](../specs/addon-build.md)による非短縮リンクと構文・環境検証を利用できる。Addon最適化と全server APIの解析は未提供である。PlaygroundではSDKの対応範囲と実際に試せる操作を区別し、操作・例・テストの対応を上記の対応表で管理する。未提供のAddon最適化をPlayground完成の前提にはしない。
 
 ## 4. 操作とホストの境界
 

@@ -1,6 +1,6 @@
 # ADR 0006: Storm Minとの併存とStorm Lua Engine: Playground
 
-日付: 2026-09-26。状態: **採用。設計反映のみで、Playground実装・Addon Lab削除・本番配備は未完了。**
+日付: 2026-09-26。状態: **採用。** 決定時点では設計反映のみで、Playground実装・Addon Lab削除・本番配備は未完了だった。現在の実装・公開状況は[STATUS](../../STATUS.md)を参照する。
 
 ## 背景
 

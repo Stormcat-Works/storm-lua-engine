@@ -4,13 +4,13 @@ Status: accepted for the foundation, 2026-09-24. Implementation completion is tr
 
 ## Decision
 
-機能所有者4crate（spec/raster/vm/microcontroller）とWASM境界2crateを採用する。test-only conformanceとxtaskを製品DAGから分け、依存を機械検査する。詳細な現行責務は[architecture](../design/architecture.md)に集約する。
+機能所有者として4crate（spec/raster/vm/microcontroller）、WASM境界として2crateを採用する。test-only conformanceとxtaskを製品DAGから分け、依存を機械検査する。詳細な現行責務は[architecture](../design/architecture.md)に集約する。
 
 NativeはCargo source依存、TSは1つのnpm packageと2つのWASM成果物を使う。高レベルAPIと低レベルの借用/batch APIを両方サポートする。Linear Memoryはコピー回避の手段であり、Worker/表示/関数呼び出しまで0µsになるという主張は採用しない。
 
 描画の契約はこのリポジトリが所有し、フォントデータを必ず同梱する。Composite信号はf32、Lua内部はf64/i64として境界でのみ変換する。描画規則と式は[screen](../specs/screen.md)、数値契約は[numeric I/O](../specs/numeric-io.md)を正本にする。
 
-Propertiesを信号へ混ぜず、host debuggerをLua標準APIへ露出させない。プロパティの実ゲーム保存精度・欠損getterの未確認挙動は確認済みと装わず、実装時fixtureゲートにする。
+Propertiesを信号へ混ぜず、host debuggerをLua標準APIへ露出させない。プロパティの実ゲーム保存精度・欠損getterの未確認挙動は確認済みと装わず、実装時にfixtureで確認することを条件とする。
 
 ゲーム互換の最適化テストはエンジンを使い、汎用Luaの独立oracleは直接backend利用を許容する。コンパイラ製品へVMの強制依存は追加しない。
 

@@ -6,7 +6,7 @@
 
 - 意味論の所有者は[architecture](docs/design/architecture.md)。1つの処理に1つの所有者を置く。
 - 公式アプリは[Playground設計](docs/design/playground.md)に従い`app/`で管理する。Storm MinのCLI/Webとは併存し、SDKを試す範囲を超えるアプリ機能を増やさない。
-- Cargoの全依存宣言を[architecture.json](tools/architecture.json)で管理し、`cargo xtask check`を通す。optional・target固有・dev依存も対象。
+- Cargoの依存宣言はすべて[architecture.json](tools/architecture.json)で管理し、`cargo xtask check`を通す。optional依存、target固有依存、dev依存も対象とする。
 - 製品からconformance/xtaskへ依存しない。描画専用経路はmlua、Lua処理系、DOM、GPU、HTTPへ依存しない。
 - WASM境界は変換・所有権・呼び出しのみを担当し、ゲームの描画式やLua API規則を再実装しない。
 - vehicleとaddonは別profile・別API型。server関数や地形データはhostが明示提供し、未提供を成功stubで埋めない。

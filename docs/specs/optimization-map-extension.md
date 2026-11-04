@@ -42,7 +42,7 @@ Rustの公開構造とvalidatorが実装契約で、TypeScriptの型は`optimiza
 | tokenNames | 初出順の名前綴りプール（JSON 文字列配列）。非名前トークンは含まない |
 | tokens | トークンごとの配列レコード。単一 source では `[generatedStart, sourceStart, sourceEnd, nameId]`、nameId は tokenNames への index、非名前トークンは -1。generatedEnd は generatedStart + (sourceEnd - sourceStart) から復元する |
 
-リネームされたトークン（origin が元の綴りを primary に名指しするが生成側の長さが異なるもの）は、末尾に generatedEnd を追加したレコードで表す（単一 source では5要素）。複数 source の map ではレコードの第2要素に source index を挿入する（完全 copy が5要素 `[generatedStart, source, sourceStart, sourceEnd, nameId]`、リネームが6要素）。レイアウトは source 数だけで決まるため、単一 source の既存レコードの意味は変わらず、複数 source のトークン表は単一 source 前提の旧読手では「単一 source でない」として棄却される（fail-closed）。schemaVersion は 2 のまま据え置く（schema 2 は未リリースであり、書手・読手・型・本仕様を同時に更新する）。
+リネームされたトークン（origin が元の綴りを primary に名指しするが生成側の長さが異なるもの）は、末尾に generatedEnd を追加したレコードで表す（単一 source では5要素）。複数 source の map ではレコードの第2要素に source index を挿入する（完全 copy が5要素 `[generatedStart, source, sourceStart, sourceEnd, nameId]`、リネームが6要素）。レイアウトは source 数だけで決まるため、単一 source の既存レコードの意味は変わらず、複数 source のトークン表は単一 source 前提の旧読手では「単一 source でない」として棄却される（fail-closed）。schemaVersion は 2 のまま据え置いた。この形式の追加はschema 2の公開前に行い、書手・読手・型・本仕様を同時に更新した。
 
 トークン間の未知ギャップ（および先頭・末尾の余白）はワイヤから省き、読手の展開時に字句 copy と同じ cursor 走査で未知 mapping として復元する。展開時の検査：トークンの生成順・非重複・範囲内・名前綴りと原文 slice の一致・source index の範囲内。simple_copy 経路ではさらに「全 origin が1件以上の mapping から参照されていること」「初出順が origin 順と一致すること」「(source, primary, 名前, 精度) が一意であること」「mapping が生成コード全体を連続して覆うこと」を満たす場合に限りトークン表を使い、満たさない場合は schemaVersion 2 のまま従来レイアウトで出す。トークン表を持たない字句形（トークン0件など）も従来レイアウトで出す。
 
@@ -112,7 +112,9 @@ SHA-256は組み違い・破損の検出用で、作成者の署名ではない�
 
 ## 未提供のデバッグ機能
 
-元の変数の保存先・生存期間・実行時の値、消えたframe、bytecode命令→生成列の対応、録画/逆実行、描画loopの特定反復→元命令の動的復元は別工程。行番号しか得られない実行環境から、mapだけで実際の列を確定しない。Playgroundの詳細UIはP5として管理する。
+元の変数の保存先・生存期間・実行時の値、消えたframe、bytecode命令→生成列の対応、録画/逆実行、描画loopの特定反復→元命令の動的復元は別工程。行番号しか得られない実行環境から、mapだけで実際の列を確定しない。
+
+Playgroundの詳細UIはP5で実装済みであり、[検査・実行契約](playground-source-maps.md)に従う。
 
 
 ## 同じルールの複数適用

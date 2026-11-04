@@ -2,7 +2,9 @@
 
 記録日: 2026-09-26。基準: Storm Lua Engine v0.1.0。
 
-**初回のSDK移管・既存ホスト接続を実装済み、未公開。** 本文は全体の目標設計。実装済みの入口は[Compiler guide](../guide/compiler.md)、実行した検証と残件は[統合検証](../verification/compiler-integration-20260926.md)を参照。Playgroundの追加・Addon Labの移行など未完了段階も含むため、本文の全提案を完了扱いしない。現在の契約は[Architecture](architecture.md)と[利用側API](../guide/api-reference.md)、言語処理移管の採用判断は[ADR 0005](../adr/0005-compiler-sdk-integration.md)、Storm Minとの併存とPlaygroundは[ADR 0006](../adr/0006-playground-coexistence.md)を参照する。
+初回のSDK移管・既存ホスト接続、Playgroundの追加・Addon Labの移行は実装済み。SDKの現行公開版はv0.4.0であり、公開状態は[STATUS](../../STATUS.md)に記す。
+
+本文は当初の目標設計と段階ごとの記録を保持する。未確定・未実施の記述は各記録時点の状態であり、本文の全提案を完了扱いしない。実装済みの入口は[Compiler guide](../guide/compiler.md)、初回移管時の検証と残件は[統合検証](../verification/compiler-integration-20260926.md)を参照。現在の契約は[Architecture](architecture.md)と[利用側API](../guide/api-reference.md)、言語処理移管の採用判断は[ADR 0005](../adr/0005-compiler-sdk-integration.md)、Storm Minとの併存とPlaygroundは[ADR 0006](../adr/0006-playground-coexistence.md)を参照する。
 
 ## 1. 決定範囲
 
@@ -14,9 +16,9 @@
 | 必須の品質条件 | 不具合・意味保存条件の不足によるデフォルト無効パスは、削除または根本修正で解消する。無効のまま移植して完了としない |
 | 合意したフロントエンド | Storm MinのCLI/Webを維持し、SDK全機能の確認用にStorm Lua Engine: Playgroundを追加する。CLI/Webとmakkii.jp公開用Workerは`app/`配下で管理する |
 | 合意したサンプル整理 | Addon Labの必要なSDK接続・確認をPlaygroundへ移行し、旧アプリと不要な仮物理・3Dワールドを削除する |
-| 未確定 | PlaygroundのCLI実行ファイル名・配布単位・Webの正式URL・公開Workerのroute・次の公開版。Storm Minの廃止は行わない |
+| 計画作成時点の未確定事項 | PlaygroundのCLI実行ファイル名・配布単位・Webの正式URL・公開Workerのroute・次の公開版。Storm Minの廃止は行わない |
 
-設計の採用と実装・公開の完了は区別する。初回SDK移管と4パス撤去は検証済み。Playground、Addon Lab移行、本番配備は未完了であり、この文書で研究タスクや公開設定を変更しない。
+設計の採用と実装・公開の完了は区別する。初回SDK移管と4パス撤去は検証済み。計画作成時点ではPlayground、Addon Lab移行、本番配備は未完了だった。この文書で研究タスクや公開設定を変更しない。
 
 ## 2. 製品と所有者
 
@@ -67,7 +69,7 @@ SDKが受け取るモジュールはメモリ上のデータとする。非保�
 | `minify` | 単一ソース、target、最適化設定 | 短縮Luaと付随情報 | VM生成、暗黙の実行検証 |
 | 実行API | Luaソース、プロパティ、ホストサービス | VMとcallback結果 | 暗黙のminify、ホストのスケジューラ生成 |
 
-`build`はリンクと必要時のminifyを組み合わせる。別の最適化器や別のモジュール規則を作らない。ホストにパスを一つずつ呼ばせ、採否を再実装させるAPIを通常の入口にしない。
+`build`はリンクと必要時のminifyを組み合わせる。別の最適化器や別のモジュール規則を作らない。ホストがパスを一つずつ呼び出して採否を再実装するAPIを通常の利用経路にしない。
 
 利用例の形は`analyze(project, { target: "vehicle" })`、`build(project, { target: "vehicle", minify: false })`、`minify(source, { target: "vehicle", targetSize: 8192 })`。引数・戻り値の最終型は実装前のAPI設計で決める。
 
@@ -83,7 +85,7 @@ SDKが受け取るモジュールはメモリ上のデータとする。非保�
 
 IDEでは原文を解析し、非短縮でリンクした成果物を実行し、エクスポート時に明示的にminifyする。生成位置と元ソースを結ぶ共通ヘルパーはSDKに置けるが、エディタ表示と操作タイミングはホストが持つ。
 
-移行元のmapは非短縮リンク結果の行単位対応であり、最適化後の変数名・評価順序まで逆変換できる保証ではない。提供できない精度のmapを生成したり、最適化済みコードを元コードどおりステップ実行できると説明したりしない。
+移行元のmapは非短縮リンク結果の行単位対応を示すものであり、最適化後の変数名・評価順序まで逆変換できることは保証しない。提供できない精度のmapを生成したり、最適化済みコードを元コードどおりステップ実行できると説明したりしない。
 
 ### targetと意味論
 
@@ -124,7 +126,7 @@ TSの`/compiler`入口は実装済み。コンパイラ用loaderはVMを初期�
 
 Addon Labは必要なSDK接続・確認ケースをPlaygroundへ移した後、独立アプリとして削除する。港、船、仮物理、3Dワールドをそのまま移すものではない。既存の小さな組み込み例とSDK conformanceは維持する。Storm MinのCLI/Webは移設・削除しない。
 
-Playgroundの実装・確認は完了し、makkii.jpへの本番公開は未実施。SDKの実行・解析機能を暗黙に呼ばず、必要な操作を明示させる。公開アプリ、公開用Cloudflare Worker、ブラウザ内Web WorkerをSDK自身の意味論と分離する。
+Playgroundの実装・確認は完了した。本節の記録時点では、makkii.jpへの本番公開は未実施だった。SDKの実行・解析機能を暗黙に呼ばず、必要な操作を明示させる。公開アプリ、公開用Cloudflare Worker、ブラウザ内Web WorkerをSDK自身の意味論と分離する。
 
 ## 9. デフォルト無効パスを残さない移行ゲート
 
@@ -168,4 +170,4 @@ raw呼び出し列、正規化後のDrawCommand、画素は異なる観測。命
 
 移行元で有用だった機能・テスト・ベンチを、統合しやすさだけで落とさない。機械的抽出は出力差分を検査し、修正・削除による意図的な差は別に報告する。不具合修正より過去の誤出力維持を優先せず、文字数退行や性能悪化も隠さない。
 
-初回SDK移管・4パス撤去・既存Storm Min接続と検証は完了。残る範囲は[TASKS](../../TASKS.md)と[Playground設計](playground.md)で追跡する。PlaygroundとAddon Lab撤去は実装済み。新SDKの公開と本番配備は未実施。過去の設計予定を実装済みAPIと混同しない。
+初回SDK移管・4パス撤去・既存Storm Min接続と検証は完了。残る範囲は[TASKS](../../TASKS.md)と[Playground設計](playground.md)で追跡する。PlaygroundとAddon Lab撤去は実装済み。新SDKの公開と本番配備は、この記録時点では未実施だった。過去の設計予定を実装済みAPIと混同しない。

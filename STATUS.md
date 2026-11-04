@@ -1,8 +1,18 @@
 # Current status
 
+## v0.4.0 公開済み（2026-11-04）
+
+v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`、タグは `v0.4.0`。GitHub Release と npm の公開も完了している。
+
+正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
+
+## 開発・公開準備の履歴
+
+以下は各作業時点の記録であり、「未公開」「承認待ち」、検査の失敗や未実施の記述も当時の状態を示す。現在の公開状態は上記のとおり。後続の候補再構築と検証結果は [後続の候補再構築記録](docs/verification/release-candidate-0.4.0-r308-rebuild-20261104.md)に残している。履歴の測定値・条件・採否はその時点の記録として保持する。
+
 ## v0.4.0 ローカル公開候補（2026-11-02、未公開）
 
-正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を統合した公開候補。版番号を0.4.0へ更新し、現行コーパス全件（4,155ファイル×4条件）の最終FULL検証では整列TSVが第300・第301ラウンドとバイト同一（SHA-256 `42ce28ca…`）、ワークスペーステスト1,775件合格、独立回帰パック114/114を確認した。`cargo xtask check`のアーキテクチャ検査は、第299ラウンドで入った`storm-lua-build`→`storm-lua-vm`依存を規則側が未許可のため失敗する（ベースでも同一の既存不整合であり、本準備の退行ではない。公開判定の入力として[候補記録](docs/verification/release-candidate-0.4.0.md)に明記）。公開（push・タグ・GitHub Release・npm）は管理者の明示承認待ちで、本候補は公開済みではない。
+正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を統合した公開候補。版番号を0.4.0へ更新し、現行コーパス全件（4,155ファイル×4条件）の最終FULL検証では整列TSVが第300・第301ラウンドとバイト同一（SHA-256 `42ce28ca…`）、ワークスペーステスト1,775件合格、独立回帰パック114/114を確認した。`cargo xtask check`のアーキテクチャ検査は、第299ラウンドで入った`storm-lua-build`→`storm-lua-vm`依存を規則側が未許可のため失敗する（ベースでも同一の既存不整合であり、本準備の退行ではない。公開判断の資料として[候補記録](docs/verification/release-candidate-0.4.0.md)に明記）。公開（push・タグ・GitHub Release・npm）は管理者の明示承認待ちで、本候補は公開済みではない。
 
 ## API エイリアス解析の global／localized 間共有（2026-10-30、未公開）
 
@@ -49,8 +59,8 @@ slack128 では 0 件（部分複合の価値はタイトな目標に集中）�
 
 ## トークン表の複数ソース対応と混在形（部分保存）（2026-10-30、未公開）
 
-schema-2 トークン表の残件2件を一設計パスで解消した。(1) ゲートの単一
-ソース条件を外し、複数ソースではレコード第2要素に source index を持つ
+schema-2 トークン表の残件2件を一設計パスで解消した。(1) 単一ソースに限る
+条件を外し、複数ソースではレコード第2要素に source index を持つ
 レイアウト（完全 copy 5要素・リネーム6要素）で出す。レイアウトは source
 数で切り替わるため単一ソースの既存 Map はバイト単位で不変で、
 schemaVersion は 2 のまま。(2) compose に部分保存を追加し、変換後も
@@ -159,7 +169,7 @@ R137 のリネーム済みトークンの Map 表現の未設計を一設計パ�
 materialize 済み字句ライタはリネーム済み mapping に copied を書き、トークン表
 レコードは 4 要素のままであった。変更は生成コードとリネーム処理自体には触れず、
 リネーム済み mapping の copied を null とし、トークン表レコードをリネーム済み
-のみ第 5 要素（generated_end）付きとし、simple_copy ゲートをリネーム形へ拡張し、
+のみ第 5 要素（generated_end）付きとし、simple_copy の適用条件をリネーム形にも広げ、
 単純形の compose には origin のインプレース再マッピングによる高速路を加えた
 （非単純入力は従来経路とバイト同一）。validate の検査内容は変更していない。
 回帰テスト 5 件を追加した。
@@ -169,8 +179,8 @@ materialize 済み字句ライタはリネーム済み mapping に copied を書
 単一 compile の validate が通過へ。project 経路では 3 件がトークン表化し
 Map 合計は約 49MB から約 4.6MB へ（約 44.8MB 削減）。lifeboat 経路は 69 件の
 非単純 origin（テンプレート由来の変換・理由を持つ origin）を保持するため正しく
-従来レイアウトに残り、validate は通過する。複数モジュール project はゲートの
-単一ソース条件により引き続き従来レイアウト。
+従来レイアウトに残り、validate は通過する。複数モジュール project は単一ソースに限る
+条件により引き続き従来レイアウト。
 詳細は docs/verification/renamed-token-map-representation-20261030.md。
 
 ## SMC 部分変種（S1-partial 同型）の追加（2026-10-30、未公開）
@@ -482,7 +492,7 @@ target 限定レイアウト `joint-api-local-s1`・
 目標なしコンパイルには一切触れない。登録パス ID は追加しない
 （LICM と同じレイアウト変換の扱いで、map の churn を避ける）。
 
-キャッシュ局所名は、プログラムの文字列集合に存在しない最短の
+キャッシュ局所名はプログラムの文字列集合に存在しない最短の
 1 文字識別子を使う。第56サイクル形の生成名
 `__membercache` はレイアウト候補では短縮されず、1 グループ
 あたり約 +34 文字かかっていた（合成入力で S1 候補 217 文字→
@@ -1436,7 +1446,7 @@ Map 比 1.2 の目標は未達のまま。[検証記録](docs/verification/from-
 
 ## v0.3.1 公開版の準備と検証（2026-10-12）
 
-最新性能ブランチ、Addon実行/非短縮build/metadata、採用済み743件の描画契約を統合した。条件分岐のpanic/trap、部分/大量反復名mapとWASMオプション拒否を修正。Native871、SDK30、実WASM87、Playground/CLI38、3ブラウザ各16例、独立tarball consumerと基本ゲートが成功した。[候補の検証・性能・成果物](docs/verification/release-candidate-0.3.1.md)。
+最新性能ブランチ、Addon実行/非短縮build/metadata、採用済み743件の描画契約を統合した。条件分岐のpanic/trap、部分/大量反復名mapとWASMオプション拒否を修正。Native871、SDK30、実WASM87、Playground/CLI38、3ブラウザ各16例、独立tarball consumerの検証と基本検査が成功した。[候補の検証・性能・成果物](docs/verification/release-candidate-0.3.1.md)。
 
 公開v0.3.0比、実コーパス成功組の全探索平均はMapなし48.9%、Mapあり60.8%短縮。既知7trapの全設定が成功し、残る8,175成功組の生成Lua・完全map・診断・探索が一致。最大Map比1.2目標は未達で、追加性能研究はv0.3.2以降へ送る。source manifestと検査済みtarball/ZIP、SHA256SUMS、release notes、ガイドpatchを永続領域へ保存した。ローカル候補の記録と正式配布物は区別する。公開commitの3 OS CI、producer確定後の成果物再検査、registryと本番の最終確認は[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.3.1)の検証記録で確認する。
 
@@ -1488,7 +1498,7 @@ Native 806件、SDK 30件、実WASM 81件、Playground/CLI 38件、3ブラウザ
 
 全67パスの対応と、固定30入力・240設定のUnknown 0%/生成Lua一致は維持する。理由コードと構造操作は保持するが、全パスの適用根拠を形式的に証明するものではない。basis/factsの詳細は実際に記録した判断のみで、未記録の根拠を推測しない。Source/Derivedの名前・式・文などの精度と、Synthetic/Unknownを区別する。
 
-**P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** identity/copyの文字選択・カーソル・runtime行の範囲を正確に保つ仕上げも完了した。Unicode/CRLFと読み取り専用欄のキーボード操作、保存復元を3ブラウザーで再確認。[最終確認](docs/verification/p5-final-selection-20261001.md)。 Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
+**P0〜P5とリリース前の利用検証・梱包・互換性棚卸しを完了した。** identity/copyの文字選択・カーソル・runtime行の範囲を正確に保つ仕上げも完了した。Unicode/CRLFと読み取り専用欄のキーボード操作、保存復元を3ブラウザーで再確認。[最終確認](docs/verification/p5-final-selection-20261001.md)。Playgroundで元snapshot/生成Luaの双方向選択、複数由来と理由・除去記録を表示し、実VMのpause/step/log/errorへ接続する。実行時に生成行しか得られない場合は列を捏造せず候補を示す。入力編集後の旧map、保存されたVM結果と新しい実行を混同しない。[P5の完成確認](docs/verification/p5-playground-20261001.md)、[アプリ契約](docs/specs/playground-source-maps.md)。
 
 CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存・復元を検証済み。v0.3.0向けの[限定性能ラウンド](docs/verification/source-map-performance-20261002.md)を完了した。サイズ比較にしか使わない候補での由来処理を減らし、生成Luaとschema1の内容を維持。追加改善はv0.3.1以降へ送る。元変数値・寿命・bytecode PC・消えた実frame・loop反復の動的復元は別機能として未実装。**v0.3.0をnpm・GitHub・Playgroundへ公開し、registry再導入と本番3ブラウザーの確認まで完了した。** npm latestは0.3.0。[公開記録](docs/verification/release-0.3.0.md)に対象commit・配布物・実行結果を残す。[確定設計](docs/design/optimization-explanation-schema.md)、[公開スキーマ契約](docs/specs/optimization-map-extension.md)。
 
@@ -1498,9 +1508,9 @@ CLI/Webの16確認例、workspace export/import、IndexedDBの大容量map保存
 
 npm公開workflowは実公開まで成功した。[run 36667537171](https://github.com/Stormcat-Works/storm-lua-engine/actions/runs/36667537171)のattempt 1で公開し、attempt 2で同一版の再公開を省略してregistry再取得・consumerを確認した。[自動化の検証記録](docs/verification/publication-workflow-20260930.md)。v0.3.0は専用branch `feat/minify-source-provenance-v0.3`で開発中であり、本公開とは分離する。
 
-以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は本節が正本である。
+以下の0.2.0と統合ブランチの記述は過去の実装・検証記録であり、現在の公開状態は冒頭に記したとおりである。
 
-2026-09-27 — **Storm Lua Engine v0.2.0をnpm/GitHubへ公開し、Playground・ガイド・2記事の本番公開まで完了。** 版番号はworkspace、npm SDK、Playgroundとも0.2.0です。範囲と公開手順は[release](docs/release.md)、残件は[TASKS](TASKS.md)、利用ガイドは[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)です。
+2026-09-27 に **Storm Lua Engine v0.2.0をnpm/GitHubへ公開し、Playground・ガイド・2記事の本番公開まで完了。** 版番号はworkspace、npm SDK、Playgroundとも0.2.0です。範囲と公開手順は[release](docs/release.md)、残件は[TASKS](TASKS.md)、利用ガイドは[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)です。
 
 ## 後続ブランチの作業（未公開）
 
@@ -1510,7 +1520,7 @@ npm公開workflowは実公開まで成功した。[run 36667537171](https://gith
 
 ## consumer実行ホストの接続準備（未公開）
 
-同じ専用ブランチで、名前付きVehicle tick/draw、extended限定controlNamespace、更新後propertyスナップショット、analyzeのruntime/build区分を追加。Designと通常実行で標準APIを再実装せず利用するための公開操作。新しい状態操作を行った場合だけ固定I/Oへ戻し、描画やloadが未消費のホスト入力を上書きしない。識別子位置で記号や予約語を受理していた既存構文不具合も修正した。詳細はruntime-host仕様。[検証記録](docs/verification/vehicle-host-controls-20260929.md): Native487、WASM60、SDK JS30、3ブラウザ、梱包consumerと各静的ゲート通過。
+同じ専用ブランチで、名前付きVehicle tick/draw、extended限定controlNamespace、更新後propertyスナップショット、analyzeのruntime/build区分を追加。Designと通常実行で標準APIを再実装せず利用するための公開操作。新しい状態操作を行った場合だけ固定I/Oへ戻し、描画やloadが未消費のホスト入力を上書きしない。識別子位置で記号や予約語を受理していた既存構文不具合も修正した。詳細はruntime-host仕様。[検証記録](docs/verification/vehicle-host-controls-20260929.md): Native487、WASM60、SDK JS30、3ブラウザ、梱包consumerと各静的検査を通過した。
 
 ## v0.2.0に含む実装
 
@@ -1528,7 +1538,7 @@ npm公開workflowは実公開まで成功した。[run 36667537171](https://gith
 
 ## 候補の最終確認
 
-実装commit `8707a80`に対する41種の最終ゲートがすべて成功しました。Engine Native472件、WASM48件、SDK JS27件、Playground15件＋3ブラウザ各13例、Storm Min Rust492件／独立JS25件と新しいNative/WASM400条件を再検証。[0.2.0 candidate](docs/verification/release-candidate-0.2.0.md)と[機械記録](docs/verification/release-candidate-0.2.0.json)へ集約しています。過去の件数や出力一致を、新しい候補の実行結果として使い回していません。
+実装commit `8707a80`に対する41種の最終検査はすべて成功しました。Engine Native472件、WASM48件、SDK JS27件、Playground15件＋3ブラウザ各13例、Storm Min Rust492件／独立JS25件と新しいNative/WASM400条件を再検証。[0.2.0 candidate](docs/verification/release-candidate-0.2.0.md)と[機械記録](docs/verification/release-candidate-0.2.0.json)へ集約しています。過去の件数や出力一致を、新しい候補の実行結果として使い回していません。
 
 既存の検証記録: [source loaderと0.2準備](docs/verification/source-loading-20260927.md)、[環境修正](docs/verification/environment-contract-20260926.md)、[Playground](docs/verification/playground-20260926.md)。初回移管の685条件一致はその時点の証跡であり、後続の正確性修正後の出力保証ではありません。
 

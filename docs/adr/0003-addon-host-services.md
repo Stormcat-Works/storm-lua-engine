@@ -18,4 +18,6 @@ checkpointはowned dataのversion付き携帯形式で、全Lua heap、参照ide
 
 ## Documentation
 
-READMEは利用するアプリケーションの開発者を入口にする。インストール・例・mode・ホスト責務・errors・メモリ寿命をdocs/guideへまとめ、contributor規約と分離する。Node例はpacked packageを入れた独立環境で実行する。
+以下は決定時の文書配置方針である。利用者向け本文は後に移設され、現在の案内は[文書索引](../README.md)を参照する。
+
+READMEを、利用するアプリケーションの開発者向け案内の起点とする。インストール・例・mode・ホスト責務・errors・メモリ寿命をdocs/guideへまとめ、contributor規約と分離する。Node例はpacked packageを入れた独立環境で実行する。

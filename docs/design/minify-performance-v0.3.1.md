@@ -1,5 +1,7 @@
 # v0.3.1 minify / build / lint 性能改善計画
 
+この文書は当時の性能改善計画です。本文の版・比較元・目標・作業指示は記録時点のものとして保持しています。現行の検証方針は[テスト・性能設計](testing-performance.md)、Source Map契約は[現行仕様](../specs/optimization-map-extension.md)、未完了項目は[TASKS](../../TASKS.md)を参照します。
+
 2026-10-02。v0.3.1は**短縮時間の最適化を主目的**とする。対象はminify全体で、同じ解析・AST・印字・リンク基盤にあるlint/analyze/buildの高速化も歓迎する。特に `sourceMap:true` の追加コストを削減する。
 
 ## 優先順位

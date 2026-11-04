@@ -1,5 +1,7 @@
 # Documentation index
 
+現在の公開版は v0.4.0です。公開状態は[STATUS](../STATUS.md)、版ごとの変更点は[CHANGELOG](../CHANGELOG.md)を参照してください。
+
 ## 利用するアプリケーションを開発する
 
 利用者向けガイドの本文は[docs.makkii.jp](https://docs.makkii.jp/storm-lua-engine/index)を正本とします。[導入](https://docs.makkii.jp/storm-lua-engine/getting-started)、[コンパイラ](https://docs.makkii.jp/storm-lua-engine/compiler)、[ソース読み込み](https://docs.makkii.jp/storm-lua-engine/source-loading)、[環境](https://docs.makkii.jp/storm-lua-engine/environments)、[API一覧](https://docs.makkii.jp/storm-lua-engine/api-reference)、[Playground](https://docs.makkii.jp/storm-lua-engine/playground)。
@@ -10,19 +12,13 @@
 
 仕様は「このライブラリの契約」と「実装済み範囲」を分離する。未確認のゲーム挙動は確定事実として扱わず、対応するfixtureゲートと[TASKS](../TASKS.md)で管理する。
 
+### 仕様
+
 | Document | Owns |
 |---|---|
-| [Architecture](design/architecture.md) | crate責務・依存方向・ホストとの境界 |
-| [Source provenance verification](verification/source-provenance-20260930.md) | P0/P1の実装、Native/WASM性能、列対応、残工程の検証 |
-| [Optimized source provenance](design/source-provenance.md) | 最適化後map、link/lintの詳細位置、未達target探索の共通化計画 |
-| [Optimization explanation schema](design/optimization-explanation-schema.md) | versioned producer/理由/由来/採用候補の確定設計 |
 | [Optimization map extension](specs/optimization-map-extension.md) | Source Map v3＋x_stormの公開API・座標・指紋検証 |
-| [Compiler SDK plan](design/compiler-sdk.md) | 言語処理統合の境界・移行ゲート。現在の実装はCompiler guideとSTATUSで区別 |
 | [Playground source maps](specs/playground-source-maps.md) | 双方向位置、理由、実行位置と持ち運びの契約 |
-| [Playground](design/playground.md) | SDK全機能を試すCLI/Web、app配置、公開Worker、Addon Lab移行の範囲 |
-| [Playground decision](adr/0006-playground-coexistence.md) | Storm Minとの併存とSDK確認専用アプリの採用理由 |
-| [Compiler integration decision](adr/0005-compiler-sdk-integration.md) | 言語処理移管の判断理由と保留事項 |
-| [API surface](specs/api.md) | 現在の公開API、今後の高/低レイヤーAPI |
+| [API surface](specs/api.md) | 公開APIの所有者と保証範囲 |
 | [Numeric I/O](specs/numeric-io.md) | f32/f64の境界・チャネル・出力保持 |
 | [Addon](specs/addon.md) | 独立profile・lifecycle・savedata・host server契約 |
 | [Properties](specs/properties.md) | 型・精度・更新時点・欠損処理 |
@@ -30,19 +26,67 @@
 | [Screen](specs/screen.md) | 描画・RGBA・同梱フォント |
 | [WASM ABI](specs/wasm-abi.md) | レイアウト・寿命・エラー・Worker |
 | [Runtime and host](specs/runtime-host.md) | サンドボックス・Addon・HTTP・地図 |
+| [Addon non-optimizing build](specs/addon-build.md) | Addon専用の非短縮include-onceリンクと環境検証 |
+| [Lua environments](specs/environments.md) | game / extendedと実行モデルの独立した契約 |
+| [Source loading](specs/source-loading.md) | 名前付きソース、requireLoader、load / resetの契約 |
+| [Non-optimizing source maps](specs/source-maps.md) | 非短縮buildのSource Mapと診断位置 |
+
+### 設計
+
+| Document | Owns |
+|---|---|
+| [Architecture](design/architecture.md) | crate責務・依存方向・ホストとの境界 |
+| [Optimized source provenance](design/source-provenance.md) | 最適化後map、link/lintの詳細位置、target探索の実装計画と完了状態 |
+| [Optimization explanation schema](design/optimization-explanation-schema.md) | versioned producer/理由/由来/採用候補の確定設計 |
+| [Compiler SDK plan](design/compiler-sdk.md) | 言語処理統合の境界・移行ゲート。現在の実装はCompiler guideとSTATUSで区別 |
+| [Playground](design/playground.md) | SDK全機能を試すCLI/Web、app配置、公開Worker、Addon Lab移行の範囲 |
 | [Publication workflow](design/publication-workflow.md) | npm OIDC公開、検査済みtarball、再実行とCI起動 |
-| [Release](release.md) | 版・配布物・公開手順 |
 | [Distribution](design/distribution.md) | Cargo/npm、target、ビルド手順 |
 | [Integration](design/integration.md) | 利用形態・最適化ツールの移行判断 |
 | [Testing and performance](design/testing-performance.md) | fixture・CI・性能測定 |
 | [Dependencies](design/dependencies.md) | 外部依存の採否・backendバージョン |
+| [Playground Source Map inspector](design/playground-source-map-inspector.md) | 元位置と生成位置の選択・検査・実行接続 |
+
+### 判断理由
+
+| Document | Owns |
+|---|---|
+| [Playground decision](adr/0006-playground-coexistence.md) | Storm Minとの併存とSDK確認専用アプリの採用理由 |
+| [Compiler integration decision](adr/0005-compiler-sdk-integration.md) | 言語処理移管の判断理由と保留事項 |
 | [Decisions](adr/0004-self-contained-contracts.md) | 採用判断と理由 |
-| [Verification](verification/repository.md) | 今回の実行結果と未検証範囲 |
+| [Modular foundation](adr/0001-modular-foundation.md) | ライブラリ分割と意味論の所有者の採用理由 |
+| [Addon host services](adr/0003-addon-host-services.md) | Addonとホストサービスを分ける判断 |
+
+### 検証と公開手順
+
+| Document | Owns |
+|---|---|
+| [Source provenance verification](verification/source-provenance-20260930.md) | P0/P1の実装、Native/WASM性能、列対応、残工程の検証 |
+| [Release](release.md) | 版・配布物・公開手順 |
+| [Verification](verification/repository.md) | 記録時点の実行結果と未検証範囲 |
+
+### 過去の性能改善計画
+
+以下は v0.3.0 / v0.3.1 開発時の計画です。比較元、測定条件、採用・不採用の理由を確認するために残しています。現在の契約は上の仕様、継続する課題は[TASKS](../TASKS.md)を参照してください。
+
+| Document | Owns |
+|---|---|
+| [v0.3.1 コンパイル全経路の時間削減](design/compile-all-scenes-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 全経路高速化の継続](design/compile-continuation-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 解析依存の再利用とマップ費用の継続削減](design/compile-effect-dependencies-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 借用印字とリテラル処理の性能改善](design/compile-emission-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 コンパイル待ち時間の継続削減](design/compile-latency-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 コンパイル全経路・追加性能ラウンド](design/compile-next-round-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 子ノード走査とmap辞書構築の追加改善](design/compile-traversal-pools-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 実Luaコーパスによる最適化パスの費用・使用頻度調査](design/corpus-pass-profiling-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 Source Map追加時間の削減](design/map-delta-reduction-v031.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.1 minify / build / lint 性能改善計画](design/minify-performance-v0.3.1.md) | 当時の性能目標・比較条件・検証方針 |
+| [v0.3.0 Source Map 最小限性能最適化計画](design/source-map-performance-v0.3.0.md) | 当時の性能目標・比較条件・検証方針 |
 
 [AGENTS](../AGENTS.md)は作業規則、[CONTRIBUTING](../CONTRIBUTING.md)は開発手順、[STATUS](../STATUS.md)は現在地の単一正本。
 
-## v0.2.0候補の確認
+## v0.2.0の検証履歴
 
 [非短縮マップ契約](specs/source-maps.md) · [候補の検証記録](verification/release-candidate-0.2.0.md)。利用者向け本文はdocs.makkii.jpのガイドを参照します。
 
-現在の公開版: [v0.2.0の公開・配備確認](verification/release-0.2.0.md) / [機械記録](verification/release-0.2.0.json)。
+v0.2.0当時の記録: [公開・配備確認](verification/release-0.2.0.md) / [機械記録](verification/release-0.2.0.json)。

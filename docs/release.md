@@ -1,50 +1,14 @@
 # リリース手順
 
+v0.4.0は2026-11-04にGitHub Releaseとnpmで公開済み。現在の公開状態は[STATUS](../STATUS.md)を参照してください。以下の共通手順と、後半の過去版の準備記録を分けて扱います。
+
 リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
-
-## v0.4.0の公開前準備
-
-v0.4.0は、正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を一つの公開候補にまとめる。全入力でMap/plain比1.2以内にする研究目標は引き続き後続版へ送る。Addonのコンパイル（最適化）サポートはv0.5.0の主題とする（2026-11-02決定）。
-
-ローカル候補は統合ブランチ`muse/perf-optimization`の先端で検証した。候補の結果と制限は[公開候補の記録](verification/release-candidate-0.4.0.md)へ集約する。公開はユーザーのgo/no-go確認とpush承認を前提とし、本節の準備だけでは公開済みにしない。
-
-互換性の注意： 最適化後Source Mapのx_storm `schemaVersion`が1から2へ変わる（承認済みの非互換変更）。描画命令ABI、Composite I/O、savedata、Source Map v3自体、Playground保存形式は維持する。方言としてロード違法なソースをコンパイル時に拒否するfail-fastが入るため、従来受理されていた違法ソースはエラーになる。
-
-公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。
-
-## v0.3.1の公開前準備
-
-v0.3.1は、検証済みのコンパイル性能改善、入れ子条件分岐のpanic/trap修正、Addon実行修正、非短縮Addon buildとmetadata除去を一つの公開候補にまとめる。追加性能研究と全入力でのMap比1.2目標はv0.3.2以降へ送る。
-
-ローカル候補は`feat/minify-performance-v0.3.1`のworking treeで検証した。公開版は既公開main/developを親とする新規1コミットへまとめ、未公開作業履歴を祖先に含めない。候補の結果と制限を[公開候補の記録](verification/release-candidate-0.3.1.md)へ集約する。source manifest、npm tarball、静的サイトZIP、SHA256SUMS、公開用release notesを保存する。未コミット候補のproducerはdirty=trueのまま正直に記録する。
-
-公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。未コミット候補を公開commitのCI成功として扱わない。
-
-描画命令ABI、Composite I/O、savedata、Source Map v3とx_storm schema1、Playground保存形式は維持する。低レベルRustの`ApiProjectCompileOptions.metadata_tag`と内部candidate形式の更新を確認し、Rustの全フィールド指定とWorker内のcompiler版混在を避ける。既公開タグとtarballは変更しない。
-
-## v0.3.0の公開前準備
-
-v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。v0.3.0の公開状態と検査済み成果物は[公開記録](verification/release-0.3.0.md)を参照する。
-
-公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。限定性能改善は完了し、追加の改善はv0.3.1以降へ送り、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
-
-以下の0.2.0/0.2.1固有範囲は過去版の条件であり、今回の完成状態とは区別する。
-
-## v0.2.0の完成範囲
-
-v0.2.0は既存runtime/raster/debug、Vehicle Compiler SDK、game/extendedとbindings、開発require、Vehicle load履歴、Playgroundを一つの版として仕上げます。ゲーム向けのmulti-fileは`build({minify:false,environment:"game"})`で単一ソースにして実行し、LB式の実行時includeはextendedの`requireLoader`を維持します。両者の意味を自動推測しません。
-
-Source Mapは**非短縮リンク結果の行単位対応だけ**を今回の正式範囲とします。元ファイルのbreakpoint・停止行・runtime errorへの接続を実行例と回帰で確認します。最適化後マップはv0.2.5またはv0.3.0の別改修であり、現在のminify結果へ古いmapを付けません。元変数の復元や新しいデバッガ抽象は今回の条件に含めません。
-
-ローカル完成確認は[TASKS](../TASKS.md)の5項目と[候補記録](verification/release-candidate-0.2.0.md)。この段階でpush・CI実行・タグ・公開・本番配備は行いません。公開時のCIと正式配布物確定は、以下の別工程です。
 
 ## 版と契約の確認
 
-0.2.1公開時の対象範囲は次のとおりです。target未達時の最大探索との同一出力、重複探索排除、詳細な非短縮map、ログ位置・ホスト操作・LifeBoatビルドを含みます。最適化後minify mapは**0.3.0**の別工程です。公開実行前に[0.2.1確認記録](verification/release-0.2.1.md)とCHANGELOGを確認します。
-
 Cargo workspaceと`packages/lua-engine/package.json`の版を揃え、`CHANGELOG.md`へ利用者に影響する変更を書きます。タグは`v<version>`とします。公開済みのタグやnpmの同じ版を差し替えず、修正は新しい版として出します。
 
-公開API、WASM ABI、描画命令、savedata/checkpoint、Playgroundのproject形式に非互換変更があるか確認します。形式を変える場合は版とreject条件、往復テストを同時に更新し、予定している非互換変更を分散したリリースへ持ち越しません。0.2.0でも既存savedata/project形式、描画命令ABI、Composite I/Oレイアウトの維持を照合します。環境の既定値やload/resetの挙動変更はCHANGELOGで明示します。
+公開API、WASM ABI、描画命令、savedata/checkpoint、Playgroundのproject形式に非互換変更があるか確認します。形式を変える場合は版とreject条件、往復テストを同時に更新し、予定している非互換変更を分散したリリースへ持ち越しません。環境の既定値やload/resetの挙動変更はCHANGELOGで明示します。
 
 ## 検証とビルド
 
@@ -57,6 +21,10 @@ Playgroundは`npm --prefix app ci`でローカルSDK依存を更新した後、`
 画面のないLinuxランナーでも、Playgroundはheadlessブラウザ試験を`npm --prefix app run test:browser`で実行します。ブラウザ依存はPlaywrightの`install --with-deps`で用意します。
 
 `node tools/check-package.mjs`はJS export、WASM、必須の通知、公開先設定を確認します。`npm pack`のprepackにも組み込まれており、TypeScriptだけをビルドした不完全な配布物を拒否します。パス検査は`node tools/check-artifacts.mjs packages/lua-engine/dist app/dist`で実行します。
+
+## Compiler assets
+
+A release containing the compiler subpath must additionally run `node tools/build-compiler.mjs`, `npm --prefix packages/lua-engine run test:compiler` and `node tools/test-compiler-browser.mjs`. Build compiler assets before the full package gate. The isolated installed consumer exercises both compiler and runtime together, including property snapshot preservation. Publishing requires an explicit release action.
 
 ## 同じ成果物を検査して公開する
 
@@ -72,19 +40,11 @@ GitHub Releasesには検査したnpm tarball、Playgroundの静的サイトZIP�
 
 `main`は公開する版、`develop`は次の変更、`release`はPlaygroundの本番配備対象を管理します。`release`はCI確認済みcommitへfast-forwardし、Cloudflare Workers Buildsでそのcheckoutをビルド・配備します。設定と手順は[app guide](../app/README.md)のrelease節を参照してください。初回公開ではレビュー済みtreeを親なしの1commitにまとめ、そのcommitから`develop`を作成します。公開対象でない開発履歴の復旧用bundleはローカルだけに保存し、公開refやReleaseには含めません。以後の通常リリースで初期化や履歴の作り直しを繰り返しません。
 
-## Compiler assets on the integration branch
-
-A release containing the compiler subpath must additionally run `node tools/build-compiler.mjs`, `npm --prefix packages/lua-engine run test:compiler` and `node tools/test-compiler-browser.mjs`. Build compiler assets before the full package gate. The isolated installed consumer exercises both compiler and runtime together, including property snapshot preservation. The expanded SDK is prepared as 0.2.1; publishing still requires an explicit release action.
-
 ## Playgroundの配布
 
 `app/`にはCLI/Webと公開用Worker設定を置きます。`npm --prefix app run build`は`app/dist`と専用route向け`app/dist-site`を生成します。`npm --prefix app run deploy:dry-run`は梱包検査であり、本番配備ではありません。Storm Minの製品・Worker・routeは維持します。
 
 Addon Labの現在のソース・CI参照は撤去済みです。過去版ReleaseのLab資産は書き換えません。配布物のライセンスとsource/WASM版の一致を確認し、実配備は明示的に許可したreleaseブランチへのpushで実施します。
-
-## 環境契約変更の公開ゲート
-
-環境プロファイル対応版は、既定のpcall/error/print等、onLogの副作用、コンパイラ診断、外部名と_ENVの扱いを変更します。新しい版で公開し、0.1.0を差し替えません。gameとextendedの同じ条件でNative/WASMを検査し、compiler-workerとホストbindingsを梱包済みconsumerから実行します。既存利用者にはextendedの明示指定と、必要なcompiler側hostBindingsの指定を案内します。
 
 ## 公開資料の正本
 
@@ -92,7 +52,58 @@ Addon Labの現在のソース・CI参照は撤去済みです。過去版Releas
 
 公開時はSDKパッケージ、ガイド、Playgroundを対応版で配備し、ブログ下書きのdraft解除はその公開状態を確認してから行います。npm publish・Worker配備・ブログ公開を、通常のコードcommitと同一視しません。
 
+## 過去版の準備条件と検証記録
 
-## v0.3.0の性能ラウンド後の検査済み成果物
+以下の対象版・候補ブランチ・未実施工程は、それぞれの準備時点の記録です。当時の検証条件や制限を保持し、現在の公開待ち項目として扱いません。公開の実施記録と、ローカル候補の検証は区別します。
+
+### v0.4.0の公開前準備
+
+v0.4.0は正確性修正群（S1〜S11・S14、ロード違法ソースのfail-fastを含む）、Source Map schema-2、コンパイル性能改善を一つの公開候補にまとめる。全入力でMap/plain比1.2以内にする研究目標は引き続き後続版へ送る。Addonのコンパイル（最適化）サポートはv0.5.0の主題とする（2026-11-02決定）。
+
+ローカル候補は統合ブランチ`muse/perf-optimization`の先端で検証した。候補の結果と制限は[公開候補の記録](verification/release-candidate-0.4.0.md)へ集約する。準備時点ではユーザーのgo/no-go確認とpush承認を公開の前提としていた。本節は当時の候補条件を記録したもので、現在の公開状態は冒頭のとおり。
+
+互換性の注意： 最適化後Source Mapのx_storm `schemaVersion`が1から2へ変わる（承認済みの非互換変更）。描画命令ABI、Composite I/O、savedata、Source Map v3自体、Playground保存形式は維持する。方言としてロード違法なソースをコンパイル時に拒否するfail-fastが入るため、従来受理されていた違法ソースはエラーになる。
+
+公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。
+
+### v0.3.1の公開前準備
+
+v0.3.1は検証済みのコンパイル性能改善、入れ子条件分岐のpanic/trap修正、Addon実行修正、非短縮Addon buildとmetadata除去を一つの公開候補にまとめる。追加性能研究と全入力でのMap比1.2目標はv0.3.2以降へ送る。
+
+ローカル候補は`feat/minify-performance-v0.3.1`のworking treeで検証した。公開版は既公開main/developを親とする新規1コミットへまとめ、未公開作業履歴を祖先に含めない。候補の結果と制限を[公開候補の記録](verification/release-candidate-0.3.1.md)へ集約する。source manifest、npm tarball、静的サイトZIP、SHA256SUMS、公開用release notesを保存する。未コミット候補のproducerはdirty=trueのまま正直に記録する。
+
+公開工程では最終commitを確定し、そのcommitで3 OS/WASM CIを通してproducer/revisionを確定した配布物を再検証する。タグ・GitHub Release公開・releaseブランチへの反映・npmのOIDC公開とregistry再導入・本番検証はその後に行う。未コミット候補を公開commitのCI成功として扱わない。
+
+描画命令ABI、Composite I/O、savedata、Source Map v3とx_storm schema1、Playground保存形式は維持する。低レベルRustの`ApiProjectCompileOptions.metadata_tag`と内部candidate形式の更新を確認し、Rustの全フィールド指定とWorker内のcompiler版混在を避ける。既公開タグとtarballは変更しない。
+
+### v0.3.0の公開前準備
+
+v0.3.0のP0〜P5と、SDK/Playground/CLIの検証・梱包は[P5完成記録](verification/p5-playground-20261001.md)に集約した。 identity/選択の最終修正後の検査済みrevisionとtarball/ZIPは[仕上げ記録](verification/p5-final-selection-20261001.md)を使う。Source Map v3＋x_storm schema1、producerと指紋、内部candidate ABI、低レベルNodeArena、PlaygroundのIndexedDB/workspace形式を非互換棚卸しに含める。v0.3.0の公開状態と検査済み成果物は[公開記録](verification/release-0.3.0.md)を参照する。
+
+公開を実施する際は、検査済みcommitとtarball/ZIPを固定し、CHANGELOG日付・タグ・GitHub Release/npm OIDC・releaseブランチの配備・公開ガイドを同じ版で揃える。限定性能改善は完了し、追加の改善はv0.3.1以降へ送り、4秒を理由付きmap生成の保証値として案内しない。古い端末の保存状態を暗黙変換しない旨も公開ノートへ含める。
+
+### v0.3.0の性能ラウンド後の検査済み成果物
 
 P5完成後の限定性能改善と最終tarball/ZIPの検査は[2026-10-02の記録](verification/source-map-performance-20261002.md)へ集約した。性能改善前のP5 tarballと混同せず、公開時は採用commitと同じproducer/revisionを持つ検査済み成果物を使う。公開・registry再導入・本番配備は引き続き別の明示工程である。
+
+### v0.2.0の完成範囲
+
+v0.2.0は既存runtime/raster/debug、Vehicle Compiler SDK、game/extendedとbindings、開発require、Vehicle load履歴、Playgroundを一つの版として仕上げます。ゲーム向けのmulti-fileは`build({minify:false,environment:"game"})`で単一ソースにして実行し、LB式の実行時includeはextendedの`requireLoader`を維持します。両者の意味を自動推測しません。
+
+Source Mapは**非短縮リンク結果の行単位対応だけ**を今回の正式範囲とします。元ファイルのbreakpoint・停止行・runtime errorへの接続を実行例と回帰で確認します。最適化後マップはv0.2.5またはv0.3.0の別改修であり、現在のminify結果へ古いmapを付けません。元変数の復元や新しいデバッガ抽象は今回の条件に含めません。
+
+ローカル完成確認は[TASKS](../TASKS.md)の5項目と[候補記録](verification/release-candidate-0.2.0.md)。この段階でpush・CI実行・タグ・公開・本番配備は行いません。公開時のCIと正式配布物確定は、前半の共通手順に示す別工程です。
+
+0.2.0でも既存savedata/project形式、描画命令ABI、Composite I/Oレイアウトの維持を照合します。
+
+### v0.2.1の公開対象
+
+0.2.1公開時の対象範囲は次のとおりです。target未達時の最大探索との同一出力、重複探索排除、詳細な非短縮map、ログ位置・ホスト操作・LifeBoatビルドを含みます。最適化後minify mapは**0.3.0**の別工程です。公開実行前に[0.2.1確認記録](verification/release-0.2.1.md)とCHANGELOGを確認します。
+
+当時のcompiler統合準備に関する注記も、以下のとおり保持します。
+
+The expanded SDK is prepared as 0.2.1; publishing still requires an explicit release action.
+
+### 環境契約変更の公開ゲート
+
+環境プロファイル対応版は既定のpcall/error/print等、onLogの副作用、コンパイラ診断、外部名と_ENVの扱いを変更します。新しいバージョンで公開し、0.1.0を差し替えません。gameとextendedの同じ条件でNative/WASMを検査し、compiler-workerとホストbindingsを梱包済みconsumerから実行します。既存利用者にはextendedの明示指定と、必要なcompiler側hostBindingsの指定を案内します。

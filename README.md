@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-v0.4.0では敵対的レビューで確認された正確性問題を修正し、最適化後Source Mapをschema 2へ更新し、コンパイルを高速化しました。方言としてロード違法なソースは、最適化で無言に修復せずコンパイル時に拒否します。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.4.0.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.4.0)で確認できます。
+v0.4.0では敵対的レビューで確認された正確性の問題を修正し、最適化後のSource Mapをschema 2へ更新し、コンパイルを高速化しました。方言としてロード違法なソースは最適化で暗黙に修復せずコンパイル時に拒否します。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.4.0.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.4.0)で確認できます。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,7 +14,7 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.4.0`。新しい版のJavaScript・型定義・WASMを一組で使用してください。
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.4.0`。新しいバージョンのJavaScript・型定義・WASMを一組で使用してください。
 
 実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
@@ -30,7 +30,7 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 | IDE・テストハーネス | ブレークポイント、ステップ実行、変数・テーブル検査、watch、ログ配送 |
 | 自分のワールドとの接続 | `drawMap`の地図プロバイダー、同期サーバー関数、HTTP要求・返信キュー |
 
-**描画仕様と採用済みの入出力は、このリポジトリが所有します。** 固定した743ケースのRGBAを直接描画とLua実行の両方から検証し、下流アプリの実装へ逆依存しません。通常のビルド・実行にゲーム本体や外部フォントは不要です。[描画仕様](docs/specs/screen.md)
+**描画仕様と採用済みの入出力は、このリポジトリが所有します。** 固定した743ケースのRGBAを直接描画とLua実行の両方から検証し、下流アプリの実装に逆依存しません。通常のビルド・実行にゲーム本体や外部フォントは不要です。[描画仕様](docs/specs/screen.md)
 
 ## 使うモードを選ぶ
 
@@ -52,7 +52,7 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 
 ## アプリケーションに主導権を残す
 
-エンジンは勝手にタイマー、Worker、Canvas、ネットワーク接続を作りません。地図を描くなら地図プロバイダーを、ゲームの状態を読むならサーバー関数をホストが渡します。未提供のサービスを、空のプレイヤー一覧や架空の地形で成功扱いすることもありません。
+エンジンはタイマー、Worker、Canvas、ネットワーク接続を自動的に作りません。地図を描くなら地図プロバイダーを、ゲームの状態を読むならサーバー関数をホストが渡します。未提供のサービスを空のプレイヤー一覧や架空の地形で成功扱いすることもありません。
 
 `print()`と`debug.log()`は`onLog`でコンソール・IDEパネル・ファイルなどへ接続できます。ログの元データはバイト列のまま保持し、表示時の文字コード変換もホストが選びます。
 
@@ -66,8 +66,8 @@ Native、Node／WASM、Chromium・Firefox・WebKit、独立したnpmインスト
 
 ## 開発に参加する
 
-ビルド・テスト・依存境界の確認は[CONTRIBUTING.md](CONTRIBUTING.md)、内部設計は[Architecture](docs/design/architecture.md)へ。利用するだけの場合、内部クレート構造を理解する必要はありません。
+ビルド・テスト・依存境界の確認先は[CONTRIBUTING.md](CONTRIBUTING.md)、内部設計の参照先は[Architecture](docs/design/architecture.md)です。利用するだけの場合、内部クレート構造を理解する必要はありません。
 
 MIT License。描画参照元と依存ライブラリの権利表示は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)にまとめています。StormworksおよびGeometaとは独立したコミュニティプロジェクトです。
 
-公開後のregistry導入・本番配備の確認は[0.3.0公開記録](docs/verification/release-0.3.0.md)、Webは[Playground](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)を参照してください。
+v0.3.0当時のregistry導入・本番配備の確認は[0.3.0公開記録](docs/verification/release-0.3.0.md)、Webは[Playground](https://www.makkii.jp/tools/stormworks/storm-lua-engine/)を参照してください。

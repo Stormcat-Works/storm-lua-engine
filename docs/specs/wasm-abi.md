@@ -54,7 +54,7 @@ decoderは全batchを検証してからsubmitする。raster adapterはUTF-8も�
 
 0=completed、1=Lua error、2=limit、3=invalid handle、4=invalid argument、5=busy、6=unsupported、7=suspended、8=missing callback、9=failed VM、10=host service failure。0/7/8以外をTS EngineErrorにする。pointer/queryの0とerrorはerror_statusで区別する。
 
-property更新はbyte-label付きentry JSON。Numberは16桁f64 bits、Textはbyte配列。debugはaction付きJSONでbreakpoints/resume/stack/locals/upvalues/watch/tableを表現する。i64/u64はdecimal string、f64はbits、Lua stringはbytes。cold response上限16MiB。
+property更新はbyte-label付きentry JSON。Numberは16桁f64 bits、Textはbyte配列。debugはaction付きJSONでbreakpoints/resume/requestPause/cancelPause/stack/locals/upvalues/watch/tableを表現する。resumeは任意のBoolean `carry`を受け取る。`breakable_lines`はloadと同じくソースとチャンク名のupload bufferを受け取り、行番号の配列をcold responseで返す。Vehicleの設定JSONの`pausePoll: true`は、同期host importへ`{"kind":"pausePoll"}`を送る問い合わせを有効にする。応答は1byteの0または1で、それ以外はhost errorとする。debugを含まないbuildは、これらをunsupportedで拒否する。i64/u64はdecimal string、f64はbits、Lua stringはbytes。cold response上限16MiB。
 
 ## Threading
 

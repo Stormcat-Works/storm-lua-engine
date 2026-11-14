@@ -26,7 +26,7 @@ catalogのavailabilityはimplemented／host-extension／requires-providerを区�
 
 ## Lifecycle and state
 
-load/tick/draw/start/dispatch/resumeなどはcompleted／suspended／missingを区別し、失敗はResult／EngineErrorで返す。suspendedは同じcontinuationを保持する。未定義callbackはmissingであり、Lua処理を実行したという意味ではない。
+load/tick/draw/start/dispatch/resumeなどはcompleted／suspended／missingを区別し、失敗はResult／EngineErrorで返す。suspendedは同じcontinuationを保持する。ホストが実行を止める手段（ブレークポイント、ステップ、一時停止の予約、実行中の問い合わせ）は[debugger](debugger.md)を参照する。未定義callbackはmissingであり、Lua処理を実行したという意味ではない。
 
 Vehicleのloadは現在の環境へチャンクを追加実行し、正常完了した全チャンクをresetで順に再実行する。失敗・未完了のloadは履歴へ追加しない。新しい独立プログラムには新しいvehicleを作る。Addonは明示的な段階制約を持ち、top-level→checkpoint復元→onCreate→イベントの順。詳細は[Addon contract](addon.md)。
 

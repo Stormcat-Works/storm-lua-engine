@@ -15,7 +15,8 @@ export type MapProvider = (request: MapRequest) => Uint8Array;
 /** 戻り値が1つの場合でも結果リストが必要です。[] は戻り値なし、[null] は nil 1つを意味します。 */
 export type ServerFunction = (...args: LuaValue[]) => readonly LuaValue[];
 export type ServerFunctions = Readonly<Record<string,ServerFunction>>;
-interface Services { readonly source?: RequireLoader; readonly server?: ServerFunctions; readonly functions?: ServerFunctions; readonly map?: MapProvider }
+interface Services { readonly source?: RequireLoader; readonly server?: ServerFunctions; readonly functions?: ServerFunctions; readonly map?: MapProvider; readonly pause?: () => boolean }
+const POLL_CONTINUE = Uint8Array.of(0), POLL_PAUSE = Uint8Array.of(1);
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8',{fatal:true});
 function finite(value: unknown, name: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`Invalid ${name}`);
@@ -48,6 +49,12 @@ export class HostDispatcher {
     const service = this.#services.get(key);
     if (!service) throw new EngineError(6,'No host services registered for this VM');
     const request = object(JSON.parse(decoder.decode(bytes)) as unknown);
+    if (request['kind'] === 'pausePoll') {
+      if (!service.pause) throw new EngineError(6,'No pause poll is configured');
+      const pause = service.pause();
+      if (typeof pause !== 'boolean') { requireSynchronous(pause); throw new TypeError('pausePoll must synchronously return a Boolean'); }
+      return pause ? POLL_PAUSE : POLL_CONTINUE;
+    }
     if (request['kind'] === 'source') {
       if (!service.source || typeof request['name'] !== 'string') throw new EngineError(6, 'Source provider is not configured');
       const result = service.source(request['name']);

@@ -96,10 +96,32 @@ impl Script {
             Self::Addon(vm) => vm.set_breakpoints(points),
         }
     }
-    pub(crate) fn resume(&mut self, mode: StepMode) -> Result<RunOutcome, VmError> {
+    pub(crate) fn resume_with(
+        &mut self,
+        mode: StepMode,
+        carry: bool,
+    ) -> Result<RunOutcome, VmError> {
         match self {
-            Self::Vehicle(vm) => vm.resume(mode),
-            Self::Addon(vm) => vm.resume(mode),
+            Self::Vehicle(vm) => vm.resume_with(mode, carry),
+            Self::Addon(vm) => vm.resume_with(mode, carry),
+        }
+    }
+    pub(crate) fn request_pause(&mut self) -> Result<(), VmError> {
+        match self {
+            Self::Vehicle(vm) => vm.request_pause(),
+            Self::Addon(vm) => vm.request_pause(),
+        }
+    }
+    pub(crate) fn cancel_pause(&mut self) {
+        match self {
+            Self::Vehicle(vm) => vm.cancel_pause(),
+            Self::Addon(vm) => vm.cancel_pause(),
+        }
+    }
+    pub(crate) fn breakable_lines(&self, source: &[u8], name: &str) -> Result<Vec<u32>, VmError> {
+        match self {
+            Self::Vehicle(vm) => vm.breakable_lines(source, name),
+            Self::Addon(vm) => vm.breakable_lines(source, name),
         }
     }
     pub(crate) fn stack(&self) -> Result<Vec<StackFrame>, VmError> {

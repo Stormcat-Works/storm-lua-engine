@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## デバッガの一時停止・ステップ持ち越し・置ける行（2026-11-15、未公開）
+
+ホストが実行を止める手段として、一時停止の予約（request_pause）と実行中の問い合わせ（pause poll）を追加した。ステップが入口の終わりを越えたときに次の入口へ持ち越す指定と、ブレークポイントを置ける行の一覧も追加した。契約は[debugger](docs/specs/debugger.md)。
+
+Nativeの適合テスト（`conformance/tests/debugger_pause.rs`）とTypeScriptの単体テストは通過した。置ける行は、各行に置いたブレークポイントが実際に止まる行と一致することを確かめた。実WASM（Emscripten 6.0.6）でも`packages/lua-engine/tests/wasm/debugger-pause.test.mjs`の6件を含む98件が通過し、梱包consumerの検査（`node tools/test-package.mjs`）も通過した。3ブラウザでの実行は未実施。
+
 ## 開発・公開準備の履歴
 
 以下は各作業時点の記録であり、「未公開」「承認待ち」、検査の失敗や未実施の記述も当時の状態を示す。現在の公開状態は上記のとおり。後続の候補再構築と検証結果は [後続の候補再構築記録](docs/verification/release-candidate-0.4.0-r308-rebuild-20261104.md)に残している。履歴の測定値・条件・採否はその時点の記録として保持する。

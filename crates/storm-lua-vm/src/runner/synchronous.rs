@@ -73,7 +73,7 @@ impl Context {
         {
             // デバッガサポートのコンパイルによって、通常の実行に行フックや呼び出しフックが追加されてはなりません。
             let state = self.control.borrow();
-            if !state.breakpoints.is_empty() || state.step.is_some() {
+            if !state.breakpoints.is_empty() || state.step.is_some() || state.pause_requested {
                 triggers = triggers.every_line().on_calls().on_returns();
             }
         }
@@ -102,6 +102,32 @@ impl Context {
             }
             #[cfg(feature = "debug")]
             {
+                if info.event() == DebugEvent::Count {
+                    if state.pause_poll.is_some() {
+                        state.poll_countdown = state.poll_countdown.saturating_sub(quantum);
+                    }
+                    if state.poll_countdown == 0 {
+                        if let Some(poll) = state.pause_poll.clone() {
+                            state.poll_countdown = PAUSE_POLL_INTERVAL;
+                            // ホストの関数を呼ぶ間は制御状態を借用しません。
+                            drop(state);
+                            let pause = poll().map_err(mlua::Error::external)?;
+                            state = control.borrow_mut();
+                            state.poll_pending |= pause;
+                        }
+                    }
+                    if state.poll_pending && probe.can_yield() {
+                        state.poll_pending = false;
+                        let source = info
+                            .source()
+                            .source
+                            .map(|s| s.into_owned())
+                            .unwrap_or_default();
+                        state.last_line = Some((source, info.curr_line()));
+                        state.local_names = probe.local_names()?;
+                        return Ok(VmState::Yield);
+                    }
+                }
                 match info.event() {
                     DebugEvent::Call => state.depth += 1,
                     DebugEvent::Ret => state.depth -= 1,
@@ -120,10 +146,11 @@ impl Context {
                             return Ok(VmState::Continue);
                         }
                     }
-                    let stop = state
-                        .breakpoints
-                        .iter()
-                        .any(|(s, l)| *l == line && (s.is_empty() || *s == source))
+                    let stop = state.pause_requested
+                        || state
+                            .breakpoints
+                            .iter()
+                            .any(|(s, l)| *l == line && (s.is_empty() || *s == source))
                         || match state.step {
                             Some(StepMode::Into) => true,
                             Some(StepMode::Over) => state.depth <= state.target_depth,
@@ -131,6 +158,7 @@ impl Context {
                             _ => false,
                         };
                     if stop && probe.can_yield() {
+                        state.pause_requested = false;
                         state.last_line = Some((source, line));
                         state.local_names = probe.local_names()?;
                         return Ok(VmState::Yield);

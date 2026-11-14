@@ -13,6 +13,12 @@ export interface VehicleOptions extends ScriptOptions {
   readonly mapProvider?: MapProvider;
   /** Opt-in native state controls for an extended harness. Must name an unused root table. */
   readonly controlNamespace?: string;
+  /**
+   * 実行中の一時停止を問い合わせる関数。指定したVMだけが、一定の命令数ごとに同期で呼びます。
+   * デバッガを含むモジュールが必要です。別スレッドからの要求は、SharedArrayBuffer などで
+   * この関数に伝えます。resetをまたいで有効です。
+   */
+  readonly pausePoll?: import('./debug.js').PausePoll;
 }
 /** ビークルモードは Composite I/O と描画を所有し、アドオンのサーバーAPIは持ちません。 */
 export class VehicleVm extends ScriptVm {
@@ -73,12 +79,16 @@ export class LuaEngine {
     }
     let key = 0, handle = 0;
     try {
-      if (options.mapProvider !== undefined || options.requireLoader !== undefined || Object.keys(options.bindings?.functions ?? {}).length) {
+      if (options.pausePoll !== undefined) {
+        if (typeof options.pausePoll !== 'function') throw new TypeError('pausePoll must be a function');
+        if (!(this.bridge.capabilities & 4)) throw new EngineError(6,'Debugger is not included in this module');
+      }
+      if (options.mapProvider !== undefined || options.requireLoader !== undefined || options.pausePoll !== undefined || Object.keys(options.bindings?.functions ?? {}).length) {
         if (options.mapProvider !== undefined && typeof options.mapProvider !== 'function') throw new TypeError('mapProvider must be a function');
         if (!this.hosts || !(this.bridge.capabilities & 16)) throw new EngineError(6,'This runtime cannot call JS host services');
-        key = this.hosts.register({...(options.requireLoader === undefined ? {} : {source: options.requireLoader}), ...(options.mapProvider === undefined ? {} : {map: options.mapProvider}), ...(options.bindings?.functions === undefined ? {} : {functions: options.bindings.functions})});
+        key = this.hosts.register({...(options.requireLoader === undefined ? {} : {source: options.requireLoader}), ...(options.mapProvider === undefined ? {} : {map: options.mapProvider}), ...(options.pausePoll === undefined ? {} : {pause: options.pausePoll}), ...(options.bindings?.functions === undefined ? {} : {functions: options.bindings.functions})});
       }
-      const config = encoder.encode(JSON.stringify({...environment, ...(options.controlNamespace === undefined ? {} : {controlNamespace: options.controlNamespace}), properties: JSON.parse(decoder.decode(encodeProperties(options.properties ?? {}))) as unknown}));
+      const config = encoder.encode(JSON.stringify({...environment, ...(options.controlNamespace === undefined ? {} : {controlNamespace: options.controlNamespace}), ...(options.pausePoll === undefined ? {} : {pausePoll: true}), properties: JSON.parse(decoder.decode(encodeProperties(options.properties ?? {}))) as unknown}));
       handle = this.bridge.upload(config, (pointer,length) => this.bridge.query('new_vehicle',instructions,memory,key,pointer,length));
       const vm = new VehicleVm(this.bridge,handle,options.onLog,() => { if (key) this.hosts?.remove(key); });
       if (options.mapProvider !== undefined) this.bridge.call('set_map_host',handle,key);

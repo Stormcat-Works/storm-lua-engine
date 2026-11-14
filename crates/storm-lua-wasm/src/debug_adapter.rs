@@ -41,7 +41,12 @@ fn execute(session: &mut Session, request: &Value) -> Result<Status, BridgeError
             if entries.len()>4096{return Err(invalid());}
             let points=entries.iter().map(|v|Ok((v["source"].as_str().ok_or_else(invalid)?.to_owned(),i32::try_from(number(&v["line"])?).map_err(|_|invalid())?))).collect::<Result<Vec<_>,BridgeError>>()?;
             session.vm.set_breakpoints(points).map_err(convert)?;json!({"ok":true})},
-        Some("resume")=>{let mode=match request["mode"].as_str(){Some("continue")=>StepMode::Continue,Some("into")=>StepMode::Into,Some("over")=>StepMode::Over,Some("out")=>StepMode::Out,_=>return Err(invalid())};status=session.resume(mode)?;json!({"status":status as i32})},
+        Some("resume")=>{let mode=match request["mode"].as_str(){Some("continue")=>StepMode::Continue,Some("into")=>StepMode::Into,Some("over")=>StepMode::Over,Some("out")=>StepMode::Out,_=>return Err(invalid())};
+            // carryは、ステップが入口の終わりを越えたときに次の入口の最初の行で止める指定。
+            let carry=match request.get("carry"){None=>false,Some(Value::Bool(carry))=>*carry,_=>return Err(invalid())};
+            status=session.resume(mode,carry)?;json!({"status":status as i32})},
+        Some("requestPause")=>{session.vm.request_pause().map_err(convert)?;json!({"ok":true})},
+        Some("cancelPause")=>{session.vm.cancel_pause();json!({"ok":true})},
         Some("stack")=>Value::Array(session.vm.stack().map_err(convert)?.into_iter().map(|frame|json!({"level":frame.level,"source":frame.source,"line":frame.line,"functionName":frame.function_name})).collect()),
         Some("locals")=>variables(session.vm.locals(number(&request["level"])?).map_err(convert)?),
         Some("upvalues")=>variables(session.vm.upvalues(number(&request["level"])?).map_err(convert)?),

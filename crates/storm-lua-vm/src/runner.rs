@@ -30,6 +30,38 @@ pub enum ErrorKind {
     /// 提供されたホストサービスが失敗。
     Host,
 }
+/// Luaエラーが起きた段階。どちらも`ErrorKind::Lua`です。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LuaErrorStage {
+    /// チャンクのコンパイル中。ユーザーコードはまだ実行されていません。
+    Syntax,
+    /// コンパイル済みコードの実行中。
+    Runtime,
+}
+/// エラー時の呼び出し履歴の1フレーム。エラーを起こしたフレームが0です。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorFrame {
+    /// スタック深度インデックス。
+    pub level: u32,
+    /// 省略されていないチャンク名。Cフレームでは`=[C]`です。
+    pub source: String,
+    /// 実行中の行番号（Cフレームの場合は -1）。
+    pub line: i32,
+    /// 取得可能な関数名。不明な場合と、UTF-8でない名前の場合はNone。
+    pub function_name: Option<String>,
+}
+/// エラーの位置情報。チャンク名と呼び出し履歴は、メッセージ文字列ではなくスタックから取得します。
+/// 構文エラーの行だけは、Luaがメッセージの先頭に付ける行番号を読みます。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ErrorTrace {
+    /// `ErrorKind::Lua`のときの段階。それ以外のカテゴリではNone。
+    pub stage: Option<LuaErrorStage>,
+    /// エラーを起こした最も近いLuaフレーム、または構文エラーの行。取得できない場合はNone。
+    /// `error(message, 2)`のようにメッセージが別の階層を指す場合でも、送出した位置を示します。
+    pub location: Option<crate::logging::LogLocation>,
+    /// 最大256件の呼び出し履歴。構文エラーでは空です。
+    pub stack: Vec<ErrorFrame>,
+}
 /// 診断テキストを伴う明示的なエンジンエラー。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmError {
@@ -37,6 +69,8 @@ pub struct VmError {
     pub kind: ErrorKind,
     /// 診断の詳細情報（空の成功に置換されることはありません）。
     pub message: String,
+    /// スクリプトの読み込み・実行で失敗したときの位置情報。ホスト引数の誤りなどではNone。
+    pub trace: Option<Box<ErrorTrace>>,
 }
 impl VmError {
     /// ホストドメインのエラーを構築します。
@@ -44,8 +78,112 @@ impl VmError {
         Self {
             kind,
             message: message.into(),
+            trace: None,
         }
     }
+}
+/// 入れ子のコールバックエラーをたどり、Luaの構文エラーが原因かどうかを判定します。
+pub(crate) fn syntax_message(error: &mlua::Error) -> Option<&str> {
+    match error {
+        mlua::Error::SyntaxError { message, .. } => Some(message),
+        mlua::Error::CallbackError { cause, .. } => syntax_message(cause),
+        _ => None,
+    }
+}
+/// Lua 5.3の`luaO_chunkid`と同じ規則で、メッセージ中のチャンク表記を求めます。
+fn chunk_id(name: &[u8]) -> Vec<u8> {
+    const SIZE: usize = 60;
+    let length = name.len();
+    match name.first() {
+        Some(b'=') if length <= SIZE => name[1..].to_vec(),
+        Some(b'=') => name[1..SIZE].to_vec(),
+        Some(b'@') if length <= SIZE => name[1..].to_vec(),
+        Some(b'@') => {
+            let keep = SIZE - 3;
+            let mut out = b"...".to_vec();
+            out.extend_from_slice(&name[1 + length - keep..]);
+            out
+        }
+        _ => {
+            let room = SIZE - b"[string \"...\"]".len() - 1;
+            let newline = name.iter().position(|byte| *byte == b'\n');
+            let mut out = b"[string \"".to_vec();
+            if length < room && newline.is_none() {
+                out.extend_from_slice(name);
+            } else {
+                out.extend_from_slice(&name[..newline.unwrap_or(length).min(room)]);
+                out.extend_from_slice(b"...");
+            }
+            out.extend_from_slice(b"\"]");
+            out
+        }
+    }
+}
+/// 構文エラーの行番号。チャンク名はエンジンが渡した値を使い、メッセージからは
+/// Luaが付けた`チャンク表記:行:`の行だけを読みます。形式が一致しなければ推測しません。
+pub(crate) fn syntax_location(message: &str, name: &str) -> Option<crate::logging::LogLocation> {
+    let id = chunk_id(name.as_bytes());
+    let rest = message
+        .strip_prefix(String::from_utf8_lossy(&id).as_ref())?
+        .strip_prefix(':')?;
+    let digits = rest.split(':').next()?;
+    let line = digits.parse::<u32>().ok().filter(|line| *line > 0)?;
+    Some(crate::logging::LogLocation {
+        chunk: name.to_owned(),
+        line,
+    })
+}
+/// 実行していないコルーチンから位置情報を読み、エラーへ付けます。
+/// 読み取りに失敗した場合は位置なしとし、元のエラーを別のエラーで置き換えません。
+pub(crate) fn attach_trace(
+    lua: &Lua,
+    thread: &Thread,
+    error: &mut VmError,
+    syntax_site: Option<crate::logging::LogLocation>,
+    hook_line: Option<i32>,
+) {
+    // フックからyieldして止まったコルーチンだけが再開可能な状態で残ります。
+    let hook_yielded = thread.status() == ThreadStatus::Resumable;
+    let stack: Vec<ErrorFrame> =
+        crate::backend_support::thread_frames(lua, thread, 256, hook_yielded)
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(level, frame)| ErrorFrame {
+                level: level as u32,
+                source: frame.source,
+                line: match (hook_yielded && level == 0, frame.is_lua) {
+                    (true, true) => hook_line.unwrap_or(-1),
+                    (false, true) => frame.line,
+                    (_, false) => -1,
+                },
+                function_name: frame.name,
+            })
+            .collect();
+    let syntax = error
+        .trace
+        .as_ref()
+        .is_some_and(|trace| trace.stage == Some(LuaErrorStage::Syntax));
+    let location = if syntax {
+        syntax_site
+    } else {
+        stack.iter().find_map(|frame| {
+            let line = u32::try_from(frame.line).ok().filter(|line| *line > 0)?;
+            Some(crate::logging::LogLocation {
+                chunk: frame.source.clone(),
+                line,
+            })
+        })
+    };
+    error.trace = Some(Box::new(ErrorTrace {
+        stage: match error.kind {
+            ErrorKind::Lua if syntax => Some(LuaErrorStage::Syntax),
+            ErrorKind::Lua => Some(LuaErrorStage::Runtime),
+            _ => None,
+        },
+        location,
+        stack,
+    }));
 }
 impl fmt::Display for VmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -65,7 +203,14 @@ impl From<mlua::Error> for VmError {
                 _ => ErrorKind::Lua,
             }
         }
-        Self::new(category(&value), value.to_string())
+        let mut error = Self::new(category(&value), value.to_string());
+        if error.kind == ErrorKind::Lua && syntax_message(&value).is_some() {
+            error.trace = Some(Box::new(ErrorTrace {
+                stage: Some(LuaErrorStage::Syntax),
+                ..ErrorTrace::default()
+            }));
+        }
+        error
     }
 }
 /// 実行結果。エラーの表現には誤解を招く完了フラグではなくResultを使用します。
@@ -95,6 +240,8 @@ pub enum StepMode {
 pub(crate) struct HookControl {
     pub(crate) remaining: u64,
     pub(crate) exhausted: bool,
+    /// 命令数の上限でyieldしたときに、フックが報告した実行行。
+    pub(crate) limit_line: Option<i32>,
     #[cfg(feature = "debug")]
     pub(crate) breakpoints: Vec<(String, i32)>,
     #[cfg(feature = "debug")]
@@ -124,6 +271,8 @@ pub struct Vm {
     _synchronous_owner: Rc<()>,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     pub(crate) logs: Rc<RefCell<crate::logging::LogBuffer>>,
+    /// requireが読んだチャンクの構文エラー位置。実行中のエラーへ付けるまで保持します。
+    pub(crate) syntax_site: Rc<RefCell<Option<crate::logging::LogLocation>>>,
     #[cfg(feature = "debug")]
     pub(crate) debugger: crate::debug::Debugger,
 }
@@ -183,6 +332,7 @@ impl Vm {
             _synchronous_owner: synchronous_owner,
             environment_profile,
             logs,
+            syntax_site: Rc::default(),
             #[cfg(feature = "debug")]
             debugger,
         })
@@ -258,7 +408,16 @@ impl Vm {
             .set_name(name)
             .set_mode(ChunkMode::Text)
             .set_environment(self.environment.clone())
-            .into_function()?;
+            .into_function()
+            .map_err(|error| {
+                let location =
+                    syntax_message(&error).and_then(|message| syntax_location(message, name));
+                let mut error = VmError::from(error);
+                if let Some(trace) = &mut error.trace {
+                    trace.location = location;
+                }
+                error
+            })?;
         self.start(function, MultiValue::new())
     }
     /// 生のルックアップにより引数なしコールバックを呼び出します。
@@ -290,6 +449,7 @@ impl Vm {
             let mut control = self.control.borrow_mut();
             control.remaining = self.limits.instruction_budget.get();
             control.exhausted = false;
+            control.limit_line = None;
             #[cfg(feature = "debug")]
             {
                 control.depth = 0;
@@ -311,8 +471,10 @@ impl Vm {
         self.debugger.invalidate()?;
         let thread = self
             .pending
-            .as_ref()
+            .clone()
             .ok_or_else(|| VmError::new(ErrorKind::InvalidArgument, "no suspended callback"))?;
+        let thread = &thread;
+        self.syntax_site.borrow_mut().take();
         let result = {
             let _active = synchronous::ActiveCall::enter(&self.synchronous, thread, true);
             thread.resume::<MultiValue>(arguments)
@@ -327,14 +489,16 @@ impl Vm {
             self.failed.set(true);
             self.pending = None;
             self.synchronous.main_pending.set(false);
-            return Err(VmError::new(
-                ErrorKind::Limit,
-                "instruction budget exceeded",
-            ));
+            let mut error = VmError::new(ErrorKind::Limit, "instruction budget exceeded");
+            let line = self.control.borrow_mut().limit_line.take();
+            attach_trace(&self.lua, thread, &mut error, None, line);
+            return Err(error);
         }
         match result {
             Err(error) => {
-                let error = VmError::from(error);
+                let mut error = VmError::from(error);
+                let site = self.syntax_site.borrow_mut().take();
+                attach_trace(&self.lua, thread, &mut error, site, None);
                 self.failed.set(
                     self.failed.get() || !self.addon_callbacks || error.kind != ErrorKind::Lua,
                 );

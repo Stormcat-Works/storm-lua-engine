@@ -52,7 +52,9 @@ decoderは全batchを検証してからsubmitする。raster adapterはUTF-8も�
 
 ## Status and control plane
 
-0=completed、1=Lua error、2=limit、3=invalid handle、4=invalid argument、5=busy、6=unsupported、7=suspended、8=missing callback、9=failed VM、10=host service failure。0/7/8以外をTS EngineErrorにする。pointer/queryの0とerrorはerror_statusで区別する。
+0=completed、1=Lua error、2=limit、3=invalid handle、4=invalid argument、5=busy、6=unsupported、7=suspended、8=missing callback、9=failed VM、10=host service failure。0/7/8以外をTS EngineErrorにする。pointer/queryの0とerrorはerror_statusで区別する。番号の正本は`storm_lua_spec::abi::status`で、`cargo xtask generate`がTSの`STATUS`へ同期する。
+
+runtimeの`error_detail_ptr/error_detail_len`は、直前のerrorの[位置情報](runtime-host.md#エラーの位置)をUTF-8のJSONで返す。形は`{"stage":"syntax"|"runtime"|null,"location":{"chunk","line"}|null,"stack":[{"level","source","line","functionName"}]}`。位置情報がないerrorでは長さ0。寿命は`error_ptr/error_len`と同じで、次の通常operationがclearする。raster-onlyのmoduleはこのexportを持たない。
 
 property更新はbyte-label付きentry JSON。Numberは16桁f64 bits、Textはbyte配列。debugはaction付きJSONでbreakpoints/resume/stack/locals/upvalues/watch/tableを表現する。i64/u64はdecimal string、f64はbits、Lua stringはbytes。cold response上限16MiB。
 

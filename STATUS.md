@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## プロパティの1件設定、コンパイラWASMのexports、置ける行の構文エラー位置（2026-11-15、未公開）
+
+Vehicleのプロパティを1件だけ設定する操作と、1件だけ削除する操作を追加した。設定のAPIは削除を受け付けず、削除は別の操作にした。契約は[properties](docs/specs/properties.md)。npmパッケージの`exports`に`./compiler-wasm/*`を足し、コンパイラのWASMの場所をパッケージ名から解決できるようにした（[distribution](docs/design/distribution.md)）。`breakable_lines`の構文エラーには、読み込みの構文エラーと同じ位置情報を付けた。
+
+Nativeの適合テスト（`conformance/tests/runtime.rs`、`vehicle_controls.rs`、`debugger.rs`、`debugger_pause.rs`）を含むワークスペースのテスト1,872件が通過した。実WASM（Emscripten 6.0.6）のテスト108件と、TypeScriptの単体テスト37件も通過した。梱包consumerの検査（`node tools/test-package.mjs`）では、runtime、raster、compilerのWASMを`require.resolve`と`import.meta.resolve`の両方で解決できることを確かめた。3ブラウザでの実行は未実施。
+
 ## デバッガの一時停止・ステップ持ち越し・置ける行（2026-11-15、未公開）
 
 ホストが実行を止める手段として、一時停止の予約（request_pause）と実行中の問い合わせ（pause poll）を追加した。ステップが入口の終わりを越えたときに次の入口へ持ち越す指定と、ブレークポイントを置ける行の一覧も追加した。契約は[debugger](docs/specs/debugger.md)。

@@ -78,7 +78,13 @@ test('actual WASM: breakable lines include nested functions and match real stops
     assert.deepEqual(reported,[...reported].sort((a,b)=>a-b));
     for(const blank of [2,3,4,6])assert.ok(!reported.includes(blank));
     assert.ok(reported.includes(8));
-    assert.throws(()=>probe.breakableLines('local = 1','@bad.lua'),error=>error instanceof EngineError&&error.code===1);
+    // 構文エラーは、省略されていないチャンク名と行を位置情報として持つ。
+    const long='@a/path/that/goes/on/and/on/for/more/than/sixty/characters/bad.lua';
+    for(const name of [long,'@bad.lua'])assert.throws(()=>probe.breakableLines('local a = 1\nlocal = 1',name),error=>{
+      assert.ok(error instanceof EngineError);assert.equal(error.code,1);
+      assert.deepEqual(error.detail,{stage:'syntax',location:{chunk:name,line:2},stack:[]});
+      return true;
+    });
     // 問い合わせたソースは実行も保持もされない。
     assert.equal(probe.tick(),'missing');
   }finally{probe.dispose();}

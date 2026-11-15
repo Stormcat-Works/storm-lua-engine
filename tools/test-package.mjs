@@ -67,6 +67,8 @@ import(pathToFileURL(join(__dirname,'resolve-assets.mjs')).href).then(esm=>{
   console.log(run(process.execPath,['source-loading.mjs'],temporary).trim());
   await writeFile(join(temporary,'log-locations.mjs'),await readFile(join(root,'examples/consumer/log-locations.mjs')));
   console.log(run(process.execPath,['log-locations.mjs'],temporary).trim());
+  await writeFile(join(temporary,'frame-changes.mjs'),await readFile(join(root,'examples/consumer/frame-changes.mjs')));
+  console.log(run(process.execPath,['frame-changes.mjs'],temporary).trim());
   // Source-map decoding belongs to this consumer, not the runtime-only SDK package.
   // npm ci caches integrity-addressed tarballs, not necessarily registry metadata.
   // Reuse the exact test-only lock entries in a child consumer; the tested SDK is

@@ -42,6 +42,7 @@ host側のHTTP worker・sceneキュー・実ゲームとの応答比較はconsum
 | Addonの追加server/matrix規則 | 実hostとゲーム観察に基づき追加。未実装を成功stubで埋めない |
 | map座標変換、描画専用TS rasterのmap provider | 実利用要求がある段階で入力・精度を検証して追加 |
 | VSCode WebView、追加CPU/OS | 実WebView/CSP、i686/armv7等を実際に実行した証拠と分離 |
+| フレームのダイジェスト、変化の判定API | 2026-11-15に試作して測定し、見送った。`Buffer`のないブラウザのホストから具体的な要求が出た段階で、[測定記録](docs/verification/frame-change-detection-20261115.md)の条件で測り直す |
 | SIMD/shared-memory/並列pool等 | 必要性と同条件の改善測定がある場合だけ検討 |
 | 全収集コーパス回帰・包括的性能評価 | 初期の代表回帰を全件と表現しない。測定なしの速度向上を主張しない |
 

@@ -2,6 +2,11 @@
 
 ## 未公開
 
+### フレームが変わったかどうかの確かめ方
+
+- 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。
+- フレームのダイジェストを返すAPIと、エンジンが前回フレームを保持して比べるAPIは、試作して実WASMで測定し、上の手順より速くならなかったので追加を見送った。
+
 ### ホスト向けの小さな追加
 
 - プロパティを1件だけ設定する`setProperty`と、1件だけ削除する`removeProperty`を追加した。Rustは`Microcontroller::set_property`と`remove_property`。全体を読んで書き戻す必要がなくなる。ラベルはバイト列のまま比較する。受け付ける時点は`setProperties`と同じで、実行中と中断中は拒否する。`setProperty`に`null`や`undefined`を渡しても削除にはならず、`TypeError`になる。

@@ -6,6 +6,11 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## フレームが変わったかどうかの確かめ方（2026-11-15、未公開）
+
+描画の結果が前回と同じかどうかを返すAPIは追加しなかった。64bitダイジェストを返す案と、エンジンが前回フレームを保持して比べる案を試作し、実WASMで測定した。どちらも、既存のAPIだけで書ける手順（`pixels`の借用ビューを前回の写しと`Buffer.compare`で比べる）より速くならなかった。手順は[例](examples/consumer/frame-changes.mjs)、測定値は[検証記録](docs/verification/frame-change-detection-20261115.md)にある。
+
+例は梱包consumerの検査（`node tools/test-package.mjs`）で実行し、通過した。エンジンのコードは変えていない。ワークスペースのテスト1,871件、実WASM（Emscripten 6.0.6）のテスト107件、TypeScriptの単体テスト36件も通過した。測定は1台のmacOS（Apple Silicon）とNode 26.8.2だけで行い、ブラウザでは測っていない。3ブラウザでの実行は未実施。
 ## プロパティの1件設定、コンパイラWASMのexports、置ける行の構文エラー位置（2026-11-15、未公開）
 
 Vehicleのプロパティを1件だけ設定する操作と、1件だけ削除する操作を追加した。設定のAPIは削除を受け付けず、削除は別の操作にした。契約は[properties](docs/specs/properties.md)。npmパッケージの`exports`に`./compiler-wasm/*`を足し、コンパイラのWASMの場所をパッケージ名から解決できるようにした（[distribution](docs/design/distribution.md)）。`breakable_lines`の構文エラーには、読み込みの構文エラーと同じ位置情報を付けた。

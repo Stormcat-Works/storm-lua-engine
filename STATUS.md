@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## エラーの位置情報（2026-11-15、未公開）
+
+実行と読み込みのエラーに、省略されていないチャンク名と行、呼び出し履歴、構文エラーと実行時エラーの区別を付けた。VMは失敗したコルーチンを破棄する前にスタックを読むので、debug featureと行フックは要らない。命令数の上限に達したエラーには、フックが報告した実行行を使う。TypeScriptには`EngineError.detail`と結果コードの定数`STATUS`を公開した。契約は[runtime-host](docs/specs/runtime-host.md#エラーの位置)。
+
+Nativeの適合テスト（`conformance/tests/error_locations.rs`）とTypeScriptのデコードの単体テストは通過した。実WASM（Emscripten 6.0.6）でも`packages/lua-engine/tests/wasm/error-locations.test.mjs`の6件を含む98件が通過し、梱包consumerの検査（`node tools/test-package.mjs`）も通過した。3ブラウザでの実行は未実施。
+
 ## 開発・公開準備の履歴
 
 以下は各作業時点の記録であり、「未公開」「承認待ち」、検査の失敗や未実施の記述も当時の状態を示す。現在の公開状態は上記のとおり。後続の候補再構築と検証結果は [後続の候補再構築記録](docs/verification/release-candidate-0.4.0-r308-rebuild-20261104.md)に残している。履歴の測定値・条件・採否はその時点の記録として保持する。

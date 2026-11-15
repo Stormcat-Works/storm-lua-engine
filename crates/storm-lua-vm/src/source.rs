@@ -104,6 +104,7 @@ impl Vm {
         }
         let environment = self.environment.clone();
         let resolve = Rc::clone(&loader.0);
+        let syntax_site = Rc::clone(&self.syntax_site);
         let count = Cell::new(0usize);
         let bytes = Cell::new(0usize);
         let compile = self.lua.create_function(move |lua, name: Value| {
@@ -151,7 +152,12 @@ impl Vm {
                 .set_name(&chunk.name)
                 .set_mode(ChunkMode::Text)
                 .set_environment(environment.clone())
-                .into_function()?;
+                .into_function()
+                .inspect_err(|error| {
+                    // メッセージは変えず、省略されていないチャンク名と行だけを別経路で渡します。
+                    *syntax_site.borrow_mut() = crate::runner::syntax_message(error)
+                        .and_then(|message| crate::runner::syntax_location(message, &chunk.name));
+                })?;
             count.set(count.get() + 1);
             bytes.set(bytes.get() + chunk.source.len());
             Ok(function)

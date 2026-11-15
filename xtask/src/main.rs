@@ -15,8 +15,13 @@ fn contract() -> serde_json::Value {
 }
 fn generated(check: bool) -> Result<(), Box<dyn Error>> {
     let json = serde_json::to_string_pretty(&contract())?;
+    let status: serde_json::Map<String, serde_json::Value> = abi::status::ALL
+        .iter()
+        .map(|(name, code)| ((*name).to_owned(), serde_json::json!(code)))
+        .collect();
+    let status = serde_json::to_string_pretty(&status)?;
     let source = format!(
-        "// cargo xtask generate によって自動生成されています。編集しないでください。\nexport const ABI = {json} as const;\n"
+        "// cargo xtask generate によって自動生成されています。編集しないでください。\nexport const ABI = {json} as const;\n/** EngineError.code と生のC ABIが返す結果コード。 */\nexport const STATUS = {status} as const;\n"
     );
     let catalog: Vec<_> = storm_lua_spec::catalog::FUNCTIONS
         .iter()

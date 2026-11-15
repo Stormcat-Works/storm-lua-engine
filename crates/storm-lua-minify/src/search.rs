@@ -2555,21 +2555,24 @@ pub fn finalize_satisficing_fallback(
 }
 
 pub fn encode_candidate_job(job: &CandidateJob) -> Result<Vec<u8>, String> {
-    bincode::serialize(job).map_err(|error| format!("failed to encode candidate job: {error}"))
+    crate::job_codec::encode(job)
+        .map_err(|error| format!("failed to encode candidate job: {error}"))
 }
 
 pub fn decode_and_evaluate_candidate_job(bytes: &[u8]) -> Result<CandidateBatch, String> {
-    let job: CandidateJob = bincode::deserialize(bytes)
+    let job: CandidateJob = crate::job_codec::decode(bytes)
         .map_err(|error| format!("failed to decode candidate job: {error}"))?;
     evaluate_candidate(job)
 }
 
 pub fn encode_search_context(context: &SearchContext) -> Result<Vec<u8>, String> {
-    bincode::serialize(context).map_err(|error| format!("failed to encode search context: {error}"))
+    crate::job_codec::encode(context)
+        .map_err(|error| format!("failed to encode search context: {error}"))
 }
 
 pub fn decode_search_context(bytes: &[u8]) -> Result<SearchContext, String> {
-    bincode::deserialize(bytes).map_err(|error| format!("failed to decode search context: {error}"))
+    crate::job_codec::decode(bytes)
+        .map_err(|error| format!("failed to decode search context: {error}"))
 }
 
 fn compile_code_obj1(source: &str, options: &CompileOptions) -> Result<CompileCodeResult, String> {

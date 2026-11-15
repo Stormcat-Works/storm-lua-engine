@@ -2,6 +2,7 @@
 //! Compiler-only code: no VM, filesystem or scheduler is initialized.
 
 pub mod config;
+mod job_codec;
 #[doc(hidden)]
 pub mod lexical_rename;
 #[doc(hidden)]

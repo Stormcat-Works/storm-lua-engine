@@ -280,13 +280,15 @@ fn binary_worker_protocol_retains_tracked_metadata_and_validates_ranges() {
     let expected = compile_code(source, &options).unwrap();
     let (context, jobs) = prepare_search(source, &options).unwrap();
     let context: SearchContext =
-        bincode::deserialize(&bincode::serialize(&context).unwrap()).unwrap();
+        crate::job_codec::decode(&crate::job_codec::encode(&context).unwrap()).unwrap();
     let mut batches = Vec::new();
     for job in jobs.into_iter().rev() {
-        let job: CandidateJob = bincode::deserialize(&bincode::serialize(&job).unwrap()).unwrap();
+        let job: CandidateJob =
+            crate::job_codec::decode(&crate::job_codec::encode(&job).unwrap()).unwrap();
         let batch = evaluate_candidate(job).unwrap();
         batches.push(
-            bincode::deserialize::<CandidateBatch>(&bincode::serialize(&batch).unwrap()).unwrap(),
+            crate::job_codec::decode::<CandidateBatch>(&crate::job_codec::encode(&batch).unwrap())
+                .unwrap(),
         );
     }
     let actual = select_best(context, batches).unwrap();
@@ -310,15 +312,17 @@ fn target_continuation_carries_completed_origin_batches_without_recomputing() {
     let mut attempt = crate::search::try_satisficing(source, &options, None).unwrap();
     if let Some((context, jobs)) = crate::search::take_satisficing_fallback(&mut attempt) {
         let context: SearchContext =
-            bincode::deserialize(&bincode::serialize(&context).unwrap()).unwrap();
+            crate::job_codec::decode(&crate::job_codec::encode(&context).unwrap()).unwrap();
         let mut batches = Vec::new();
         for job in jobs.into_iter().rev() {
             let job: CandidateJob =
-                bincode::deserialize(&bincode::serialize(&job).unwrap()).unwrap();
+                crate::job_codec::decode(&crate::job_codec::encode(&job).unwrap()).unwrap();
             let batch = evaluate_candidate(job).unwrap();
             batches.push(
-                bincode::deserialize::<CandidateBatch>(&bincode::serialize(&batch).unwrap())
-                    .unwrap(),
+                crate::job_codec::decode::<CandidateBatch>(
+                    &crate::job_codec::encode(&batch).unwrap(),
+                )
+                .unwrap(),
             );
         }
         let actual = select_best(context, batches).unwrap();

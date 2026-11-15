@@ -12,6 +12,8 @@ RustクレートはGitで配布するため`publish = false`を維持する。np
 
 `@stormcat-works/storm-lua-engine`に型定義・JSラッパー・WASMを同梱する。現在の入口はmain、`/raw`、`/debug`、`/raster`、`/commands`、`/canvas`、`/compiler`、`/compiler-worker`とWASMファイル。runtimeのWorker構成はhost側のexampleで示す。compilerにはWorkerクライアントも提供し、汎用poolを必須化しない。
 
+WASMファイルは`./wasm/*`（runtimeとraster）と`./compiler-wasm/*`（compiler）のサブパスで公開する。ホストは`require.resolve`または`import.meta.resolve`にパッケージ名とサブパスを渡して場所を求め、読んだバイト列を`wasmBinary`へ渡せる。`file:`のURLをfetchできないホストが、パッケージ内の配置を相対パスで仮定せずに済む。ワイルドカードは各ディレクトリの全ファイルを公開するので、wasm-packが生成する`compiler.js`や`package.json`も同じサブパスから解決できる。JSの入口として使うのは従来どおり`/compiler`である。`tools/check-package.mjs`は2つのサブパスの定義を検査し、`tools/test-package.mjs`は独立consumerで両方の解決方法を実行する。
+
 runtime用WASMはmicrocontrollerと必要なrasterを同じmoduleに含める。raster-only用WASMはLuaを含めない。両方をロードした場合のmemoryは別であり、pointerを相互に使わない。compiler-only用WASMも独立したmoduleとmemoryを持ち、Lua実行系を含めない。
 
 ## Pinned build baseline

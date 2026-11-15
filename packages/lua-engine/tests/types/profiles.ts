@@ -29,5 +29,11 @@ void asyncMap;
 const harness=engine.createVehicle({environment:'extended',controlNamespace:'controls'});
 harness.callTick('setup',[1n,'text']);harness.callDraw('preview',32,32,[true]);
 for(const property of harness.properties()){const bytes:string|Uint8Array=property.label;void bytes;}
+harness.setProperty('gain',1.5);harness.setProperty(new Uint8Array([255]),{kind:'text',bytes:new Uint8Array()});
+const removed:boolean=harness.removeProperty('gain');void removed;
+// @ts-expect-error 値のない設定は削除として受け付けません。
+harness.setProperty('gain',null);
+// @ts-expect-error Addonのmenu propertyは別のAPIです。
+addon.setProperty('gain',1);
 // @ts-expect-error Named Vehicle drawing is not an Addon operation.
 addon.callDraw('preview',32,32);

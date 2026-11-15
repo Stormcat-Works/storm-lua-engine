@@ -38,6 +38,25 @@ pub(super) fn validate_properties(properties: &PropertyBag) -> Result<(), VmErro
     }
     Ok(())
 }
+/// 1件を設定したあとの件数とバイト数を、設定する前に検査します。
+pub(super) fn validate_property_update(
+    properties: &PropertyBag,
+    label: &[u8],
+    value: &PropertyValue,
+) -> Result<(), VmError> {
+    let previous = properties.get(label);
+    let entries = properties.len() + usize::from(previous.is_none());
+    let bytes = property_bytes(properties) - previous.map_or(0, |v| label.len() + value_bytes(v))
+        + label.len()
+        + value_bytes(value);
+    if entries > MAX_PROPERTIES || bytes > MAX_PROPERTY_BYTES {
+        return Err(VmError::new(
+            ErrorKind::Limit,
+            "development properties exceed their entry/byte budget",
+        ));
+    }
+    Ok(())
+}
 fn index(value: &LuaValue) -> Result<usize, VmError> {
     let channel = match value {
         LuaValue::Integer(n) if (1..=32).contains(n) => *n as usize,
@@ -103,18 +122,7 @@ pub(super) fn with_controls(
                 }
             };
             let mut state = s.borrow_mut();
-            let previous = state.properties.get(label);
-            let entries = state.properties.len() + usize::from(previous.is_none());
-            let bytes = property_bytes(&state.properties)
-                - previous.map_or(0, |v| label.len() + value_bytes(v))
-                + label.len()
-                + value_bytes(&value);
-            if entries > MAX_PROPERTIES || bytes > MAX_PROPERTY_BYTES {
-                return Err(VmError::new(
-                    ErrorKind::Limit,
-                    "development properties exceed their entry/byte budget",
-                ));
-            }
+            validate_property_update(&state.properties, label, &value)?;
             state.properties.insert(label.clone(), value);
             Ok(vec![])
         }),

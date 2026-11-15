@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## フレームが変わったかどうかの確かめ方（2026-11-15、未公開）
+
+描画の結果が前回と同じかどうかを返すAPIは追加しなかった。64bitダイジェストを返す案と、エンジンが前回フレームを保持して比べる案を試作し、実WASMで測定した。どちらも、既存のAPIだけで書ける手順（`pixels`の借用ビューを前回の写しと`Buffer.compare`で比べる）より速くならなかった。手順は[例](examples/consumer/frame-changes.mjs)、測定値は[検証記録](docs/verification/frame-change-detection-20261115.md)にある。
+
+例は梱包consumerの検査（`node tools/test-package.mjs`）で実行し、通過した。エンジンのコードは変えていない。ワークスペースのテスト1,871件、実WASM（Emscripten 6.0.6）のテスト107件、TypeScriptの単体テスト36件も通過した。測定は1台のmacOS（Apple Silicon）とNode 26.8.2だけで行い、ブラウザでは測っていない。3ブラウザでの実行は未実施。
+
 ## デバッガの一時停止・ステップ持ち越し・置ける行（2026-11-15、未公開）
 
 ホストが実行を止める手段として、一時停止の予約（request_pause）と実行中の問い合わせ（pause poll）を追加した。ステップが入口の終わりを越えたときに次の入口へ持ち越す指定と、ブレークポイントを置ける行の一覧も追加した。契約は[debugger](docs/specs/debugger.md)。

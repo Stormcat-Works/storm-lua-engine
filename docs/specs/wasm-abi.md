@@ -31,6 +31,8 @@ memory.growは非共有memoryの旧ArrayBufferをdetachする。[MDN](https://de
 
 FrameLeaseはframe epochとVM/rasterの生存を確認する。copyはJS所有のsnapshot。既に返したTypedArrayを後から回収・無効化する機能ではない。frameのptr/len/寸法を再照会し、raw RGBAと表示用変換を分離する。
 
+フレームの内容が前回と同じかどうかを返すAPIは持たない。`frame_epoch`は描画のたびに進むリースの世代で、内容が同じでも変わるので、変化の判定には使えない。ホストは`pixels`の借用ビューを前回の`copy`と比べ、変わったときだけ`copy`する。この手順は写し取りを減らし、結果は厳密である。エンジン側のダイジェストと前回フレームの保持は試作して測定し、この手順より速くならなかったので追加していない。[測定記録](../verification/frame-change-detection-20261115.md)、[例](../../examples/consumer/frame-changes.mjs)。
+
 ## Binary drawing commands
 
 各recordはLE u16 opcode、u16 reserved=0、u32 payload bytesの8byte header。座標はLE f64、色はRGBA4byte、textはUTF-8 bytes。

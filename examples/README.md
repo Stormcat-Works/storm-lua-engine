@@ -28,6 +28,10 @@ TSとWASMをbuildした後、リポジトリルートから`python3 -m http.serv
 
 例に含まれる地図・プレイヤー・HTTP replyはテストホストが明示的に用意したデータであり、ゲーム環境が無い場合のengine fallbackではありません。詳細は[consumer guides](../docs/guide/getting-started.md)。
 
+## フレームが変わったかどうか
+
+[frame-changes.mjs](consumer/frame-changes.mjs)は、描画の結果が前回と同じかどうかを確かめる手順を示します。`frame().pixels`の借用ビューを前回の写しと`Buffer.compare`で比べ、変わったときだけ`copy()`します。`node tools/test-package.mjs`が隔離consumerで実行します。測定値は[検証記録](../docs/verification/frame-change-detection-20261115.md)にあります。
+
 ## 開発用の名前付きソース
 
 [source-loading.mjs](consumer/source-loading.mjs)はインストール済みSDKだけを利用し、require先のブレークポイントと前置き・本体・後置きのresetを確認します。`node tools/test-package.mjs`も同じ例を隔離consumerで実行します。利用手順の参照先は[ソースガイド](https://docs.makkii.jp/storm-lua-engine/source-loading)です。

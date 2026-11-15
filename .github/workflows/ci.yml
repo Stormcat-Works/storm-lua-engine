@@ -95,6 +95,17 @@ jobs:
       - run: node tools/test-browser.mjs
       - run: node tools/test-compiler-browser.mjs
       - run: node tools/test-package.mjs
+      - name: Packaged consumer on the lowest supported Node.js versions
+        shell: bash
+        run: |
+          # package.jsonのenginesの下限。梱包と導入は上のNodeで行い、consumerだけを古いNodeで実行する。
+          for version in 18.19.0 20.6.0; do
+            name="node-v$version-linux-x64"
+            curl -fsSLO "https://nodejs.org/dist/v$version/$name.tar.xz"
+            curl -fsSL "https://nodejs.org/dist/v$version/SHASUMS256.txt" | grep " $name.tar.xz\$" | sha256sum -c -
+            tar -xJf "$name.tar.xz" -C "$RUNNER_TEMP"
+            node tools/test-package.mjs --node "$RUNNER_TEMP/$name/bin/node"
+          done
       - name: Package content inspection (no publish)
         working-directory: packages/lua-engine
         run: npm pack --dry-run

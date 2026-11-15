@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Rustは[rust-toolchain.toml](rust-toolchain.toml)のtoolchain、Python 3.10以降、Node.js 22.18以降、npmを使用する。Nativeのvendored LuaにはCコンパイラが必要。WASMは[配布・ビルド](docs/design/distribution.md)のtargetとEmscriptenを追加する。
+Rustは[rust-toolchain.toml](rust-toolchain.toml)のtoolchain、Python 3.10以降、Node.js 22.18以降、npmを使用する。これは開発とビルドの条件で、公開パッケージの`engines`とは別に[配布・ビルド](docs/design/distribution.md)で定める。Nativeのvendored LuaにはCコンパイラが必要。WASMは[配布・ビルド](docs/design/distribution.md)のtargetとEmscriptenを追加する。
 Cargoの生成物は利用環境のポリシーに従って`CARGO_TARGET_DIR`で指定できる。個人の絶対パスをリポジトリ設定へ入れない。
 
 ## Gates
@@ -18,6 +18,7 @@ Cargoの生成物は利用環境のポリシーに従って`CARGO_TARGET_DIR`で
 | Rust documentation | `cargo doc --workspace --all-features --no-deps --locked` |
 | 採用済み画面契約の検査 | `python3 tools/check_screen_fixtures.py` |
 | Isolated npm consumer | `node tools/test-package.mjs` (build TS/WASM first) |
+| Isolated consumer on another Node.js | `node tools/test-package.mjs --node <binary> [tarball]` |
 | Three browser engines / Workers | `node tools/test-browser.mjs` (install Playwright browsers first) |
 | Python tool tests | `python3 -m unittest discover -s tools/tests -v` |
 | Consumer mode/type contracts | `npm --prefix packages/lua-engine run check:consumer` |

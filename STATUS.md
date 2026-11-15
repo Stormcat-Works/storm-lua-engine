@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## npmパッケージが求めるNodeの版（2026-11-15、未公開）
+
+公開パッケージの`engines`を`^18.19.0 || >=20.6.0`へ下げた。22.18以降という条件は開発とビルドだけに残した。梱包したtarballを独立consumerへ導入し、consumerを古いNodeで実行して決めた値である。条件と根拠は[distribution](docs/design/distribution.md)、実行した版と結果は[検証記録](docs/verification/node-engines-20261115.md)にある。
+
+確かめたのはmacOS（Apple Silicon）の公式バイナリで、CIに足したLinux x64での実行はまだ走らせていない。3ブラウザでの実行は未実施。
+
 ## デバッガの一時停止・ステップ持ち越し・置ける行（2026-11-15、未公開）
 
 ホストが実行を止める手段として、一時停止の予約（request_pause）と実行中の問い合わせ（pause poll）を追加した。ステップが入口の終わりを越えたときに次の入口へ持ち越す指定と、ブレークポイントを置ける行の一覧も追加した。契約は[debugger](docs/specs/debugger.md)。

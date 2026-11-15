@@ -14,6 +14,11 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 
 - [ ] トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの実ゲームの挙動を測る。測定するまでは、0/falseを返し書き込みと描画を無視する従来の挙動を維持する。
 
+### npmパッケージが求めるNodeの版（2026-11-15）
+
+- [ ] CIのwasmジョブに足した、Node 18.19.0と20.6.0（Linux x64）での梱包consumerの実行結果を確かめる。ローカルで実行したのはmacOS（Apple Silicon）だけである。
+- [ ] 18.19.0より前の18系と、20.6.0より前の20系を対象に入れるかを決める。`import.meta.resolve`を使わない最小の利用（load、tick、draw、raster、compilerの読み込み）は18.0.0でも動いたが、consumerの例一式は通らないので、対応とは書いていない。対象に入れるなら、例を`createRequire`で書き直したうえで例一式を通す。
+
 ### AD-01/AD-02 host接続（2026-10-17）
 
 `HostCall::truthy`で呼出し中の値をowned dataへ変換せずにLua truthinessを読みます。循環tableや関数の値を保持・実行しない引数参照APIです。hostの設定・同期・永続化はconsumerが所有し、公開工程とは区別します。

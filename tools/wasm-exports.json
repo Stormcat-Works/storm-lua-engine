@@ -24,6 +24,8 @@
     "sle_error_status",
     "sle_error_ptr",
     "sle_error_len",
+    "sle_error_detail_ptr",
+    "sle_error_detail_len",
     "sle_response_ptr",
     "sle_response_len",
     "sle_new_addon",

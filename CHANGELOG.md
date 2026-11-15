@@ -2,6 +2,14 @@
 
 ## 未公開
 
+### エラーの位置情報
+
+- スクリプトの読み込みと実行で失敗したエラーが、メッセージとは別に位置情報を持つようになった。省略されていないチャンク名と行、呼び出し履歴、構文エラーと実行時エラーの区別を返す。Luaはメッセージの中のチャンク名を60バイトに切り詰めるため、従来は長いパスのファイルをメッセージから特定できなかった。
+- Rustは`VmError.trace`、TypeScriptは`EngineError.detail`で受け取る。命令数の上限に達したエラーにも、実行していた行と呼び出し履歴が付く。debug featureは要らない。
+- 結果コードの名前付き定数`STATUS`をTypeScriptへ公開した。`EngineError.code`と比較する数値を直接書かずに済む。
+- runtimeのWASMに`error_detail_ptr`と`error_detail_len`を追加した。既存のexportとABI番号は変えていない。
+- Rustで`VmError`または`BridgeError`をstruct literalで構成している利用者は、追加したフィールド（`trace`、`detail`）を指定する必要がある。`VmError::new`と`BridgeError::new`の呼び出しは変更不要。
+
 ### 実ゲームに合わせた挙動の変更（非互換）
 
 - 呼べないphaseで呼んだ`input`、`output`、`screen`の関数が、実ゲームと同じ文言のLuaエラーになった。対象は、`onDraw`の実行中の`input.*`と`output.*`、`onTick`の実行中の`screen.*`である。従来は読み出しが0または`false`を返し、書き込みと描画は無視されていた。Stormworks v1.15.26の実機ではどれもスクリプトが停止するため、ゲームで止まるスクリプトがエンジンでは動き続けていた。

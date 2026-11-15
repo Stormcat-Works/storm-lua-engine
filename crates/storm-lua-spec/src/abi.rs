@@ -15,6 +15,45 @@ pub const CAP_ADDON: u32 = 8;
 pub const CAP_HOST_SERVICES: u32 = 16;
 /// ワークスペースによって実装されている機能群。各モジュールのアクティブなサブセットを照会してください。
 pub const CAPABILITIES: u32 = CAP_RASTER | CAP_RUNTIME | CAP_DEBUG | CAP_ADDON | CAP_HOST_SERVICES;
+/// 外部関数呼び出しの結果コード。アダプタの`Status`とTypeScriptの`STATUS`はこの値から作ります。
+pub mod status {
+    /// 正常に完了。
+    pub const OK: i32 = 0;
+    /// Luaのコンパイル／実行時エラー。
+    pub const LUA: i32 = 1;
+    /// リソース上限を超過。
+    pub const LIMIT: i32 = 2;
+    /// 不明、失効、または破棄済みのハンドル。
+    pub const INVALID_HANDLE: i32 = 3;
+    /// 不正なホスト引数またはバイナリデータ。
+    pub const INVALID_ARGUMENT: i32 = 4;
+    /// 再入操作または中断状態のコールバック。
+    pub const BUSY: i32 = 5;
+    /// 必要な機能またはプロバイダが利用不可。
+    pub const UNSUPPORTED: i32 = 6;
+    /// コールバックが中断中（フレーム／tick完了ではありません）。
+    pub const SUSPENDED: i32 = 7;
+    /// 指定された名前のコールバックが存在しない。
+    pub const MISSING: i32 = 8;
+    /// VMが故障状態でありリセットが必要。
+    pub const FAILED: i32 = 9;
+    /// ホスト提供のサービスが失敗。
+    pub const HOST: i32 = 10;
+    /// TypeScriptへ生成する名前と値の一覧。
+    pub const ALL: [(&str, i32); 11] = [
+        ("ok", OK),
+        ("lua", LUA),
+        ("limit", LIMIT),
+        ("invalidHandle", INVALID_HANDLE),
+        ("invalidArgument", INVALID_ARGUMENT),
+        ("busy", BUSY),
+        ("unsupported", UNSUPPORTED),
+        ("suspended", SUSPENDED),
+        ("missing", MISSING),
+        ("failed", FAILED),
+        ("host", HOST),
+    ];
+}
 /// wasm32向けの固定I/Oレイアウト。Rustのboolの代わりにu8が使用されます。
 #[repr(C, align(4))]
 #[derive(Debug, Clone, Copy)]

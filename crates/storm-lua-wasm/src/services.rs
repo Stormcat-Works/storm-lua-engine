@@ -312,6 +312,31 @@ pub(crate) fn vehicle(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> 
             Ok(Status::Ok)
         });
     }
+    // 1件の設定と削除。ラベルはバイト列のまま渡し、アイドル中かどうかはVehicleが判定します。
+    if request["action"] == "setProperty" {
+        let (label, value) = codec::property_entry(&request["entry"])?;
+        return session::with(handle, |session| {
+            session
+                .vm
+                .vehicle()?
+                .set_property(&label, value)
+                .map_err(session::convert)?;
+            codec::respond(&Value::Null)?;
+            Ok(Status::Ok)
+        });
+    }
+    if request["action"] == "removeProperty" {
+        let label = codec::byte_array(&request["label"])?;
+        return session::with(handle, |session| {
+            let removed = session
+                .vm
+                .vehicle()?
+                .remove_property(&label)
+                .map_err(session::convert)?;
+            codec::respond(&json!(removed))?;
+            Ok(Status::Ok)
+        });
+    }
     let name = request["name"]
         .as_str()
         .filter(|s| !s.is_empty() && s.len() <= 1024 && !s.contains('\0'))

@@ -69,6 +69,35 @@ function onTick() output.setNumber(1,input.getNumber(1)) output.setNumber(2,gain
     assert.equal(vm.draw(8,8),'missing');
   }finally{vm.dispose();}
 });
+test('single property updates keep other entries, compare labels as bytes and reject absent values',()=>{
+  const raw=new Uint8Array([255,0]);
+  const vm=runtime.createVehicle({properties:[{label:'keep',value:{kind:'number',value:16777217}},{label:raw,value:{kind:'bool',value:true}}]});
+  const snapshot=()=>vm.properties().map(p=>[Array.from(p.label),p.value.kind,p.value.kind==='text'?Array.from(p.value.bytes):p.value.value]);
+  const bytes=text=>Array.from(new TextEncoder().encode(text));
+  try{
+    vm.setProperty('n',0.1);
+    vm.load('local cached=property.getNumber("n")\nfunction onTick()output.setNumber(1,cached*10);output.setNumber(2,property.getNumber("n")*10);output.setNumber(3,property.getNumber("keep")-16777216);output.setBool(1,property.getBool(string.char(255,0)));output.setBool(2,property.getBool("N"))end');
+    vm.setProperty('n',{kind:'number',value:0.2});vm.setProperty('N',true);vm.setProperty(raw,new Uint8Array([0,255]));
+    vm.tick();
+    assert.deepEqual(Array.from(vm.io.outputNumbers.subarray(0,3)),[1,2,1]);
+    assert.deepEqual(Array.from(vm.io.outputBooleans.subarray(0,2)),[0,1]);
+    assert.deepEqual(snapshot(),[[bytes('N'),'bool',true],[bytes('keep'),'number',16777217],[bytes('n'),'number',0.2],[[255,0],'text',[0,255]]]);
+    // -0と非有限数も、JSONの数値を通さずに届く。
+    vm.setProperty('n',-0);assert.ok(Object.is(vm.properties().find(p=>p.label.length===1&&p.label[0]===110).value.value,-0));
+    vm.setProperty('n',NaN);assert.ok(Number.isNaN(vm.properties().find(p=>p.label.length===1&&p.label[0]===110).value.value));
+    // 値のない呼び出しは削除として扱わない。削除は別の操作で、空のテキストとも別。
+    for(const absent of [null,undefined,{},{kind:'number',value:'1'},{kind:'nil'}])assert.throws(()=>vm.setProperty('n',absent),TypeError);
+    assert.throws(()=>vm.setProperty(7,1),TypeError);assert.throws(()=>vm.removeProperty(7),TypeError);
+    vm.setProperty('n','');assert.deepEqual(snapshot()[2],[bytes('n'),'text',[]]);
+    assert.equal(vm.removeProperty('n'),true);assert.equal(vm.removeProperty('n'),false);
+    assert.equal(vm.removeProperty(raw),true);
+    assert.deepEqual(snapshot().map(entry=>entry[0]),[bytes('N'),bytes('keep')]);
+    vm.reset();vm.tick();assert.deepEqual(Array.from(vm.io.outputNumbers.subarray(0,3)),[0,0,1]);
+  }finally{vm.dispose();}
+  assert.throws(()=>vm.setProperty('n',1),/disposed/);
+  const addon=runtime.createAddon();
+  try{assert.equal(addon.setProperty,undefined);assert.equal(addon.removeProperty,undefined);}finally{addon.dispose();}
+});
 test('output persistence and multiple draw callbacks share Lua state',()=>{
   const vm=runtime.createVehicle();
   try{
@@ -101,6 +130,8 @@ function onTick() output.setNumber(1,z) end`,'=debug'),'suspended');
     const h=byName.get('t').handle;assert.equal(vm.expandTable(h)[0].value.value,17n);
     assert.throws(()=>vm.tick(),e=>e.code===5);
     assert.throws(()=>vm.setProperties({a:1}),e=>e.code===5);
+    assert.throws(()=>vm.setProperty('a',1),e=>e.code===5);assert.throws(()=>vm.removeProperty('a'),e=>e.code===5);
+    assert.deepEqual(vm.properties(),[]);
     assert.equal(vm.stack()[0].line,5);
     assert.equal(vm.evaluateWatch('big').value,9223372036854775807n);
     assert.throws(()=>vm.expandTable(h),/stale/);

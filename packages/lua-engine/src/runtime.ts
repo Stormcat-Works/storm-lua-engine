@@ -2,7 +2,7 @@ import { environmentWire } from './environment.js';
 import { adaptModule, Bridge, EngineError, object, unsigned, type Backend, type Outcome } from './bridge.js';
 import { RawIoView, type CompositeIoViews } from './raw.js';
 import { FrameLease } from './frame.js';
-import { decodeProperties, encodeProperties, type PropertyEntry, type Properties } from './properties.js';
+import { decodeProperties, encodeProperties, encodePropertyEntry, encodePropertyLabel, type PropertyEntry, type PropertyInput, type Properties } from './properties.js';
 import { ScriptVm, type ScriptOptions, type LogHandler } from './script.js';
 import { AddonVm, type AddonOptions } from './addon.js';
 import { HostDispatcher, type MapProvider } from './host.js';
@@ -46,6 +46,20 @@ export class VehicleVm extends ScriptVm {
   frame(): FrameLease { this.alive(); return new FrameLease(this.bridge,this.handle,this.alive); }
   setProperties(properties: Properties): void {
     this.execute(() => this.bridge.upload(encodeProperties(properties),(pointer,length) => this.bridge.call('set_properties',this.handle,pointer,length)));
+  }
+  /**
+   * プロパティを1件だけ設定します。他の項目は変えません。同じラベルの値は、型が違っても置き換えます。
+   * ラベルは文字列ならUTF-8のバイト列にし、バイト列のまま比較します。アイドル中だけ受け付け、
+   * 実行中と中断中は code 5（busy）の EngineError になります。削除は removeProperty を使います。
+   */
+  setProperty(label: string | Uint8Array, value: PropertyInput): void {
+    this.control('vehicle',{action:'setProperty',entry:encodePropertyEntry(label,value)});
+  }
+  /** プロパティを1件だけ削除し、その項目があったかどうかを返します。アイドル中だけ受け付けます。 */
+  removeProperty(label: string | Uint8Array): boolean {
+    const removed = this.control('vehicle',{action:'removeProperty',label:encodePropertyLabel(label)}).data;
+    if (typeof removed !== 'boolean') throw new TypeError('Invalid property removal result');
+    return removed;
   }
   /** Recreate the VM and replay all completed loads in order. Clears the require cache. */
   reset(): void { this.execute(() => this.bridge.call('reset',this.handle)); }

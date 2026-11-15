@@ -29,6 +29,7 @@
       "import": "./dist/debug.js"
     },
     "./wasm/*": "./dist/wasm/*",
+    "./compiler-wasm/*": "./dist/compiler-wasm/*",
     "./raster": {
       "types": "./dist/raster.d.ts",
       "import": "./dist/raster.js"

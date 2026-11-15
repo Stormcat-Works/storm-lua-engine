@@ -10,7 +10,7 @@ use std::{
 use storm_lua_spec::{
     draw::{CommandBuffer, DrawCommand, ScreenSink},
     io::CompositeSignal,
-    property::PropertyBag,
+    property::{PropertyBag, PropertyValue},
 };
 /// VM所有者と共有されるコールバック完了状態。
 pub use storm_lua_vm::runner::RunOutcome as CallbackOutcome;
@@ -250,6 +250,24 @@ impl Microcontroller {
         }
         self.state.borrow_mut().properties = properties;
         Ok(())
+    }
+    /// アイドル境界で実行時プロパティを1件だけ設定します。他の項目と既存のLuaローカル変数には
+    /// 影響しません。同じラベルの値があれば、型が違っても置き換えます。ラベルはバイト列のまま
+    /// 比較します。実行中と中断中はBusyで拒否します。削除は`remove_property`を使います。
+    pub fn set_property(&mut self, label: &[u8], value: PropertyValue) -> Result<(), VmError> {
+        self.vm.ensure_idle()?;
+        let mut state = self.state.borrow_mut();
+        if self.control_namespace.is_some() {
+            controls::validate_property_update(&state.properties, label, &value)?;
+        }
+        state.properties.insert(label.to_vec(), value);
+        Ok(())
+    }
+    /// アイドル境界で実行時プロパティを1件だけ削除し、その項目があったかどうかを返します。
+    /// 存在しないラベルはエラーにせず、falseを返します。実行中と中断中はBusyで拒否します。
+    pub fn remove_property(&mut self, label: &[u8]) -> Result<bool, VmError> {
+        self.vm.ensure_idle()?;
+        Ok(self.state.borrow_mut().properties.remove(label).is_some())
     }
     /// テキストデコードや数値の型縮小を行わずにホストプロパティデータを検査します。
     pub fn properties(&self) -> Ref<'_, PropertyBag> {

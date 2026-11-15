@@ -8,6 +8,13 @@
 - ホスト関数に届くLuaの文字列が`Uint8Array`であることを示す例を追加した（`examples/consumer/host-bindings-bytes.mjs`）。文字列へ直す形と、バイト列のまま扱う形の両方を載せた。
 - どちらの例も、`node tools/test-package.mjs`が独立consumerで実行する。パッケージのREADMEに2つの例への案内を足した。SDKのコードは変えていない。
 
+### ホスト向けの小さな追加
+
+- プロパティを1件だけ設定する`setProperty`と、1件だけ削除する`removeProperty`を追加した。Rustは`Microcontroller::set_property`と`remove_property`。全体を読んで書き戻す必要がなくなる。ラベルはバイト列のまま比較する。受け付ける時点は`setProperties`と同じで、実行中と中断中は拒否する。`setProperty`に`null`や`undefined`を渡しても削除にはならず、`TypeError`になる。
+- パッケージの`exports`に`./compiler-wasm/*`を追加した。コンパイラのWASM（`compiler-wasm/compiler_bg.wasm`）の場所を、`require.resolve`と`import.meta.resolve`で求められる。
+- `breakableLines`の構文エラーに位置情報が付くようになった。読み込みの構文エラーと同じく、`EngineError.detail`（Rustは`VmError.trace`）から省略されていないチャンク名と行を読める。
+- runtimeのWASMは、既存の`sle_vehicle`に操作を足しただけで、exportの一覧とABI番号は変えていない。
+
 ### デバッガ
 
 - ホストから実行を止める手段を追加した。`requestPause`は、実行していないVMに「次に実行する行で止まる」予約を置く。VM作成時の`pausePoll`は、実行中のVMが4096命令ごとに呼ぶ関数で、trueを返すと実行を中断する。無限ループに入ったスクリプトを、命令数の上限を待たずに止めて検査できる。

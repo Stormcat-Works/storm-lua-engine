@@ -31,6 +31,10 @@ export async function checkPackage(directory) {
     }
   }
   await checkExport(metadata.exports);
+  // WASMはホストがディスクから読んで渡すので、置き場所をexportsから解決できる必要がある。
+  for (const [subpath, target] of [['./wasm/*', './dist/wasm/*'], ['./compiler-wasm/*', './dist/compiler-wasm/*']]) {
+    if (metadata.exports?.[subpath] !== target) throw new Error(`Missing WASM asset export: ${subpath}`);
+  }
   for (const name of ['screen.wasm', 'storm_lua_wasm.wasm']) {
     const bytes = await readFile(join(directory, 'dist/wasm', name));
     if (!WebAssembly.validate(bytes)) throw new Error(`Invalid WASM: ${name}`);

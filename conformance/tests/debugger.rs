@@ -1,7 +1,10 @@
 //! ホストデバッガのセマンティクス、ハンドルの生存期間、およびバジェット構成。
 use std::error::Error;
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
-use storm_lua_spec::{io::CompositeSignal, property::PropertyBag};
+use storm_lua_spec::{
+    io::CompositeSignal,
+    property::{PropertyBag, PropertyValue},
+};
 use storm_lua_vm::{
     debug::{DebugHandle, DebugValue},
     runner::{ErrorKind, RunOutcome, StepMode},
@@ -53,6 +56,17 @@ fn inspect_continue_and_stale_handles() -> Result<(), Box<dyn Error>> {
         .ok_or("no table")?;
     assert_eq!(vm.expand_table(handle, 0, 16)?.len(), 2);
     assert!(vm.set_properties(PropertyBag::default()).is_err());
+    // 中断中は1件の設定と削除もBusyで拒否し、プロパティを変えない。
+    for error in [
+        vm.set_property(b"a", PropertyValue::Bool(true)).err(),
+        vm.remove_property(b"a").err(),
+    ] {
+        assert_eq!(
+            error.ok_or("accepted while suspended")?.kind,
+            ErrorKind::Busy
+        );
+    }
+    assert!(vm.properties().is_empty());
     assert!(vm.tick(&CompositeSignal::default()).is_err());
     vm.set_breakpoints(Vec::new())?;
     assert_eq!(vm.resume(StepMode::Continue)?, RunOutcome::Completed);

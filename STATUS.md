@@ -11,6 +11,11 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 CommonJSのホストからSDKを使う例と、ホスト関数に届くLuaの文字列が`Uint8Array`であることを示す例を、`examples/consumer`に追加した。説明は[examples](examples/README.md)にある。SDKのコードは変えていない。
 
 梱包consumerの検査（`node tools/test-package.mjs`）が2つの例を実行し、通過した。同じ検査で、CommonJSのTypeScriptの例を導入したパッケージの型で検査し、従来の設定（`module: CommonJS`、`moduleResolution: Node10`）では動かないことも確かめた。ワークスペースのテスト1,871件、実WASM（Emscripten 6.0.6）のテスト107件、TypeScriptの単体テスト36件も通過した。docs.makkii.jpのガイドへの追記は[TASKS](TASKS.md)に残る。3ブラウザでの実行は未実施。
+## プロパティの1件設定、コンパイラWASMのexports、置ける行の構文エラー位置（2026-11-15、未公開）
+
+Vehicleのプロパティを1件だけ設定する操作と、1件だけ削除する操作を追加した。設定のAPIは削除を受け付けず、削除は別の操作にした。契約は[properties](docs/specs/properties.md)。npmパッケージの`exports`に`./compiler-wasm/*`を足し、コンパイラのWASMの場所をパッケージ名から解決できるようにした（[distribution](docs/design/distribution.md)）。`breakable_lines`の構文エラーには、読み込みの構文エラーと同じ位置情報を付けた。
+
+Nativeの適合テスト（`conformance/tests/runtime.rs`、`vehicle_controls.rs`、`debugger.rs`、`debugger_pause.rs`）を含むワークスペースのテスト1,872件が通過した。実WASM（Emscripten 6.0.6）のテスト108件と、TypeScriptの単体テスト37件も通過した。梱包consumerの検査（`node tools/test-package.mjs`）では、runtime、raster、compilerのWASMを`require.resolve`と`import.meta.resolve`の両方で解決できることを確かめた。3ブラウザでの実行は未実施。
 
 ## デバッガの一時停止・ステップ持ち越し・置ける行（2026-11-15、未公開）
 

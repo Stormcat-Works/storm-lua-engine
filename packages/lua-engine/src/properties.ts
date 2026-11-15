@@ -18,31 +18,51 @@ export function numberFromBits(value: unknown): number {
   view.setBigUint64(0, BigInt('0x' + value), false);
   return view.getFloat64(0, false);
 }
+/** 1件ぶんのwire表現。一括設定と1件設定で同じ規則を使います。 */
+function entryWire(label: string | Uint8Array, value: PropertyValue): Record<string, unknown> {
+  const name = Array.from(labelBytes(label));
+  if (typeof value !== 'object' || value === null) throw new TypeError('Invalid property value');
+  switch (value.kind) {
+    case 'number':
+      if (typeof value.value !== 'number') throw new TypeError('Number property requires a number');
+      return {label:name, kind:'number', bits:numberBits(value.value)};
+    case 'bool':
+      if (typeof value.value !== 'boolean') throw new TypeError('Boolean property requires a Boolean');
+      return {label:name, kind:'bool', value:value.value};
+    case 'text':
+      if (!(value.bytes instanceof Uint8Array) || value.bytes.length > 1024 * 1024) throw new TypeError('Invalid property bytes');
+      return {label:name, kind:'text', bytes:Array.from(value.bytes)};
+    default:
+      throw new TypeError('Unknown property kind');
+  }
+}
+function labelBytes(label: string | Uint8Array): Uint8Array {
+  const bytes = typeof label === 'string' ? encoder.encode(label) : label;
+  if (!(bytes instanceof Uint8Array) || bytes.length > 1024 * 1024) throw new TypeError('Invalid property label');
+  return bytes;
+}
+function typed(value: number | boolean | string | Uint8Array): PropertyValue {
+  return typeof value === 'number' ? {kind:'number', value} :
+    typeof value === 'boolean' ? {kind:'bool', value} : {kind:'text', bytes:typeof value === 'string' ? encoder.encode(value) : value};
+}
 export function encodeProperties(properties: Properties): Uint8Array {
   const entries: readonly PropertyEntry[] = Array.isArray(properties) ? properties :
-    Object.entries(properties).map(([label, value]) => ({label, value: typeof value === 'number' ? {kind:'number', value} :
-      typeof value === 'boolean' ? {kind:'bool', value} : {kind:'text', bytes:typeof value === 'string' ? encoder.encode(value) : value}}));
+    Object.entries(properties).map(([label, value]) => ({label, value: typed(value)}));
   if (entries.length > 4096) throw new RangeError('Too many properties');
-  const payload = entries.map(({label, value}) => {
-    const bytes = typeof label === 'string' ? encoder.encode(label) : label;
-    if (!(bytes instanceof Uint8Array) || bytes.length > 1024 * 1024) throw new TypeError('Invalid property label');
-    const name = Array.from(bytes);
-    switch (value.kind) {
-      case 'number':
-        if (typeof value.value !== 'number') throw new TypeError('Number property requires a number');
-        return {label:name, kind:'number', bits:numberBits(value.value)};
-      case 'bool':
-        if (typeof value.value !== 'boolean') throw new TypeError('Boolean property requires a Boolean');
-        return {label:name, kind:'bool', value:value.value};
-      case 'text':
-        if (!(value.bytes instanceof Uint8Array) || value.bytes.length > 1024 * 1024) throw new TypeError('Invalid property bytes');
-        return {label:name, kind:'text', bytes:Array.from(value.bytes)};
-    }
-  });
+  const payload = entries.map(({label, value}) => entryWire(label, value));
   const result = encoder.encode(JSON.stringify(payload));
   if (result.length > 4 * 1024 * 1024) throw new RangeError('Property request exceeds 4 MiB');
   return result;
 }
+/** 1件設定の値。recordと同じ素の値か、型を明示したPropertyValueを渡せます。 */
+export type PropertyInput = number | boolean | string | Uint8Array | PropertyValue;
+/** 1件設定のwire表現。nullとundefinedは削除として扱わず、TypeErrorにします。 */
+export function encodePropertyEntry(label: string | Uint8Array, value: PropertyInput): Record<string, unknown> {
+  if (value === null || value === undefined) throw new TypeError('Property value is required; use removeProperty to delete');
+  return entryWire(label, typeof value === 'object' && !(value instanceof Uint8Array) ? value : typed(value));
+}
+/** 削除するラベルのwire表現。文字列はUTF-8のバイト列にします。 */
+export function encodePropertyLabel(label: string | Uint8Array): number[] { return Array.from(labelBytes(label)); }
 
 /** Decode a property snapshot without losing binary strings or binary64 values. */
 export function decodeProperties(input: unknown): PropertyEntry[] {

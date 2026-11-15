@@ -11,6 +11,14 @@
 - 中断したフレームの行を取得するとき、関数の最初の命令で止まった場合に行情報の手前を読んでいた不具合を修正した。フックが記録した行を返す。
 - runtimeのWASMに`breakable_lines`を追加した。既存のexportとABI番号は変えていない。
 
+### エラーの位置情報
+
+- スクリプトの読み込みと実行で失敗したエラーが、メッセージとは別に位置情報を持つようになった。省略されていないチャンク名と行、呼び出し履歴、構文エラーと実行時エラーの区別を返す。Luaはメッセージの中のチャンク名を60バイトに切り詰めるため、従来は長いパスのファイルをメッセージから特定できなかった。
+- Rustは`VmError.trace`、TypeScriptは`EngineError.detail`で受け取る。命令数の上限に達したエラーにも、実行していた行と呼び出し履歴が付く。debug featureは要らない。
+- 結果コードの名前付き定数`STATUS`をTypeScriptへ公開した。`EngineError.code`と比較する数値を直接書かずに済む。
+- runtimeのWASMに`error_detail_ptr`と`error_detail_len`を追加した。既存のexportとABI番号は変えていない。
+- Rustで`VmError`または`BridgeError`をstruct literalで構成している利用者は、追加したフィールド（`trace`、`detail`）を指定する必要がある。`VmError::new`と`BridgeError::new`の呼び出しは変更不要。
+
 ## 0.4.1 — 2026-11-04
 
 ### 正確性の修正

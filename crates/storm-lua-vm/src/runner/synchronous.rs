@@ -93,6 +93,7 @@ impl Context {
                 // mluaはyield不可能なCコールバック内のYieldを暗黙に無視するため、そこではエラーを送出します。
                 // yield可能な境界では代わりに中断することで、pcallがバジェット枯渇を握りつぶせないようにします。
                 return if probe.can_yield() {
+                    state.limit_line = Some(info.curr_line());
                     Ok(VmState::Yield)
                 } else {
                     Err(mlua::Error::RuntimeError(
@@ -380,13 +381,16 @@ impl SynchronousCallbacks {
         }
         let attempted_yield = result.is_ok() && thread.status() == ThreadStatus::Resumable;
         let outcome = if context.control.borrow().exhausted {
-            Err(VmError::new(
-                ErrorKind::Limit,
-                "instruction budget exceeded",
-            ))
+            let mut error = VmError::new(ErrorKind::Limit, "instruction budget exceeded");
+            attach_trace(&context.lua, &thread, &mut error, None, None);
+            Err(error)
         } else {
             match result {
-                Err(error) => Err(error.into()),
+                Err(error) => {
+                    let mut error = VmError::from(error);
+                    attach_trace(&context.lua, &thread, &mut error, None, None);
+                    Err(error)
+                }
                 Ok(_) if thread.status() == ThreadStatus::Resumable => Err(VmError::new(
                     ErrorKind::Lua,
                     "synchronous callback attempted to yield",

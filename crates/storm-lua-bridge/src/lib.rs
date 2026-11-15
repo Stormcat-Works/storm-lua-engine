@@ -1,33 +1,33 @@
 //! 共有アダプタ機構。Lua、グラフィックス、unsafeな参照外し、ユーザースケジューラを含みません。
 use std::{cell::RefCell, collections::BTreeMap, fmt};
-use storm_lua_spec::draw::ScreenError;
+use storm_lua_spec::{abi::status, draw::ScreenError};
 
 /// 外部関数呼び出し（FFI）の結果コード。中断（Suspension）やコールバック不在は正常な結果として扱われます。
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// 正常に完了。
-    Ok = 0,
+    Ok = status::OK,
     /// Luaのコンパイル／実行時エラー。
-    Lua = 1,
+    Lua = status::LUA,
     /// リソース上限を超過。
-    Limit = 2,
+    Limit = status::LIMIT,
     /// 不明、失効、または破棄済みのハンドル。
-    InvalidHandle = 3,
+    InvalidHandle = status::INVALID_HANDLE,
     /// 不正なホスト引数またはバイナリデータ。
-    InvalidArgument = 4,
+    InvalidArgument = status::INVALID_ARGUMENT,
     /// 再入操作または中断状態のコールバック。
-    Busy = 5,
+    Busy = status::BUSY,
     /// 必要な機能またはプロバイダが利用不可。
-    Unsupported = 6,
+    Unsupported = status::UNSUPPORTED,
     /// コールバックが中断中（フレーム／tick完了ではありません）。
-    Suspended = 7,
+    Suspended = status::SUSPENDED,
     /// 指定された名前のコールバックが存在しない。
-    Missing = 8,
+    Missing = status::MISSING,
     /// VMが故障状態でありリセットが必要。
-    Failed = 9,
+    Failed = status::FAILED,
     /// ホスト提供のサービスが失敗。
-    Host = 10,
+    Host = status::HOST,
 }
 /// アダプタエラー（ドメイン固有のバックエンドエラーとは分離）。
 #[derive(Debug)]
@@ -36,6 +36,8 @@ pub struct BridgeError {
     pub status: Status,
     /// UTF-8の診断メッセージ。
     pub message: String,
+    /// アダプタが定義する構造化された補足情報（UTF-8のJSON）。ない場合はNone。
+    pub detail: Option<String>,
 }
 impl BridgeError {
     /// 明示的なアダプタエラーを構築します。
@@ -43,7 +45,14 @@ impl BridgeError {
         Self {
             status,
             message: message.into(),
+            detail: None,
         }
+    }
+    /// 構造化された補足情報を付けます。メッセージは変更しません。
+    #[must_use]
+    pub fn with_detail(mut self, detail: String) -> Self {
+        self.detail = Some(detail);
+        self
     }
 }
 impl fmt::Display for BridgeError {
@@ -145,14 +154,17 @@ struct Uploads {
 thread_local! {
     static UPLOADS:RefCell<Uploads>=const{RefCell::new(Uploads{buffers:BTreeMap::new(),bytes:0})};
     static DIAGNOSTIC:RefCell<(Status,Vec<u8>)>=const{RefCell::new((Status::Ok,Vec::new()))};
+    static DETAIL:RefCell<Vec<u8>>=const{RefCell::new(Vec::new())};
     static RESPONSE:RefCell<Vec<u8>>=const{RefCell::new(Vec::new())};
 }
 /// 状態変更または照会操作の前に前回の診断エラーをクリアします。
 pub fn clear_error() {
     DIAGNOSTIC.with(|last| *last.borrow_mut() = (Status::Ok, Vec::new()));
+    DETAIL.with(|last| last.borrow_mut().clear());
 }
 /// 返されたエラーを記録します。取得呼び出しによってクリアされることはありません。
 pub fn record(error: BridgeError) {
+    DETAIL.with(|last| *last.borrow_mut() = error.detail.unwrap_or_default().into_bytes());
     DIAGNOSTIC.with(|last| *last.borrow_mut() = (error.status, error.message.into_bytes()));
 }
 /// 診断情報を保持しつつ、Resultをステータスコードに変換します。
@@ -269,6 +281,14 @@ pub fn error_ptr() -> usize {
 /// エラーUTF-8のバイト長。
 pub fn error_len() -> usize {
     DIAGNOSTIC.with(|last| last.borrow().1.len())
+}
+/// エラー補足情報のUTF-8 JSONのポインタ。次の通常操作まで有効です。
+pub fn error_detail_ptr() -> usize {
+    DETAIL.with(|last| last.borrow().as_ptr() as usize)
+}
+/// エラー補足情報のバイト長。補足情報がない場合は0です。
+pub fn error_detail_len() -> usize {
+    DETAIL.with(|last| last.borrow().len())
 }
 /// レスポンスバッファのポインタ。次のレスポンス生成操作まで有効です。
 pub fn response_ptr() -> usize {

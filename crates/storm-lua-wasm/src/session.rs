@@ -25,8 +25,29 @@ pub(crate) struct Session {
     map_host: Option<u32>,
 }
 thread_local! {static SESSIONS:RefCell<Registry<Session>>=RefCell::new(Registry::default());}
+/// 位置情報をコールドパスのJSONへ変換します。チャンク名はUTF-8のまま運びます。
+fn trace_detail(trace: &storm_lua_vm::runner::ErrorTrace) -> String {
+    use storm_lua_vm::runner::LuaErrorStage;
+    serde_json::json!({
+        "stage": trace.stage.map(|stage| match stage {
+            LuaErrorStage::Syntax => "syntax",
+            LuaErrorStage::Runtime => "runtime",
+        }),
+        "location": trace.location.as_ref().map(|location| {
+            serde_json::json!({"chunk": location.chunk, "line": location.line})
+        }),
+        "stack": trace.stack.iter().map(|frame| serde_json::json!({
+            "level": frame.level,
+            "source": frame.source,
+            "line": frame.line,
+            "functionName": frame.function_name,
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
 pub(crate) fn convert(error: VmError) -> BridgeError {
-    BridgeError::new(
+    let detail = error.trace.as_deref().map(trace_detail);
+    let converted = BridgeError::new(
         match error.kind {
             ErrorKind::Busy => Status::Busy,
             ErrorKind::Failed => Status::Failed,
@@ -37,7 +58,11 @@ pub(crate) fn convert(error: VmError) -> BridgeError {
             ErrorKind::Host => Status::Host,
         },
         error.to_string(),
-    )
+    );
+    match detail {
+        Some(detail) => converted.with_detail(detail),
+        None => converted,
+    }
 }
 pub(crate) fn outcome(value: RunOutcome) -> Status {
     match value {

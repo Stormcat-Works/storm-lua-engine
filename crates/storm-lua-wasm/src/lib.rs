@@ -17,6 +17,18 @@ bridge::memory_exports!(
     sle_response_ptr,
     sle_response_len
 );
+/// 直前のエラーの位置情報（UTF-8 JSON）を参照します。次の通常操作まで有効です。
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_error_detail_ptr() -> usize {
+    bridge::error_detail_ptr()
+}
+/// 直前のエラーの位置情報のバイト長。位置情報がない場合は0です。
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_error_detail_len() -> usize {
+    bridge::error_detail_len()
+}
 /// 現在の固定I/OおよびコマンドABIリビジョン。
 #[allow(unsafe_code)]
 #[no_mangle]

@@ -2,8 +2,38 @@
 import { ABI } from './generated.js';
 
 export type Outcome = 'completed' | 'suspended' | 'missing';
+/** エラー時の呼び出し履歴の1フレーム。エラーを起こしたフレームが0。Cフレームの行は -1。 */
+export interface ErrorFrame { readonly level: number; readonly source: string; readonly line: number; readonly functionName: string | null }
+/** 省略されていないチャンク名と1始まりの行。ログの LogLocation と同じ形。 */
+export interface ErrorLocation { readonly chunk: string; readonly line: number }
+/** スクリプトの読み込み・実行で失敗したときの位置情報。チャンク名はメッセージと違い省略されません。 */
+export interface ErrorDetail {
+  /** code が STATUS.lua のときの段階。それ以外の code では null。 */
+  readonly stage: 'syntax' | 'runtime' | null;
+  /** エラーを送出した最も近いLuaフレーム、または構文エラーの行。取得できなければ null。 */
+  readonly location: ErrorLocation | null;
+  /** 最大256件の呼び出し履歴。構文エラーでは空。 */
+  readonly stack: readonly ErrorFrame[];
+}
 export class EngineError extends Error {
-  constructor(readonly code: number, message: string) { super(message); this.name = 'EngineError'; }
+  /** スクリプト実行に由来しないエラー（不正な引数、ハンドルなど）では undefined。 */
+  readonly detail: ErrorDetail | undefined;
+  constructor(readonly code: number, message: string, detail?: ErrorDetail) { super(message); this.name = 'EngineError'; this.detail = detail; }
+}
+function decodeErrorDetail(input: unknown): ErrorDetail {
+  const value = object(input), stage = value['stage'], location = value['location'], stack = value['stack'];
+  if (!(stage === null || stage === 'syntax' || stage === 'runtime') || !Array.isArray(stack)) throw new TypeError('Invalid error detail');
+  let decoded: ErrorLocation | null = null;
+  if (location !== null) {
+    const l = object(location), chunk = l['chunk'], line = l['line'];
+    if (typeof chunk !== 'string' || typeof line !== 'number' || !Number.isInteger(line) || line < 1) throw new TypeError('Invalid error location');
+    decoded = {chunk, line};
+  }
+  return {stage, location: decoded, stack: stack.map(entry => {
+    const f = object(entry), level = f['level'], source = f['source'], line = f['line'], functionName = f['functionName'];
+    if (typeof level !== 'number' || typeof source !== 'string' || typeof line !== 'number' || !Number.isInteger(line) || !(functionName === null || typeof functionName === 'string')) throw new TypeError('Invalid error frame');
+    return {level: unsigned(level, 'level'), source, line, functionName};
+  })};
 }
 export interface MemorySource { readonly buffer: ArrayBufferLike }
 export type WasmFunction = (...args: number[]) => number;
@@ -49,7 +79,13 @@ export class Bridge {
     // 通常のABI呼び出し（解放処理を含む）によって診断情報がクリアされる前に読み取ります。
     const pointer = this.invoke('error_ptr') >>> 0;
     const length = this.invoke('error_len') >>> 0;
-    return new EngineError(code, length ? utf8.decode(this.bytes(pointer, length)) : `Engine status ${code}`);
+    const message = length ? utf8.decode(this.bytes(pointer, length)) : `Engine status ${code}`;
+    // raster専用モジュールは位置情報のexportを持ちません。
+    if (!this.backend.functions['error_detail_len']) return new EngineError(code, message);
+    const detailLength = this.invoke('error_detail_len') >>> 0;
+    if (!detailLength) return new EngineError(code, message);
+    const detail: unknown = JSON.parse(utf8.decode(this.bytes(this.invoke('error_detail_ptr') >>> 0, detailLength)));
+    return new EngineError(code, message, decodeErrorDetail(detail));
   }
   status(code: number): Outcome {
     if (code === 0) return 'completed';

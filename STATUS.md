@@ -11,6 +11,11 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 描画の結果が前回と同じかどうかを返すAPIは追加しなかった。64bitダイジェストを返す案と、エンジンが前回フレームを保持して比べる案を試作し、実WASMで測定した。どちらも、既存のAPIだけで書ける手順（`pixels`の借用ビューを前回の写しと`Buffer.compare`で比べる）より速くならなかった。手順は[例](examples/consumer/frame-changes.mjs)、測定値は[検証記録](docs/verification/frame-change-detection-20261115.md)にある。
 
 例は梱包consumerの検査（`node tools/test-package.mjs`）で実行し、通過した。エンジンのコードは変えていない。ワークスペースのテスト1,871件、実WASM（Emscripten 6.0.6）のテスト107件、TypeScriptの単体テスト36件も通過した。測定は1台のmacOS（Apple Silicon）とNode 26.8.2だけで行い、ブラウザでは測っていない。3ブラウザでの実行は未実施。
+## npmパッケージが求めるNodeの版（2026-11-15、未公開）
+
+公開パッケージの`engines`を`^18.19.0 || >=20.6.0`へ下げた。22.18以降という条件は開発とビルドだけに残した。梱包したtarballを独立consumerへ導入し、consumerを古いNodeで実行して決めた値である。条件と根拠は[distribution](docs/design/distribution.md)、実行した版と結果は[検証記録](docs/verification/node-engines-20261115.md)にある。
+
+確かめたのはmacOS（Apple Silicon）の公式バイナリで、CIに足したLinux x64での実行はまだ走らせていない。3ブラウザでの実行は未実施。
 ## プロパティの1件設定、コンパイラWASMのexports、置ける行の構文エラー位置（2026-11-15、未公開）
 
 Vehicleのプロパティを1件だけ設定する操作と、1件だけ削除する操作を追加した。設定のAPIは削除を受け付けず、削除は別の操作にした。契約は[properties](docs/specs/properties.md)。npmパッケージの`exports`に`./compiler-wasm/*`を足し、コンパイラのWASMの場所をパッケージ名から解決できるようにした（[distribution](docs/design/distribution.md)）。`breakable_lines`の構文エラーには、読み込みの構文エラーと同じ位置情報を付けた。

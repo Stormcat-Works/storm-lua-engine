@@ -20,6 +20,8 @@ runtime用WASMはmicrocontrollerと必要なrasterを同じmoduleに含める。
 
 Rust 1.97.1、Emscripten SDK **6.0.6**、TypeScript 5.8.3を使用する。Nodeは22.18以降。EmscriptenはSDKに付属するClang/LLVMとBinaryenを一組として使い、OSの別バージョンの`wasm-opt`を混ぜない。画面契約は同梱JSONだけで検査し、外部アプリや元ソースの取得・実行を必要としない。
 
+Nodeの22.18以降という条件は、開発とビルドに使う道具の条件である。公開パッケージの`engines`は、梱包済みパッケージを使う側の条件として別に定め、`^18.19.0 || >=20.6.0`とする。根拠は、梱包したtarballを独立consumerへ導入し、consumerのスクリプトだけを古いNodeで実行した結果である（`node tools/test-package.mjs --node <Nodeの実行ファイル> <tarball>`）。通ったのは18.19.0、18.20.8、20.6.0、20.20.2、21.7.3、22.0.0、22.18.0で、18.18.2以前、19.9.0、20.0.0、20.5.1は通らなかった。通らなかった版はどれも、consumerの例が使う`import.meta.resolve`を同期の関数として持たない。記録は[検証記録](../verification/node-engines-20261115.md)にある。CIのwasmジョブは、下限の18.19.0と20.6.0で同じ検査を実行する。VSCodeなどの組み込みNodeがこの条件を満たすかどうかは、利用する側がその製品のNodeの版で確かめる。
+
 `rustup target add --toolchain 1.97.1 wasm32-unknown-unknown wasm32-unknown-emscripten`でtargetを入れる。Emscripten SDKの6.0.6をactivateし、そのSDKの`emcc`と付属ツールがPATHから解決される状態にする。[SDK installation](https://emscripten.org/docs/getting_started/downloads.html)。
 
 開発時の実行順は`npm --prefix packages/lua-engine ci`、`cargo xtask check`、`npm --prefix packages/lua-engine test`、`node tools/build-wasm.mjs --with-tests`、`node tools/build-compiler.mjs`、`node tools/test-wasm.mjs --with-tests`。ブラウザ検証はpackageで`npx playwright install chromium firefox webkit`を行い、rootから`node tools/test-browser.mjs`を実行する。CI/Linuxでシステム依存も必要な場合はPlaywrightの`install --with-deps`を使う。

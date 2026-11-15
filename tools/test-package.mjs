@@ -8,11 +8,20 @@ import {checkArtifacts} from './check-artifacts.mjs';
 import {checkPackage} from './check-package.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const args=process.argv.slice(2);
-if(args.length>1||args[0]?.startsWith('-'))throw new Error('usage: node tools/test-package.mjs [tarball]');
+// --node は、導入したパッケージを使うconsumerのスクリプトだけを実行するNodeを指定する。
+// 梱包、導入、配布物の検査は、このスクリプトを動かしているNodeとnpmで行う。
+let consumerNode=process.execPath;
+const nodeOption=args.indexOf('--node');
+if(nodeOption!==-1){
+  if(!args[nodeOption+1])throw new Error('--node requires a path to a Node.js binary');
+  consumerNode=resolve(args[nodeOption+1]);args.splice(nodeOption,2);
+}
+if(args.length>1||args[0]?.startsWith('-'))throw new Error('usage: node tools/test-package.mjs [--node BINARY] [tarball]');
 const provided=args[0]?resolve(args[0]):null;
 const temporary=await mkdtemp(join(tmpdir(),'storm-lua-package-'));
 const npm=process.platform==='win32'?'npm.cmd':'npm';
 function run(program,args,cwd){
+  if(program===process.execPath)program=consumerNode;
   const result=spawnSync(program,args,{cwd,encoding:'utf8',shell:process.platform==='win32'&&program===npm});
   if(result.error)throw result.error;
   if(result.status!==0)throw new Error(`${program} failed: ${result.stderr}\n${result.stdout}`);
@@ -93,4 +102,5 @@ import(pathToFileURL(join(__dirname,'resolve-assets.mjs')).href).then(esm=>{
   await writeFile(join(mapped,'optimized-source-map.mjs'),await readFile(join(root,'examples/consumer/optimized-source-map.mjs')));
   console.log(run(process.execPath,['optimized-source-map.mjs'],mapped).trim());
   console.log(`${provided?'Provided release tarball':`Packed ${packed.files.length} files`}; SDK has no runtime npm dependencies; mapped-debug consumer separately installs trace-mapping.`);
+  console.log(`Consumer scripts ran on Node.js ${run(process.execPath,['--version'],temporary).trim()}.`);
 }finally{await rm(temporary,{recursive:true,force:true});}

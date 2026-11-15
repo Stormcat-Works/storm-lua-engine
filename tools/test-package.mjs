@@ -41,6 +41,26 @@ try{const frame=raster.render([{kind:'color',rgba:[255,0,0,128]},{kind:'rect',x:
 console.log('Isolated installed package: Lua execution, raster, export paths and optional Canvas import passed.');
 `);
   console.log(run(process.execPath,['smoke.mjs'],temporary).trim());
+  // 実行用とコンパイラ用のWASMを、ESMとCommonJSの両方の解決でパッケージ名から探せることを確かめる。
+  await writeFile(join(temporary,'resolve-assets.cjs'),`
+const assert=require('node:assert/strict');
+const {readFileSync,realpathSync}=require('node:fs');
+const {join}=require('node:path');
+const {pathToFileURL,fileURLToPath}=require('node:url');
+const installed=realpathSync(join(__dirname,'node_modules/@stormcat-works/storm-lua-engine'));
+const assets=['wasm/storm_lua_wasm.wasm','wasm/screen.wasm','compiler-wasm/compiler_bg.wasm'];
+for(const asset of assets){
+  const resolved=require.resolve('@stormcat-works/storm-lua-engine/'+asset);
+  assert.equal(realpathSync(resolved),join(installed,'dist',asset));
+  assert.ok(WebAssembly.validate(readFileSync(resolved)));
+}
+import(pathToFileURL(join(__dirname,'resolve-assets.mjs')).href).then(esm=>{
+  for(const asset of assets)assert.equal(realpathSync(fileURLToPath(esm.resolve(asset))),join(installed,'dist',asset));
+  console.log('Isolated installed package: runtime, raster and compiler WASM resolve through require.resolve and import.meta.resolve.');
+}).catch(error=>{console.error(error);process.exitCode=1;});
+`);
+  await writeFile(join(temporary,'resolve-assets.mjs'),"export const resolve=asset=>import.meta.resolve('@stormcat-works/storm-lua-engine/'+asset);\n");
+  console.log(run(process.execPath,['resolve-assets.cjs'],temporary).trim());
   await writeFile(join(temporary,'consumer.mjs'),await readFile(join(root,'examples/consumer/node.mjs')));
   console.log(run(process.execPath,['consumer.mjs'],temporary).trim());
   await writeFile(join(temporary,'source-loading.mjs'),await readFile(join(root,'examples/consumer/source-loading.mjs')));

@@ -108,6 +108,25 @@ fn controls_have_explicit_argument_and_rust_owned_memory_budgets(
     );
     assert!(matches!(result,Err(error) if error.kind==ErrorKind::Limit));
     assert_eq!(vm.properties().len(), 4096);
+    // 上限に達したVMは失敗状態になるので、ホストからの設定は新しいVMで確かめる。
+    let failed = vm.set_property(b"after", PropertyValue::Bool(true));
+    assert!(matches!(failed,Err(error) if error.kind==ErrorKind::Failed));
+    let mut vm = Microcontroller::new(config())?;
+    for i in 0..4096 {
+        vm.set_property(i.to_string().as_bytes(), PropertyValue::Bool(true))?;
+    }
+    // ホストからの1件設定も、同じ件数とバイト数の上限を通る。超える設定は何も変えない。
+    let over = vm.set_property(b"one more", PropertyValue::Bool(true));
+    assert!(matches!(over,Err(error) if error.kind==ErrorKind::Limit));
+    assert!(vm.properties().get(b"one more").is_none());
+    // 既存のラベルの置き換えは件数を増やさない。1MiBを超える値は拒否する。
+    vm.set_property(b"1", PropertyValue::Number(2.0))?;
+    let large = vm.set_property(b"1", PropertyValue::Text(vec![0; 1024 * 1024]));
+    assert!(matches!(large,Err(error) if error.kind==ErrorKind::Limit));
+    assert_eq!(vm.properties().get(b"1"), Some(&PropertyValue::Number(2.0)));
+    assert!(vm.remove_property(b"1")?);
+    vm.set_property(b"one more", PropertyValue::Bool(true))?;
+    assert_eq!(vm.properties().len(), 4096);
     Ok(())
 }
 

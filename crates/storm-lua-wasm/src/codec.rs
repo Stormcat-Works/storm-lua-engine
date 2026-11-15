@@ -32,6 +32,31 @@ pub(crate) fn byte_array(value: &Value) -> Result<Vec<u8>, BridgeError> {
         })
         .collect()
 }
+/// プロパティ1件のwire表現を読みます。一括設定と1件設定で同じ規則を使います。
+pub(crate) fn property_entry(entry: &Value) -> Result<(Vec<u8>, PropertyValue), BridgeError> {
+    let label = byte_array(&entry["label"])?;
+    let value = match entry["kind"].as_str() {
+        Some("number") => {
+            let bits = entry["bits"]
+                .as_str()
+                .ok_or_else(|| invalid("number requires IEEE754 hex bits"))?;
+            if bits.len() != 16 || !bits.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(invalid("invalid f64 bit representation"));
+            }
+            PropertyValue::Number(f64::from_bits(
+                u64::from_str_radix(bits, 16).map_err(|_| invalid("invalid f64 bits"))?,
+            ))
+        }
+        Some("bool") => PropertyValue::Bool(
+            entry["value"]
+                .as_bool()
+                .ok_or_else(|| invalid("Boolean property requires a Boolean value"))?,
+        ),
+        Some("text") => PropertyValue::Text(byte_array(&entry["bytes"])?),
+        _ => return Err(invalid("unknown property kind")),
+    };
+    Ok((label, value))
+}
 pub(crate) fn properties(bytes: &[u8]) -> Result<PropertyBag, BridgeError> {
     let root = parse(bytes)?;
     let values = root
@@ -42,27 +67,7 @@ pub(crate) fn properties(bytes: &[u8]) -> Result<PropertyBag, BridgeError> {
     }
     let mut bag = PropertyBag::default();
     for entry in values {
-        let label = byte_array(&entry["label"])?;
-        let value = match entry["kind"].as_str() {
-            Some("number") => {
-                let bits = entry["bits"]
-                    .as_str()
-                    .ok_or_else(|| invalid("number requires IEEE754 hex bits"))?;
-                if bits.len() != 16 || !bits.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(invalid("invalid f64 bit representation"));
-                }
-                PropertyValue::Number(f64::from_bits(
-                    u64::from_str_radix(bits, 16).map_err(|_| invalid("invalid f64 bits"))?,
-                ))
-            }
-            Some("bool") => PropertyValue::Bool(
-                entry["value"]
-                    .as_bool()
-                    .ok_or_else(|| invalid("Boolean property requires a Boolean value"))?,
-            ),
-            Some("text") => PropertyValue::Text(byte_array(&entry["bytes"])?),
-            _ => return Err(invalid("unknown property kind")),
-        };
+        let (label, value) = property_entry(entry)?;
         if bag.insert(label, value).is_some() {
             return Err(invalid("duplicate property label"));
         }

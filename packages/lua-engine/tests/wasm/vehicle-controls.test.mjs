@@ -21,6 +21,11 @@ test('native development state and named callbacks cross WASM without host reent
     }
     vm.load('harness.setProperty("gain",nil);harness.setProperty("raw",string.char(255))','@delete.lua');
     assert.deepEqual(vm.properties().map(p=>[luaText(p.label),Array.from(p.value.bytes)]),[['raw',[255]]]);
+    // ホストからの1件設定も、controlNamespaceのあるVMでは同じ上限を通る。
+    assert.throws(()=>vm.setProperty('big',new Uint8Array(1024*1024)),e=>e.code===2);
+    assert.equal(vm.properties().length,1);
+    vm.setProperty('gain',2);vm.load('function seen()output.setNumber(1,property.getNumber("gain"))end','@seen.lua');
+    vm.callTick('seen');assert.equal(vm.io.outputNumbers[0],2);
   }finally{vm.dispose();}
   assert.throws(()=>vm.callTick('custom'),/disposed/);
 });

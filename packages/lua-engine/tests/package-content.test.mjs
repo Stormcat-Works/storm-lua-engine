@@ -59,3 +59,14 @@ test('a compiler export cannot be distributed without its WASM payload', async t
   await rm(join(directory, 'dist/compiler-wasm/compiler_bg.wasm'));
   await assert.rejects(checkPackage(directory), /ENOENT/);
 });
+
+test('WASM asset directories must stay resolvable through package exports', async t => {
+  for (const subpath of ['./wasm/*', './compiler-wasm/*']) {
+    const directory = await fixture(t);
+    const metadata = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    assert.equal(metadata.exports[subpath], subpath.replace('./', './dist/'));
+    delete metadata.exports[subpath];
+    await writeFile(join(directory, 'package.json'), JSON.stringify(metadata));
+    await assert.rejects(checkPackage(directory), /Missing WASM asset export/);
+  }
+});

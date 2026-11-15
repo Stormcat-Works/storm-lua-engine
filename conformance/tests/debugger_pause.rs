@@ -3,7 +3,10 @@ use std::{cell::Cell, error::Error, num::NonZeroU64, rc::Rc};
 use storm_lua_addon::{Addon, AddonConfig};
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::io::CompositeSignal;
-use storm_lua_vm::runner::{ErrorKind, PausePoll, RunOutcome, StepMode, PAUSE_POLL_INTERVAL};
+use storm_lua_vm::{
+    logging::LogLocation,
+    runner::{ErrorKind, LuaErrorStage, PausePoll, RunOutcome, StepMode, PAUSE_POLL_INTERVAL},
+};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -382,13 +385,26 @@ fn breakable_lines_do_not_execute_or_retain_the_source() -> TestResult {
     vm.reset()?;
     vm.tick(&signal())?;
     assert_eq!(vm.output().numbers[0], 7.0);
-    assert_eq!(
-        vm.breakable_lines(b"local = 1", "@bad.lua")
+    // 構文エラーは、読み込みのときと同じ位置情報を持つ。チャンク名は省略されない。
+    const LONG: &str = "@a/path/that/goes/on/and/on/for/more/than/sixty/characters/bad.lua";
+    for name in [LONG, "@bad.lua", "=literal"] {
+        let error = vm
+            .breakable_lines(b"local a = 1\nlocal = 1", name)
             .err()
-            .ok_or("accepted")?
-            .kind,
-        ErrorKind::Lua
-    );
+            .ok_or("accepted")?;
+        assert_eq!(error.kind, ErrorKind::Lua);
+        let trace = error.trace.as_deref().ok_or("no trace")?;
+        assert_eq!(trace.stage, Some(LuaErrorStage::Syntax));
+        assert_eq!(
+            trace.location,
+            Some(LogLocation {
+                chunk: name.into(),
+                line: 2
+            }),
+            "{name}"
+        );
+        assert!(trace.stack.is_empty());
+    }
     // 中断中でも問い合わせられる。
     vm.request_pause()?;
     assert_eq!(vm.tick(&signal())?, RunOutcome::Suspended);

@@ -60,6 +60,45 @@ fn property_updates_do_not_rewrite_lua_locals_and_bytes_survive() -> Result<(), 
     Ok(())
 }
 #[test]
+fn single_property_updates_leave_other_entries_and_compare_labels_as_bytes(
+) -> Result<(), Box<dyn Error>> {
+    let mut vm = Microcontroller::new(MicrocontrollerConfig::default())?;
+    let mut initial = PropertyBag::default();
+    initial.insert(b"keep".to_vec(), PropertyValue::Number(16777217.0));
+    initial.insert(vec![0xff, 0x00], PropertyValue::Bool(true));
+    vm.set_properties(initial)?;
+    // 1件の設定は、load前にもtickの間にも受け付ける。f64は縮めない。
+    vm.set_property(b"n", PropertyValue::Number(0.1))?;
+    vm.load(b"local cached=property.getNumber('n');function onTick()output.setNumber(1,cached*10);output.setNumber(2,property.getNumber('n')*10);output.setNumber(3,property.getNumber('keep')-16777216);output.setBool(1,property.getBool(string.char(255,0)));output.setBool(2,property.getBool('N'))end","=single")?;
+    vm.set_property(b"n", PropertyValue::Number(0.2))?;
+    // 大文字小文字の違うラベルは別の項目。型の違う値でも、同じラベルなら置き換える。
+    vm.set_property(b"N", PropertyValue::Bool(true))?;
+    vm.set_property(&[0xff, 0x00], PropertyValue::Text(vec![0, 255]))?;
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(&vm.output().numbers[..3], &[1.0, 2.0, 1.0]);
+    assert_eq!(&vm.output().booleans[..2], &[false, true]);
+    assert_eq!(vm.properties().len(), 4);
+    assert_eq!(
+        vm.properties().get(&[0xff, 0x00]),
+        Some(&PropertyValue::Text(vec![0, 255]))
+    );
+    // 空のテキストの設定と削除は別の操作。ない項目の削除はfalseを返す。
+    vm.set_property(b"n", PropertyValue::Text(Vec::new()))?;
+    assert_eq!(
+        vm.properties().get(b"n"),
+        Some(&PropertyValue::Text(Vec::new()))
+    );
+    assert!(vm.remove_property(b"n")?);
+    assert!(!vm.remove_property(b"n")?);
+    assert!(vm.properties().get(b"n").is_none());
+    assert_eq!(vm.properties().len(), 3);
+    // resetは1件ずつ変えた現在の値を引き継ぐ。
+    vm.reset()?;
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(&vm.output().numbers[..3], &[0.0, 0.0, 1.0]);
+    Ok(())
+}
+#[test]
 fn drawing_calls_share_lua_state_but_not_composite_write_access() -> Result<(), Box<dyn Error>> {
     let mut vm=loaded("n=0;function onTick()output.setNumber(1,n)end;function onDraw()n=n+1;screen.drawRectF(n,0,screen.getWidth(),1)end")?;
     vm.draw(32, 32)?;

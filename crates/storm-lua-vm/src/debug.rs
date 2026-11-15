@@ -346,7 +346,17 @@ impl Vm {
             .set_name(name)
             .set_mode(ChunkMode::Text)
             .set_environment(self.environment.clone())
-            .into_function()?;
+            .into_function()
+            .map_err(|error| {
+                // 実行時の読み込みと同じく、省略されていないチャンク名と行を位置情報へ付けます。
+                let location = crate::runner::syntax_message(&error)
+                    .and_then(|message| crate::runner::syntax_location(message, name));
+                let mut error = VmError::from(error);
+                if let Some(trace) = &mut error.trace {
+                    trace.location = location;
+                }
+                error
+            })?;
         lines::active_lines(&function.dump(false))
             .map_err(|message| VmError::new(ErrorKind::Unsupported, message))
     }

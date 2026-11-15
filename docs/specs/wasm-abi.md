@@ -58,7 +58,7 @@ decoderは全batchを検証してからsubmitする。raster adapterはUTF-8も�
 
 runtimeの`error_detail_ptr/error_detail_len`は、直前のerrorの[位置情報](runtime-host.md#エラーの位置)をUTF-8のJSONで返す。形は`{"stage":"syntax"|"runtime"|null,"location":{"chunk","line"}|null,"stack":[{"level","source","line","functionName"}]}`。位置情報がないerrorでは長さ0。寿命は`error_ptr/error_len`と同じで、次の通常operationがclearする。raster-onlyのmoduleはこのexportを持たない。
 
-property更新はbyte-label付きentry JSON。Numberは16桁f64 bits、Textはbyte配列。debugはaction付きJSONでbreakpoints/resume/requestPause/cancelPause/stack/locals/upvalues/watch/tableを表現する。resumeは任意のBoolean `carry`を受け取る。`breakable_lines`はloadと同じくソースとチャンク名のupload bufferを受け取り、行番号の配列をcold responseで返す。Vehicleの設定JSONの`pausePoll: true`は、同期host importへ`{"kind":"pausePoll"}`を送る問い合わせを有効にする。応答は1byteの0または1で、それ以外はhost errorとする。debugを含まないbuildは、これらをunsupportedで拒否する。i64/u64はdecimal string、f64はbits、Lua stringはbytes。cold response上限16MiB。
+property更新はbyte-label付きentry JSON。Numberは16桁f64 bits、Textはbyte配列。`sle_vehicle`の`setProperty`は同じ形のentryを1件、`removeProperty`はbyte配列のlabelを受け、削除はその項目があったかどうかをBooleanで返す。debugはaction付きJSONでbreakpoints/resume/requestPause/cancelPause/stack/locals/upvalues/watch/tableを表現する。resumeは任意のBoolean `carry`を受け取る。`breakable_lines`はloadと同じくソースとチャンク名のupload bufferを受け取り、行番号の配列をcold responseで返す。Vehicleの設定JSONの`pausePoll: true`は、同期host importへ`{"kind":"pausePoll"}`を送る問い合わせを有効にする。応答は1byteの0または1で、それ以外はhost errorとする。debugを含まないbuildは、これらをunsupportedで拒否する。i64/u64はdecimal string、f64はbits、Lua stringはbytes。cold response上限16MiB。
 
 ## Threading
 

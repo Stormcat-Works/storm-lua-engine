@@ -72,6 +72,48 @@ import(pathToFileURL(join(__dirname,'resolve-assets.mjs')).href).then(esm=>{
   console.log(run(process.execPath,['resolve-assets.cjs'],temporary).trim());
   await writeFile(join(temporary,'consumer.mjs'),await readFile(join(root,'examples/consumer/node.mjs')));
   console.log(run(process.execPath,['consumer.mjs'],temporary).trim());
+  // CommonJSのホストと、ホスト関数に届くLuaの文字列の例。type:moduleのconsumerでも.cjsはCommonJSとして動く。
+  for(const name of ['commonjs.cjs','host-bindings-bytes.mjs']){
+    await writeFile(join(temporary,name),await readFile(join(root,'examples/consumer',name)));
+    console.log(run(process.execPath,[name],temporary).trim());
+  }
+  // CommonJSのTypeScriptの例を、導入したパッケージの型で検査する。TypeScriptはSDKの開発用依存を使い、consumerには入れない。
+  const tsc=join(root,'packages/lua-engine/node_modules/typescript/bin/tsc');
+  for(const name of ['commonjs-types.cts','tsconfig.commonjs.json'])await writeFile(join(temporary,name),await readFile(join(root,'examples/consumer',name)));
+  run(process.execPath,[tsc,'-p','tsconfig.commonjs.json'],temporary);
+  const emitted=await readFile(join(temporary,'commonjs-out/commonjs-types.cjs'),'utf8');
+  if(!emitted.includes("await import('@stormcat-works/storm-lua-engine')"))throw new Error('Node16 output must keep the dynamic import');
+  await writeFile(join(temporary,'commonjs-types-check.cjs'),`
+const assert=require('node:assert/strict');
+const {readFileSync}=require('node:fs');
+const {createVehicle,topLine}=require('./commonjs-out/commonjs-types.cjs');
+createVehicle(readFileSync(require.resolve('@stormcat-works/storm-lua-engine/wasm/storm_lua_wasm.wasm'))).then(vm=>{
+  try{
+    vm.setBreakpoints([{source:'@main.lua',line:2}]);
+    assert.equal(vm.load('local a = 1\\nlocal b = a + 1','@main.lua'),'suspended');
+    assert.equal(topLine(vm),2);
+  }finally{vm.dispose();}
+  console.log('CommonJS TypeScript consumer: Node16 type check passed and the emitted module ran.');
+}).catch(error=>{console.error(error);process.exitCode=1;});
+`);
+  console.log(run(process.execPath,['commonjs-types-check.cjs'],temporary).trim());
+  // 従来の設定（module: CommonJS、moduleResolution: Node10）では動かないことも確かめる。
+  // 属性のない型importはサブパスを解決できず、動的importはrequireへ変換されて実行時に失敗する。
+  const legacy={compilerOptions:{target:'ES2022',module:'CommonJS',moduleResolution:'Node10',lib:['ES2022','DOM'],strict:true,types:[],outDir:'legacy-out'}};
+  await writeFile(join(temporary,'legacy-types.cts'),"import type { StackFrame } from '@stormcat-works/storm-lua-engine/debug';\nexport type Frame = StackFrame;\n");
+  await writeFile(join(temporary,'tsconfig.legacy-types.json'),JSON.stringify({...legacy,files:['legacy-types.cts']}));
+  const legacyTypes=spawnSync(process.execPath,[tsc,'-p','tsconfig.legacy-types.json'],{cwd:temporary,encoding:'utf8'});
+  if(legacyTypes.status===0||!legacyTypes.stdout.includes('TS2307'))throw new Error(`Node10 resolution was expected to reject the subpath types: ${legacyTypes.stdout}`);
+  await writeFile(join(temporary,'legacy-run.cts'),"import('@stormcat-works/storm-lua-engine').then(() => console.log('loaded'), error => console.log(error.code));\n");
+  await writeFile(join(temporary,'tsconfig.legacy-run.json'),JSON.stringify({...legacy,files:['legacy-run.cts']}));
+  run(process.execPath,[tsc,'-p','tsconfig.legacy-run.json'],temporary);
+  const legacyRun=run(process.execPath,['legacy-out/legacy-run.cjs'],temporary).trim();
+  if(legacyRun!=='ERR_PACKAGE_PATH_NOT_EXPORTED')throw new Error(`CommonJS output was expected to fail on require(): ${legacyRun}`);
+  // Node16でも、属性のない型importは拒否される。例の書き方が必要であることを確かめる。
+  await writeFile(join(temporary,'tsconfig.plain-types.json'),JSON.stringify({compilerOptions:{...legacy.compilerOptions,module:'Node16',moduleResolution:'Node16',noEmit:true},files:['legacy-types.cts']}));
+  const plainTypes=spawnSync(process.execPath,[tsc,'-p','tsconfig.plain-types.json'],{cwd:temporary,encoding:'utf8'});
+  if(plainTypes.status===0||!plainTypes.stdout.includes('TS1541'))throw new Error(`Node16 was expected to require resolution-mode: ${plainTypes.stdout}`);
+  console.log('CommonJS TypeScript settings: Node10 rejected subpath types (TS2307), CommonJS output failed on require(), plain type imports need resolution-mode (TS1541).');
   await writeFile(join(temporary,'source-loading.mjs'),await readFile(join(root,'examples/consumer/source-loading.mjs')));
   console.log(run(process.execPath,['source-loading.mjs'],temporary).trim());
   await writeFile(join(temporary,'log-locations.mjs'),await readFile(join(root,'examples/consumer/log-locations.mjs')));

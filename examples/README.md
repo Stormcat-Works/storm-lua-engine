@@ -31,6 +31,19 @@ TSとWASMをbuildした後、リポジトリルートから`python3 -m http.serv
 ## フレームが変わったかどうか
 
 [frame-changes.mjs](consumer/frame-changes.mjs)は、描画の結果が前回と同じかどうかを確かめる手順を示します。`frame().pixels`の借用ビューを前回の写しと`Buffer.compare`で比べ、変わったときだけ`copy()`します。`node tools/test-package.mjs`が隔離consumerで実行します。測定値は[検証記録](../docs/verification/frame-change-detection-20261115.md)にあります。
+## CommonJSのホスト
+
+[commonjs.cjs](consumer/commonjs.cjs)は、CommonJSのファイルからSDKを使う例です。SDKはESMだけなので、`require()`ではなく動的`import()`で読み込みます。WASMは`require.resolve`で場所を求めて`fs`で読み、`wasmBinary`へ渡します。
+
+[commonjs-types.cts](consumer/commonjs-types.cts)と[tsconfig.commonjs.json](consumer/tsconfig.commonjs.json)は、同じことをTypeScriptで書くときの設定と型の書き方です。`module`と`moduleResolution`は`Node16`にし、型のimportには`resolution-mode: import`を付けます。`node tools/test-package.mjs`は、導入したパッケージの型でこの例を検査し、出力したファイルを実行します。次の3点も同じ検査で確かめています。
+
+- `module: CommonJS`の設定では、動的`import()`が`require()`へ変換され、実行時に`ERR_PACKAGE_PATH_NOT_EXPORTED`で失敗する。
+- `moduleResolution: Node10`では、属性のない型importが`/debug`などのサブパスを解決できない（TS2307）。
+- `Node16`でも、属性のない型importは拒否される（TS1541）。
+
+## ホスト関数に届くLuaの文字列
+
+[host-bindings-bytes.mjs](consumer/host-bindings-bytes.mjs)は、`bindings`のホスト関数に届くLuaの文字列が`Uint8Array`であることを示します。`TextDecoder`や`luaText`で文字列へ直す形と、バイト列のまま扱う形の両方を実行します。そのまま文字列へ連結すると、`49,120,49`のような数字の並びになります。
 
 ## 開発用の名前付きソース
 

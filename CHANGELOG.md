@@ -10,6 +10,11 @@
 
 - npmパッケージの`engines`を、`>=22.18`から`^18.19.0 || >=20.6.0`へ下げた。梱包したパッケージを独立consumerへ導入し、consumerを18.19.0、18.20.8、20.6.0、20.20.2、21.7.3、22.0.0、22.18.0で実行して確かめた。22.18以降という条件は、本リポジトリの開発とビルドだけに残る。
 - `tools/test-package.mjs`に`--node`を追加した。梱包と導入は現在のNodeで行い、consumerのスクリプトだけを指定したNodeで実行する。CIは下限の2つの版でこの検査を実行する。
+### 実行して確かめた例の追加
+
+- CommonJSから使う例を追加した（`examples/consumer/commonjs.cjs`、`commonjs-types.cts`、`tsconfig.commonjs.json`）。動的`import()`で読み込み、WASMは`require.resolve`と`fs`で読んで`wasmBinary`へ渡す。TypeScriptは`module`と`moduleResolution`を`Node16`にし、型のimportに`resolution-mode`を付ける。
+- ホスト関数に届くLuaの文字列が`Uint8Array`であることを示す例を追加した（`examples/consumer/host-bindings-bytes.mjs`）。文字列へ直す形と、バイト列のまま扱う形の両方を載せた。
+- どちらの例も、`node tools/test-package.mjs`が独立consumerで実行する。パッケージのREADMEに2つの例への案内を足した。SDKのコードは変えていない。
 
 ### ホスト向けの小さな追加
 

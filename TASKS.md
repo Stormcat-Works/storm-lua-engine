@@ -18,6 +18,9 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 
 - [ ] CIのwasmジョブに足した、Node 18.19.0と20.6.0（Linux x64）での梱包consumerの実行結果を確かめる。ローカルで実行したのはmacOS（Apple Silicon）だけである。
 - [ ] 18.19.0より前の18系と、20.6.0より前の20系を対象に入れるかを決める。`import.meta.resolve`を使わない最小の利用（load、tick、draw、raster、compilerの読み込み）は18.0.0でも動いたが、consumerの例一式は通らないので、対応とは書いていない。対象に入れるなら、例を`createRequire`で書き直したうえで例一式を通す。
+### 利用者向けガイドへの追記（2026-11-15）
+
+- [ ] docs.makkii.jpのガイドへ、CommonJSからの読み込み方と、ホスト関数に届くLuaの文字列が`Uint8Array`であることを追記する。ガイドの本文は本リポジトリの外で管理する。実行して確かめた例は`examples/consumer`の`commonjs.cjs`、`commonjs-types.cts`、`host-bindings-bytes.mjs`にある。
 
 ### AD-01/AD-02 host接続（2026-10-17）
 

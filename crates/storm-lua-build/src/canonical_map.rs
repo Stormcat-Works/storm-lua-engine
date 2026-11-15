@@ -809,7 +809,10 @@ mod canonical_tests {
         extension.integrity.clear();
         let mut value = standard.clone();
         value["x_storm"] = serde_json::to_value(extension).unwrap();
-        let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let hash = Sha256::digest(serde_json::to_vec(&value).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
         value["x_storm"]["integrity"] = Value::String(hash);
         serde_json::to_string(&value).unwrap()
     }

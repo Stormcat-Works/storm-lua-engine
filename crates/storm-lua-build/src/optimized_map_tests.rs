@@ -571,7 +571,10 @@ fn invalid_source_name_is_a_label_error_not_an_unknown_optimizer_pass() {
 fn resealed(value: &mut Value) -> String {
     use sha2::{Digest, Sha256};
     value["x_storm"]["integrity"] = "".into();
-    let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(value).unwrap()));
+    let hash = Sha256::digest(serde_json::to_vec(value).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     value["x_storm"]["integrity"] = hash.into();
     value.to_string()
 }

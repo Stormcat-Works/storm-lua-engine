@@ -30,7 +30,7 @@ use serde::ser::{
     self, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
     SerializeTupleStruct, SerializeTupleVariant,
 };
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use std::fmt::Display;
 
 #[derive(Debug)]
@@ -117,7 +117,7 @@ fn zigzag(value: i128) -> u128 {
     ((value << 1) ^ (value >> 127)) as u128
 }
 
-impl<'a> Serializer for &'a mut Writer {
+impl Serializer for &mut Writer {
     type Ok = ();
     type Error = CodecError;
     type SerializeSeq = Self;
@@ -310,7 +310,7 @@ impl<'a> Serializer for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeSeq for &'a mut Writer {
+impl SerializeSeq for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -323,7 +323,7 @@ impl<'a> SerializeSeq for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeTuple for &'a mut Writer {
+impl SerializeTuple for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -336,7 +336,7 @@ impl<'a> SerializeTuple for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeTupleStruct for &'a mut Writer {
+impl SerializeTupleStruct for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -349,7 +349,7 @@ impl<'a> SerializeTupleStruct for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeTupleVariant for &'a mut Writer {
+impl SerializeTupleVariant for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -362,7 +362,7 @@ impl<'a> SerializeTupleVariant for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeMap for &'a mut Writer {
+impl SerializeMap for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -379,7 +379,7 @@ impl<'a> SerializeMap for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeStruct for &'a mut Writer {
+impl SerializeStruct for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 
@@ -396,7 +396,7 @@ impl<'a> SerializeStruct for &'a mut Writer {
     }
 }
 
-impl<'a> SerializeStructVariant for &'a mut Writer {
+impl SerializeStructVariant for &mut Writer {
     type Ok = ();
     type Error = CodecError;
 

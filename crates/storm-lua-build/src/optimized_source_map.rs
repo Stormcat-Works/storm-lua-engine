@@ -213,7 +213,11 @@ pub struct MapExtension {
     pub integrity: String,
 }
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    // digest 0.11's output array no longer implements `LowerHex`.
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn identity(text: &str) -> BufferIdentity {
     BufferIdentity {

@@ -61,7 +61,7 @@ fn property_updates_do_not_rewrite_lua_locals_and_bytes_survive() -> Result<(), 
 }
 #[test]
 fn drawing_calls_share_lua_state_but_not_composite_write_access() -> Result<(), Box<dyn Error>> {
-    let mut vm=loaded("n=0;function onTick()output.setNumber(1,n)end;function onDraw()n=n+1;output.setNumber(1,999);screen.drawRectF(n,0,screen.getWidth(),1)end")?;
+    let mut vm=loaded("n=0;function onTick()output.setNumber(1,n)end;function onDraw()n=n+1;screen.drawRectF(n,0,screen.getWidth(),1)end")?;
     vm.draw(32, 32)?;
     let first = vm.commands().to_vec();
     vm.draw(64, 32)?;

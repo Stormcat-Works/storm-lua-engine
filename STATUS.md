@@ -18,6 +18,12 @@ Nativeの適合テスト（`conformance/tests/debugger_pause.rs`）とTypeScript
 
 Nativeの適合テスト（`conformance/tests/error_locations.rs`）とTypeScriptのデコードの単体テストは通過した。実WASM（Emscripten 6.0.6）でも`packages/lua-engine/tests/wasm/error-locations.test.mjs`の6件を含む98件が通過し、梱包consumerの検査（`node tools/test-package.mjs`）も通過した。3ブラウザでの実行は未実施。
 
+## phase違反の呼び出しをLuaエラーへ変更（2026-11-15、未公開）
+
+`onDraw`の実行中の`input.*`と`output.*`、`onTick`の実行中の`screen.*`を、実ゲームと同じ文言のLuaエラーにした。従来は0/falseを返すか無視していた。根拠はStormworks v1.15.26での測定で、[検証記録](docs/verification/phase-errors-ingame-20261115.md)に残した。トップレベルと`httpReply`は未測定のため従来の挙動を維持する。契約は[numeric-io](docs/specs/numeric-io.md)。
+
+Nativeの適合テスト（`conformance/tests/phase_errors.rs`）、実WASM（Emscripten 6.0.6）のテスト95件、梱包consumerの検査（`node tools/test-package.mjs`）が通過した。3ブラウザでの実行は未実施。
+
 ## 開発・公開準備の履歴
 
 以下は各作業時点の記録であり、「未公開」「承認待ち」、検査の失敗や未実施の記述も当時の状態を示す。現在の公開状態は上記のとおり。後続の候補再構築と検証結果は [後続の候補再構築記録](docs/verification/release-candidate-0.4.0-r308-rebuild-20261104.md)に残している。履歴の測定値・条件・採否はその時点の記録として保持する。

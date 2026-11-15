@@ -18,6 +18,35 @@ fn resource(message: &str) -> BackendError {
     BackendError::external(VmError::new(ErrorKind::Limit, message))
 }
 
+/// 呼べないphaseで呼ばれたAPIのLuaエラー。文言は実ゲームの表示に合わせます。
+/// Luaの実行時エラーと同じく、呼び出したLuaの行を`チャンク表記:行:`として先頭に付けます。
+fn outside(lua: &Lua, family: &str, callback: &str) -> BackendError {
+    let message = format!("attempting to use {family} function outside {callback}");
+    let position = lua.inspect_stack(1).and_then(|frame| {
+        let line = frame.curr_line();
+        let source = frame.source().short_src?.into_owned();
+        (line > 0).then(|| format!("{source}:{line}: "))
+    });
+    BackendError::RuntimeError(position.unwrap_or_default() + &message)
+}
+/// input/outputはonDrawの実行中に呼ぶとエラー。トップレベルとhttpReplyでの挙動は
+/// 実ゲームで未測定のため、従来の既定値（0/false、書き込み無効）を維持します。
+fn tick_only(lua: &Lua, phase: Phase, family: &str) -> BackendResult<()> {
+    if phase == Phase::Draw {
+        Err(outside(lua, family, "onTick"))
+    } else {
+        Ok(())
+    }
+}
+/// screenはonTickの実行中に呼ぶとエラー。それ以外の非描画phaseでは従来どおり何もしません。
+fn draw_only(lua: &Lua, phase: Phase) -> BackendResult<bool> {
+    match phase {
+        Phase::Draw => Ok(true),
+        Phase::Tick => Err(outside(lua, "screen", "onDraw")),
+        Phase::Init | Phase::Idle => Ok(false),
+    }
+}
+
 pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> BackendResult<()> {
     let input = lua.create_table()?;
     let output = lua.create_table()?;
@@ -26,8 +55,9 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     input.raw_set(
         "getNumber",
-        lua.create_function(move |_, c: i64| {
+        lua.create_function(move |lua, c: i64| {
             let s = s.borrow();
+            tick_only(lua, s.phase, "input")?;
             Ok(if s.phase == Phase::Tick {
                 channel(c).map_or(0.0, |i| f64::from(s.input.numbers[i]))
             } else {
@@ -38,16 +68,18 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     input.raw_set(
         "getBool",
-        lua.create_function(move |_, c: i64| {
+        lua.create_function(move |lua, c: i64| {
             let s = s.borrow();
+            tick_only(lua, s.phase, "input")?;
             Ok(s.phase == Phase::Tick && channel(c).is_some_and(|i| s.input.booleans[i]))
         })?,
     )?;
     let s = Rc::clone(&state);
     output.raw_set(
         "setNumber",
-        lua.create_function(move |_, (c, v): (i64, f64)| {
+        lua.create_function(move |lua, (c, v): (i64, f64)| {
             let mut s = s.borrow_mut();
+            tick_only(lua, s.phase, "output")?;
             if s.phase == Phase::Tick {
                 if let Some(i) = channel(c) {
                     s.output.numbers[i] = v as f32;
@@ -59,8 +91,9 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     output.raw_set(
         "setBool",
-        lua.create_function(move |_, (c, v): (i64, bool)| {
+        lua.create_function(move |lua, (c, v): (i64, bool)| {
             let mut s = s.borrow_mut();
+            tick_only(lua, s.phase, "output")?;
             if s.phase == Phase::Tick {
                 if let Some(i) = channel(c) {
                     s.output.booleans[i] = v;
@@ -106,17 +139,25 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     screen.raw_set(
         "getWidth",
-        lua.create_function(move |_, ()| {
+        lua.create_function(move |lua, ()| {
             let s = s.borrow();
-            Ok(if s.phase == Phase::Draw { s.size.0 } else { 0 })
+            Ok(if draw_only(lua, s.phase)? {
+                s.size.0
+            } else {
+                0
+            })
         })?,
     )?;
     let s = Rc::clone(&state);
     screen.raw_set(
         "getHeight",
-        lua.create_function(move |_, ()| {
+        lua.create_function(move |lua, ()| {
             let s = s.borrow();
-            Ok(if s.phase == Phase::Draw { s.size.1 } else { 0 })
+            Ok(if draw_only(lua, s.phase)? {
+                s.size.1
+            } else {
+                0
+            })
         })?,
     )?;
     for definition in storm_lua_spec::catalog::FUNCTIONS
@@ -131,7 +172,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         screen.raw_set(
             name,
             lua.create_function(move |lua, args: Variadic<Value>| {
-                if s.borrow().phase != Phase::Draw {
+                if !draw_only(lua, s.borrow().phase)? {
                     return Ok(());
                 }
                 let number = |i: usize| -> BackendResult<f64> {
@@ -224,9 +265,9 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let maps = Rc::clone(&state);
     screen.raw_set(
         "drawMap",
-        lua.create_function(move |_, (x, z, zoom): (f64, f64, f64)| {
+        lua.create_function(move |lua, (x, z, zoom): (f64, f64, f64)| {
             let mut state = maps.borrow_mut();
-            if state.phase != Phase::Draw {
+            if !draw_only(lua, state.phase)? {
                 return Ok(());
             }
             if ![x, z, zoom].iter().all(|n| n.is_finite()) {
@@ -251,9 +292,9 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             .map_err(BackendError::external)?;
         screen.raw_set(
             format!("setMapColor{name}"),
-            lua.create_function(move |_, (r, g, b, a): (f64, f64, f64, Option<f64>)| {
+            lua.create_function(move |lua, (r, g, b, a): (f64, f64, f64, Option<f64>)| {
                 let mut state = palette.borrow_mut();
-                if state.phase != Phase::Draw {
+                if !draw_only(lua, state.phase)? {
                     return Ok(());
                 }
                 let values = [r, g, b, a.unwrap_or(255.0)];

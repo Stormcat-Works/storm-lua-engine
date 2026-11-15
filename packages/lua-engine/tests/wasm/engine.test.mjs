@@ -72,7 +72,7 @@ function onTick() output.setNumber(1,input.getNumber(1)) output.setNumber(2,gain
 test('output persistence and multiple draw callbacks share Lua state',()=>{
   const vm=runtime.createVehicle();
   try{
-    vm.load(`n=0 function onTick() if n==0 then output.setNumber(1,42) end end function onDraw() n=n+1 screen.setColor(n,0,0) screen.drawClear() output.setNumber(1,99) end`);
+    vm.load(`n=0 function onTick() if n==0 then output.setNumber(1,42) end end function onDraw() n=n+1 screen.setColor(n,0,0) screen.drawClear() end`);
     vm.tick();vm.draw(4,4);assert.equal(vm.frame().pixels[0],1);vm.draw(8,8);assert.equal(vm.frame().pixels[0],2);
     vm.tick();assert.equal(vm.io.outputNumbers[0],42);
   }finally{vm.dispose();}

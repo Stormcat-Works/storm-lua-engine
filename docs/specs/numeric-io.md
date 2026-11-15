@@ -19,9 +19,19 @@ Rustの`CompositeSignal`はドメイン型であり、ABIへのメモリcastを�
 
 ## Channels and lifecycle
 
-ホストAPIでは1〜32を`Channel`へ検証する。Lua側では不正な型をerror、範囲外/phase外の読み出しを0/false、書き込みを無効とするエンジン契約を実装した。実ゲームの全異常系を測定済みではない。ホストの不正入力をLua互換の既定値に隠さない。
+ホストAPIでは1〜32を`Channel`へ検証する。Lua側では不正な型をerror、範囲外の読み出しを0/false、範囲外への書き込みを無効とするエンジン契約を実装した。実ゲームの全異常系を測定済みではない。ホストの不正入力をLua互換の既定値に隠さない。
 
-出力は毎tickゼロクリアせず、次の書き込みまで保持する。入力はホストが次のcallback開始前に設定する。tick/drawを同じVM上で並列実行せず、drawのために入力APIを暗黙に有効化しない。実行失敗時の部分出力は完成したtickと区別する。未確認のエラー時出力をロールバックする実装を先に足さない。
+呼べないphaseでの呼び出しは、実ゲームの測定に合わせてLuaエラーとする。スクリプトは通常の実行時エラーと同じく停止する。
+
+| 呼び出し | 実行中のphase | 結果 |
+|---|---|---|
+| `input.*`、`output.*` | onDraw（callDrawを含む） | `attempting to use input function outside onTick`、`attempting to use output function outside onTick` |
+| `screen.*` | onTick（callTickを含む） | `attempting to use screen function outside onDraw` |
+| `input.*`、`output.*`、`screen.*` | トップレベル、httpReply | 未測定。読み出しは0/false、書き込みと描画は無効のまま |
+
+文言の先頭には、Luaの実行時エラーと同じ`チャンク表記:行:`が付く。行は、そのAPIを呼んだLuaの行である。ゲームが調べるのは関数が呼ばれた時点のphaseで、トップレベルで変数に取っておいた関数を別のphaseで呼んでも同じエラーになる。引数の型が不正な呼び出しは、phaseにかかわらず型のエラーが先に出る。game環境とextended環境で挙動は同じである。測定の条件と写真の出典は[検証記録](../verification/phase-errors-ingame-20261115.md)に残す。
+
+出力は毎tickゼロクリアせず、次の書き込みまで保持する。入力はホストが次のcallback開始前に設定する。tick/drawを同じVM上で並列実行せず、drawのために入力APIを暗黙に有効化しない。draw中の入出力APIはエラーとなるため、drawが出力を書き換えることはない。実行失敗時の部分出力は完成したtickと区別する。未確認のエラー時出力をロールバックする実装を先に足さない。
 
 ## Non-finite and reproducibility
 

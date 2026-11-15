@@ -310,9 +310,10 @@ impl Session {
     pub(crate) fn resume(
         &mut self,
         mode: storm_lua_vm::runner::StepMode,
+        carry: bool,
     ) -> Result<Status, BridgeError> {
         self.advance_epoch()?;
-        let result = self.vm.resume(mode);
+        let result = self.vm.resume_with(mode, carry);
         self.sync_output();
         let replay = self.refresh_frame();
         match result {

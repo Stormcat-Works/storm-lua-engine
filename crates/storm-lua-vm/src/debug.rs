@@ -30,6 +30,7 @@ pub enum DebugValue {
     Opaque(&'static str),
 }
 
+mod lines;
 use crate::runner::{ErrorKind, Vm, VmError};
 use mlua::{ChunkMode, Function, Lua, Table, Thread, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -138,21 +139,29 @@ impl Vm {
         let get: Function = self.debugger.library.raw_get("getinfo")?;
         let mut frames = Vec::new();
         for level in 0..256_u32 {
-            let info: Option<Table> = get.call((thread.clone(), level, "nSl"))?;
+            // 中断したフレームの行は、フックが記録した値を使います。フックからyieldしたフレームは
+            // Luaがsavedpcを1つ巻き戻しており、関数の最初の命令で止まった場合に"l"の照会が
+            // 行情報配列の手前を読むため、そのフレームには"l"を指定しません。
+            let hook_line = if level == 0 {
+                self.control
+                    .borrow()
+                    .last_line
+                    .as_ref()
+                    .map(|(_, line)| *line)
+            } else {
+                None
+            };
+            let what = if hook_line.is_some() { "nS" } else { "nSl" };
+            let info: Option<Table> = get.call((thread.clone(), level, what))?;
             let Some(info) = info else {
                 break;
             };
             frames.push(StackFrame {
                 level,
                 source: info.raw_get("source")?,
-                line: if level == 0 {
-                    self.control
-                        .borrow()
-                        .last_line
-                        .as_ref()
-                        .map_or(info.raw_get::<i32>("currentline")?, |(_, line)| *line)
-                } else {
-                    info.raw_get("currentline")?
+                line: match hook_line {
+                    Some(line) => line,
+                    None => info.raw_get("currentline")?,
                 },
                 function_name: info.raw_get("name")?,
             });
@@ -317,5 +326,28 @@ impl Vm {
         self.debugger.hook_dirty = true;
         let value = self.evaluate_watch_thread(&evaluator)?;
         self.debugger.value(value)
+    }
+    /// ブレークポイントを置ける行（行フックが発火しうる行）を昇順で返します。
+    ///
+    /// `source`を実行と同じ方言変換のあとでコンパイルし、入れ子の関数を含むすべての関数の
+    /// 行情報を読みます。コードは実行せず、VMの環境や保持済みソースも変更しません。
+    /// 返した行でも、その命令に到達しない実行では止まりません。構文エラーはエラーで返します。
+    pub fn breakable_lines(&self, source: &[u8], name: &str) -> Result<Vec<u32>, VmError> {
+        if self.is_failed() {
+            return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
+        }
+        crate::source::validate_source(source, name)?;
+        let source = crate::dialect::rewrite(source)
+            .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
+        crate::source::validate_source(&source, name)?;
+        let function = self
+            .lua
+            .load(source.as_ref())
+            .set_name(name)
+            .set_mode(ChunkMode::Text)
+            .set_environment(self.environment.clone())
+            .into_function()?;
+        lines::active_lines(&function.dump(false))
+            .map_err(|message| VmError::new(ErrorKind::Unsupported, message))
     }
 }

@@ -14,6 +14,7 @@
     "sle_enable_logs",
     "sle_drain_logs",
     "sle_debug",
+    "sle_breakable_lines",
     "sle_frame_ptr",
     "sle_frame_len",
     "sle_frame_width",

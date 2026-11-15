@@ -236,6 +236,17 @@ pub enum StepMode {
     /// 現在の呼び出し深度から脱出した後に停止します（ステップアウト）。
     Out,
 }
+/// 実行中のスクリプトを止めるかどうかを、ホストが答える関数。
+///
+/// VMは[`PAUSE_POLL_INTERVAL`]命令ごとに呼びます。trueを返すと、次にyieldできる命令で
+/// コールバックを中断します。VMやLuaの値へはアクセスできません。エラーを返すと、
+/// 実行中のスクリプトへそのエラーを送出します（続行にも停止にも読み替えません）。
+#[cfg(feature = "debug")]
+pub type PausePoll = Rc<dyn Fn() -> Result<bool, VmError>>;
+/// [`PausePoll`]を呼ぶ間隔（Lua VMの命令数）。
+#[cfg(feature = "debug")]
+pub const PAUSE_POLL_INTERVAL: u32 = 4096;
+
 #[derive(Default)]
 pub(crate) struct HookControl {
     pub(crate) remaining: u64,
@@ -256,6 +267,19 @@ pub(crate) struct HookControl {
     pub(crate) local_names: Vec<(i32, Vec<u8>)>,
     #[cfg(feature = "debug")]
     pub(crate) skip_first_line: bool,
+    /// 次に実行する行で止まる予約。入口をまたいで保持し、止まった時点で消します。
+    #[cfg(feature = "debug")]
+    pub(crate) pause_requested: bool,
+    /// ステップが入口の終わりを越えたとき、予約へ引き継ぐかどうか。
+    #[cfg(feature = "debug")]
+    pub(crate) carry_step: bool,
+    #[cfg(feature = "debug")]
+    pub(crate) pause_poll: Option<PausePoll>,
+    #[cfg(feature = "debug")]
+    pub(crate) poll_countdown: u32,
+    /// pollがtrueを返したが、yieldできない場所にいた。次にyieldできる命令で止まります。
+    #[cfg(feature = "debug")]
+    pub(crate) poll_pending: bool,
 }
 
 /// 1つのスレッド拘束型Lua状態。ホストコードがすべての呼び出しと継続を明示的に駆動します。
@@ -454,7 +478,10 @@ impl Vm {
             {
                 control.depth = 0;
                 control.step = None;
+                control.carry_step = false;
                 control.skip_first_line = false;
+                control.poll_countdown = PAUSE_POLL_INTERVAL;
+                control.poll_pending = false;
             }
         }
         let thread = self.lua.create_thread(function)?;
@@ -512,14 +539,59 @@ impl Vm {
                 } else {
                     self.pending = None;
                     self.synchronous.main_pending.set(false);
+                    #[cfg(feature = "debug")]
+                    {
+                        // 入口の終わりを越えたステップは、指定があれば次の入口の最初の行へ引き継ぎます。
+                        let mut control = self.control.borrow_mut();
+                        let stepping = matches!(
+                            control.step,
+                            Some(StepMode::Into | StepMode::Over | StepMode::Out)
+                        );
+                        if stepping && control.carry_step {
+                            control.pause_requested = true;
+                        }
+                        control.step = None;
+                        control.carry_step = false;
+                    }
                     Ok(RunOutcome::Completed)
                 }
             }
         }
     }
+    /// 次に実行する行で止まるよう予約します。実行していないとき（アイドルまたは中断中）に呼びます。
+    ///
+    /// アイドル中に呼ぶと、次に実行する入口の最初の行で中断します。中断中に呼ぶと、
+    /// 再開後の次の行で中断します。予約は止まるまで残り、存在しないコールバックの
+    /// 呼び出しでは消えません。実行中のスクリプトを止めるには[`Vm::set_pause_poll`]を使います。
+    #[cfg(feature = "debug")]
+    pub fn request_pause(&mut self) -> Result<(), VmError> {
+        if self.failed.get() {
+            return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
+        }
+        self.control.borrow_mut().pause_requested = true;
+        Ok(())
+    }
+    /// 止まっていない一時停止の予約を取り消します。予約がなければ何もしません。
+    #[cfg(feature = "debug")]
+    pub fn cancel_pause(&mut self) {
+        self.control.borrow_mut().pause_requested = false;
+    }
+    /// 実行中の一時停止を問い合わせる関数を設定または解除します。アイドル中に呼びます。
+    #[cfg(feature = "debug")]
+    pub fn set_pause_poll(&mut self, poll: Option<PausePoll>) -> Result<(), VmError> {
+        self.ensure_idle()?;
+        self.control.borrow_mut().pause_poll = poll;
+        Ok(())
+    }
     /// 残りの命令数バジェットを維持したまま、同一の中断中の継続を再開します。
     #[cfg(feature = "debug")]
     pub fn resume(&mut self, mode: StepMode) -> Result<RunOutcome, VmError> {
+        self.resume_with(mode, false)
+    }
+    /// [`Vm::resume`]と同じですが、`carry`がtrueのとき、ステップが入口の終わりを越えると
+    /// 次に実行する入口の最初の行で止まります。`StepMode::Continue`には影響しません。
+    #[cfg(feature = "debug")]
+    pub fn resume_with(&mut self, mode: StepMode, carry: bool) -> Result<RunOutcome, VmError> {
         if self.failed.get() {
             return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
         }
@@ -533,6 +605,7 @@ impl Vm {
             let mut state = self.control.borrow_mut();
             state.target_depth = state.depth;
             state.step = Some(mode);
+            state.carry_step = carry;
             state.skip_first_line = true;
         }
         // ウォッチ式の評価が別のコルーチンを使用した可能性があるため、mluaの単一フックを復元します。
@@ -541,13 +614,13 @@ impl Vm {
             .as_ref()
             .ok_or_else(|| VmError::new(ErrorKind::InvalidArgument, "no callback"))?;
         if self.debugger.hook_dirty {
-            {
-                let mut state = self.control.borrow_mut();
-                state.remaining = state.remaining.saturating_sub(100);
-            }
-            self.install_hook(thread)?;
-            self.debugger.hook_dirty = false;
+            let mut state = self.control.borrow_mut();
+            state.remaining = state.remaining.saturating_sub(100);
         }
+        // 行フックは必要なときだけ付けます。行フックなしで始めた実行がpollで止まった後でも
+        // ステップや後から置いたブレークポイントが働くよう、再開のたびにフックを付け直します。
+        self.install_hook(thread)?;
+        self.debugger.hook_dirty = false;
         self.resume_inner(MultiValue::new())
     }
     #[cfg(feature = "debug")]

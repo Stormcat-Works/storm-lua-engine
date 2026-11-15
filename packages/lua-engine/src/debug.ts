@@ -15,6 +15,18 @@ export interface StackFrame { readonly level: number; readonly source: string; r
 export interface TableEntry { readonly key: DebugValue; readonly value: DebugValue }
 export interface Breakpoint { readonly source: string; readonly line: number }
 export type StepMode = 'continue' | 'into' | 'over' | 'out';
+export interface ResumeOptions {
+  /**
+   * ステップ（into/over/out）がコールバックの終わりを越えたとき、次に実行するコールバックの
+   * 最初の行で止めます。既定はfalseで、ステップはコールバックの終わりで消えます。
+   */
+  readonly carryToNextEntry?: boolean;
+}
+/**
+ * 実行中のスクリプトを止めるかどうかを答える関数。VMは一定の命令数ごとに同期で呼びます。
+ * trueを返すと、次に中断できる命令で実行が suspended になります。例外はスクリプトのエラーになります。
+ */
+export type PausePoll = () => boolean;
 function bigint(value: unknown, signed = false): bigint {
   if (typeof value !== 'string' || !(signed ? /^-?\d+$/ : /^\d+$/).test(value)) throw new TypeError('Invalid decimal integer');
   const integer = BigInt(value);

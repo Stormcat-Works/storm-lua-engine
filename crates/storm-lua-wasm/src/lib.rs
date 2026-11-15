@@ -197,6 +197,46 @@ pub extern "C" fn sle_debug(handle: u32, pointer: usize, length: u32) -> i32 {
     })
 }
 
+/// ブレークポイントを置ける行を、u32の10進配列のJSONレスポンスで返します。コードは実行しません。
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_breakable_lines(
+    handle: u32,
+    source_ptr: usize,
+    source_len: u32,
+    name_ptr: usize,
+    name_len: u32,
+) -> i32 {
+    bridge::call(|| {
+        #[cfg(feature = "debug")]
+        {
+            bridge::with_upload(source_ptr, source_len, |source| {
+                bridge::with_upload(name_ptr, name_len, |name| {
+                    let name = std::str::from_utf8(name).map_err(|_| {
+                        BridgeError::new(Status::InvalidArgument, "chunk name is not UTF-8")
+                    })?;
+                    let lines = session::with(handle, |session| {
+                        session
+                            .vm
+                            .breakable_lines(source, name)
+                            .map_err(session::convert)
+                    })?;
+                    codec::respond(&serde_json::json!(lines))?;
+                    Ok(Status::Ok)
+                })
+            })
+        }
+        #[cfg(not(feature = "debug"))]
+        {
+            let _ = (handle, source_ptr, source_len, name_ptr, name_len);
+            Err(BridgeError::new(
+                Status::Unsupported,
+                "debugger was disabled for this build",
+            ))
+        }
+    })
+}
+
 /// フレームの変更または破棄が発生するまで、生のRGBAバイト列を参照します。
 #[allow(unsafe_code)]
 #[no_mangle]

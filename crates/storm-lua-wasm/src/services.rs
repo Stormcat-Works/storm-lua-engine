@@ -139,6 +139,38 @@ pub(crate) fn create_vehicle(
         },
     )
     .map_err(convert)?;
+    #[allow(unused_mut)]
+    let mut vm = vm;
+    match request.get("pausePoll") {
+        None | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => {
+            if host_key == 0 {
+                return Err(invalid("missing pause poll provider"));
+            }
+            #[cfg(feature = "debug")]
+            vm.set_pause_poll(Some(Rc::new(move || {
+                // 応答は1バイトの0または1。それ以外を続行や停止に読み替えません。
+                match host::call(host_key, &json!({"kind":"pausePoll"}))
+                    .map_err(host_error)?
+                    .as_slice()
+                {
+                    [0] => Ok(false),
+                    [1] => Ok(true),
+                    _ => Err(VmError::new(
+                        ErrorKind::Host,
+                        "pause poll must answer one byte, 0 or 1",
+                    )),
+                }
+            })))
+            .map_err(convert)?;
+            #[cfg(not(feature = "debug"))]
+            return Err(BridgeError::new(
+                Status::Unsupported,
+                "debugger was disabled for this build",
+            ));
+        }
+        _ => return Err(invalid("pausePoll must be Boolean")),
+    }
     session::insert(Script::Vehicle(Box::new(vm)))
 }
 pub(crate) fn create_addon(

@@ -66,6 +66,8 @@ pub struct Microcontroller {
     environment: storm_lua_spec::environment::EnvironmentProfile,
     bindings: storm_lua_vm::bindings::HostBindings,
     control_namespace: Option<String>,
+    #[cfg(feature = "debug")]
+    pause_poll: Option<storm_lua_vm::runner::PausePoll>,
 }
 impl Microcontroller {
     /// 未開始のコントローラーを作成します。loadを呼び出す前にホストオプションを設定してください。
@@ -123,6 +125,8 @@ impl Microcontroller {
             environment: config.environment,
             bindings: config.bindings,
             control_namespace: config.control_namespace,
+            #[cfg(feature = "debug")]
+            pause_poll: None,
         })
     }
     /// Execute another named chunk in the existing environment. Completed loads
@@ -299,6 +303,9 @@ impl Microcontroller {
         for chunk in &self.sources {
             next.load(&chunk.source, &chunk.name)?;
         }
+        // 再生中のトップレベルをpollで中断させないよう、再生が終わってから引き継ぎます。
+        #[cfg(feature = "debug")]
+        next.set_pause_poll(self.pause_poll.clone())?;
         *self = next;
         Ok(())
     }

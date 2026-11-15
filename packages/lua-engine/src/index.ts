@@ -10,7 +10,7 @@ export { EngineError } from './bridge.js';
 export type { Outcome, ErrorDetail, ErrorLocation, ErrorFrame } from './bridge.js';
 export type { Properties, PropertyEntry, PropertyValue } from './properties.js';
 export { FrameLease } from './frame.js';
-export type { DebugHandle, DebugValue, StackFrame, Variable, TableEntry, Breakpoint, StepMode } from './debug.js';
+export type { DebugHandle, DebugValue, StackFrame, Variable, TableEntry, Breakpoint, StepMode, ResumeOptions, PausePoll } from './debug.js';
 export { VEHICLE_API_CATALOG, ADDON_API_CATALOG, ADDON_EVENTS } from './catalog.js';
 export { luaTable, luaText, luaField, encodeSavedata, decodeSavedata } from './values.js';
 export type { LuaValue, LuaTable } from './values.js';

@@ -1,6 +1,6 @@
 /** 両方のLuaプロファイルで共有されるクライアントライフサイクル、デバッガ、および明示的なホスト配信ルート。 */
 import { Bridge, EngineError, byteArray, object, unsigned, type Outcome } from './bridge.js';
-import { decodeDebugValue, decodeStack, decodeVariables, type DebugHandle, type DebugValue, type StackFrame, type Variable, type TableEntry, type Breakpoint, type StepMode } from './debug.js';
+import { decodeDebugValue, decodeStack, decodeVariables, type DebugHandle, type DebugValue, type StackFrame, type Variable, type TableEntry, type Breakpoint, type StepMode, type ResumeOptions } from './debug.js';
 /** Execution-time source identity; never an instruction to fetch a filesystem path. */
 export interface LogLocation { readonly chunk: string; readonly line: number }
 export interface LogRecord {
@@ -121,7 +121,34 @@ export abstract class ScriptVm {
     return this.control('debug',request);
   }
   setBreakpoints(points: readonly Breakpoint[]): void { this.debug({action:'breakpoints',points}); }
-  resume(mode: StepMode = 'continue'): Outcome { return this.debug({action:'resume',mode}).outcome; }
+  resume(mode: StepMode = 'continue', options: ResumeOptions = {}): Outcome {
+    const carry = options.carryToNextEntry ?? false;
+    if (typeof carry !== 'boolean') throw new TypeError('carryToNextEntry must be Boolean');
+    return this.debug({action:'resume',mode,carry}).outcome;
+  }
+  /**
+   * 次に実行する行で止まるよう予約します。実行していないときに呼びます。アイドル中なら次に実行する
+   * コールバックの最初の行、中断中なら再開後の次の行で suspended になります。予約は止まるまで残ります。
+   * 実行中のスクリプトを止めるには、VM作成時の pausePoll を使います。
+   */
+  requestPause(): void { this.debug({action:'requestPause'}); }
+  /** 止まっていない一時停止の予約を取り消します。 */
+  cancelPause(): void { this.debug({action:'cancelPause'}); }
+  /**
+   * ブレークポイントを置ける行（1始まり、昇順）を返します。入れ子の関数の行を含みます。
+   * ソースはコンパイルするだけで実行せず、VMにも保持しません。構文エラーは EngineError になります。
+   * 返した行でも、その行の命令に到達しない実行では止まりません。
+   */
+  breakableLines(source: string | Uint8Array, name = '=script'): number[] {
+    if (!(this.bridge.capabilities & 4)) throw new EngineError(6,'Debugger is not included in this module');
+    return this.execute(() => {
+      const code = typeof source === 'string' ? encoder.encode(source) : source;
+      this.bridge.upload(code,(pointer,length) => this.bridge.upload(encoder.encode(name),(namePtr,nameLen) => this.bridge.call('breakable_lines',this.handle,pointer,length,namePtr,nameLen)));
+      const data = this.bridge.response();
+      if (!Array.isArray(data)) throw new TypeError('Invalid breakable line list');
+      return data.map(line => { const value = unsigned(line as number,'line'); if (value === 0) throw new TypeError('Line must be positive'); return value; });
+    },false);
+  }
   stack(): StackFrame[] { return decodeStack(this.debug({action:'stack'}).data); }
   locals(level = 0): Variable[] { return decodeVariables(this.debug({action:'locals',level:unsigned(level,'level')}).data); }
   upvalues(level = 0): Variable[] { return decodeVariables(this.debug({action:'upvalues',level:unsigned(level,'level')}).data); }

@@ -2,7 +2,7 @@
 use super::Microcontroller;
 use storm_lua_vm::{
     debug::{DebugHandle, DebugValue, StackFrame, TableEntry, Variable},
-    runner::{RunOutcome, StepMode, VmError},
+    runner::{PausePoll, RunOutcome, StepMode, VmError},
 };
 impl Microcontroller {
     /// loadの呼び出し前または再開の合間に、ソース修飾付きの行ブレークポイントを設定します。
@@ -13,6 +13,31 @@ impl Microcontroller {
     pub fn resume(&mut self, mode: StepMode) -> Result<RunOutcome, VmError> {
         let result = self.vm.resume(mode);
         self.finish(result)
+    }
+    /// [`Microcontroller::resume`]と同じですが、`carry`がtrueのとき、ステップがコールバックの
+    /// 終わりを越えると、次に実行するコールバックの最初の行で止まります。
+    pub fn resume_with(&mut self, mode: StepMode, carry: bool) -> Result<RunOutcome, VmError> {
+        let result = self.vm.resume_with(mode, carry);
+        self.finish(result)
+    }
+    /// 次に実行する行で止まるよう予約します。アイドル中なら次のコールバックの最初の行、
+    /// 中断中なら再開後の次の行で止まります。resetは予約を破棄します。
+    pub fn request_pause(&mut self) -> Result<(), VmError> {
+        self.vm.request_pause()
+    }
+    /// 止まっていない一時停止の予約を取り消します。
+    pub fn cancel_pause(&mut self) {
+        self.vm.cancel_pause();
+    }
+    /// 実行中の一時停止を問い合わせる関数を設定または解除します。resetをまたいで保持します。
+    pub fn set_pause_poll(&mut self, poll: Option<PausePoll>) -> Result<(), VmError> {
+        self.vm.set_pause_poll(poll.clone())?;
+        self.pause_poll = poll;
+        Ok(())
+    }
+    /// ブレークポイントを置ける行を返します。[`storm_lua_vm::runner::Vm::breakable_lines`]を参照。
+    pub fn breakable_lines(&self, source: &[u8], name: &str) -> Result<Vec<u32>, VmError> {
+        self.vm.breakable_lines(source, name)
     }
     /// 中断中のコールバックのソーススタックフレームを検査します。
     pub fn stack(&self) -> Result<Vec<StackFrame>, VmError> {

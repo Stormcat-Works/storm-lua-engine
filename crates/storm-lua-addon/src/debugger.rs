@@ -15,6 +15,25 @@ impl Addon {
         let result = self.vm.borrow_mut().resume(mode);
         self.finish(result)
     }
+    /// [`Addon::resume`]と同じですが、`carry`がtrueのとき、ステップがコールバックの終わりを
+    /// 越えると、次に実行するコールバックの最初の行で止まります。
+    pub fn resume_with(&mut self, mode: StepMode, carry: bool) -> Result<RunOutcome, VmError> {
+        let _execution = self.callbacks.enter();
+        let result = self.vm.borrow_mut().resume_with(mode, carry);
+        self.finish(result)
+    }
+    /// 次に実行する行で止まるよう予約します。同期イベントのコールバックでは止まりません。
+    pub fn request_pause(&mut self) -> Result<(), VmError> {
+        self.vm.borrow_mut().request_pause()
+    }
+    /// 止まっていない一時停止の予約を取り消します。
+    pub fn cancel_pause(&mut self) {
+        self.vm.borrow_mut().cancel_pause();
+    }
+    /// ブレークポイントを置ける行を返します。[`storm_lua_vm::runner::Vm::breakable_lines`]を参照。
+    pub fn breakable_lines(&self, source: &[u8], name: &str) -> Result<Vec<u32>, VmError> {
+        self.vm.borrow().breakable_lines(source, name)
+    }
     /// 中断中のコールバックのソーススタックフレームを検査します。
     pub fn stack(&self) -> Result<Vec<StackFrame>, VmError> {
         self.vm.borrow_mut().stack()

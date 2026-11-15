@@ -2,6 +2,12 @@
 
 ## 未公開
 
+### 実行して確かめた例の追加
+
+- CommonJSから使う例を追加した（`examples/consumer/commonjs.cjs`、`commonjs-types.cts`、`tsconfig.commonjs.json`）。動的`import()`で読み込み、WASMは`require.resolve`と`fs`で読んで`wasmBinary`へ渡す。TypeScriptは`module`と`moduleResolution`を`Node16`にし、型のimportに`resolution-mode`を付ける。
+- ホスト関数に届くLuaの文字列が`Uint8Array`であることを示す例を追加した（`examples/consumer/host-bindings-bytes.mjs`）。文字列へ直す形と、バイト列のまま扱う形の両方を載せた。
+- どちらの例も、`node tools/test-package.mjs`が独立consumerで実行する。パッケージのREADMEに2つの例への案内を足した。SDKのコードは変えていない。
+
 ### デバッガ
 
 - ホストから実行を止める手段を追加した。`requestPause`は、実行していないVMに「次に実行する行で止まる」予約を置く。VM作成時の`pausePoll`は、実行中のVMが4096命令ごとに呼ぶ関数で、trueを返すと実行を中断する。無限ループに入ったスクリプトを、命令数の上限を待たずに止めて検査できる。

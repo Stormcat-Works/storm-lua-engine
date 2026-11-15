@@ -39,6 +39,10 @@ HTTPは`drainHttpRequests`からhostへ渡され、hostが実通信を行って�
 
 ブラウザは`await loadRuntime()`、NodeではWASMを明示的に読み`loadRuntime({ wasmBinary })`を使用します。WASMのexport pathは`@stormcat-works/storm-lua-engine/wasm/storm_lua_wasm.wasm`。独自bundlerやWebViewでは`moduleUrl`／`wasmUrl`または`fromEmscripten(module)`でアセットを接続します。
 
+パッケージはESMだけです。CommonJSのホスト（VSCodeの拡張機能など）は動的`import()`で読み込み、WASMは`require.resolve`で場所を求めて`wasmBinary`へ渡します。TypeScriptでは`module`と`moduleResolution`を`Node16`にし、型のimportに`resolution-mode`を付けます。実行して確かめた例は、ソースリポジトリの[commonjs.cjs](https://github.com/Stormcat-Works/storm-lua-engine/blob/main/examples/consumer/commonjs.cjs)と[commonjs-types.cts](https://github.com/Stormcat-Works/storm-lua-engine/blob/main/examples/consumer/commonjs-types.cts)です。
+
+`bindings`や`server`のホスト関数に届くLuaの文字列は、stringではなく`Uint8Array`です。文字として読むときは`luaText`か`TextDecoder`で直します。両方の扱い方は[host-bindings-bytes.mjs](https://github.com/Stormcat-Works/storm-lua-engine/blob/main/examples/consumer/host-bindings-bytes.mjs)にあります。
+
 load/tick/draw/start/resumeはcompleted/suspended/missingを返し、エラーはEngineErrorなどの例外です。停止中は次のcallbackを重ねず、debuggerで確認してresumeします。使用後は必ずdispose。AddonのonDestroyも呼びたい場合は先にdestroyを明示してください。
 
 ## 配布とライセンス

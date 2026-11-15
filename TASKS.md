@@ -14,6 +14,10 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 
 - [ ] トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの実ゲームの挙動を測る。測定するまでは、0/falseを返し書き込みと描画を無視する従来の挙動を維持する。
 
+### 利用者向けガイドへの追記（2026-11-15）
+
+- [ ] docs.makkii.jpのガイドへ、CommonJSからの読み込み方と、ホスト関数に届くLuaの文字列が`Uint8Array`であることを追記する。ガイドの本文は本リポジトリの外で管理する。実行して確かめた例は`examples/consumer`の`commonjs.cjs`、`commonjs-types.cts`、`host-bindings-bytes.mjs`にある。
+
 ### AD-01/AD-02 host接続（2026-10-17）
 
 `HostCall::truthy`で呼出し中の値をowned dataへ変換せずにLua truthinessを読みます。循環tableや関数の値を保持・実行しない引数参照APIです。hostの設定・同期・永続化はconsumerが所有し、公開工程とは区別します。

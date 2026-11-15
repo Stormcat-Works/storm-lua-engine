@@ -6,6 +6,10 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## 依存関係の更新（2026-11-15、未公開）
+
+bincodeを自前コーデックへ置換し、Rustとnpmの依存を最新化した。ワークスペースのテスト1,875件、TypeScriptの単体テスト（lua-engine 37件、app 38件）、appのビルドと`wrangler deploy --dry-run`、`wrangler dev`の起動が通過した。mluaの0.11/0.12化とtypescriptの5.9以降への更新は、上流の挙動・型の変更で既存テストとビルドが壊れるため見送り、理由をCHANGELOGの未公開節に記録した。appのビルド確認に使うWASM成果物は、この環境のemccとwasm-optの版の不一致でローカル生成できないため、公開済み0.4.1の成果物を使った（依存更新とは無関係の既存の環境問題）。
+
 ## フレームが変わったかどうかの確かめ方（2026-11-15、未公開）
 
 描画の結果が前回と同じかどうかを返すAPIは追加しなかった。64bitダイジェストを返す案と、エンジンが前回フレームを保持して比べる案を試作し、実WASMで測定した。どちらも、既存のAPIだけで書ける手順（`pixels`の借用ビューを前回の写しと`Buffer.compare`で比べる）より速くならなかった。手順は[例](examples/consumer/frame-changes.mjs)、測定値は[検証記録](docs/verification/frame-change-detection-20261115.md)にある。

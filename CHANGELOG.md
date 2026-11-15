@@ -2,6 +2,14 @@
 
 ## 未公開
 
+### 依存関係の更新
+
+- `bincode`（RUSTSEC-2025-0141で保守終了が宣言された）を外し、minifyの候補探索がWorker境界で使う符号化を、serde駆動の自前バイナリコーデック（`crates/storm-lua-minify/src/job_codec.rs`）へ置き換えた。公開関数のシグネチャと符号化の意味は変えていない。
+- `sha2`を0.11へ上げ、`Cargo.lock`全体を最新化した。推移依存の`rustix`は1.1.6となり、RUSTSEC-2026-0486の対象外になった。
+- `mlua`の0.11/0.12化は見送った。どちらの版でも`Thread::set_hook`の内部実装変更により、addonの`synchronous_events`テスト（`nested_lua_error_restores_debugger_and_preserves_non_tick_callbacks`）がLuaのアサーションで異常終了する。切り分けは済んでおり、`=0.10.5`の固定を維持する。
+- npm側は`vite` 8.3.8、`wrangler` 4.162.0、`playwright` 1.65.1、`@types/node` 26へ上げた。miniflareが厳密に固定する`undici` 7.28.0と`sharp` 0.35.2は、appの`overrides`で7.30.2と0.35.5へ寄せた。
+- `typescript`は5.8.3を維持する。5.9.3と7.0.2では`WebAssembly.instantiate`の戻り値の型が変わり、`packages/lua-engine/src/raster.ts`がTS2339で失敗する。
+
 ### フレームが変わったかどうかの確かめ方
 
 - 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。

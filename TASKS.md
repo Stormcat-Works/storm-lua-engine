@@ -1,8 +1,12 @@
 # Implementation tasks
 
-v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、GitHub Releaseとnpmの公開を完了した。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
+v0.4.1は2026-11-04に公開済み。mainは`88ec6f0`、タグは`v0.4.1`で、GitHub Releaseとnpmの公開を完了した。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
 
 ## 未完了の作業
+
+### v0.5.0のローカル公開候補（2026-11-16、準備完了・公開工程は残る）
+
+Component Modプロファイルの追加と、Vehicle／Addon意味論の実ゲーム整合、依存関係の更新を一つの公開候補にまとめ、版番号を0.5.0へ更新した。残る公開工程は、検査済みツリーの候補スカッシュ再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認で、[リリース手順](docs/release.md)に従い管理者の最終確認後に行う。
 
 ### Component Mod の TypeScript SDK 公開（2026-11-16）
 
@@ -14,9 +18,9 @@ Rust側（`storm-lua-component`）は完了し v0.5.0 に含まれる。TS SDK �
 
 残る公開工程は、検査済みツリーの候補スカッシュ再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認。
 
-### phase外の呼び出しの残りの実機測定（2026-11-15）
+### phase外の呼び出しの残りの実機測定（2026-11-15、解決済み）
 
-- [ ] トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの実ゲームの挙動を測る。測定するまでは、0/falseを返し書き込みと描画を無視する従来の挙動を維持する。
+トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの挙動は、v1.15.26の静的解析で実ゲームと同じoutsideエラーになることが確定し、2026-11-16にv0.5.0で実装した。実機測定は不要になったため本項目は閉じる。
 
 ### npmパッケージが求めるNodeの版（2026-11-15）
 

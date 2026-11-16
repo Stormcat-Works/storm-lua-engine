@@ -1,5 +1,5 @@
 /** アドオンモードはライフサイクル/イベント/セーブデータを持ちますが、Composite I/O や画面描画は行いません。 */
-import { Bridge, EngineError, object, unsigned, byteArray, type Outcome } from './bridge.js';
+import { Bridge, EngineError, object, signed, byteArray, type Outcome } from './bridge.js';
 import { ScriptVm, type ScriptOptions, type LogHandler } from './script.js';
 import { decodeLuaValue, encodeLuaValue, encodeLuaValues, type LuaValue, type LuaTable } from './values.js';
 import { ADDON_EVENTS } from './catalog.js';
@@ -26,7 +26,7 @@ export class AddonVm extends ScriptVm {
     if (bridge.query('mode',handle) !== 2) throw new EngineError(4,'Handle is not an addon');
   }
   start(): Outcome { return this.control('addon',{action:'start'}).outcome; }
-  tick(gameTicks = 1): Outcome { return this.control('addon',{action:'tick',gameTicks:unsigned(gameTicks,'gameTicks')}).outcome; }
+  tick(gameTicks = 1): Outcome { return this.control('addon',{action:'tick',gameTicks:signed(gameTicks,'gameTicks')}).outcome; }
   dispatch(callback: AddonEvent, arguments_: readonly LuaValue[] = []): Outcome {
     return this.control('addon',{action:'dispatch',callback,arguments:encodeLuaValues(arguments_)}).outcome;
   }

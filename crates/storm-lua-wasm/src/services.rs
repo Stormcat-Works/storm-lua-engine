@@ -239,7 +239,7 @@ pub(crate) fn addon(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
         let mut status = Status::Ok;
         let response=match request["action"].as_str() {
             Some("start")=>{status=outcome(vm.start().map_err(convert)?);Value::Null},
-            Some("tick")=>{status=outcome(vm.tick(number(&request["gameTicks"])? as i32).map_err(convert)?);Value::Null},
+            Some("tick")=>{status=outcome(vm.tick(value_codec::integer(&request["gameTicks"])?).map_err(convert)?);Value::Null},
             Some("dispatch")=>{
                 let callback=request["callback"].as_str().ok_or_else(|| invalid("callback name is missing"))?;
                 status=outcome(vm.dispatch(callback,&value_codec::values(&request["arguments"])?).map_err(convert)?);Value::Null

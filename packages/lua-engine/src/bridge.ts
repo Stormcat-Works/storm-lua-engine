@@ -44,6 +44,10 @@ export function unsigned(value: number, label: string): number {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) throw new RangeError(`${label} must be a u32`);
   return value;
 }
+export function signed(value: number, label: string): number {
+  if (!Number.isInteger(value) || value < -0x8000_0000 || value > 0x7fff_ffff) throw new RangeError(`${label} must be an i32`);
+  return value;
+}
 export function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('Expected a protocol object');
   return value as Record<string, unknown>;

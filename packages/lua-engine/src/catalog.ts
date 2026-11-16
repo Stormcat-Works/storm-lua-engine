@@ -134,7 +134,7 @@ export const VEHICLE_API_CATALOG = [
     "parameters": "",
     "path": "screen.getWidth",
     "phase": "draw",
-    "returns": "integer"
+    "returns": "number"
   },
   {
     "availability": "implemented",
@@ -142,7 +142,7 @@ export const VEHICLE_API_CATALOG = [
     "parameters": "",
     "path": "screen.getHeight",
     "phase": "draw",
-    "returns": "integer"
+    "returns": "number"
   },
   {
     "availability": "implemented",
@@ -227,7 +227,7 @@ export const VEHICLE_API_CATALOG = [
   {
     "availability": "implemented",
     "effect": "draw-command",
-    "parameters": "x: number, y: number, width: number, height: number, text: string, horizontalAlign: number, verticalAlign: number",
+    "parameters": "x: number, y: number, width: number, height: number, text: string, horizontalAlign?: number, verticalAlign?: number",
     "path": "screen.drawTextBox",
     "phase": "draw",
     "returns": ""
@@ -239,6 +239,22 @@ export const VEHICLE_API_CATALOG = [
     "path": "screen.drawMap",
     "phase": "draw",
     "returns": ""
+  },
+  {
+    "availability": "implemented",
+    "effect": "coordinate-conversion",
+    "parameters": "mapX: number, mapY: number, zoom: number, screenWidth: number, screenHeight: number, pixelX: number, pixelY: number",
+    "path": "map.screenToMap",
+    "phase": "any",
+    "returns": "number, number"
+  },
+  {
+    "availability": "implemented",
+    "effect": "coordinate-conversion",
+    "parameters": "mapX: number, mapY: number, zoom: number, screenWidth: number, screenHeight: number, worldX: number, worldY: number",
+    "path": "map.mapToScreen",
+    "phase": "any",
+    "returns": "number, number"
   },
   {
     "availability": "host-extension",

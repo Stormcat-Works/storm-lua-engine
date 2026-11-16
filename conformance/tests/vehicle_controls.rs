@@ -52,7 +52,8 @@ fn input_controls_quantize_at_io_and_named_callbacks_do_not_replace_on_tick(
     vm.call_draw("paint", &[LuaValue::Integer(2)], 64, 32)?;
     assert!(!vm.commands().is_empty());
     assert_eq!(vm.output().numbers[1], 7.0);
-    assert_eq!(vm.drain_logs(), vec![b"64\t32".to_vec()]);
+    // getWidth/getHeightはdoubleで返るため、文字列化では"64.0"になります（E19）。
+    assert_eq!(vm.drain_logs(), vec![b"64.0\t32.0".to_vec()]);
     assert_eq!(vm.call_tick("missing", &[], &input)?, RunOutcome::Missing);
     Ok(())
 }

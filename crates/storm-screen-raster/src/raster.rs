@@ -307,18 +307,37 @@ impl ScreenRaster {
         }
         let radius = r.abs();
         let n = (radius / 2.0).floor().clamp(8.0, 16.0) as usize;
-        let mut points = [[0.0; 2]; 16];
-        for (i, p) in points.iter_mut().enumerate().take(n) {
-            let a = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
-            *p = [
+        // 実ゲームはfloat32のtauを分割数で割ったstepを0から逐次加算して周辺点を
+        // 作ります（E24）。outlineは角度がtau以下の間、filledはtau未満の間点を
+        // 追加するため、実際の点数は分割数とずれることがあります
+        // （例: 分割数15ではoutline 16点・filled 15点、分割数10ではどちらも10点）。
+        let tau: f32 = std::f32::consts::TAU;
+        let step = tau / n as f32;
+        let mut points: Vec<[f64; 2]> = Vec::new();
+        let mut angle: f32 = 0.0;
+        while if fill { angle < tau } else { angle <= tau } {
+            let a = f64::from(angle);
+            points.push([
                 f64::from((x + radius * a.cos()) as f32),
                 f64::from((y + radius * a.sin()) as f32),
-            ];
+            ]);
+            angle += step;
         }
         if fill {
-            self.convex(&points[..n], 0.0, -1.0);
+            self.convex(&points, 0.0, -1.0);
         } else {
-            self.outline(&points[..n]);
+            self.outline(&points);
+        }
+    }
+    /// 1文字分のglyphを指定位置へ描きます。
+    fn draw_glyph(&mut self, ch: char, x: f64, y: f64) {
+        let rows = font::glyph_for(ch);
+        for (row, bits) in rows.iter().enumerate() {
+            for col in 0..4 {
+                if bits & (1 << (3 - col)) != 0 {
+                    self.plot(x + f64::from(col), y + row as f64);
+                }
+            }
         }
     }
     fn text(&mut self, position: [f64; 2], text: &str) {
@@ -327,21 +346,22 @@ impl ScreenRaster {
         }
         let ox = position[0].floor();
         let (mut x, mut y) = (ox, position[1].floor());
-        for ch in text.chars() {
-            if ch == '\n' {
-                x = ox;
-                y += 6.0;
-                continue;
-            }
-            let rows = font::glyph_for(ch);
-            for (row, bits) in rows.iter().enumerate() {
-                for col in 0..4 {
-                    if bits & (1 << (3 - col)) != 0 {
-                        self.plot(x + f64::from(col), y + row as f64);
-                    }
+        // 実ゲームのdrawTextは文字列をbyte単位でglyph IDとして照合します
+        // （UTF-8のdecodeはしません。E21）。対応glyphがないbyteは横送りも
+        // しません。空白は5送り、改行はXを開始位置へ戻してYを6進めます。
+        // glyphが1個もない文字列は頂点を生成しません。
+        for byte in text.bytes() {
+            match byte {
+                b'\n' => {
+                    x = ox;
+                    y += 6.0;
                 }
+                32..=126 => {
+                    self.draw_glyph(char::from(byte), x, y);
+                    x += 5.0;
+                }
+                _ => {}
             }
-            x += 5.0;
         }
     }
     fn textbox(&mut self, v: [f64; 6], text: &str) {
@@ -349,51 +369,99 @@ impl ScreenRaster {
             return;
         }
         let [x, y, w, h, ha, va] = v;
-        let cap = (w / 5.0).floor().max(1.0) as usize;
-        // JSの文字列スライスと文字長は、UTF-8バイトではなくUTF-16コードユニットを基準とします。
-        let units: Vec<u16> = text.encode_utf16().collect();
-        let mut lines: Vec<&[u16]> = Vec::new();
-        for paragraph in units.split(|u| *u == 10) {
-            let mut pos: usize = 0;
-            loop {
-                let mut end = pos.saturating_add(cap).min(paragraph.len());
-                if end < paragraph.len() && paragraph[end] != 32 {
-                    if let Some(space) = paragraph[pos..end].iter().rposition(|u| *u == 32) {
-                        end = pos + space + 1;
-                    }
-                }
-                lines.push(&paragraph[pos..end]);
-                pos = end;
-                if pos >= paragraph.len() {
-                    break;
-                }
+        // 実ゲームのdrawTextBoxはUTF-8をdecodeし、glyphがあるcodepoint
+        // （32〜126）だけをトークンとして残します（E22）。対応しないcodepointは
+        // 送り幅も生じません。LFは現在行の末尾トークンになる改行、TABは空白
+        // glyphの幅・送りを4倍にしたトークンです。
+        struct Token {
+            glyph: char,
+            advance: f64,
+            space: bool,
+            line_feed: bool,
+        }
+        let mut tokens: Vec<Token> = Vec::new();
+        for ch in text.chars() {
+            match ch {
+                '\n' => tokens.push(Token {
+                    glyph: ' ',
+                    advance: 5.0,
+                    space: false,
+                    line_feed: true,
+                }),
+                '\t' => tokens.push(Token {
+                    glyph: ' ',
+                    advance: 20.0,
+                    space: false,
+                    line_feed: false,
+                }),
+                ' '..='~' => tokens.push(Token {
+                    glyph: ch,
+                    advance: 5.0,
+                    space: ch == ' ',
+                    line_feed: false,
+                }),
+                _ => {}
             }
         }
-        let height = lines.len() as f64 * 6.0 - 1.0;
+        // 行分割はトークン単位です。送り幅の合計が指定widthを超え、かつ行に
+        // 2トークン以上あるとき戻し処理へ入ります（ちょうど等しい場合は
+        // 折り返しません）。戻す場合も現在行に最低1トークンは残します。
+        let mut lines: Vec<Vec<Token>> = Vec::new();
+        let mut line: Vec<Token> = Vec::new();
+        let mut line_width = 0.0_f64;
+        for token in tokens {
+            if token.line_feed {
+                line.push(token);
+                lines.push(std::mem::take(&mut line));
+                line_width = 0.0;
+                continue;
+            }
+            if line_width + token.advance > w && line.len() >= 2 {
+                if let Some(space) = line.iter().rposition(|t| t.space) {
+                    let carry: Vec<Token> = line.drain(space + 1..).collect();
+                    lines.push(std::mem::take(&mut line));
+                    line_width = carry.iter().map(|t| t.advance).sum();
+                    line = carry;
+                } else {
+                    lines.push(std::mem::take(&mut line));
+                    line_width = 0.0;
+                }
+            }
+            line_width += token.advance;
+            line.push(token);
+        }
+        lines.push(line);
+        // 配置に使う全行高さは (行数 − 1) × 6 + 5、行の配置用幅は
+        // (トークン個数 − 1) × 5 + 4 です（折返し判定の送り幅合計とは別です）。
+        let total_height = (lines.len() as f64 - 1.0) * 6.0 + 5.0;
         let top = if va < 0.0 {
             y
         } else if va > 0.0 {
-            y + h - height
+            y + h - total_height
         } else {
-            y + (h - height) / 2.0
+            y + (h - total_height) / 2.0
         };
         for (i, line) in lines.iter().enumerate() {
-            let width = if line.is_empty() {
+            let layout_width = if line.is_empty() {
                 0.0
             } else {
-                line.len() as f64 * 5.0 - 1.0
+                (line.len() as f64 - 1.0) * 5.0 + 4.0
             };
             let left = if ha < 0.0 {
                 x
             } else if ha > 0.0 {
-                x + w - width
+                x + w - layout_width
             } else {
-                x + (w - width) / 2.0
+                x + (w - layout_width) / 2.0
             };
-            let decoded: String = char::decode_utf16(line.iter().copied())
-                .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
-                .collect();
-            self.text([left.floor(), top.floor() + i as f64 * 6.0], &decoded);
+            let mut cursor = left.floor();
+            let row_y = top.floor() + i as f64 * 6.0;
+            for token in line {
+                if token.glyph != ' ' {
+                    self.draw_glyph(token.glyph, cursor, row_y);
+                }
+                cursor += token.advance;
+            }
         }
     }
 }
@@ -451,7 +519,13 @@ impl ScreenSink for ScreenRaster {
             DrawCommand::Circle(v, fill) => self.circle(*v, *fill),
             DrawCommand::Triangle(p, fill) => {
                 if *fill {
-                    self.convex(p, 1.0, -1.0);
+                    // 実ゲームのwrapperは塗り三角形の各頂点を (f(x), f(f(y) − 1))
+                    // へ移してから渡します（E23）。従来のY sample offsetによる
+                    // 近似から、頂点生成規則そのものへ置き換えます。全743ケースの
+                    // 採用画素は不変であることを契約テストで確認済みです。
+                    let shifted =
+                        p.map(|[px, py]| [f64::from(px as f32), f64::from((py as f32) - 1.0)]);
+                    self.convex(&shifted, 0.0, -1.0);
                 } else {
                     self.outline(p);
                 }

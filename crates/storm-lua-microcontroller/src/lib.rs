@@ -75,6 +75,9 @@ struct State {
     size: (u32, u32),
     http: storm_lua_spec::http::HttpQueue,
     commands: CommandBuffer,
+    /// このフレームで`screen.drawMap`を使用済みかどうか（E6）。実ゲームの
+    /// draw_data +0x2a5相当で、フレーム開始（onDraw入口）で0に戻ります。
+    map_used: bool,
     /// 実ゲームのエラーステータス（スクリプト状態の +0x350 相当）。
     /// 0=正常、1=onDraw失敗、2=onTick失敗/時間超過、3=ロード失敗、5=httpReply失敗。
     error_status: u32,
@@ -123,6 +126,7 @@ impl Microcontroller {
             size: (0, 0),
             http: storm_lua_spec::http::HttpQueue::new().map_err(http_error)?,
             commands: CommandBuffer::new(65536, 1024 * 1024),
+            map_used: false,
             error_status: 0,
             errors: Vec::new(),
             entry_error_status: 3,
@@ -253,6 +257,7 @@ impl Microcontroller {
             state.phase = Phase::Draw;
             state.size = (width, height);
             state.commands.clear();
+            state.map_used = false;
             state.entry_error_status = 1;
         }
         // エラー状態の間、実ゲームはonDrawをスキップします（E9）。
@@ -390,6 +395,9 @@ impl Microcontroller {
     /// Discard unfinished loads, runtime state and debugger handles. Replace this
     /// VM only after replay succeeds; external host side effects cannot roll back.
     pub fn reset(&mut self) -> Result<(), VmError> {
+        // 実ゲームではVMのclose/newstateだけではComposite出力キャッシュは
+        // zero化されません（E20）。再生成をまたいで出力値を保持します。
+        let saved_output = self.state.borrow().output;
         let config = MicrocontrollerConfig {
             properties: self.state.borrow().properties.clone(),
             limits: self.limits,
@@ -407,6 +415,7 @@ impl Microcontroller {
         for chunk in &self.sources {
             next.load(&chunk.source, &chunk.name)?;
         }
+        next.state.borrow_mut().output = saved_output;
         // 再生中のトップレベルをpollで中断させないよう、再生が終わってから引き継ぎます。
         #[cfg(feature = "debug")]
         next.set_pause_poll(self.pause_poll.clone())?;

@@ -26,6 +26,17 @@
 - Vehicle/Addon環境から`select`を除き（baseは6関数のみ）、`string.dump`を戻した（stringライブラリは完全版）。
 - 関数でないコールバックは、エラーではなく「不在」として扱う。Addonの`tick(game_ticks)`は符号付き整数を受け付け、0以下でも拒否しない。
 
+### screen/描画意味論の実ゲーム整合
+
+- 色変換（`setColor`/`setMapColor*`）を実ゲームへ合わせた。成分はゼロ方向へ切り捨てて下位8bitを格納し（クランプなしのラップ）、NaN・非有限・範囲外は0、非数値は0になる。エラーにはならない。alphaは省略時のみ255で、明示nilは0。
+- `screen.drawTextBox`のalignは省略できるようになった（省略時-1、明示nilは0、[-1, 1]へクランプ）。カタログの必須宣言も合わせた。
+- `screen.drawMap`は1フレーム1回までになった。2回目以降は引数を読む前に無言で戻り、非有限座標でもエラーにならない。
+- `map.screenToMap` / `map.mapToScreen`を追加した（7引数・戻り値2個、仕様の変換式をfloat32の演算順で評価）。
+- `screen.getWidth` / `getHeight`の戻り値をdoubleにした（従来はLua整数）。
+- `reset()`をまたいでもComposite出力が保持されるようになった（従来は再生成で全0に戻っていた）。
+- `drawText`は文字列をbyte単位でglyph IDとして照合するようになった（UTF-8 decodeなし）。対応glyphがないbyteは描画も横送りもしない。`drawTextBox`はUTF-8をdecodeし、glyphがあるcodepoint（32〜126）だけをトークンとするトークン単位の折返し、TABの空白4倍、LFの改行トークンへ合わせた。画面契約の採用ケースは、この規則変更で画素が変わる34ケース（text 1件・textBox 33件）の期待値を、実ゲームの静的解析という独立した導出に基づいて更新した（他の709ケースは不変）。
+- 円の周辺点を、float32のtau逐次加算による実ゲームの生成規則へ合わせた（分割数15でoutline 16点・filled 15点になる癖を含む）。塗り三角形は頂点を (f(x), f(f(y)−1)) へ移すwrapper規則へ置き換えた（採用画素は不変）。`drawRectF`のY−1は、現行のsnap+floor境界モデルが実機撮影で検証済みの採用画素と一致しているため、そのままでは適用せず現行維持とした（記録参照）。
+
 ### フレームが変わったかどうかの確かめ方
 
 - 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。

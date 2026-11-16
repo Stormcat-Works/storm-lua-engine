@@ -62,6 +62,12 @@ impl EnvironmentProfile {
     pub fn is_addon_unavailable(self, name: &str) -> bool {
         self.is_unavailable(name)
     }
+    /// Component Mod base-function availability. select is absent from the
+    /// shared game environment itself (E13), so this currently matches
+    /// the base predicate.
+    pub fn is_component_unavailable(self, name: &str) -> bool {
+        self.is_unavailable(name)
+    }
     /// Stable wire/profile identifier.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -85,5 +91,18 @@ pub fn valid_binding_path(path: &str) -> bool {
         })
 }
 
+/// Builtin roots visible to a Component Mod script, including the restricted logging table.
+pub const COMPONENT_ROOTS: &[&str] = &[
+    "math", "string", "table", "debug", "matrix", "parser", "component", "ipairs", "next", "pairs",
+    "tonumber", "tostring", "type",
+];
 /// Vehicle callbacks invoked externally, not ordinary dead global functions.
 pub const VEHICLE_CALLBACKS: &[&str] = &["onTick", "onDraw", "httpReply"];
+/// Component Mod callbacks invoked externally, not ordinary dead global functions.
+pub const COMPONENT_CALLBACKS: &[&str] = &[
+    "onParse",
+    "onAddToSimulation",
+    "onTick",
+    "onRender",
+    "onRemoveFromSimulation",
+];

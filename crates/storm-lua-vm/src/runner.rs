@@ -253,6 +253,12 @@ pub(crate) struct HookControl {
     pub(crate) exhausted: bool,
     /// 命令数の上限でyieldしたときに、フックが報告した実行行。
     pub(crate) limit_line: Option<i32>,
+    /// 現在の入口の壁時計期限。時間制限が無効な入口ではNoneです。
+    pub(crate) deadline: Option<std::time::Instant>,
+    /// 時間制限を超過したかどうか。フックが記録し、入口側が実ゲーム文面のLuaエラーへ変換します。
+    pub(crate) time_exceeded: bool,
+    /// 次に時計を確認するまでの命令数。
+    pub(crate) time_countdown: u32,
     #[cfg(feature = "debug")]
     pub(crate) breakpoints: Vec<(String, i32)>,
     #[cfg(feature = "debug")]
@@ -282,6 +288,39 @@ pub(crate) struct HookControl {
     pub(crate) poll_pending: bool,
 }
 
+/// フックが時計を確認する間隔（命令数）。1001msの制限に対して検出遅れは無視できる範囲です。
+pub(crate) const TIME_CHECK_INTERVAL: u32 = 512;
+impl HookControl {
+    /// 入口の開始時に制限カウンタを初期化します。入れ子の呼び出しでは呼びません
+    /// （制限は入口単位であり、内側の呼び出しが延長することはありません）。
+    pub(crate) fn begin_entry(&mut self, limits: &ExecutionLimits) {
+        self.remaining = limits.instruction_allowance();
+        self.exhausted = false;
+        self.limit_line = None;
+        self.time_exceeded = false;
+        self.time_countdown = TIME_CHECK_INTERVAL;
+        self.deadline = limits
+            .time_limit
+            .map(|limit| std::time::Instant::now() + limit);
+    }
+    /// フックのカウントイベントごとに呼び、時間制限の超過を記録します。
+    pub(crate) fn note_instructions(&mut self, quantum: u32) {
+        if self.deadline.is_none() || self.time_exceeded {
+            return;
+        }
+        self.time_countdown = self.time_countdown.saturating_sub(quantum);
+        if self.time_countdown == 0 {
+            self.time_countdown = TIME_CHECK_INTERVAL;
+            if self
+                .deadline
+                .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
+                self.time_exceeded = true;
+            }
+        }
+    }
+}
+
 /// 1つのスレッド拘束型Lua状態。ホストコードがすべての呼び出しと継続を明示的に駆動します。
 pub struct Vm {
     pub(crate) lua: Lua,
@@ -290,7 +329,6 @@ pub struct Vm {
     pub(crate) control: Rc<RefCell<HookControl>>,
     pub(crate) limits: ExecutionLimits,
     failed: Rc<std::cell::Cell<bool>>,
-    addon_callbacks: bool,
     synchronous: Rc<synchronous::Context>,
     _synchronous_owner: Rc<()>,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
@@ -314,17 +352,19 @@ impl Vm {
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
         let lua = create_lua()?;
-        if lua.used_memory() > limits.lua_memory_bytes.get() {
-            return Err(VmError::new(
-                ErrorKind::Limit,
-                "Lua memory budget is smaller than initialization",
-            ));
+        if let Some(memory) = limits.lua_memory_bytes {
+            if lua.used_memory() > memory.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua memory budget is smaller than initialization",
+                ));
+            }
+            lua.set_memory_limit(memory.get())?;
         }
-        lua.set_memory_limit(limits.lua_memory_bytes.get())?;
         let environment = crate::sandbox::environment(&lua, environment_profile)?;
         let control = Rc::new(RefCell::new(HookControl::default()));
         if environment_profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
-            crate::sandbox::protect_calls(&lua, &environment, Rc::clone(&control))?;
+            crate::sandbox::protect_calls(&lua, &environment, Rc::clone(&control), limits)?;
         }
         let logs = Rc::default();
         crate::logging::install(
@@ -351,7 +391,6 @@ impl Vm {
             control,
             limits,
             failed,
-            addon_callbacks: false,
             synchronous,
             _synchronous_owner: synchronous_owner,
             environment_profile,
@@ -361,14 +400,15 @@ impl Vm {
             debugger,
         })
     }
-    /// Addon callbacks retain their VM after ordinary Lua errors. Resource limits
-    /// still fail closed; non-function callback globals are treated as absent.
+    /// Addon環境のVMです。通常のLuaエラーでVMが失敗状態にならない点と、
+    /// 関数でないコールバックを不在として扱う点は全プロファイル共通になりました。
+    /// Addon固有の差は同期ホストイベント側にあり、そちらの通常のLuaエラーは
+    /// 呼び出し元へ戻して回復可能にします（制限は失敗状態にします）。
     pub fn with_addon_environment(
         limits: ExecutionLimits,
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
-        let mut vm = Self::with_environment(limits, environment_profile)?;
-        vm.addon_callbacks = true;
+        let vm = Self::with_environment(limits, environment_profile)?;
         vm.synchronous.addon_callbacks.set(true);
         Ok(vm)
     }
@@ -380,6 +420,14 @@ impl Vm {
     ) -> Result<(), VmError> {
         self.ensure_idle()?;
         crate::random::install(&self.lua, &self.environment.get::<Table>("math")?, source)?;
+        Ok(())
+    }
+    /// Gameプロファイルの既定（CRT互換の共有ストリーム）を、VMごとの決定的
+    /// ストリームへ差し替えます（ホスト選択肢、J2）。Extendedではもともと
+    /// 決定的ストリームのため実質的に変わりません。
+    pub fn use_deterministic_random(&mut self) -> Result<(), VmError> {
+        self.ensure_idle()?;
+        crate::sandbox::install_random(&self.lua, &self.environment.get::<Table>("math")?)?;
         Ok(())
     }
     /// バックエンド密結合な明示的拡張フィーチャーを通じてホストバインディングを設定します。
@@ -422,10 +470,11 @@ impl Vm {
     /// テキストのみをコンパイルし、ホストバインディング組み込み後にそのトップレベルを実行します。
     pub fn execute(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
-        crate::source::validate_source(source, name)?;
+        crate::source::validate_chunk_name(name)?;
+        self.check_source_len(source.len())?;
         let source = crate::dialect::rewrite(source)
             .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
-        crate::source::validate_source(&source, name)?;
+        self.check_source_len(source.len())?;
         let function = self
             .lua
             .load(source.as_ref())
@@ -460,20 +509,28 @@ impl Vm {
             Value::Function(function) => {
                 self.start(function, crate::value::encode(&self.lua, arguments)?)
             }
-            _ if self.addon_callbacks => Ok(RunOutcome::Missing),
-            _ => Err(VmError::new(
-                ErrorKind::InvalidArgument,
-                format!("{name} is not a function"),
-            )),
+            // 実ゲームの共通呼び出し（call_lua_function）は、対象が関数でなければ
+            // 何も実行せずエラーも記録しません。全プロファイルで「不在」として扱います。
+            _ => Ok(RunOutcome::Missing),
         }
+    }
+    /// ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+    fn check_source_len(&self, len: usize) -> Result<(), VmError> {
+        if let Some(max) = self.limits.max_source_bytes {
+            if len > max.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua source exceeds the host source limit",
+                ));
+            }
+        }
+        Ok(())
     }
     fn start(&mut self, function: Function, arguments: MultiValue) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
         {
             let mut control = self.control.borrow_mut();
-            control.remaining = self.limits.instruction_budget.get();
-            control.exhausted = false;
-            control.limit_line = None;
+            control.begin_entry(&self.limits);
             #[cfg(feature = "debug")]
             {
                 control.depth = 0;
@@ -512,6 +569,20 @@ impl Vm {
             self.synchronous.main_pending.set(false);
             return Err(error);
         }
+        if self.control.borrow().time_exceeded {
+            // 時間制限の超過は実ゲームでは通常のLuaエラーであり、VMは失敗状態になりません。
+            self.pending = None;
+            self.synchronous.main_pending.set(false);
+            let line = {
+                let mut control = self.control.borrow_mut();
+                control.time_exceeded = false;
+                control.deadline = None;
+                control.limit_line.take()
+            };
+            let mut error = VmError::new(ErrorKind::Lua, self.limits.timeout_message(line));
+            attach_trace(&self.lua, thread, &mut error, None, line);
+            return Err(error);
+        }
         if self.control.borrow().exhausted {
             self.failed.set(true);
             self.pending = None;
@@ -526,9 +597,11 @@ impl Vm {
                 let mut error = VmError::from(error);
                 let site = self.syntax_site.borrow_mut().take();
                 attach_trace(&self.lua, thread, &mut error, site, None);
-                self.failed.set(
-                    self.failed.get() || !self.addon_callbacks || error.kind != ErrorKind::Lua,
-                );
+                // 通常のLuaエラーではVMは失敗状態になりません（実ゲームのエラーステータス
+                // モデル: エラー後もVMは生存し、クラス側がステータスで管理します）。
+                // 制限・ホスト等の異常だけが従来どおり失敗状態にします。
+                self.failed
+                    .set(self.failed.get() || error.kind != ErrorKind::Lua);
                 self.pending = None;
                 self.synchronous.main_pending.set(false);
                 Err(error)
@@ -627,9 +700,16 @@ impl Vm {
     pub(crate) fn evaluate_watch_thread(&mut self, evaluator: &Thread) -> Result<Value, VmError> {
         let previous = {
             let mut control = self.control.borrow_mut();
-            let previous = (control.remaining, control.exhausted);
+            let previous = (
+                control.remaining,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            );
             control.remaining = 100_000;
             control.exhausted = false;
+            control.time_exceeded = false;
+            control.deadline = None;
             previous
         };
         self.synchronous.install_synchronous_hook(evaluator);
@@ -640,7 +720,12 @@ impl Vm {
         let exhausted = {
             let mut control = self.control.borrow_mut();
             let exhausted = control.exhausted;
-            (control.remaining, control.exhausted) = previous;
+            (
+                control.remaining,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            ) = previous;
             exhausted
         };
         if let Some(error) = self.synchronous.restore_error.borrow_mut().take() {

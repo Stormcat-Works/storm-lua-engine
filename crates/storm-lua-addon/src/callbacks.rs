@@ -1,5 +1,5 @@
 //! Borrowed host phases and synchronous callback delivery share one Lua state.
-use super::{invalid, Stage};
+use super::{invalid, ErrorState, Stage};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -27,7 +27,7 @@ pub struct AddonCallback {
     slots: Table,
     names: Rc<Vec<String>>,
     stage: Rc<Cell<Stage>>,
-    tick_disabled: Rc<Cell<bool>>,
+    error_state: Rc<ErrorState>,
     depth: Rc<Cell<usize>>,
     valid: Rc<Cell<bool>>,
     logs: LogReader,
@@ -59,7 +59,7 @@ impl AddonCallback {
     pub(crate) fn new(
         vm: Rc<RefCell<Vm>>,
         stage: Rc<Cell<Stage>>,
-        tick_disabled: Rc<Cell<bool>>,
+        error_state: Rc<ErrorState>,
         names: &[String],
     ) -> Result<Self, VmError> {
         let (lua, slots) = vm.borrow_mut().configure(|lua, env| {
@@ -83,7 +83,7 @@ impl AddonCallback {
             slots,
             names: Rc::new(names.to_vec()),
             stage,
-            tick_disabled,
+            error_state,
             depth: Rc::new(Cell::new(0)),
             valid: Rc::new(Cell::new(true)),
             logs,
@@ -125,7 +125,8 @@ impl AddonCallback {
         let result = self.synchronous.call_if_function(callback, arguments);
         if let Err(error) = &result {
             if error.kind == ErrorKind::Lua {
-                self.tick_disabled.set(true);
+                // 通常イベントの失敗はステータス5として記録します（E9）。
+                self.error_state.record(5, &error.message);
             } else {
                 self.stage.set(Stage::Failed);
             }

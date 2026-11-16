@@ -65,6 +65,60 @@ fn tick_lua_error_retains_globals_and_delivers_events_and_destroy() -> Result<()
 }
 
 #[test]
+fn status_five_auto_recovers_on_the_next_tick() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデル（E9）: onTick以外のコールバック失敗はステータス5となり、
+    // 報告後のtickでクリアされてonTickが再開します。onTick失敗（ステータス2）は残ります。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        g_savedata.ticks = 0
+        function onTick() g_savedata.ticks = g_savedata.ticks + 1 end
+        function onPlayerJoin() error('join failed') end
+    "#,
+        "=status-five",
+    )?;
+    addon.start()?;
+    assert_eq!(
+        addon
+            .dispatch("onPlayerJoin", &[])
+            .err()
+            .ok_or("expected Lua error")?
+            .kind,
+        ErrorKind::Lua
+    );
+    assert_eq!(addon.error_status(), 5);
+    assert_eq!(addon.error_log().len(), 1);
+    // 報告済みのため、このtickでステータスはクリアされ、onTickはまだ走りません。
+    assert_eq!(addon.tick(1)?, RunOutcome::Missing);
+    assert_eq!(addon.error_status(), 0);
+    assert!(addon.error_log().is_empty());
+    // 次のtickからonTickが再開します。
+    assert_eq!(addon.tick(1)?, RunOutcome::Completed);
+    assert_eq!(field(&addon, "ticks")?, Some(LuaValue::Integer(1)));
+    Ok(())
+}
+
+#[test]
+fn tick_accepts_zero_and_negative_game_ticks_as_integers() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのonTick引数は符号付き整数で、0以下も拒否されません（E18）。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        function onTick(game_ticks) g_savedata.seen = game_ticks end
+    "#,
+        "=game-ticks",
+    )?;
+    addon.start()?;
+    addon.tick(0)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(0)));
+    addon.tick(-30)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(-30)));
+    addon.tick(2147483647)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(2147483647)));
+    Ok(())
+}
+
+#[test]
 fn source_lua_error_still_restores_savedata_and_calls_create() -> Result<(), Box<dyn Error>> {
     let mut addon = Addon::new(AddonConfig {
         is_world_create: false,
@@ -135,7 +189,7 @@ fn game_addon_base_globals_do_not_include_select() -> Result<(), Box<dyn Error>>
 fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onTick() while true do end end; function onDestroy() end",
@@ -168,20 +222,32 @@ fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn ordinary_vm_still_fails_closed_after_lua_error() -> Result<(), Box<dyn Error>> {
+fn ordinary_vm_survives_lua_errors_but_limits_fail_closed() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデルでは、通常のLuaエラーでVMは失敗状態になりません（E9）。
     let mut vm = Vm::new(Default::default())?;
     assert_eq!(
         vm.execute(b"missing()", "=vehicle-policy")
             .err()
-            .ok_or("expected VM failure")?
+            .ok_or("expected Lua error")?
             .kind,
         ErrorKind::Lua
     );
-    assert!(vm.is_failed());
+    assert!(!vm.is_failed());
+    vm.execute(b"function onTick() end", "=vehicle-policy")?;
+    assert_eq!(vm.call("onTick")?, RunOutcome::Completed);
+    // 制限の超過は従来どおり失敗状態にします。
+    let mut vm = Vm::new(storm_lua_vm::ExecutionLimits {
+        instruction_budget: Some(std::num::NonZeroU64::new(100).ok_or("budget")?),
+        ..Default::default()
+    })?;
     assert_eq!(
-        vm.call("onTick").err().ok_or("expected VM failure")?.kind,
-        ErrorKind::Failed
+        vm.execute(b"while true do end", "=limit")
+            .err()
+            .ok_or("expected limit")?
+            .kind,
+        ErrorKind::Limit
     );
+    assert!(vm.is_failed());
     Ok(())
 }
 
@@ -297,10 +363,12 @@ fn borrowed_host_phase_supports_cached_alias_and_synchronous_callback() -> Resul
 
 #[test]
 fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error>> {
-    let mut addon = Addon::new(AddonConfig {
+    let mut config = AddonConfig {
         scoped_server: vec!["again".into()],
         ..Default::default()
-    })?;
+    };
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
+    let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let again = |_: &[LuaValue]| {
         target.dispatch("onVehicleSpawn", &[])?;
@@ -482,7 +550,7 @@ fn borrowed_predicates_share_budget_and_propagate_caught_exhaustion() -> Result<
         scoped_server: vec!["choose".into()],
         ..Default::default()
     };
-    config.limits.instruction_budget = std::num::NonZeroU64::new(2000).ok_or("budget")?;
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let attempts = std::cell::Cell::new(0);
@@ -523,7 +591,7 @@ fn borrowed_predicate_allocator_memory_error_propagates() -> Result<(), Box<dyn 
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -550,7 +618,7 @@ fn borrowed_predicate_c_buffer_runtime_error_rejects_candidate() -> Result<(), B
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -653,7 +721,7 @@ fn sdk_http_settlement_is_independent_of_destroyed_vm() -> Result<(), Box<dyn Er
 fn sdk_http_settlement_survives_terminal_instruction_failure() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onCreate() server.httpGet(27180,'/pending') end; function onTick() while true do end end",

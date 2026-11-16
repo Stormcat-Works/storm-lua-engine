@@ -7,13 +7,13 @@ export const ENVIRONMENT_CATALOG = {
     "pcall",
     "xpcall",
     "unpack",
-    "print"
+    "print",
+    "select"
   ],
   "gameFunctions": [
     "ipairs",
     "next",
     "pairs",
-    "select",
     "tonumber",
     "tostring",
     "type"
@@ -24,6 +24,7 @@ export const ENVIRONMENT_CATALOG = {
     "xpcall",
     "error",
     "assert",
+    "select",
     "setmetatable",
     "getmetatable",
     "rawget",
@@ -66,7 +67,6 @@ export const ENVIRONMENT_CATALOG = {
     "ipairs",
     "pairs",
     "next",
-    "select",
     "tonumber",
     "tostring",
     "map",

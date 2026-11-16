@@ -193,7 +193,7 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
         })
     });
     let mut c = configured(l);
-    c.limits.instruction_budget = std::num::NonZeroU64::MIN.saturating_add(1999);
+    c.limits.instruction_budget = Some(std::num::NonZeroU64::MIN.saturating_add(1999));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"while true do pcall(require,'loop')end", "@main.lua")
@@ -224,7 +224,7 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
         Rc::default(),
     );
     let mut c = configured(allocation);
-    c.limits.lua_memory_bytes = std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1);
+    c.limits.lua_memory_bytes = Some(std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"require('alloc')", "@main.lua")
@@ -348,7 +348,10 @@ fn completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm(
 }
 #[test]
 fn load_history_is_bounded_before_source_executes() -> Result<(), Box<dyn std::error::Error>> {
-    let mut vm = Microcontroller::new(Default::default())?;
+    // 保持履歴の上限は、ホストがソース長制限を有効化した場合に適用されます（J1）。
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.max_source_bytes = Some(std::num::NonZeroUsize::new(1024).ok_or("nonzero")?);
+    let mut vm = Microcontroller::new(config)?;
     for _ in 0..128 {
         vm.load(b"counter=(counter or 0)+1", "@same.lua")?;
     }

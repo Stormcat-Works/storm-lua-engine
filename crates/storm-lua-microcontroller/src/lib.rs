@@ -20,7 +20,7 @@ use storm_lua_vm::{
 };
 
 /// トップレベルコードが実行される前にプロパティが組み込まれます。
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct MicrocontrollerConfig {
     /// 大文字小文字を区別する型付きプロパティ値（UIウィジェットのメタデータは含みません）。
     pub properties: PropertyBag,
@@ -35,6 +35,29 @@ pub struct MicrocontrollerConfig {
     /// Optional native state-control namespace for an extended development harness.
     /// Never installed in the game environment or selected implicitly.
     pub control_namespace: Option<String>,
+    /// ホスト共有のCRT乱数コンテキスト。指定した場合は `deterministic_random` より優先します。
+    /// 未指定時のGameプロファイル既定は、エンジン組み込みの共有CRT互換ストリームです（J2）。
+    pub random: Option<storm_lua_vm::random::SharedCrtRandom>,
+    /// trueの場合、Gameプロファイルの既定（共有CRT互換ストリーム）ではなく
+    /// VMごとの決定的ストリームを使います（J2のホスト選択肢）。
+    pub deterministic_random: bool,
+}
+impl std::fmt::Debug for MicrocontrollerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MicrocontrollerConfig")
+            .field("properties", &self.properties)
+            .field("limits", &self.limits)
+            .field("environment", &self.environment)
+            .field("bindings", &self.bindings)
+            .field("require_loader", &self.require_loader)
+            .field("control_namespace", &self.control_namespace)
+            .field(
+                "random",
+                &self.random.as_ref().map(|_| "<host CRT context>"),
+            )
+            .field("deterministic_random", &self.deterministic_random)
+            .finish()
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -52,12 +75,21 @@ struct State {
     size: (u32, u32),
     http: storm_lua_spec::http::HttpQueue,
     commands: CommandBuffer,
+    /// 実ゲームのエラーステータス（スクリプト状態の +0x350 相当）。
+    /// 0=正常、1=onDraw失敗、2=onTick失敗/時間超過、3=ロード失敗、5=httpReply失敗。
+    error_status: u32,
+    /// エラーリング（実ゲームのhandle_errorと同じく最大11件、古い順）。
+    errors: Vec<String>,
+    /// 実行中の入口に対応するエラーステータス。継続の再開でも入口の値を保ちます。
+    entry_error_status: u32,
 }
 /// 明示的なtick/draw駆動と再利用可能なコマンドストレージを備えたスレッド拘束型VM。
 pub struct Microcontroller {
     vm: Vm,
     state: Rc<RefCell<State>>,
     limits: ExecutionLimits,
+    random: Option<storm_lua_vm::random::SharedCrtRandom>,
+    deterministic_random: bool,
     sources: Vec<storm_lua_vm::source::SourceChunk>,
     source_bytes: usize,
     pending_source: Option<storm_lua_vm::source::SourceChunk>,
@@ -77,6 +109,11 @@ impl Microcontroller {
             loader.validate_configuration(config.environment, &config.bindings)?;
         }
         let mut vm = Vm::with_environment(config.limits, config.environment)?;
+        if let Some(random) = &config.random {
+            vm.install_crt_random(Rc::clone(random))?;
+        } else if config.deterministic_random {
+            vm.use_deterministic_random()?;
+        }
         let state = Rc::new(RefCell::new(State {
             input: CompositeSignal::default(),
             input_changed: false,
@@ -86,6 +123,9 @@ impl Microcontroller {
             size: (0, 0),
             http: storm_lua_spec::http::HttpQueue::new().map_err(http_error)?,
             commands: CommandBuffer::new(65536, 1024 * 1024),
+            error_status: 0,
+            errors: Vec::new(),
+            entry_error_status: 3,
         }));
         vm.configure(|lua, env| bindings::install(lua, env, Rc::clone(&state)))?;
         let bindings = controls::with_controls(
@@ -117,6 +157,8 @@ impl Microcontroller {
             vm,
             state,
             limits: config.limits,
+            random: config.random,
+            deterministic_random: config.deterministic_random,
             sources: Vec::new(),
             source_bytes: 0,
             pending_source: None,
@@ -134,9 +176,12 @@ impl Microcontroller {
     /// Chunk locals are distinct. A failed or abandoned suspended load is not saved.
     pub fn load(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.vm.ensure_idle()?;
-        storm_lua_vm::source::validate_source(source, name)?;
-        if self.sources.len() >= storm_lua_vm::source::MAX_PROGRAM_CHUNKS
-            || source.len() > storm_lua_vm::source::MAX_PROGRAM_BYTES - self.source_bytes
+        storm_lua_vm::source::validate_chunk_name(name)?;
+        // ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+        // 有効化時は保持プログラム全体の上限（128チャンク／8MiB）も併せて適用します。
+        if self.limits.max_source_bytes.is_some()
+            && (self.sources.len() >= storm_lua_vm::source::MAX_PROGRAM_CHUNKS
+                || source.len() > storm_lua_vm::source::MAX_PROGRAM_BYTES - self.source_bytes)
         {
             return Err(VmError::new(
                 ErrorKind::Limit,
@@ -147,7 +192,11 @@ impl Microcontroller {
             source: source.to_vec(),
             name: name.to_owned(),
         });
-        self.state.borrow_mut().phase = Phase::Init;
+        {
+            let mut state = self.state.borrow_mut();
+            state.phase = Phase::Init;
+            state.entry_error_status = 3;
+        }
         let result = self.vm.execute(source, name);
         self.finish(result)
     }
@@ -168,6 +217,12 @@ impl Microcontroller {
             let mut state = self.state.borrow_mut();
             state.input = *input;
             state.phase = Phase::Tick;
+            state.entry_error_status = 2;
+        }
+        // エラー状態の間、実ゲームはonTickをスキップします（E9）。入力の取り込みだけ行います。
+        if self.state.borrow().error_status != 0 {
+            self.state.borrow_mut().phase = Phase::Idle;
+            return Ok(RunOutcome::Missing);
         }
         let result = self.vm.call_with(name, arguments);
         self.finish(result)
@@ -198,6 +253,12 @@ impl Microcontroller {
             state.phase = Phase::Draw;
             state.size = (width, height);
             state.commands.clear();
+            state.entry_error_status = 1;
+        }
+        // エラー状態の間、実ゲームはonDrawをスキップします（E9）。
+        if self.state.borrow().error_status != 0 {
+            self.state.borrow_mut().phase = Phase::Idle;
+            return Ok(RunOutcome::Missing);
         }
         let result = self.vm.call_with(name, arguments);
         self.finish(result)
@@ -209,6 +270,18 @@ impl Microcontroller {
                 if result.is_ok() {
                     self.source_bytes += chunk.source.len();
                     self.sources.push(chunk);
+                }
+            }
+            // 通常のLuaエラーは実ゲームのエラーステータスとリングへ記録します（E9）。
+            // 制限・ホスト等の異常はVM側の失敗状態で表すため、ここでは記録しません。
+            if let Err(error) = &result {
+                if error.kind == ErrorKind::Lua {
+                    let mut state = self.state.borrow_mut();
+                    state.error_status = state.entry_error_status;
+                    if state.errors.len() > 10 {
+                        state.errors.remove(0);
+                    }
+                    state.errors.push(error.message.clone());
                 }
             }
         }
@@ -297,9 +370,20 @@ impl Microcontroller {
     pub fn is_suspended(&self) -> bool {
         self.vm.is_suspended()
     }
-    /// 実行時エラーの発生後にこのVMをリセットする必要があるかどうか。
+    /// 制限・ホスト等の異常でVMが失敗状態かどうか。通常のLuaエラーでは
+    /// 失敗状態になりません（[`Microcontroller::error_status`]を参照）。
     pub fn is_failed(&self) -> bool {
         self.vm.is_failed()
+    }
+    /// 実ゲームのエラーステータス（0=正常、1=onDraw失敗、2=onTick失敗/時間超過、
+    /// 3=ロード失敗、5=httpReply失敗）。エラー状態の間はonTick/onDrawが
+    /// スキップされます。リセットで0に戻ります。
+    pub fn error_status(&self) -> u32 {
+        self.state.borrow().error_status
+    }
+    /// 記録されたエラーメッセージ（最大11件、古い順）。
+    pub fn error_log(&self) -> Vec<String> {
+        self.state.borrow().errors.clone()
     }
     /// Recreate with current properties/bindings and replay all completed loads
     /// in order. Module caches are fresh; the host loader is called again.
@@ -313,6 +397,8 @@ impl Microcontroller {
             bindings: self.bindings.clone(),
             control_namespace: self.control_namespace.clone(),
             require_loader: self.require_loader.clone(),
+            random: self.random.clone(),
+            deterministic_random: self.deterministic_random,
         };
         let mut next = Self::new(config)?;
         if self.dev_logs {
@@ -358,6 +444,8 @@ impl Microcontroller {
             .reply(token, reply)
             .map_err(http_error)?;
         use storm_lua_vm::value::LuaValue;
+        // httpReplyはエラー状態でも配送されます（実ゲームはtick末尾の保守処理を継続します、E9）。
+        self.state.borrow_mut().entry_error_status = 5;
         let result = self.vm.call_with(
             "httpReply",
             &[

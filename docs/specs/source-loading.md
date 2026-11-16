@@ -21,7 +21,7 @@ Global state is shared; chunk locals remain local to that chunk. Two logical nam
 
 The Rust callback only compiles and returns a Lua Function to an internal Lua wrapper. That wrapper invokes it after the C callback returns. It runs on the calling coroutine, keeping the parent's instruction budget, phase, source-qualified breakpoints and suspension/resume. The public owned-value host-function interface still does not transport Lua Functions or permit reentry.
 
-One chunk is at most 1 MiB. Chunk/module names are nonempty UTF-8 text, at most 1024 bytes, without NUL. Module resolution is capped at 1024 successfully compiled sources and 8 MiB cumulative source bytes per VM. The Lua heap limit still applies to compiled functions and cached state. Host callback runtime/allocations remain host responsibilities; no wall-clock interruption guarantee is added.
+For this include-once loader, one chunk is at most 1 MiB. Chunk/module names are nonempty UTF-8 text, at most 1024 bytes, without NUL. Module resolution is capped at 1024 successfully compiled sources and 8 MiB cumulative source bytes per VM. The Lua heap limit, when the host configures one, still applies to compiled functions and cached state. Direct script execution has no source-length limit unless the host enables one in `ExecutionLimits`; the per-entry wall-clock limit is described in [runtime host](runtime-host.md#execution-limits).
 
 ## Vehicle load history
 
@@ -31,7 +31,7 @@ Only completed loads enter the replay history. A debugger-suspended load is pend
 
 `reset` reinstalls current properties, host bindings and require loader, then reexecutes every completed load in its original order. The module cache is new, so the host may be asked for sources again. Deterministic reset requires the host to keep a consistent source snapshot. This resets runtime I/O and debugger/HTTP identities, not the host closure's external state. No intervening ticks, draws, HTTP replies, property changes or external effects are replayed; this is initialization replay, not a session snapshot.
 
-History is bounded to 128 chunks and 8 MiB; overflow is rejected before executing another chunk. Empty text is a valid retained chunk. Reset replaces the current instance only after all replayed chunks succeed. External callbacks invoked during a failed replay cannot be rolled back. For a different program, create another VM instead of accumulating edited copies with load.
+When the host enables a source-length limit, history is bounded to 128 chunks and 8 MiB and overflow is rejected before executing another chunk; with source limits off (the default) the retained history is not capped by the engine. Empty text is a valid retained chunk. Reset replaces the current instance only after all replayed chunks succeed. External callbacks invoked during a failed replay cannot be rolled back. For a different program, create another VM instead of accumulating edited copies with load.
 
 ## Addon lifecycle
 

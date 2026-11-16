@@ -17,6 +17,14 @@
 - 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も identity を除き完全一致を要求する（`Wrong number of args`）。
 - multiply の合成順序は、実ゲームのバイナリと現行実装が一致することを乱数行列200ケースの数値比較で確認したため変更していない。
 - `multiplyXYZW` のベクトル成分を、実ゲームどおり f32 へ丸めてから計算するようにした。
+### VMコア意味論の実ゲーム仕様への整合
+
+- MC APIの引数意味論を実ゲームへ合わせた。引数の個数が合わない呼び出しはエラーにならず戻り値0個で無言に戻り、値の型はLuaの変換規則で変換され、変換できない値は0として扱われる。検査の順序は個数→phaseフラグ→変換。トップレベルとhttpReplyでもI/O・描画はoutsideエラーになる。Compositeチャンネルはcvttsd2si相当の変換となり、範囲外の大きな値やNaNでもエラーにならない。
+- エラー後の回復モデルを実ゲームのエラーステータスへ合わせた。通常のLuaエラーではVMは失敗状態にならず、Vehicleはステータス（onDraw=1、onTick=2、ロード=3、httpReply=5）と最大11件のエラーリングを保持し、エラー中はonTick/onDrawをスキップする一方でhttpReplyは配送を続ける。Addonはステータス（onTick=2、ロード=3、それ以外=5）を保持し、ステータス5は報告後のtickで自動復帰する。どちらも`error_status`/`error_log`で参照できる。
+- 実行制限を再構成した。壁時計1001msの時間制限を既定で有効にし、超過は実ゲームと同じ文面のLuaエラーになる。命令数・Luaメモリ・ソース長の上限は既定で無効になり、ホストが明示した場合だけ効く（`ExecutionLimits`の各項目は`Option`になった）。
+- Gameプロファイルの`math.random`の既定を、実ゲームと同じCRT互換のプロセス共有ストリームへ変えた。VMごとの決定的ストリームは`deterministic_random`オプションで選べる。Vehicleの`MicrocontrollerConfig`にもホストCRTコンテキスト（`random`）と`deterministic_random`を追加した。
+- Vehicle/Addon環境から`select`を除き（baseは6関数のみ）、`string.dump`を戻した（stringライブラリは完全版）。
+- 関数でないコールバックは、エラーではなく「不在」として扱う。Addonの`tick(game_ticks)`は符号付き整数を受け付け、0以下でも拒否しない。
 
 ### フレームが変わったかどうかの確かめ方
 

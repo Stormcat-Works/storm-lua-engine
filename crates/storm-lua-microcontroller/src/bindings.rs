@@ -1,18 +1,50 @@
 //! APIの登録および数値変換。描画アルゴリズムは別のモジュールで実装されます。
+//!
+//! 引数の意味論は実ゲームに合わせます（E1/E2）。検査の順序は
+//! (1) 引数の個数（arity）→ 不一致は無言で戻る（戻り値0個）、
+//! (2) phase（I/O・描画許可フラグ）→ 違反は実ゲーム文言のLuaエラー、
+//! (3) 値の変換 → 変換できない値は0/空として扱う、
+//! の順です。個数の検査がないAPI（screen.getWidth/getHeight/drawClear）は
+//! 任意の個数を受け付けます。
 use super::{Phase, State};
 use std::{cell::RefCell, rc::Rc};
 use storm_lua_spec::{draw::DrawCommand, property::PropertyValue, screen::Rgba8};
 use storm_lua_vm::{
-    backend::{BackendError, BackendResult, Lua, LuaString, Table, Value, Variadic},
+    backend::{BackendError, BackendResult, Lua, LuaString, MultiValue, Table, Value, Variadic},
     runner::{ErrorKind, VmError},
 };
 
-fn channel(c: i64) -> Option<usize> {
+/// Compositeチャンネル引数の変換（E25）。実ゲームはLua数値をcvttsd2siで
+/// i32へ変換（小数部は切り捨て、範囲外・NaNでは不定値）してから内部
+/// インデックス0..31へ写します。有効範囲1..=32の判定において、Rustの
+/// `as i32`（飽和＋切り捨て）は不定値の場合と観測可能な差がありません。
+fn channel(value: f64) -> Option<usize> {
+    let c = value as i32;
     if (1..=32).contains(&c) {
-        Some(c as usize - 1)
+        Some((c - 1) as usize)
     } else {
         None
     }
+}
+/// 実ゲームの変換ヘルパー（lua_tonumberx相当）で数値を得ます。実ゲームは
+/// 変換の成功フラグを無視するため、変換できない値は0.0になります
+/// （数値文字列はLuaの規則で変換され、真偽値は0になります）。
+fn coerced_number(lua: &Lua, value: Option<&Value>) -> f64 {
+    value
+        .and_then(|value| lua.coerce_number(value.clone()).ok().flatten())
+        .unwrap_or(0.0)
+}
+/// lua_tolstring相当で文字列を得ます。変換できない値は空文字列にします
+/// （実ゲームでNULLが返る場合の扱いは未確定のため、描画されない空文字列で近似）。
+fn coerced_text(lua: &Lua, value: Option<&Value>) -> Vec<u8> {
+    value
+        .and_then(|value| lua.coerce_string(value.clone()).ok().flatten())
+        .map(|string| string.as_bytes().to_vec())
+        .unwrap_or_default()
+}
+/// Lua値の真偽（lua_toboolean相当）。falseとnilだけが偽です。
+fn truthy(value: Option<&Value>) -> bool {
+    !matches!(value, None | Some(Value::Nil) | Some(Value::Boolean(false)))
 }
 fn resource(message: &str) -> BackendError {
     BackendError::external(VmError::new(ErrorKind::Limit, message))
@@ -29,21 +61,22 @@ fn outside(lua: &Lua, family: &str, callback: &str) -> BackendError {
     });
     BackendError::RuntimeError(position.unwrap_or_default() + &message)
 }
-/// input/outputはonDrawの実行中に呼ぶとエラー。トップレベルとhttpReplyでの挙動は
-/// 実ゲームで未測定のため、従来の既定値（0/false、書き込み無効）を維持します。
+/// I/O許可フラグの検査（E4）。onTickの実行中だけ許可され、それ以外
+/// （トップレベル・onDraw・httpReplyを含む）は実ゲームと同じ文言のLuaエラーです。
 fn tick_only(lua: &Lua, phase: Phase, family: &str) -> BackendResult<()> {
-    if phase == Phase::Draw {
-        Err(outside(lua, family, "onTick"))
-    } else {
+    if phase == Phase::Tick {
         Ok(())
+    } else {
+        Err(outside(lua, family, "onTick"))
     }
 }
-/// screenはonTickの実行中に呼ぶとエラー。それ以外の非描画phaseでは従来どおり何もしません。
-fn draw_only(lua: &Lua, phase: Phase) -> BackendResult<bool> {
-    match phase {
-        Phase::Draw => Ok(true),
-        Phase::Tick => Err(outside(lua, "screen", "onDraw")),
-        Phase::Init | Phase::Idle => Ok(false),
+/// 描画許可フラグの検査（E4）。onDrawの実行中だけ許可され、それ以外
+/// （トップレベル・onTick・httpReplyを含む）は実ゲームと同じ文言のLuaエラーです。
+fn draw_only(lua: &Lua, phase: Phase) -> BackendResult<()> {
+    if phase == Phase::Draw {
+        Ok(())
+    } else {
+        Err(outside(lua, "screen", "onDraw"))
     }
 }
 
@@ -55,35 +88,43 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     input.raw_set(
         "getNumber",
-        lua.create_function(move |lua, c: i64| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 1 {
+                return Ok(MultiValue::new());
+            }
             let s = s.borrow();
             tick_only(lua, s.phase, "input")?;
-            Ok(if s.phase == Phase::Tick {
-                channel(c).map_or(0.0, |i| f64::from(s.input.numbers[i]))
-            } else {
-                0.0
-            })
+            let value = channel(coerced_number(lua, args.first()))
+                .map_or(0.0, |i| f64::from(s.input.numbers[i]));
+            Ok(MultiValue::from_vec(vec![Value::Number(value)]))
         })?,
     )?;
     let s = Rc::clone(&state);
     input.raw_set(
         "getBool",
-        lua.create_function(move |lua, c: i64| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 1 {
+                return Ok(MultiValue::new());
+            }
             let s = s.borrow();
             tick_only(lua, s.phase, "input")?;
-            Ok(s.phase == Phase::Tick && channel(c).is_some_and(|i| s.input.booleans[i]))
+            let value =
+                channel(coerced_number(lua, args.first())).is_some_and(|i| s.input.booleans[i]);
+            Ok(MultiValue::from_vec(vec![Value::Boolean(value)]))
         })?,
     )?;
     let s = Rc::clone(&state);
     output.raw_set(
         "setNumber",
-        lua.create_function(move |lua, (c, v): (i64, f64)| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 2 {
+                return Ok(());
+            }
             let mut s = s.borrow_mut();
             tick_only(lua, s.phase, "output")?;
-            if s.phase == Phase::Tick {
-                if let Some(i) = channel(c) {
-                    s.output.numbers[i] = v as f32;
-                }
+            if let Some(i) = channel(coerced_number(lua, args.first())) {
+                // 値はf64→f32へ変換して保持します。NaN/Infもそのまま通します。
+                s.output.numbers[i] = coerced_number(lua, args.get(1)) as f32;
             }
             Ok(())
         })?,
@@ -91,13 +132,14 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     output.raw_set(
         "setBool",
-        lua.create_function(move |lua, (c, v): (i64, bool)| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 2 {
+                return Ok(());
+            }
             let mut s = s.borrow_mut();
             tick_only(lua, s.phase, "output")?;
-            if s.phase == Phase::Tick {
-                if let Some(i) = channel(c) {
-                    s.output.booleans[i] = v;
-                }
+            if let Some(i) = channel(coerced_number(lua, args.first())) {
+                s.output.booleans[i] = truthy(args.get(1));
             }
             Ok(())
         })?,
@@ -105,59 +147,67 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let s = Rc::clone(&state);
     property.raw_set(
         "getNumber",
-        lua.create_function(move |_, label: LuaString| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 1 {
+                return Ok(MultiValue::new());
+            }
             let s = s.borrow();
-            Ok(match s.properties.get(label.as_bytes().as_ref()) {
+            let label = coerced_text(lua, args.first());
+            let value = match s.properties.get(&label) {
                 Some(PropertyValue::Number(n)) => *n,
                 _ => 0.0,
-            })
+            };
+            Ok(MultiValue::from_vec(vec![Value::Number(value)]))
         })?,
     )?;
     let s = Rc::clone(&state);
     property.raw_set(
         "getBool",
-        lua.create_function(move |_, label: LuaString| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 1 {
+                return Ok(MultiValue::new());
+            }
             let s = s.borrow();
-            Ok(matches!(
-                s.properties.get(label.as_bytes().as_ref()),
-                Some(PropertyValue::Bool(true))
-            ))
+            let label = coerced_text(lua, args.first());
+            let value = matches!(s.properties.get(&label), Some(PropertyValue::Bool(true)));
+            Ok(MultiValue::from_vec(vec![Value::Boolean(value)]))
         })?,
     )?;
     let s = Rc::clone(&state);
     property.raw_set(
         "getText",
-        lua.create_function(move |lua, label: LuaString| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 1 {
+                return Ok(MultiValue::new());
+            }
             let s = s.borrow();
-            let bytes = match s.properties.get(label.as_bytes().as_ref()) {
-                Some(PropertyValue::Text(bytes)) => bytes.as_slice(),
-                _ => b"",
+            let label = coerced_text(lua, args.first());
+            let bytes = match s.properties.get(&label) {
+                Some(PropertyValue::Text(bytes)) => bytes.clone(),
+                _ => Vec::new(),
             };
-            lua.create_string(bytes)
+            Ok(MultiValue::from_vec(vec![Value::String(
+                lua.create_string(&bytes)?,
+            )]))
         })?,
     )?;
     let s = Rc::clone(&state);
     screen.raw_set(
         "getWidth",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, _: Variadic<Value>| {
+            // 個数の検査はありません（実ゲームはgettopを見ません）。
             let s = s.borrow();
-            Ok(if draw_only(lua, s.phase)? {
-                s.size.0
-            } else {
-                0
-            })
+            draw_only(lua, s.phase)?;
+            Ok(s.size.0)
         })?,
     )?;
     let s = Rc::clone(&state);
     screen.raw_set(
         "getHeight",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, _: Variadic<Value>| {
             let s = s.borrow();
-            Ok(if draw_only(lua, s.phase)? {
-                s.size.1
-            } else {
-                0
-            })
+            draw_only(lua, s.phase)?;
+            Ok(s.size.1)
         })?,
     )?;
     for definition in storm_lua_spec::catalog::FUNCTIONS
@@ -168,38 +218,27 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             .path
             .strip_prefix("screen.")
             .ok_or_else(|| BackendError::RuntimeError("invalid screen API catalog path".into()))?;
+        // 実ゲームの引数個数（範囲外は無言で戻ります）。drawClearは個数の検査がありません。
+        let arity: std::ops::RangeInclusive<usize> = match name {
+            "setColor" => 3..=4,
+            "drawClear" => 0..=usize::MAX,
+            "drawLine" | "drawRect" | "drawRectF" => 4..=4,
+            "drawCircle" | "drawCircleF" => 3..=3,
+            "drawTriangle" | "drawTriangleF" => 6..=6,
+            "drawText" => 3..=3,
+            "drawTextBox" => 5..=7,
+            _ => 0..=usize::MAX,
+        };
         let s = Rc::clone(&state);
         screen.raw_set(
             name,
             lua.create_function(move |lua, args: Variadic<Value>| {
-                if !draw_only(lua, s.borrow().phase)? {
+                if !arity.contains(&args.len()) {
                     return Ok(());
                 }
-                let number = |i: usize| -> BackendResult<f64> {
-                    let value = args.get(i).cloned().ok_or_else(|| {
-                        BackendError::RuntimeError(format!("{name}: missing argument {}", i + 1))
-                    })?;
-                    lua.coerce_number(value)?.ok_or_else(|| {
-                        BackendError::RuntimeError(format!(
-                            "{name}: argument {} must be numeric",
-                            i + 1
-                        ))
-                    })
-                };
-                let text = |i: usize| -> BackendResult<Vec<u8>> {
-                    let value = args.get(i).cloned().ok_or_else(|| {
-                        BackendError::RuntimeError(format!("{name}: missing text"))
-                    })?;
-                    let string = lua.coerce_string(value)?.ok_or_else(|| {
-                        BackendError::RuntimeError(format!(
-                            "{name}: text must be a string or number"
-                        ))
-                    })?;
-                    if string.as_bytes().len() > 1024 * 1024 {
-                        return Err(resource("screen text exceeds 1 MiB"));
-                    }
-                    Ok(string.as_bytes().to_vec())
-                };
+                draw_only(lua, s.borrow().phase)?;
+                let number = |i: usize| coerced_number(lua, args.get(i));
+                let text = |i: usize| coerced_text(lua, args.get(i));
                 let color = |n: f64| -> BackendResult<u8> {
                     if !n.is_finite() {
                         return Err(BackendError::RuntimeError("non-finite color".into()));
@@ -208,46 +247,46 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 };
                 let command = match name {
                     "setColor" => DrawCommand::SetColor(Rgba8([
-                        color(number(0)?)?,
-                        color(number(1)?)?,
-                        color(number(2)?)?,
+                        color(number(0))?,
+                        color(number(1))?,
+                        color(number(2))?,
                         if args.len() > 3 {
-                            color(number(3)?)?
+                            color(number(3))?
                         } else {
                             255
                         },
                     ])),
                     "drawClear" => DrawCommand::Clear,
                     "drawLine" => {
-                        DrawCommand::Line([[number(0)?, number(1)?], [number(2)?, number(3)?]])
+                        DrawCommand::Line([[number(0), number(1)], [number(2), number(3)]])
                     }
                     "drawRect" | "drawRectF" => DrawCommand::Rect(
-                        [number(0)?, number(1)?, number(2)?, number(3)?],
+                        [number(0), number(1), number(2), number(3)],
                         name == "drawRectF",
                     ),
                     "drawCircle" | "drawCircleF" => DrawCommand::Circle(
-                        [number(0)?, number(1)?, number(2)?],
+                        [number(0), number(1), number(2)],
                         name == "drawCircleF",
                     ),
                     "drawTriangle" | "drawTriangleF" => DrawCommand::Triangle(
                         [
-                            [number(0)?, number(1)?],
-                            [number(2)?, number(3)?],
-                            [number(4)?, number(5)?],
+                            [number(0), number(1)],
+                            [number(2), number(3)],
+                            [number(4), number(5)],
                         ],
                         name == "drawTriangleF",
                     ),
-                    "drawText" => DrawCommand::Text([number(0)?, number(1)?], text(2)?),
+                    "drawText" => DrawCommand::Text([number(0), number(1)], text(2)),
                     "drawTextBox" => DrawCommand::TextBox(
                         [
-                            number(0)?,
-                            number(1)?,
-                            number(2)?,
-                            number(3)?,
-                            number(5)?,
-                            number(6)?,
+                            number(0),
+                            number(1),
+                            number(2),
+                            number(3),
+                            number(5),
+                            number(6),
                         ],
-                        text(4)?,
+                        text(4),
                     ),
                     _ => {
                         return Err(BackendError::RuntimeError(
@@ -265,19 +304,25 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     let maps = Rc::clone(&state);
     screen.raw_set(
         "drawMap",
-        lua.create_function(move |lua, (x, z, zoom): (f64, f64, f64)| {
-            let mut state = maps.borrow_mut();
-            if !draw_only(lua, state.phase)? {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            if args.len() != 3 {
                 return Ok(());
             }
-            if ![x, z, zoom].iter().all(|n| n.is_finite()) {
+            let mut state = maps.borrow_mut();
+            draw_only(lua, state.phase)?;
+            let values = [
+                coerced_number(lua, args.first()),
+                coerced_number(lua, args.get(1)),
+                coerced_number(lua, args.get(2)),
+            ];
+            if !values.iter().all(|n| n.is_finite()) {
                 return Err(BackendError::RuntimeError(
                     "map coordinates must be finite".into(),
                 ));
             }
             state
                 .commands
-                .push(DrawCommand::Map([x, z, zoom]))
+                .push(DrawCommand::Map(values))
                 .map_err(|e| resource(&e.to_string()))
         })?,
     )?;
@@ -292,12 +337,22 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             .map_err(BackendError::external)?;
         screen.raw_set(
             format!("setMapColor{name}"),
-            lua.create_function(move |lua, (r, g, b, a): (f64, f64, f64, Option<f64>)| {
-                let mut state = palette.borrow_mut();
-                if !draw_only(lua, state.phase)? {
+            lua.create_function(move |lua, args: Variadic<Value>| {
+                if !(3..=4).contains(&args.len()) {
                     return Ok(());
                 }
-                let values = [r, g, b, a.unwrap_or(255.0)];
+                let mut state = palette.borrow_mut();
+                draw_only(lua, state.phase)?;
+                let values = [
+                    coerced_number(lua, args.first()),
+                    coerced_number(lua, args.get(1)),
+                    coerced_number(lua, args.get(2)),
+                    if args.len() > 3 {
+                        coerced_number(lua, args.get(3))
+                    } else {
+                        255.0
+                    },
+                ];
                 if !values.iter().all(|v| v.is_finite()) {
                     return Err(BackendError::RuntimeError(
                         "map palette color must be finite".into(),

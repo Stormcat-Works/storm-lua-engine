@@ -37,6 +37,10 @@ pub fn validate_source(source: &[u8], name: &str) -> Result<(), VmError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(VmError::new(ErrorKind::Limit, "Lua source exceeds 1 MiB"));
     }
+    validate_chunk_name(name)
+}
+/// チャンク名だけを検証します。ソース長制限はホスト設定（`ExecutionLimits`）側の責務です。
+pub fn validate_chunk_name(name: &str) -> Result<(), VmError> {
     if name.is_empty() || name.len() > 1024 || name.contains('\0') {
         return Err(VmError::new(
             ErrorKind::InvalidArgument,

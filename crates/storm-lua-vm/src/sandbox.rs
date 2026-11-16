@@ -24,10 +24,9 @@ pub(crate) fn environment(
     for name in ["string", "table", "math"] {
         env.raw_set(name, globals.raw_get::<Table>(name)?)?;
     }
-    // Lua文字列値はこのメタテーブルを共有するため、元のテーブルからもバイトコードダンプ（string.dump）を削除します。
-    globals
-        .get::<Table>("string")?
-        .raw_set("dump", Value::Nil)?;
+    // string ライブラリは実ゲームと同じ完全版です（string.dump を含む）。
+    // チャンクの読み込みはテキスト専用のため、ダンプしたバイトコードを
+    // 実行に戻す経路はありません（E14）。
     if profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
         env.raw_set(
             "unpack",
@@ -35,6 +34,15 @@ pub(crate) fn environment(
         )?;
     }
     install_random(lua, &env.get::<Table>("math")?)?;
+    if profile == storm_lua_spec::environment::EnvironmentProfile::Game {
+        // Gameプロファイルの既定は、実ゲームと同じCRT互換のプロセス共有ストリームです（J2）。
+        // VMごとの決定的ストリームはホストが明示的に選択した場合だけ使います。
+        crate::random::install(
+            lua,
+            &env.get::<Table>("math")?,
+            crate::random::shared_builtin_crt(),
+        )?;
+    }
     Ok(env)
 }
 /// `math.random` の区間引数を PUC Lua 5.3 の `luaL_checkinteger` と同じ規則で検証します。
@@ -63,9 +71,10 @@ fn random_interval_arg(lua: &Lua, value: &Value, index: usize) -> mlua::Result<i
     }
 }
 
-fn install_random(lua: &Lua, math: &Table) -> mlua::Result<()> {
-    // PUC-Lua 5.3のC言語RNGはプロセス全体で共有されます。ローカルな決定論的ストリームによりVM間の結合を回避します。
-    // これは再現性と分離を保証するものであり、ゲームの未ドキュメントの乱数列を再現するものではありません。
+pub(crate) fn install_random(lua: &Lua, math: &Table) -> mlua::Result<()> {
+    // VMごとの決定的ストリームです。Gameプロファイルの既定は実ゲームと同じ
+    // CRT互換の共有ストリームであり、こちらはホストが明示的に選択した場合
+    // （およびExtendedプロファイル）だけ使われます（J2）。
     let seed = Rc::new(Cell::new(1_u64));
     let state = Rc::clone(&seed);
     math.raw_set(
@@ -127,9 +136,15 @@ pub(crate) fn protect_calls(
     lua: &Lua,
     env: &Table,
     control: Rc<std::cell::RefCell<crate::runner::HookControl>>,
+    limits: crate::ExecutionLimits,
 ) -> mlua::Result<()> {
     let check = lua.create_function(move |_, ()| {
-        if control.borrow().exhausted {
+        let state = control.borrow();
+        if state.time_exceeded {
+            Err(mlua::Error::RuntimeError(
+                limits.timeout_message(state.limit_line),
+            ))
+        } else if state.exhausted {
             Err(mlua::Error::RuntimeError(
                 "instruction budget exceeded".into(),
             ))
@@ -178,7 +193,7 @@ mod tests {
 
     #[test]
     fn random_rejects_numbers_without_integer_representation() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         // わずかでも小数部を持つ数、範囲外の数、NaN は PUC と同じ文面で拒否します
         // （以前は mlua の i64 変換が切り捨てて受理していました）。
         for arg in [1.5, 2.5, 0.5, -1.5, 1e19, f64::NAN, f64::INFINITY] {
@@ -208,7 +223,7 @@ mod tests {
 
     #[test]
     fn random_rejects_non_numbers_with_puc_type_error() {
-        let (lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let message = random_error(&math, true);
         assert!(
             message.contains("bad argument #1 to 'random' (number expected, got boolean)"),
@@ -228,7 +243,7 @@ mod tests {
 
     #[test]
     fn random_accepts_integral_and_coerced_forms_unchanged() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let random: mlua::Function = math.get("random").unwrap();
         // 整数値 float は従来どおり受理します。
         let value: i64 = random.call(3.0).unwrap();
@@ -254,7 +269,7 @@ mod tests {
 
     #[test]
     fn random_interval_contract_and_draw_accounting_unchanged() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         // 空区間は文書化済みの VM 文面のままです（契約差として記録済み）。
         let message = random_error(&math, (3, 1));
         assert!(message.contains("invalid random interval"), "{message}");
@@ -262,7 +277,8 @@ mod tests {
         assert!(message.contains("invalid random interval"), "{message}");
 
         // 拒否された呼び出しは乱数ドローを消費しません。
-        let (_lua2, math2) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua2, math2) =
+            sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let random2: mlua::Function = math2.get("random").unwrap();
         let expected: i64 = random2.call(10).unwrap();
         let _ = random_error(&math, 1.5);

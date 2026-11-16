@@ -14,6 +14,46 @@ pub trait CrtRandomSource {
 /// A shared execution-context resource, retained through addon savedata reload.
 pub type SharedCrtRandom = Rc<dyn CrtRandomSource>;
 
+/// エンジン組み込みのMSVC CRT互換ストリーム。実ゲームが使うCRTの
+/// `rand`/`srand`（乗算214013・加算2531011、上位ビットから15bitを取り出す方式）
+/// そのもので、初期状態はsrand前の1です。
+pub struct MsvcCrtRandom {
+    state: std::cell::Cell<u32>,
+}
+impl MsvcCrtRandom {
+    /// 初期状態（1）で作成します。
+    pub fn new() -> Self {
+        Self {
+            state: std::cell::Cell::new(1),
+        }
+    }
+}
+impl Default for MsvcCrtRandom {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl CrtRandomSource for MsvcCrtRandom {
+    fn draw(&self) -> Result<u32, String> {
+        let next = self.state.get().wrapping_mul(214013).wrapping_add(2531011);
+        self.state.set(next);
+        Ok((next >> 16) & 0x7FFF)
+    }
+    fn seed(&self, seed: u32) -> Result<(), String> {
+        self.state.set(seed);
+        Ok(())
+    }
+}
+/// プロセス共有の組み込みCRTストリームを返します。実ゲームではCRT乱数は
+/// プロセス全体で1本の列を共有するため、Gameプロファイルの既定はこちらです。
+/// エンジンはスレッド拘束型のため、共有範囲はホストスレッド単位になります。
+pub fn shared_builtin_crt() -> SharedCrtRandom {
+    thread_local! {
+        static SHARED: SharedCrtRandom = Rc::new(MsvcCrtRandom::new());
+    }
+    SHARED.with(Rc::clone)
+}
+
 fn draw(source: &dyn CrtRandomSource) -> mlua::Result<u32> {
     let value = source.draw().map_err(mlua::Error::RuntimeError)?;
     if value > 32767 {
@@ -176,6 +216,27 @@ mod tests {
             [1, u32::MAX, 1, 0, 0, 0, 0, 0, u32::MAX - 11, 0]
         );
         assert_eq!(tape.draws.borrow().len(), 10);
+    }
+    #[test]
+    fn builtin_stream_matches_the_msvc_crt_sequence() {
+        // MSVC CRT rand の既知の列（srand(1) 後: 41, 18467, 6334, 26500, 19169, ...）。
+        let source = MsvcCrtRandom::new();
+        // 初期状態はsrand(1)と同じ1のため、seedなしでも同じ列から始まります。
+        assert_eq!(source.draw().unwrap(), 41);
+        source.seed(1).unwrap();
+        let draws: Vec<u32> = (0..5).map(|_| source.draw().unwrap()).collect();
+        assert_eq!(draws, [41, 18467, 6334, 26500, 19169]);
+        // 共有インスタンスは同一スレッド内で同じ列を返し続けます。
+        let shared = shared_builtin_crt();
+        shared.seed(7).unwrap();
+        let first = shared.draw().unwrap();
+        assert_eq!(shared_builtin_crt().draw().unwrap(), {
+            let expect = MsvcCrtRandom::new();
+            expect.seed(7).unwrap();
+            let _ = expect.draw().unwrap();
+            let _ = first;
+            expect.draw().unwrap()
+        });
     }
     #[test]
     fn invalid_provider_output_and_exhausted_source_are_explicit_errors() {

@@ -22,11 +22,8 @@ fn host_can_resolve_http_without_invoking_an_origin_callback() -> Result<(), Box
     )?;
     addon.start()?;
     let request = addon.drain_http_requests().pop().ok_or("missing request")?;
-    // Rejected transport data must leave the token available to the host.
-    assert!(addon
-        .resolve_http_reply(request.token, &vec![0; 1024 * 1024])
-        .is_err());
-    let resolved = addon.resolve_http_reply(request.token, b"response")?;
+    // 応答サイズでは拒否しない。大きな応答でも精算でき、トークンは消費される。
+    let resolved = addon.resolve_http_reply(request.token, &vec![0; 1024 * 1024])?;
     assert_eq!(resolved, request);
     assert_eq!(field(&addon, "replied")?, None);
     assert!(addon

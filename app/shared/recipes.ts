@@ -15,7 +15,7 @@ const commands=[
 ];
 const bindings={values:{'host.offset':11,pcall:null},functions:{'math.abs':{returns:[99]},'host.echo':{operation:'echo'}}};
 const base={kind:'storm-lua-playground',version:1} as const;
-const mappedSource='local function twice(value)\n return value*2\nend\nfunction onTick()\n local unused=99\n output.setNumber(1,twice(input.getNumber(1))+2*3)\n debug.log("mapped",input.getNumber(1))\nend';
+const mappedSource='local function twice(value)\n return value*2\nend\nfunction onTick()\n local unused=99\n output.setNumber(1,twice(input.getNumber(1))+2*3)\n debug.log("mapped")\nend';
 const debugSource='function onTick()\n local values={}\n output.setNumber(1,input.getNumber(1))\n debug.log("before error")\n output.setNumber(2,values.missing+1)\nend';
 const mappedArtifact=(name:string)=>({kind:'storm-lua-artifact',version:1,code:ref(name+'.code'),map:ref(name+'.map')});
 export const RECIPES:Recipe[]=[
@@ -51,7 +51,7 @@ export const RECIPES:Recipe[]=[
  {...base,id:'vehicle',group:'実行と描画',title:'Vehicle / シグナルとモニター',environment:'game',
   description:'入力×Gainを計算します。プロパティ更新とresetの違い、複数draw、ログを確認できます。',
   features:['createVehicle','load','io','tick','draw','frame','setProperties','reset','logs'],
-  source:'local gain=property.getNumber("Gain")\nlocal count=0\nfunction onTick()\n count=count+1\n output.setNumber(1,input.getNumber(1)*gain)\n output.setBool(1,input.getBool(1))\n debug.log("tick",count)\nend\nfunction onDraw()\n screen.setColor(8,20,30) screen.drawClear()\n screen.setColor(100,230,200) screen.drawRectF(2,2,screen.getWidth()-4,8)\n screen.setColor(240,250,255) screen.drawText(3,17,"LUA ENGINE")\nend',
+  source:'local gain=property.getNumber("Gain")\nlocal count=0\nfunction onTick()\n count=count+1\n output.setNumber(1,input.getNumber(1)*gain)\n output.setBool(1,input.getBool(1))\n debug.log("tick")\nend\nfunction onDraw()\n screen.setColor(8,20,30) screen.drawClear()\n screen.setColor(100,230,200) screen.drawRectF(2,2,screen.getWidth()-4,8)\n screen.setColor(240,250,255) screen.drawText(3,17,"LUA ENGINE")\nend',
   steps:[{op:'createVehicle',options:{environment,properties:{Gain:2}}},{op:'load',source},{op:'io',numbers:[3],booleans:[true]},{op:'tick',count:3,as:'initial'},{op:'draw',width:64,height:32},{op:'draw',width:96,height:32},{op:'frame'},{op:'properties',properties:{Gain:4}},{op:'tick',as:'cached'},{op:'reset'},{op:'io',numbers:[3]},{op:'tick',as:'resetResult'},{op:'draw',width:64,height:32},{op:'logs'}]},
  {...base,id:'compiler',group:'解析と変換',title:'Compiler / 複数モジュール',environment:'game',
   description:'同じプロジェクトを解析・非短縮リンク・最適化します。生成物はloadするまで実行されません。',
@@ -75,17 +75,17 @@ export const RECIPES:Recipe[]=[
  {...base,id:'environment',group:'環境と拡張',title:'Game / Extended の違い',environment:'game',
   description:'既定環境はdebug.logだけを提供します。拡張環境のpcall/printと、ホストデバッガは別の機能です。',
   features:['gameEnvironment','extendedEnvironment','debug.log','print','pcall','error'],
-  source:'function onTick()\n for _,name in ipairs({"pcall","error","print"})do debug.log(name,type(_ENV[name]))end\n for key in pairs(debug)do debug.log("debug",key)end\nend',
+  source:'function onTick()\n for _,name in ipairs({"pcall","error","print"})do debug.log(name)end\n for key in pairs(debug)do debug.log(key)end\nend',
   steps:[{op:'createVehicle',options:{environment}},{op:'load',source},{op:'tick'},{op:'logs'},{op:'createVehicle',id:'extended',options:{environment:'extended'}},{op:'load',id:'extended',source:'function onTick()local ok,v=pcall(function()return 7 end);print(ok,v);output.setNumber(1,v)end'},{op:'tick',id:'extended',as:'result'},{op:'enableLogs',id:'extended'},{op:'logs',id:'extended'},{op:'createVehicle',id:'manual',manualLogs:true},{op:'load',id:'manual',source:'debug.log("record")'},{op:'drainLogRecords',id:'manual'},{op:'load',id:'manual',source:'debug.log("bytes")'},{op:'drainLogs',id:'manual'},{op:'load',id:'manual',source:'debug.log("flush")'},{op:'flushLogs',id:'manual'},{op:'dispose',id:'manual'}]},
  {...base,id:'bindings',group:'環境と拡張',title:'ホスト関数 / 標準関数の置換',environment:'extended',
   description:'明示したテストホストがmath.absを99へ置換します。VM reset後も同じbindingsを使用します。',
   features:['hostBindings','hostOverrides','bindingPaths','resetBindings','ownedValues'],
-  source:'function onTick()\n output.setNumber(1,math.abs(-3)+host.offset)\n output.setBool(1,pcall==nil)\n debug.log(host.echo(string.char(0,255),9223372036854775807))\nend',
+  source:'function onTick()\n output.setNumber(1,math.abs(-3)+host.offset)\n output.setBool(1,pcall==nil)\n debug.log((host.echo(string.char(0,255),9223372036854775807)))\nend',
   steps:[{op:'bindingPaths',bindings,as:'paths'},{op:'minify',source,options:{environment,hostBindings:ref('paths')},as:'compiled'},{op:'createVehicle',options:{environment,bindings}},{op:'load',source:ref('compiled.code')},{op:'tick',as:'result'},{op:'reset'},{op:'tick'},{op:'logs'},{op:'hostCalls'}]},
  {...base,id:'addon',group:'Addonと保存',title:'Addon / イベントとsavedata',environment:'game',
   description:'ホスト関数・メニュープロパティ・イベント・保存とreloadを試します。ゲーム世界や仮物理はありません。',
   features:['createAddon','start','dispatch','menuProperties','savedata','reload','destroy','server'],
-  source:'local enabled=property.checkbox("Enabled",true)\nlocal rate=property.slider("Rate",1,10,1,2)\ng_savedata={count=0}\nfunction onCreate(new)\n g_savedata.created=new\n g_savedata.answer=server.answer()\n debug.log("created",new,enabled,rate)\nend\nfunction onTick(dt) g_savedata.count=g_savedata.count+dt end\nfunction onChatMessage(peer,name,message) g_savedata.message=message end\nfunction onDestroy() debug.log("destroyed") end',
+  source:'local enabled=property.checkbox("Enabled",true)\nlocal rate=property.slider("Rate",1,10,1,2)\ng_savedata={count=0}\nfunction onCreate(new)\n g_savedata.created=new\n g_savedata.answer=server.answer()\n debug.log("created")\nend\nfunction onTick(dt) g_savedata.count=g_savedata.count+dt end\nfunction onChatMessage(peer,name,message) g_savedata.message=message end\nfunction onDestroy() debug.log("destroyed") end',
   steps:[{op:'createAddon',options:{environment,properties:{Enabled:true,Rate:2}},server:{answer:{returns:[{$i64:'42'}]}}},{op:'load',source},{op:'menuProperties'},{op:'start'},{op:'tick',count:3},{op:'dispatch',callback:'onChatMessage',args:[1,'tester','hello']},{op:'savedata',as:'saved'},{op:'encodeSavedata',value:ref('saved'),as:'portable'},{op:'decodeSavedata',value:ref('portable'),as:'restored'},{op:'reload',value:ref('restored')},{op:'start'},{op:'savedata',as:'afterReload'},{op:'luaField',value:ref('afterReload'),key:'count'},{op:'destroy'},{op:'logs'},{op:'hostCalls'}]},
  {...base,id:'debugger',group:'実行と描画',title:'Debugger / 停止と検査',environment:'game',
   description:'ブレークポイントで停止し、stack・locals・upvalues・table・watchを確認します。Lua標準debugは不要です。',
@@ -99,7 +99,7 @@ export const RECIPES:Recipe[]=[
  {...base,id:'services',group:'ホストサービス',title:'地図 / HTTPの明示配送',environment:'game',
   description:'地図は指定色のテスト画像、HTTPは手入力の返信です。ネットワークへの要求は送信しません。',
   features:['mapProvider','mapPalette','httpRequests','httpReply','cancelHttp'],
-  source:'local reply=0\nfunction onTick() output.setNumber(1,reply) async.httpGet(8080,"/probe") end\nfunction httpReply(port,request,response) reply=tonumber(response);debug.log(port,request,response)end\nfunction onDraw()screen.setMapColorOcean(8,20,30);screen.drawMap(0,0,1);screen.setColor(240,250,255);screen.drawText(2,2,"HOST MAP")end',
+  source:'local reply=0\nfunction onTick() output.setNumber(1,reply) async.httpGet(8080,"/probe") end\nfunction httpReply(port,request,response) reply=tonumber(response);debug.log(response)end\nfunction onDraw()screen.setMapColorOcean(8,20,30);screen.drawMap(0,0,1);screen.setColor(240,250,255);screen.drawText(2,2,"HOST MAP")end',
   steps:[{op:'createVehicle',options:{environment},mapFixture:{rgba:[20,55,70,255]}},{op:'load',source},{op:'tick'},{op:'httpRequests',as:'requests'},{op:'httpReply',token:ref('requests.0.token'),reply:'7'},{op:'tick',as:'result'},{op:'httpRequests',as:'pending'},{op:'cancelHttp',token:ref('pending.0.token')},{op:'draw',width:64,height:32},{op:'logs'},{op:'hostCalls'}]},
  {...base,id:'values',group:'Addonと保存',title:'値 / i64・バイト列・保存形式',environment:'game',
   description:'文字列を勝手にUTF-8化せず、整数64bit・非有限数・負のゼロを保持したsavedata往復を確認します。',

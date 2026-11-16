@@ -6,19 +6,10 @@ use storm_lua_vm::backend::{BackendError, BackendResult, Lua, LuaString, Table, 
 fn invalid(message: &str) -> BackendError {
     BackendError::external(super::invalid(message))
 }
-fn declare(state: &mut State, name: Vec<u8>, definition: MenuProperty) -> BackendResult<()> {
-    if name.len() > 1024 || state.definitions.len() >= 4096 {
-        return Err(invalid("menu property declaration budget exceeded"));
-    }
-    if state
-        .definitions
-        .get(&name)
-        .is_some_and(|old| *old != definition)
-    {
-        return Err(invalid("conflicting menu property declarations"));
-    }
+fn declare(state: &mut State, name: Vec<u8>, definition: MenuProperty) {
+    // 実ゲームの契約: 宣言は名前の長さ・件数・既存宣言との矛盾でエラーを投げません。
+    // 同名の再宣言は最後の宣言が有効です。
     state.definitions.insert(name, definition);
-    Ok(())
 }
 pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> BackendResult<()> {
     let property = lua.create_table()?;
@@ -28,7 +19,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         lua.create_function(move |_, (label, default): (LuaString, bool)| {
             let name = label.as_bytes().to_vec();
             let mut state = s.borrow_mut();
-            declare(&mut state, name.clone(), MenuProperty::Checkbox(default))?;
+            declare(&mut state, name.clone(), MenuProperty::Checkbox(default));
             if !state.new_world {
                 return Ok(Value::Nil);
             }
@@ -44,21 +35,14 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         "slider",
         lua.create_function(
             move |_, (label, min, max, increment, default): (LuaString, f64, f64, f64, f64)| {
-                if ![min, max, increment, default].iter().all(|n| n.is_finite())
-                    || min > max
-                    || increment <= 0.0
-                    || default < min
-                    || default > max
-                {
-                    return Err(invalid("invalid slider declaration"));
-                }
+                // 実ゲームの契約: 範囲・刻み・既定値の形は検証せず、宣言された値をそのまま保持します。
                 let name = label.as_bytes().to_vec();
                 let mut state = s.borrow_mut();
                 declare(
                     &mut state,
                     name.clone(),
                     MenuProperty::Slider([min, max, increment, default]),
-                )?;
+                );
                 if !state.new_world {
                     return Ok(Value::Nil);
                 }

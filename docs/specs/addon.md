@@ -4,7 +4,7 @@
 
 `storm-lua-addon`がAddonの名前空間、初期化順、イベント、menu property、HTTPキューを所有する。`storm-lua-vm`の制限・debugger・owned values・loggingを共有し、microcontrollerやrasterへ依存しない。
 
-Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
+Addonの通常環境には`server`、`matrix`、Addon用`property`、`debug.log`、`g_savedata`がある。`debug.log`は実ゲームの契約どおり、引数1個の文字列（数値は文字列として通る）だけを記録し、それ以外は無言で、上限・エラーはない。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
 
 server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。通常の`server`登録では`httpGet`は予約名。`scoped_server`への明示登録はHTTP要求の所有をhostへ移し、SDK内キューの代わりに借用host操作を呼ぶ。
 
@@ -24,7 +24,7 @@ Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終
 
 実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z、rotationToFaceXZ。実装はstorm-lua-vmの共有モジュールにあり、Component Modと共用する（`scale`はComponent Mod専用でaddonにはない）。row-majorの16要素table、移動成分はLua index 13〜15、計算はf64（ただしmultiplyXYZWのベクトル成分は実ゲームどおりf32へ丸める）。multiplyの合成順序・rotation系コンストラクタ・rotationToFaceXZの式は実ゲームの静的解析で確定し、検証済み。引数の検証とエラー文字列（`bad matrix size`、`matrix was nil`等）も実ゲームに合わせ、有限性は要求しない。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。
 
-menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。矛盾する重複宣言、不正な範囲・型はエラー。自動clampや刻みへの丸めはしない。
+menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。宣言は実ゲームの契約どおり検証でエラーを投げず、同名の再宣言は最後の宣言が有効になる。自動clampや刻みへの丸めはしない。host overrideの型が宣言と合わない場合だけ、ホスト入力の誤りとしてエラーにする。
 
 一般イベントは[callback catalog](../../fixtures/addon-api-catalog.json)に列挙する。onCreate/onTick/onDestroy/httpReplyは専用操作。可変長の引数列と末尾nilを保持し、不要なf32量子化を行わない。
 
@@ -83,4 +83,4 @@ world guards before invoking a predicate and project selected world objects afte
 all predicate calls when the native operation requires that order. Borrowed phases
 must finish synchronously; debugger suspension across their lifetime is unsupported.
 
-複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenと応答のサイズを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、Readyを確認してから同じ検証・消費を行い、そのAddonのcallbackを呼びます。`dispatch_http_reply`はu32のportをLua整数として渡し、要求・応答のNULを含む全bytesを保持します。NativeのC文字列境界やport変換はhostの責務です。`HostCall::integer`はLuaのinteger conversionを使い、非整数numberや非変換値をNoneとして返します。hostは変換失敗の扱いを明示します。`HostCall::number`と`string`は元のLua値に数値・文字列のcoercionを適用するため、hostは関数引数をowned valueへ変換する前に読み取れます。実HTTP transportと複数scriptの配送範囲はhostが所有します。
+複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。応答bytesのサイズは検証しません。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、Readyを確認してから同じ検証・消費を行い、そのAddonのcallbackを呼びます。`dispatch_http_reply`はu32のportをLua整数として渡し、要求・応答のNULを含む全bytesを保持します。NativeのC文字列境界やport変換はhostの責務です。`HostCall::integer`はLuaのinteger conversionを使い、非整数numberや非変換値をNoneとして返します。hostは変換失敗の扱いを明示します。`HostCall::number`と`string`は元のLua値に数値・文字列のcoercionを適用するため、hostは関数引数をowned valueへ変換する前に読み取れます。実HTTP transportと複数scriptの配送範囲はhostが所有します。

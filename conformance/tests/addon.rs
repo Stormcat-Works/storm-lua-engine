@@ -149,7 +149,7 @@ fn menu_properties_logs_and_reload_checkpoint() -> Result<(), Box<dyn Error>> {
     let mut addon = Addon::new(config)?;
     addon.load(&assertion_support::with_assertions(br#"g_savedata={rate=property.slider('Rate',0,10,0.5,1),enabled=property.checkbox('Enabled',true)}
 print('loaded',string.char(255))
-function onCreate(new) debug.log('started',new); assert(g_savedata.rate==2.5 and g_savedata.enabled) end"#), "=menu")?;
+function onCreate(new) debug.log('started'); assert(g_savedata.rate==2.5 and g_savedata.enabled) end"#), "=menu")?;
     addon.start()?;
     assert_eq!(addon.property_definitions().len(), 2);
     let logs = addon.drain_log_records();
@@ -163,6 +163,48 @@ function onCreate(new) debug.log('started',new); assert(g_savedata.rate==2.5 and
     assert_eq!(
         field(&addon.savedata()?, "rate"),
         Some(LuaValue::Number(2.5))
+    );
+    Ok(())
+}
+#[test]
+fn menu_property_declarations_are_not_validated() -> Result<(), Box<dyn Error>> {
+    // 実ゲームの契約: sliderの範囲・刻み・既定値の形、同名の再宣言、名前の長さ・宣言件数は
+    // どれもエラーを投げず、宣言された値がそのまま返り・保持されます。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        &assertion_support::with_assertions(
+            br#"g_savedata={
+  inverted=property.slider('Inverted',10,0,1,5),
+  zero_step=property.slider('ZeroStep',0,10,0,5),
+  infinite=property.slider('Infinite',0,10,1,1/0),
+  out_of_range=property.slider('OutOfRange',0,10,1,99),
+}
+property.checkbox('Enabled',true)
+property.checkbox('Enabled',false)"#,
+        ),
+        "=menu-validation",
+    )?;
+    addon.start()?;
+    let saved = addon.savedata()?;
+    assert_eq!(field(&saved, "inverted"), Some(LuaValue::Number(5.0)));
+    assert_eq!(field(&saved, "zero_step"), Some(LuaValue::Number(5.0)));
+    assert_eq!(
+        field(&saved, "infinite"),
+        Some(LuaValue::Number(f64::INFINITY))
+    );
+    assert_eq!(field(&saved, "out_of_range"), Some(LuaValue::Number(99.0)));
+    let definitions = addon.property_definitions();
+    assert_eq!(definitions.len(), 5);
+    // 同名の再宣言は最後の宣言が有効です。
+    assert_eq!(
+        definitions.get(b"Enabled".as_slice()),
+        Some(&storm_lua_addon::MenuProperty::Checkbox(false))
+    );
+    assert_eq!(
+        definitions.get(b"Inverted".as_slice()),
+        Some(&storm_lua_addon::MenuProperty::Slider([
+            10.0, 0.0, 1.0, 5.0
+        ]))
     );
     Ok(())
 }

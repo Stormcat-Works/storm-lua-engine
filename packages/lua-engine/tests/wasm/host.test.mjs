@@ -85,6 +85,23 @@ test('Promise-returning log sinks fail synchronously without unhandled rejection
   }
 });
 
+test('addon tick passes zero and negative gameTicks through as i32',()=>{
+  const vm=engine.createAddon({savedata:api.luaTable({ticks:0n}),newWorld:false});
+  try {
+    vm.load('function onTick(game_ticks) g_savedata.ticks=game_ticks end');
+    vm.start();
+    assert.equal(vm.tick(0),'completed');
+    assert.equal(api.luaField(vm.savedata(),'ticks'),0n);
+    assert.equal(vm.tick(-5),'completed');
+    assert.equal(api.luaField(vm.savedata(),'ticks'),-5n);
+    assert.equal(vm.tick(2147483647),'completed');
+    assert.equal(api.luaField(vm.savedata(),'ticks'),2147483647n);
+    assert.equal(vm.tick(-2147483648),'completed');
+    assert.equal(api.luaField(vm.savedata(),'ticks'),-2147483648n);
+    assert.throws(()=>vm.tick(2147483648),RangeError);
+    assert.throws(()=>vm.tick(1.5),RangeError);
+  } finally {vm.dispose();}
+});
 test('ordinary Addon Lua errors stop ticks while retaining savedata and later events',()=>{
   const vm=engine.createAddon({savedata:api.luaTable({count:41n}),newWorld:false});
   try {

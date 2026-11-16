@@ -40,7 +40,7 @@ pub struct AddonConfig {
     /// Server operations supplied for each borrowed host execution phase.
     /// Including `httpGet` transfers request enqueue ownership to the host.
     pub scoped_server: Vec<String>,
-    /// printを追加します。制限付きのdebug.logはアドオンプロファイルで既定で利用可能です。
+    /// printを追加します。debug.logはアドオンプロファイルで既定で利用可能です。
     pub dev_logs: bool,
     /// Script-visible game or explicitly extended environment.
     pub environment: storm_lua_spec::environment::EnvironmentProfile,
@@ -535,7 +535,7 @@ impl Addon {
     pub fn property_definitions(&self) -> BTreeMap<Vec<u8>, MenuProperty> {
         self.state.borrow().definitions.clone()
     }
-    /// 明示的なprint拡張を有効化します。debug.logは制限付きのログ専用テーブルのまま維持されます。
+    /// 明示的なprint拡張を有効化します。debug.logは実ゲームの契約どおりのログ専用テーブルとして維持されます。
     pub fn enable_dev_logs(&mut self) -> Result<(), VmError> {
         self.vm.borrow_mut().enable_logs()?;
         self.config.dev_logs = true;

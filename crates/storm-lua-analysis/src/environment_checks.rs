@@ -73,6 +73,26 @@ pub fn addon_diagnostics(
     )
 }
 
+/// Component Mod base-function diagnostics, with the same shadowing and probe rules.
+pub fn component_diagnostics(
+    ast: &Ast,
+    root: NodeId,
+    positions: Option<&NodePositions>,
+    environment: EnvironmentProfile,
+) -> Vec<Diagnostic> {
+    diagnostics_for(
+        ast,
+        root,
+        positions,
+        environment,
+        &[],
+        &HashSet::new(),
+        Severity::Error,
+        None,
+        EnvironmentProfile::is_component_unavailable,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn diagnostics_for(
     ast: &Ast,
@@ -210,4 +230,29 @@ pub fn validate(
         return Err(format!("{}: {}", issue.code, issue.message));
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use storm_lua_syntax::parser::parse_source_with_positions;
+
+    #[test]
+    fn component_diagnostics_flag_absent_base_functions() {
+        // select は Component 環境にも存在しない（base subset は3系統共通、E13）。
+        let (ast, root, positions) =
+            parse_source_with_positions("local f = select\n").expect("parse ok");
+        let diagnostics =
+            component_diagnostics(&ast, root, Some(&positions), EnvironmentProfile::Game);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("select"));
+        // 存在する base 関数は診断されない。
+        let (ast, root, positions) =
+            parse_source_with_positions("local f = pairs\nlocal g = string.dump\n")
+                .expect("parse ok");
+        let diagnostics =
+            component_diagnostics(&ast, root, Some(&positions), EnvironmentProfile::Game);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    }
 }

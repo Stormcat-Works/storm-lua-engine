@@ -14,7 +14,9 @@ use std::collections::HashSet;
 
 use crate::diagnostic::{codes, Diagnostic, Range};
 use crate::project::ModuleAnalysis;
-use crate::resolver::{api_roots, reserved, resolve, BindingId, BindingKind, Resolution};
+use crate::resolver::{
+    api_roots, component_api_roots, reserved, resolve, BindingId, BindingKind, Resolution,
+};
 use crate::sw_restrict::is_unavailable_builtin;
 use storm_lua_syntax::ast::{Ast, Node};
 
@@ -47,6 +49,34 @@ pub fn lint_module(
     written_globals: &HashSet<String>,
     ambient_roots: &HashSet<String>,
 ) -> Vec<Diagnostic> {
+    lint_module_with_roots(key, analysis, written_globals, ambient_roots, api_roots)
+}
+
+/// Component Mod プロファイルに対する [`lint_module`]。既知ルートの判定だけが
+/// Component のルート集合（`component` / `parser` / `matrix` 等）に切り替わります。
+/// コールバック名は `reserved` 側で両プロファイル分が予約済みです。
+pub fn lint_module_component(
+    key: &str,
+    analysis: &ModuleAnalysis,
+    written_globals: &HashSet<String>,
+    ambient_roots: &HashSet<String>,
+) -> Vec<Diagnostic> {
+    lint_module_with_roots(
+        key,
+        analysis,
+        written_globals,
+        ambient_roots,
+        component_api_roots,
+    )
+}
+
+fn lint_module_with_roots(
+    key: &str,
+    analysis: &ModuleAnalysis,
+    written_globals: &HashSet<String>,
+    ambient_roots: &HashSet<String>,
+    roots: fn(&str) -> bool,
+) -> Vec<Diagnostic> {
     let resolution = resolve(&analysis.ast, analysis.root);
     let mut diagnostics = Vec::new();
     diagnostics.extend(undefined_global_diagnostics(
@@ -55,6 +85,7 @@ pub fn lint_module(
         &resolution,
         written_globals,
         ambient_roots,
+        roots,
     ));
     diagnostics.extend(unused_binding_diagnostics(key, analysis, &resolution));
     diagnostics.extend(shadowed_local_diagnostics(key, analysis, &resolution));
@@ -67,8 +98,8 @@ pub fn lint_module(
 /// ambient ルート名（`sim` 等）も同様にプロジェクト固有の既知集合として個別に扱う。
 /// `sw_restrict::is_unavailable_builtin` に該当する名前（`pcall` 等）は `sw-unavailable-global`
 /// が単独の正本として発報する。ここで二重に `undefined-global` を出さないよう対象外にする。
-fn is_known_global(name: &str, ambient_roots: &HashSet<String>) -> bool {
-    api_roots(name)
+fn is_known_global(name: &str, ambient_roots: &HashSet<String>, roots: fn(&str) -> bool) -> bool {
+    roots(name)
         || reserved(name)
         || name == "require"
         || name == "_ENV"
@@ -104,11 +135,12 @@ fn undefined_global_diagnostics(
     resolution: &Resolution,
     written_globals: &HashSet<String>,
     ambient_roots: &HashSet<String>,
+    roots: fn(&str) -> bool,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     for &(symbol, bid) in &resolution.globals {
         let name = analysis.ast.strings.get(symbol);
-        if is_known_global(name, ambient_roots) {
+        if is_known_global(name, ambient_roots, roots) {
             continue;
         }
         // プロジェクト中のどこかで書き込まれていれば「定義済み」扱い（グローバル環境は
@@ -318,6 +350,22 @@ mod tests {
             "function onTick()\n  local x = math.floor(1)\n  output.setNumber(1, x)\nend\nfunction onDraw() end\n",
         );
         assert!(diagnostics.is_empty(), "{:?}", codes_of(&diagnostics));
+    }
+
+    #[test]
+    fn component_profile_knows_component_roots_and_callbacks() {
+        let source = "function onParse()\n  local v = component.getInputLogicSlotBool(1)\n  local n = parser.parseNumber(\"k\", 1)\n  if v then debug.log(n) end\nend\nfunction onRender() end\n";
+        let a = analysis(source);
+        let written = collect_written_global_names(std::iter::once(&a));
+        let diagnostics = lint_module_component("m", &a, &written, &HashSet::new());
+        assert!(diagnostics.is_empty(), "{:?}", codes_of(&diagnostics));
+        // 車両プロファイルでは component / parser は既知ルートではない。
+        let vehicle = lint_module("m", &a, &written, &HashSet::new());
+        assert!(
+            codes_of(&vehicle).contains(&codes::UNDEFINED_GLOBAL),
+            "{:?}",
+            codes_of(&vehicle)
+        );
     }
 
     #[test]

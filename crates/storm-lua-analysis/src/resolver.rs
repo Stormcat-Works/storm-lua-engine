@@ -114,7 +114,14 @@ pub fn api_roots(name: &str) -> bool {
     API_ROOTS.contains(&name)
 }
 
-/// RESERVED = KEYWORDS + onTick/onDraw。
+/// Component Mod プロファイルが提供するグローバル名（spec の COMPONENT_ROOTS が正本）。
+pub use storm_lua_spec::environment::COMPONENT_ROOTS;
+
+pub fn component_api_roots(name: &str) -> bool {
+    COMPONENT_ROOTS.contains(&name)
+}
+
+/// RESERVED = KEYWORDS + 車両/Component のコールバック名。
 pub fn reserved(name: &str) -> bool {
     matches!(
         name,
@@ -141,6 +148,7 @@ pub fn reserved(name: &str) -> bool {
             | "until"
             | "while"
     ) || storm_lua_spec::environment::VEHICLE_CALLBACKS.contains(&name)
+        || storm_lua_spec::environment::COMPONENT_CALLBACKS.contains(&name)
 }
 
 /// TS の forEachChild と同じ順で子ノードを訪問する（キー挿入順。annotate skip は無視）。

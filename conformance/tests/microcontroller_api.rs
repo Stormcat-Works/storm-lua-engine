@@ -1,8 +1,11 @@
-//! MC APIの引数意味論（E1/E2/E25）。根拠はdocs-internalのLua解析
-//! （vehicle/io-contract、vehicle/screen）。
+//! MC APIの引数意味論（E1/E2/E25）とscreen/描画系の意味論（E3/E5/E6/E15/
+//! E19/E20）。根拠はdocs-internalのLua解析（vehicle/io-contract、vehicle/screen）。
 use std::error::Error;
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
-use storm_lua_spec::{environment::EnvironmentProfile, io::CompositeSignal};
+use storm_lua_spec::{
+    draw::DrawCommand, environment::EnvironmentProfile, io::CompositeSignal, map::MapColorKind,
+    screen::Rgba8,
+};
 use storm_lua_vm::runner::RunOutcome;
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -104,6 +107,133 @@ fn screen_arity_and_conversion_follow_the_same_rules() -> TestResult {
     vm.draw(64, 32)?;
     // drawClearとdrawRectFだけがコマンドになります。
     assert_eq!(vm.commands().len(), 2);
+    assert_eq!(vm.error_status(), 0);
+    Ok(())
+}
+
+#[test]
+fn color_conversion_truncates_and_wraps_like_cvttsd2si() -> TestResult {
+    // 色成分はゼロ方向へ切り捨てて下位8bitを格納し、クランプしません（E3）。
+    // NaN・範囲外は不定値0x80000000→byte 0、非数値は0、alphaの明示nilは0、
+    // 省略したときだけ255です。setMapColor*も同じ変換です。
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onDraw()\n  screen.setColor(256, -1, 300.7)\n  screen.setColor(1, 2, 3, 0/0)\n  screen.setColor(1, 2, 3, nil)\n  screen.setColor('x', true, {})\n  screen.setMapColorOcean(-2, 511.9, 1e30, 128)\nend",
+    )?;
+    vm.draw(32, 32)?;
+    let commands = vm.commands();
+    assert_eq!(commands[0], DrawCommand::SetColor(Rgba8([0, 255, 44, 255])));
+    assert_eq!(commands[1], DrawCommand::SetColor(Rgba8([1, 2, 3, 0])));
+    assert_eq!(commands[2], DrawCommand::SetColor(Rgba8([1, 2, 3, 0])));
+    assert_eq!(commands[3], DrawCommand::SetColor(Rgba8([0, 0, 0, 255])));
+    assert_eq!(
+        commands[4],
+        DrawCommand::MapColor(MapColorKind::Ocean, Rgba8([254, 255, 0, 128]))
+    );
+    assert_eq!(vm.error_status(), 0);
+    Ok(())
+}
+
+#[test]
+fn draw_text_box_align_defaults_and_clamps() -> TestResult {
+    // alignは省略時-1、明示nilは0、範囲外は[-1, 1]へクランプします（E5）。
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onDraw()\n  screen.drawTextBox(0, 0, 10, 10, 'hi')\n  screen.drawTextBox(0, 0, 10, 10, 'hi', nil)\n  screen.drawTextBox(0, 0, 10, 10, 'hi', 2.7, -2.7)\nend",
+    )?;
+    vm.draw(32, 32)?;
+    let commands = vm.commands();
+    assert_eq!(
+        commands[0],
+        DrawCommand::TextBox([0.0, 0.0, 10.0, 10.0, -1.0, -1.0], b"hi".to_vec())
+    );
+    assert_eq!(
+        commands[1],
+        DrawCommand::TextBox([0.0, 0.0, 10.0, 10.0, 0.0, -1.0], b"hi".to_vec())
+    );
+    assert_eq!(
+        commands[2],
+        DrawCommand::TextBox([0.0, 0.0, 10.0, 10.0, 1.0, -1.0], b"hi".to_vec())
+    );
+    assert_eq!(vm.error_status(), 0);
+    Ok(())
+}
+
+#[test]
+fn draw_map_is_limited_to_once_per_frame() -> TestResult {
+    // フレーム内の2回目以降は無言で戻り、コマンドは1個だけです（E6）。
+    // 非有限座標でもエラーにはなりません。次のフレームでは再び使えます。
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onDraw()\n  screen.drawMap(0, 0, 1)\n  screen.drawMap(0/0, 0, 1)\nend",
+    )?;
+    vm.draw(32, 32)?;
+    assert_eq!(
+        vm.commands()
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Map(_)))
+            .count(),
+        1
+    );
+    assert_eq!(vm.error_status(), 0);
+    vm.draw(32, 32)?;
+    assert_eq!(
+        vm.commands()
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Map(_)))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn map_coordinate_conversion_uses_the_spec_formulas() -> TestResult {
+    // map.screenToMap / map.mapToScreenは7引数・戻り値2個で、phase検査は
+    // ありません（E15）。変換式は仕様のfloat32演算順です。
+    let mut vm = vehicle(
+        EnvironmentProfile::Extended,
+        "function onTick()\n  local x, y = map.screenToMap(1000, 2000, 0.5, 200, 100, 200, 0)\n  output.setNumber(1, x)\n  output.setNumber(2, y)\n  local px, py = map.mapToScreen(1000, 2000, 0.5, 200, 100, x, y)\n  output.setNumber(3, px)\n  output.setNumber(4, py)\n  output.setBool(1, select('#', map.screenToMap(1, 2)) == 0)\n  output.setBool(2, select('#', map.mapToScreen(1, 2, 3, 4, 5, 6)) == 0)\nend",
+    )?;
+    vm.tick(&signal())?;
+    assert_eq!(vm.output().numbers[0], 1250.0);
+    assert_eq!(vm.output().numbers[1], 2125.0);
+    assert_eq!(vm.output().numbers[2], 200.0);
+    assert_eq!(vm.output().numbers[3], 0.0);
+    assert!(vm.output().booleans[0]);
+    assert!(vm.output().booleans[1]);
+    assert_eq!(vm.error_status(), 0);
+    Ok(())
+}
+
+#[test]
+fn screen_size_returns_doubles() -> TestResult {
+    // getWidth/getHeightはdoubleで返します（E19）。math.typeで観測できます。
+    let mut vm = vehicle(
+        EnvironmentProfile::Extended,
+        "function onDraw()\n  captured_w = screen.getWidth()\n  captured_h = screen.getHeight()\nend\nfunction onTick()\n  output.setBool(1, math.type(captured_w) == 'float' and math.type(captured_h) == 'float')\n  output.setNumber(1, captured_w)\n  output.setNumber(2, captured_h)\nend",
+    )?;
+    vm.draw(64, 32)?;
+    vm.tick(&signal())?;
+    assert!(vm.output().booleans[0]);
+    assert_eq!(vm.output().numbers[0], 64.0);
+    assert_eq!(vm.output().numbers[1], 32.0);
+    Ok(())
+}
+
+#[test]
+fn reset_preserves_composite_output() -> TestResult {
+    // reset（VM再生成）をまたいでもComposite出力キャッシュは保持されます（E20）。
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onTick()\n  output.setNumber(1, 42)\n  output.setBool(2, true)\nend",
+    )?;
+    vm.tick(&signal())?;
+    vm.reset()?;
+    assert_eq!(vm.output().numbers[0], 42.0);
+    assert!(vm.output().booleans[1]);
+    // リセット後も通常どおり動作します。
+    vm.tick(&signal())?;
     assert_eq!(vm.error_status(), 0);
     Ok(())
 }

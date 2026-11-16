@@ -42,6 +42,57 @@ fn coerced_text(lua: &Lua, value: Option<&Value>) -> Vec<u8> {
         .map(|string| string.as_bytes().to_vec())
         .unwrap_or_default()
 }
+/// 色成分の変換（E3）。実ゲームはLua数値を`cvttsd2si`でint32化し、下位8bitを
+/// 格納します（ゼロ方向への切り捨て、クランプなしのラップ）。NaN/±Infや
+/// int32の範囲外は不定値`0x80000000`となり、保存byteは0です。非数値は
+/// 変換ヘルパーで0.0になるため、ここでも0になります。
+fn color_byte(n: f64) -> u8 {
+    let truncated = n.trunc();
+    if !truncated.is_finite() || truncated < f64::from(i32::MIN) || truncated > f64::from(i32::MAX)
+    {
+        return 0;
+    }
+    (truncated as i32) as u8
+}
+/// `map.screenToMap` / `map.mapToScreen`の座標変換（E15）。仕様の変換式を
+/// float32の演算順で評価し、結果をdoubleへ拡張して返します。zoom・画面寸法へ
+/// 適用されるmaxクランプ（最小値）の具体値は仕様ページでは確定していないため
+/// ここでは適用しません（未確定事項として記録）。
+#[allow(clippy::too_many_arguments)]
+fn map_convert(
+    to_world: bool,
+    map_x: f64,
+    map_y: f64,
+    zoom: f64,
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+) -> (f64, f64) {
+    let (map_x, map_y, zoom, width, height, x, y) = (
+        map_x as f32,
+        map_y as f32,
+        zoom as f32,
+        width as f32,
+        height as f32,
+        x as f32,
+        y as f32,
+    );
+    let span_x = zoom * 1000.0;
+    let span_y = span_x / (width / height);
+    let (out_x, out_y) = if to_world {
+        (
+            (map_x - span_x * 0.5) + (x / width) * span_x,
+            (map_y - span_y * 0.5) + ((height - y) / height) * span_y,
+        )
+    } else {
+        (
+            ((span_x * 0.5 + (x - map_x)) / span_x) * width,
+            height - ((span_y * 0.5 + (y - map_y)) / span_y) * height,
+        )
+    };
+    (f64::from(out_x), f64::from(out_y))
+}
 /// Lua値の真偽（lua_toboolean相当）。falseとnilだけが偽です。
 fn truthy(value: Option<&Value>) -> bool {
     !matches!(value, None | Some(Value::Nil) | Some(Value::Boolean(false)))
@@ -196,9 +247,10 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         "getWidth",
         lua.create_function(move |lua, _: Variadic<Value>| {
             // 個数の検査はありません（実ゲームはgettopを見ません）。
+            // 戻り値は実ゲームと同じくdoubleです（E19）。
             let s = s.borrow();
             draw_only(lua, s.phase)?;
-            Ok(s.size.0)
+            Ok(f64::from(s.size.0))
         })?,
     )?;
     let s = Rc::clone(&state);
@@ -207,7 +259,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         lua.create_function(move |lua, _: Variadic<Value>| {
             let s = s.borrow();
             draw_only(lua, s.phase)?;
-            Ok(s.size.1)
+            Ok(f64::from(s.size.1))
         })?,
     )?;
     for definition in storm_lua_spec::catalog::FUNCTIONS
@@ -239,19 +291,22 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 draw_only(lua, s.borrow().phase)?;
                 let number = |i: usize| coerced_number(lua, args.get(i));
                 let text = |i: usize| coerced_text(lua, args.get(i));
-                let color = |n: f64| -> BackendResult<u8> {
-                    if !n.is_finite() {
-                        return Err(BackendError::RuntimeError("non-finite color".into()));
+                // drawTextBoxのalign（E5）: 省略時は-1、明示nil等の変換失敗は0、
+                // 値は[-1, 1]へクランプします。
+                let align = |i: usize| {
+                    if args.len() <= i {
+                        -1.0
+                    } else {
+                        number(i).clamp(-1.0, 1.0)
                     }
-                    Ok((n + 0.5).floor().clamp(0.0, 255.0) as u8)
                 };
                 let command = match name {
                     "setColor" => DrawCommand::SetColor(Rgba8([
-                        color(number(0))?,
-                        color(number(1))?,
-                        color(number(2))?,
+                        color_byte(number(0)),
+                        color_byte(number(1)),
+                        color_byte(number(2)),
                         if args.len() > 3 {
-                            color(number(3))?
+                            color_byte(number(3))
                         } else {
                             255
                         },
@@ -283,8 +338,8 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                             number(1),
                             number(2),
                             number(3),
-                            number(5),
-                            number(6),
+                            align(5),
+                            align(6),
                         ],
                         text(4),
                     ),
@@ -309,17 +364,18 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 return Ok(());
             }
             let mut state = maps.borrow_mut();
+            // フレーム内の2回目以降は、引数を読む前に無言で戻ります（E6）。
+            // 使用済みフラグは描画しなかった場合も立ち、フレーム開始時に戻ります。
+            if state.map_used {
+                return Ok(());
+            }
             draw_only(lua, state.phase)?;
+            state.map_used = true;
             let values = [
                 coerced_number(lua, args.first()),
                 coerced_number(lua, args.get(1)),
                 coerced_number(lua, args.get(2)),
             ];
-            if !values.iter().all(|n| n.is_finite()) {
-                return Err(BackendError::RuntimeError(
-                    "map coordinates must be finite".into(),
-                ));
-            }
             state
                 .commands
                 .push(DrawCommand::Map(values))
@@ -343,26 +399,53 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 }
                 let mut state = palette.borrow_mut();
                 draw_only(lua, state.phase)?;
-                let values = [
-                    coerced_number(lua, args.first()),
-                    coerced_number(lua, args.get(1)),
-                    coerced_number(lua, args.get(2)),
+                let rgba = Rgba8([
+                    color_byte(coerced_number(lua, args.first())),
+                    color_byte(coerced_number(lua, args.get(1))),
+                    color_byte(coerced_number(lua, args.get(2))),
                     if args.len() > 3 {
-                        coerced_number(lua, args.get(3))
+                        color_byte(coerced_number(lua, args.get(3)))
                     } else {
-                        255.0
+                        255
                     },
-                ];
-                if !values.iter().all(|v| v.is_finite()) {
-                    return Err(BackendError::RuntimeError(
-                        "map palette color must be finite".into(),
-                    ));
-                }
-                let rgba = Rgba8(values.map(|n| (n + 0.5).floor().clamp(0.0, 255.0) as u8));
+                ]);
                 state
                     .commands
                     .push(DrawCommand::MapColor(kind, rgba))
                     .map_err(|e| resource(&e.to_string()))
+            })?,
+        )?;
+    }
+    // map.screenToMap / map.mapToScreen（E15）。7引数で、個数が合わない場合は
+    // エラーにならず戻り値0個です。onDraw許可判定はありません。
+    let map = lua.create_table()?;
+    for to_world in [true, false] {
+        let name = if to_world {
+            "screenToMap"
+        } else {
+            "mapToScreen"
+        };
+        map.raw_set(
+            name,
+            lua.create_function(move |lua, args: Variadic<Value>| {
+                if args.len() != 7 {
+                    return Ok(MultiValue::new());
+                }
+                let number = |i: usize| coerced_number(lua, args.get(i));
+                let (out_x, out_y) = map_convert(
+                    to_world,
+                    number(0),
+                    number(1),
+                    number(2),
+                    number(3),
+                    number(4),
+                    number(5),
+                    number(6),
+                );
+                Ok(MultiValue::from_vec(vec![
+                    Value::Number(out_x),
+                    Value::Number(out_y),
+                ]))
             })?,
         )?;
     }
@@ -379,6 +462,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
         })?,
     )?;
     env.raw_set("async", http)?;
+    env.raw_set("map", map)?;
     env.raw_set("input", input)?;
     env.raw_set("output", output)?;
     env.raw_set("property", property)?;

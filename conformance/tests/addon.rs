@@ -211,3 +211,140 @@ function onCreate() assert(g_savedata.n==7) end"
     addon.start()?;
     Ok(())
 }
+#[test]
+fn matrix_multiply_order_matches_game_binary() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
+        ..Default::default()
+    })?;
+    addon.load(&assertion_support::with_assertions(r##"-- 実ゲーム matrix_multiply の静的解析から導いた合成式（out[r][i] = Σ b[r][k]・a[k][i]）
+local function game_mul(a, b)
+  local out = {}
+  for r = 1, 4 do
+    for i = 1, 4 do
+      local s = 0
+      for k = 1, 4 do s = s + b[(r-1)*4+k] * a[(k-1)*4+i] end
+      out[(r-1)*4+i] = s
+    end
+  end
+  return out
+end
+local function approx(a, b) for n=1,16 do assert(math.abs(a[n]-b[n])<1e-9) end end
+local a = matrix.multiply(matrix.translation(3,-2,5), matrix.rotationZ(0.7))
+local b = matrix.multiply(matrix.rotationX(-0.3), matrix.translation(-1,4,2))
+approx(matrix.multiply(a, b), game_mul(a, b))
+approx(matrix.multiply(b, a), game_mul(b, a))
+-- 平行移動と回転の合成順序は位置で観測できる
+local rz = matrix.rotationZ(math.pi/2)
+local tr = matrix.translation(1,2,3)
+local x,y,z = matrix.position(matrix.multiply(rz, tr))
+assert(math.abs(x+2)<1e-9 and math.abs(y-1)<1e-9 and math.abs(z-3)<1e-9)
+local x,y,z = matrix.position(matrix.multiply(tr, rz))
+assert(math.abs(x-1)<1e-9 and math.abs(y-2)<1e-9 and math.abs(z-3)<1e-9)"##.as_bytes()), "=matrix-order")?;
+    Ok(())
+}
+#[test]
+fn matrix_read_validation_matches_game() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
+        ..Default::default()
+    })?;
+    addon.load(
+        &assertion_support::with_assertions(
+            r##"local function expect_err(substr, f, ...)
+  local ok, err = pcall(f, ...)
+  assert(not ok, "expected error containing: "..substr)
+  assert(string.find(tostring(err), substr, 1, true), tostring(err))
+end
+local short = {}; for n=1,15 do short[n]=0 end
+expect_err("bad matrix size", matrix.position, short)
+local long = {}; for n=1,17 do long[n]=0 end
+expect_err("matrix index out of range: 17", matrix.position, long)
+local dup = matrix.identity(); dup["3"] = 0
+expect_err("bad matrix size", matrix.position, dup)
+expect_err("matrix was nil", matrix.position, nil)
+expect_err("bad matrix input type: number", matrix.position, 42)
+expect_err("bad matrix input type: string", matrix.position, "x")
+local bad_elem = matrix.identity(); bad_elem[3] = "x"
+expect_err("bad matrix input type: string", matrix.position, bad_elem)
+local bad_elem2 = matrix.identity(); bad_elem2[3] = true
+expect_err("bad matrix input type: boolean", matrix.position, bad_elem2)
+local str_elem = matrix.identity(); str_elem[13] = "7"
+assert(matrix.position(str_elem) == 7)
+local oor = matrix.identity(); oor[17] = 0
+expect_err("matrix index out of range: 17", matrix.position, oor)
+local str_key = matrix.identity(); str_key.foo = 0
+expect_err("bad value in matrix: foo", matrix.position, str_key)
+-- 非有限の要素はエラーにならず、そのまま計算へ流れる
+local inf_elem = matrix.identity(); inf_elem[1] = math.huge
+assert(matrix.position(inf_elem) == 0)
+assert(matrix.multiply(inf_elem, matrix.identity())[1] == math.huge)"##
+                .as_bytes(),
+        ),
+        "=matrix-validation",
+    )?;
+    Ok(())
+}
+#[test]
+fn matrix_rotation_to_face_xz_matches_game() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
+        ..Default::default()
+    })?;
+    addon.load(
+        &assertion_support::with_assertions(
+            r##"-- scale は Component Mod 専用で addon には存在しない
+assert(matrix.scale == nil)
+-- 実ゲームは f32 経由で角度を求めるため、比較は粗めの許容で行う
+local function approx(a, b) for n=1,16 do assert(math.abs(a[n]-b[n])<1e-5) end end
+approx(matrix.rotationToFaceXZ(1, 0), matrix.rotationY(math.pi/2))
+approx(matrix.rotationToFaceXZ(0, 1), matrix.identity())
+approx(matrix.rotationToFaceXZ(0, 0), matrix.rotationY(math.pi/2))
+approx(matrix.rotationToFaceXZ(-1, 0), matrix.rotationY(-math.pi/2))
+approx(matrix.rotationToFaceXZ(3, 4), matrix.rotationY(math.atan(3, 4)))
+-- +Z 軸が指定方向 (x, z) へ写る
+local m = matrix.rotationToFaceXZ(0.6, 0.8)
+local x, y, z, w = matrix.multiplyXYZW(m, 0, 0, 1, 0)
+assert(math.abs(x-0.6)<1e-5 and math.abs(z-0.8)<1e-5)"##
+                .as_bytes(),
+        ),
+        "=matrix-facexz",
+    )?;
+    Ok(())
+}
+#[test]
+fn matrix_arity_scalar_conversion_and_f32_vector() -> Result<(), Box<dyn Error>> {
+    let mut addon = Addon::new(AddonConfig {
+        environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
+        ..Default::default()
+    })?;
+    addon.load(
+        &assertion_support::with_assertions(
+            r##"local function expect_err(substr, f, ...)
+  local ok, err = pcall(f, ...)
+  assert(not ok, "expected error containing: "..substr)
+  assert(string.find(tostring(err), substr, 1, true), tostring(err))
+end
+expect_err("Wrong number of args", matrix.multiply, matrix.identity())
+expect_err("Wrong number of args", matrix.translation, 1, 2)
+expect_err("Wrong number of args", matrix.rotationToFaceXZ, 1)
+-- identity は引数の個数を検査しない（実ゲームに gettop 検査がない）
+assert(matrix.identity(1, 2, 3)[1] == 1)
+-- スカラーは lua_tonumberx と同じ変換（数値文字列は変換、変換不能は 0）
+local x, y, z = matrix.position(matrix.translation("3", "4", "5"))
+assert(x==3 and y==4 and z==5)
+local x, y, z = matrix.position(matrix.translation(true, nil, "x"))
+assert(x==0 and y==0 and z==0)
+-- 回転角が非有限でもエラーにならず NaN 要素を返す
+local r = matrix.rotationX(math.huge); assert(r[6] ~= r[6])
+-- multiplyXYZW のベクトル成分は f32 へ丸められる（実ゲームの確定挙動）
+local x = matrix.multiplyXYZW(matrix.identity(), 1e300, 0, 0, 0)
+assert(x == math.huge)
+local x = matrix.multiplyXYZW(matrix.identity(), 0.1, 0, 0, 0)
+assert(x ~= 0.1 and math.abs(x - 0.1) < 1e-7)"##
+                .as_bytes(),
+        ),
+        "=matrix-args",
+    )?;
+    Ok(())
+}

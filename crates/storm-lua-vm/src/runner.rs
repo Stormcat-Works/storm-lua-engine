@@ -326,7 +326,6 @@ pub struct Vm {
     pub(crate) control: Rc<RefCell<HookControl>>,
     pub(crate) limits: ExecutionLimits,
     failed: Rc<std::cell::Cell<bool>>,
-    addon_callbacks: bool,
     synchronous: Rc<synchronous::Context>,
     _synchronous_owner: Rc<()>,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
@@ -389,7 +388,6 @@ impl Vm {
             control,
             limits,
             failed,
-            addon_callbacks: false,
             synchronous,
             _synchronous_owner: synchronous_owner,
             environment_profile,
@@ -399,14 +397,15 @@ impl Vm {
             debugger,
         })
     }
-    /// Addon callbacks retain their VM after ordinary Lua errors. Resource limits
-    /// still fail closed; non-function callback globals are treated as absent.
+    /// Addon環境のVMです。通常のLuaエラーでVMが失敗状態にならない点と、
+    /// 関数でないコールバックを不在として扱う点は全プロファイル共通になりました。
+    /// Addon固有の差は同期ホストイベント側にあり、そちらの通常のLuaエラーは
+    /// 呼び出し元へ戻して回復可能にします（制限は失敗状態にします）。
     pub fn with_addon_environment(
         limits: ExecutionLimits,
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
         let mut vm = Self::with_environment(limits, environment_profile)?;
-        vm.addon_callbacks = true;
         vm.synchronous.addon_callbacks.set(true);
         Ok(vm)
     }
@@ -499,11 +498,9 @@ impl Vm {
             Value::Function(function) => {
                 self.start(function, crate::value::encode(&self.lua, arguments)?)
             }
-            _ if self.addon_callbacks => Ok(RunOutcome::Missing),
-            _ => Err(VmError::new(
-                ErrorKind::InvalidArgument,
-                format!("{name} is not a function"),
-            )),
+            // 実ゲームの共通呼び出し（call_lua_function）は、対象が関数でなければ
+            // 何も実行せずエラーも記録しません。全プロファイルで「不在」として扱います。
+            _ => Ok(RunOutcome::Missing),
         }
     }
     /// ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
@@ -589,9 +586,10 @@ impl Vm {
                 let mut error = VmError::from(error);
                 let site = self.syntax_site.borrow_mut().take();
                 attach_trace(&self.lua, thread, &mut error, site, None);
-                self.failed.set(
-                    self.failed.get() || !self.addon_callbacks || error.kind != ErrorKind::Lua,
-                );
+                // 通常のLuaエラーではVMは失敗状態になりません（実ゲームのエラーステータス
+                // モデル: エラー後もVMは生存し、クラス側がステータスで管理します）。
+                // 制限・ホスト等の異常だけが従来どおり失敗状態にします。
+                self.failed.set(self.failed.get() || error.kind != ErrorKind::Lua);
                 self.pending = None;
                 self.synchronous.main_pending.set(false);
                 Err(error)

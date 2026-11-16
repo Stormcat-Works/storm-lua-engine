@@ -152,6 +152,33 @@ fn instruction_limits_cannot_be_caught_forever() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 #[test]
+fn non_function_callback_is_absent_not_an_error() -> Result<(), Box<dyn Error>> {
+    // 実ゲームの共通呼び出しは、対象が関数でなければ何も実行せずエラーも記録しません（E17）。
+    let mut vm = loaded("onTick = 5")?;
+    assert_eq!(
+        vm.tick(&CompositeSignal::default())?,
+        RunOutcome::Missing
+    );
+    assert!(!vm.is_failed());
+    Ok(())
+}
+#[test]
+fn ordinary_lua_error_does_not_fail_the_vm() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデルでは、通常のLuaエラー後もVMは生存します（E9）。
+    let mut vm = loaded(
+        "n=0\nfunction onTick()\n  n=n+1\n  if n==1 then error('boom') end\n  output.setNumber(1,n)\nend",
+    )?;
+    let error = vm
+        .tick(&CompositeSignal::default())
+        .err()
+        .ok_or("error was swallowed")?;
+    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
+    assert!(!vm.is_failed());
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(vm.output().numbers[0], 2.0);
+    Ok(())
+}
+#[test]
 fn time_limit_matches_the_game_and_does_not_fail_the_vm() -> Result<(), Box<dyn Error>> {
     // 実ゲームの時間制限は1001msで、超過は通常のLuaエラーとして報告され、VMは失敗状態になりません。
     let mut vm = loaded(

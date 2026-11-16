@@ -114,10 +114,7 @@ fn tick_accepts_zero_and_negative_game_ticks_as_integers() -> Result<(), Box<dyn
     addon.tick(-30)?;
     assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(-30)));
     addon.tick(2147483647)?;
-    assert_eq!(
-        field(&addon, "seen")?,
-        Some(LuaValue::Integer(2147483647))
-    );
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(2147483647)));
     Ok(())
 }
 
@@ -370,8 +367,7 @@ fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error
         scoped_server: vec!["again".into()],
         ..Default::default()
     };
-    config.limits.instruction_budget =
-        Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let again = |_: &[LuaValue]| {

@@ -12,7 +12,7 @@ server関数はホストが名前と同期実装を明示登録する。エン�
 
 ## Lifecycle
 
-Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。中断中は別のcallbackやstartを重ねない。通常のLuaエラーは呼び出し元へ返して保持し、以後のonTickを抑止するが、同じVMの通常イベント・onCreate・onDestroyは実行できる。sourceの実行がLuaエラーになった場合もcheckpointの復元とonCreateへ進める。命令数・メモリ制限やホスト境界の失敗は再利用せず、明示的にreload／recreateする。callbackのglobalがfunction以外なら未定義として扱い、Luaの返値は捨てる。errorのpeerへの報告と、通常callbackエラーの報告後のtick再開は現在のホストAPIでは未対応。
+Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。中断中は別のcallbackやstartを重ねない。通常のLuaエラーは呼び出し元へ返し、実ゲームのエラーステータス（onTick失敗=2、ロード失敗=3、それ以外のコールバック失敗=5）と最大11件のエラーリングへ記録する。ステータスが0でない間はonTickをスキップするが、同じVMの通常イベント・onCreate・onDestroyは実行できる。ステータス5は報告後のtickでクリアされ、onTickは自動的に再開する。ステータス2・3はreloadまで残る。peerへの`[Server]`報告そのものはホストの責務であり、エンジンは`error_status`/`error_log`で状態を公開する。sourceの実行がLuaエラーになった場合もcheckpointの復元とonCreateへ進める。命令数・メモリ制限やホスト境界の失敗は再利用せず、明示的にreload／recreateする。callbackのglobalがfunction以外なら未定義として扱い、Luaの返値は捨てる。
 
 新規ワールドではtop-levelの初期g_savedataを保持する。既存ワールドではcheckpointを事前検証し、top-levelが完了した後にg_savedataへ適用してからonCreate(false)を実行する。checkpointの適用で古いテーブル参照・upvalueを自動書き換えしない。
 

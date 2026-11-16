@@ -155,10 +155,7 @@ fn instruction_limits_cannot_be_caught_forever() -> Result<(), Box<dyn Error>> {
 fn non_function_callback_is_absent_not_an_error() -> Result<(), Box<dyn Error>> {
     // 実ゲームの共通呼び出しは、対象が関数でなければ何も実行せずエラーも記録しません（E17）。
     let mut vm = loaded("onTick = 5")?;
-    assert_eq!(
-        vm.tick(&CompositeSignal::default())?,
-        RunOutcome::Missing
-    );
+    assert_eq!(vm.tick(&CompositeSignal::default())?, RunOutcome::Missing);
     assert!(!vm.is_failed());
     Ok(())
 }
@@ -196,17 +193,11 @@ fn error_status_skips_callbacks_but_http_reply_is_still_delivered() -> Result<()
     assert_eq!(vm.error_status(), 2);
     assert_eq!(vm.error_log().len(), 1);
     // エラー状態の間、onTick/onDrawはスキップされます。
-    assert_eq!(
-        vm.tick(&CompositeSignal::default())?,
-        RunOutcome::Missing
-    );
+    assert_eq!(vm.tick(&CompositeSignal::default())?, RunOutcome::Missing);
     assert_eq!(vm.draw(32, 32)?, RunOutcome::Missing);
     // それでもhttpReplyは配送されます。
     let request = vm.drain_http_requests().pop().ok_or("no request")?;
-    assert_eq!(
-        vm.http_reply(request.token, b"ok")?,
-        RunOutcome::Completed
-    );
+    assert_eq!(vm.http_reply(request.token, b"ok")?, RunOutcome::Completed);
     assert_eq!(vm.drain_logs(), vec![b"replied".to_vec()]);
     // httpReplyの失敗はステータスを5へ上書きします。
     let mut vm = loaded(
@@ -274,7 +265,9 @@ fn time_limit_cannot_be_caught_forever_by_pcall() -> Result<(), Box<dyn Error>> 
         .ok_or("loop was accepted")?;
     assert_eq!(error.kind, ErrorKind::Lua, "{error}");
     assert!(
-        error.message.contains("max execution time exceeded (1000ms)"),
+        error
+            .message
+            .contains("max execution time exceeded (1000ms)"),
         "{}",
         error.message
     );
@@ -286,7 +279,10 @@ fn custom_time_limit_is_host_configurable() -> Result<(), Box<dyn Error>> {
     let mut config = MicrocontrollerConfig::default();
     config.limits.time_limit = Some(std::time::Duration::from_millis(50));
     let mut vm = Microcontroller::new(config)?;
-    vm.load(b"function onTick() while true do end end", "=timeout-custom")?;
+    vm.load(
+        b"function onTick() while true do end end",
+        "=timeout-custom",
+    )?;
     let error = vm
         .tick(&CompositeSignal::default())
         .err()
@@ -307,7 +303,9 @@ fn instruction_memory_and_source_limits_are_off_by_default() -> Result<(), Box<d
     let mut vm = Microcontroller::new(MicrocontrollerConfig::default())?;
     let mut source = String::from("--");
     source.push_str(&"x".repeat(1100 * 1024));
-    source.push_str("\nfunction onTick() local s=string.rep('y',9*1024*1024) output.setNumber(1,#s) end");
+    source.push_str(
+        "\nfunction onTick() local s=string.rep('y',9*1024*1024) output.setNumber(1,#s) end",
+    );
     vm.load(source.as_bytes(), "=unbounded")?;
     vm.tick(&CompositeSignal::default())?;
     assert_eq!(vm.output().numbers[0], 9.0 * 1024.0 * 1024.0);
@@ -382,7 +380,8 @@ fn game_default_random_is_the_shared_builtin_crt_stream() -> Result<(), Box<dyn 
     for _ in 0..3 {
         expected.push((f64::from(reference.draw()?) / 32768.0) as f32);
     }
-    let mut a = loaded("math.randomseed(2024);function onTick()output.setNumber(1,math.random())end")?;
+    let mut a =
+        loaded("math.randomseed(2024);function onTick()output.setNumber(1,math.random())end")?;
     let mut b = loaded("function onTick()output.setNumber(1,math.random())end")?;
     a.tick(&CompositeSignal::default())?;
     assert_eq!(a.output().numbers[0], expected[0]);
@@ -413,7 +412,8 @@ fn microcontroller_accepts_a_host_supplied_crt_context() -> Result<(), Box<dyn E
         vm.load(source.as_bytes(), "=test")?;
         Ok(vm)
     };
-    let mut a = with_context("math.randomseed(3);function onTick()output.setNumber(1,math.random())end")?;
+    let mut a =
+        with_context("math.randomseed(3);function onTick()output.setNumber(1,math.random())end")?;
     let mut b = with_context("function onTick()output.setNumber(1,math.random())end")?;
     a.tick(&CompositeSignal::default())?;
     assert_eq!(a.output().numbers[0], expected[0]);

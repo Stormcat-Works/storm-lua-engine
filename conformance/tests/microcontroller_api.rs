@@ -7,7 +7,10 @@ use storm_lua_vm::runner::RunOutcome;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-fn vehicle(environment: EnvironmentProfile, source: &str) -> Result<Microcontroller, Box<dyn Error>> {
+fn vehicle(
+    environment: EnvironmentProfile,
+    source: &str,
+) -> Result<Microcontroller, Box<dyn Error>> {
     let mut vm = Microcontroller::new(MicrocontrollerConfig {
         environment,
         ..Default::default()
@@ -85,10 +88,7 @@ fn channel_conversion_truncates_and_ignores_out_of_range() -> TestResult {
     assert_eq!(vm.output().numbers[1], 0.0);
     assert_eq!(vm.output().numbers[31], 9.0);
     // 範囲外への書き込みはどこにも現れません。
-    assert_eq!(
-        vm.output().numbers.iter().filter(|n| **n == 9.0).count(),
-        1
-    );
+    assert_eq!(vm.output().numbers.iter().filter(|n| **n == 9.0).count(), 1);
     assert_eq!(vm.error_status(), 0);
     Ok(())
 }

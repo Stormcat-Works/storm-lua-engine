@@ -51,7 +51,10 @@ impl std::fmt::Debug for MicrocontrollerConfig {
             .field("bindings", &self.bindings)
             .field("require_loader", &self.require_loader)
             .field("control_namespace", &self.control_namespace)
-            .field("random", &self.random.as_ref().map(|_| "<host CRT context>"))
+            .field(
+                "random",
+                &self.random.as_ref().map(|_| "<host CRT context>"),
+            )
             .field("deterministic_random", &self.deterministic_random)
             .finish()
     }

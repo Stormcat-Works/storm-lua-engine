@@ -61,7 +61,9 @@ fn runtime_error_keeps_the_full_chunk_name_and_call_stack() -> TestResult {
             (2, LONG, 9, None),
         ]
     );
-    assert!(vm.is_failed());
+    // 通常のLuaエラーではVMは失敗状態になりません（E9）。ステータスへ記録されます。
+    assert!(!vm.is_failed());
+    assert_eq!(vm.error_status(), 2);
     Ok(())
 }
 
@@ -69,7 +71,7 @@ fn runtime_error_keeps_the_full_chunk_name_and_call_stack() -> TestResult {
 fn error_raised_by_a_builtin_or_host_function_points_at_the_lua_caller() -> TestResult {
     for (body, name) in [
         ("error('boom')", "error"),
-        ("screen.drawText(0, 0)", "drawText"),
+        ("input.getNumber(1)", "getNumber"),
     ] {
         // errorはextended環境だけにある。
         let mut vm = Microcontroller::new(MicrocontrollerConfig {
@@ -216,7 +218,11 @@ fn non_utf8_function_name_is_unknown_and_keeps_the_location() -> TestResult {
 
 #[test]
 fn memory_limit_reports_where_the_script_was_running() -> TestResult {
-    let mut vm = Microcontroller::new(Default::default())?;
+    // メモリ上限はホストが明示した場合だけ効きます（J1）。
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.lua_memory_bytes =
+        Some(std::num::NonZeroUsize::new(8 * 1024 * 1024).ok_or("memory")?);
+    let mut vm = Microcontroller::new(config)?;
     vm.load(
         b"function onTick()\n  local t = {}\n  local s = 'x'\n  while true do\n    s = s .. s\n    t[#t + 1] = s\n  end\nend",
         "@main.lua",

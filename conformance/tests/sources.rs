@@ -348,7 +348,10 @@ fn completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm(
 }
 #[test]
 fn load_history_is_bounded_before_source_executes() -> Result<(), Box<dyn std::error::Error>> {
-    let mut vm = Microcontroller::new(Default::default())?;
+    // 保持履歴の上限は、ホストがソース長制限を有効化した場合に適用されます（J1）。
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.max_source_bytes = Some(std::num::NonZeroUsize::new(1024).ok_or("nonzero")?);
+    let mut vm = Microcontroller::new(config)?;
     for _ in 0..128 {
         vm.load(b"counter=(counter or 0)+1", "@same.lua")?;
     }

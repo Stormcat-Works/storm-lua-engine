@@ -35,11 +35,7 @@ impl Default for MsvcCrtRandom {
 }
 impl CrtRandomSource for MsvcCrtRandom {
     fn draw(&self) -> Result<u32, String> {
-        let next = self
-            .state
-            .get()
-            .wrapping_mul(214013)
-            .wrapping_add(2531011);
+        let next = self.state.get().wrapping_mul(214013).wrapping_add(2531011);
         self.state.set(next);
         Ok((next >> 16) & 0x7FFF)
     }

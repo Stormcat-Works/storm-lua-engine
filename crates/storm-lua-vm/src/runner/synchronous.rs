@@ -300,10 +300,7 @@ impl SynchronousCallbacks {
             ));
         }
         if context.active.get() == 0 {
-            context
-                .control
-                .borrow_mut()
-                .begin_entry(&context.limits);
+            context.control.borrow_mut().begin_entry(&context.limits);
         }
         let state = Rc::new(PassState {
             pending_failure: Cell::new(false),
@@ -379,10 +376,7 @@ impl SynchronousCallbacks {
             }
         };
         if context.active.get() == 0 && self.pass.is_none() {
-            context
-                .control
-                .borrow_mut()
-                .begin_entry(&context.limits);
+            context.control.borrow_mut().begin_entry(&context.limits);
         }
         let arguments = crate::value::encode(&context.lua, arguments).map_err(boundary_error)?;
         let thread = context
@@ -407,10 +401,7 @@ impl SynchronousCallbacks {
                 control.deadline = None;
                 control.limit_line.take()
             };
-            let mut error = VmError::new(
-                ErrorKind::Lua,
-                context.limits.timeout_message(line),
-            );
+            let mut error = VmError::new(ErrorKind::Lua, context.limits.timeout_message(line));
             attach_trace(&context.lua, &thread, &mut error, None, line);
             Err(error)
         } else if context.control.borrow().exhausted {

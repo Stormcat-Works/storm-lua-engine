@@ -94,7 +94,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             }
             let s = s.borrow();
             tick_only(lua, s.phase, "input")?;
-            let value = channel(coerced_number(lua, args.get(0)))
+            let value = channel(coerced_number(lua, args.first()))
                 .map_or(0.0, |i| f64::from(s.input.numbers[i]));
             Ok(MultiValue::from_vec(vec![Value::Number(value)]))
         })?,
@@ -108,8 +108,8 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             }
             let s = s.borrow();
             tick_only(lua, s.phase, "input")?;
-            let value = channel(coerced_number(lua, args.get(0)))
-                .is_some_and(|i| s.input.booleans[i]);
+            let value =
+                channel(coerced_number(lua, args.first())).is_some_and(|i| s.input.booleans[i]);
             Ok(MultiValue::from_vec(vec![Value::Boolean(value)]))
         })?,
     )?;
@@ -122,7 +122,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             }
             let mut s = s.borrow_mut();
             tick_only(lua, s.phase, "output")?;
-            if let Some(i) = channel(coerced_number(lua, args.get(0))) {
+            if let Some(i) = channel(coerced_number(lua, args.first())) {
                 // 値はf64→f32へ変換して保持します。NaN/Infもそのまま通します。
                 s.output.numbers[i] = coerced_number(lua, args.get(1)) as f32;
             }
@@ -138,7 +138,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             }
             let mut s = s.borrow_mut();
             tick_only(lua, s.phase, "output")?;
-            if let Some(i) = channel(coerced_number(lua, args.get(0))) {
+            if let Some(i) = channel(coerced_number(lua, args.first())) {
                 s.output.booleans[i] = truthy(args.get(1));
             }
             Ok(())
@@ -152,7 +152,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 return Ok(MultiValue::new());
             }
             let s = s.borrow();
-            let label = coerced_text(lua, args.get(0));
+            let label = coerced_text(lua, args.first());
             let value = match s.properties.get(&label) {
                 Some(PropertyValue::Number(n)) => *n,
                 _ => 0.0,
@@ -168,11 +168,8 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 return Ok(MultiValue::new());
             }
             let s = s.borrow();
-            let label = coerced_text(lua, args.get(0));
-            let value = matches!(
-                s.properties.get(&label),
-                Some(PropertyValue::Bool(true))
-            );
+            let label = coerced_text(lua, args.first());
+            let value = matches!(s.properties.get(&label), Some(PropertyValue::Bool(true)));
             Ok(MultiValue::from_vec(vec![Value::Boolean(value)]))
         })?,
     )?;
@@ -184,7 +181,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 return Ok(MultiValue::new());
             }
             let s = s.borrow();
-            let label = coerced_text(lua, args.get(0));
+            let label = coerced_text(lua, args.first());
             let bytes = match s.properties.get(&label) {
                 Some(PropertyValue::Text(bytes)) => bytes.clone(),
                 _ => Vec::new(),
@@ -314,7 +311,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             let mut state = maps.borrow_mut();
             draw_only(lua, state.phase)?;
             let values = [
-                coerced_number(lua, args.get(0)),
+                coerced_number(lua, args.first()),
                 coerced_number(lua, args.get(1)),
                 coerced_number(lua, args.get(2)),
             ];
@@ -347,7 +344,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
                 let mut state = palette.borrow_mut();
                 draw_only(lua, state.phase)?;
                 let values = [
-                    coerced_number(lua, args.get(0)),
+                    coerced_number(lua, args.first()),
                     coerced_number(lua, args.get(1)),
                     coerced_number(lua, args.get(2)),
                     if args.len() > 3 {

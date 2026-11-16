@@ -68,7 +68,8 @@ impl ExecutionLimits {
     pub const GAME_TIME_LIMIT: std::time::Duration = std::time::Duration::from_millis(1001);
     /// 命令数バジェットの実効値。無効時は枯渇しない値です。
     pub(crate) fn instruction_allowance(&self) -> u64 {
-        self.instruction_budget.map_or(u64::MAX, |budget| budget.get())
+        self.instruction_budget
+            .map_or(u64::MAX, |budget| budget.get())
     }
     /// 時間制限超過エラーの接頭辞。実ゲームは `max execution time exceeded (1000ms)` です。
     pub(crate) fn timeout_prefix(&self) -> String {

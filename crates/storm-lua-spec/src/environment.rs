@@ -16,8 +16,9 @@ pub enum EnvironmentProfile {
 /// 実ゲームのbase部分集合は6関数のみで、`select` は両クラスとも不在です（E13）。
 pub const GAME_FUNCTIONS: &[&str] = &["ipairs", "next", "pairs", "tonumber", "tostring", "type"];
 /// Additional Lua globals exposed only by the extended environment.
-pub const EXTENDED_FUNCTIONS: &[&str] =
-    &["assert", "error", "pcall", "xpcall", "unpack", "print", "select"];
+pub const EXTENDED_FUNCTIONS: &[&str] = &[
+    "assert", "error", "pcall", "xpcall", "unpack", "print", "select",
+];
 /// Globals absent from the game-facing environment. `debug` exists with `log` only.
 /// `require` is handled separately by the static project linker.
 pub const GAME_UNAVAILABLE: &[&str] = &[

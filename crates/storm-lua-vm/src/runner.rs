@@ -311,7 +311,10 @@ impl HookControl {
         self.time_countdown = self.time_countdown.saturating_sub(quantum);
         if self.time_countdown == 0 {
             self.time_countdown = TIME_CHECK_INTERVAL;
-            if self.deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+            if self
+                .deadline
+                .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
                 self.time_exceeded = true;
             }
         }
@@ -405,7 +408,7 @@ impl Vm {
         limits: ExecutionLimits,
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
-        let mut vm = Self::with_environment(limits, environment_profile)?;
+        let vm = Self::with_environment(limits, environment_profile)?;
         vm.synchronous.addon_callbacks.set(true);
         Ok(vm)
     }
@@ -597,7 +600,8 @@ impl Vm {
                 // 通常のLuaエラーではVMは失敗状態になりません（実ゲームのエラーステータス
                 // モデル: エラー後もVMは生存し、クラス側がステータスで管理します）。
                 // 制限・ホスト等の異常だけが従来どおり失敗状態にします。
-                self.failed.set(self.failed.get() || error.kind != ErrorKind::Lua);
+                self.failed
+                    .set(self.failed.get() || error.kind != ErrorKind::Lua);
                 self.pending = None;
                 self.synchronous.main_pending.set(false);
                 Err(error)

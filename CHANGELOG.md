@@ -10,6 +10,15 @@
 - npm側は`vite` 8.3.8、`wrangler` 4.162.0、`playwright` 1.65.1、`@types/node` 26へ上げた。miniflareが厳密に固定する`undici` 7.28.0と`sharp` 0.35.2は、appの`overrides`で7.30.2と0.35.5へ寄せた。
 - `typescript`は5.8.3を維持する。5.9.3と7.0.2では`WebAssembly.instantiate`の戻り値の型が変わり、`packages/lua-engine/src/raster.ts`がTS2339で失敗する。
 
+### VMコア意味論の実ゲーム仕様への整合
+
+- MC APIの引数意味論を実ゲームへ合わせた。引数の個数が合わない呼び出しはエラーにならず戻り値0個で無言に戻り、値の型はLuaの変換規則で変換され、変換できない値は0として扱われる。検査の順序は個数→phaseフラグ→変換。トップレベルとhttpReplyでもI/O・描画はoutsideエラーになる。Compositeチャンネルはcvttsd2si相当の変換となり、範囲外の大きな値やNaNでもエラーにならない。
+- エラー後の回復モデルを実ゲームのエラーステータスへ合わせた。通常のLuaエラーではVMは失敗状態にならず、Vehicleはステータス（onDraw=1、onTick=2、ロード=3、httpReply=5）と最大11件のエラーリングを保持し、エラー中はonTick/onDrawをスキップする一方でhttpReplyは配送を続ける。Addonはステータス（onTick=2、ロード=3、それ以外=5）を保持し、ステータス5は報告後のtickで自動復帰する。どちらも`error_status`/`error_log`で参照できる。
+- 実行制限を再構成した。壁時計1001msの時間制限を既定で有効にし、超過は実ゲームと同じ文面のLuaエラーになる。命令数・Luaメモリ・ソース長の上限は既定で無効になり、ホストが明示した場合だけ効く（`ExecutionLimits`の各項目は`Option`になった）。
+- Gameプロファイルの`math.random`の既定を、実ゲームと同じCRT互換のプロセス共有ストリームへ変えた。VMごとの決定的ストリームは`deterministic_random`オプションで選べる。Vehicleの`MicrocontrollerConfig`にもホストCRTコンテキスト（`random`）と`deterministic_random`を追加した。
+- Vehicle/Addon環境から`select`を除き（baseは6関数のみ）、`string.dump`を戻した（stringライブラリは完全版）。
+- 関数でないコールバックは、エラーではなく「不在」として扱う。Addonの`tick(game_ticks)`は符号付き整数を受け付け、0以下でも拒否しない。
+
 ### フレームが変わったかどうかの確かめ方
 
 - 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。

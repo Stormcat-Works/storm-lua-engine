@@ -277,7 +277,8 @@ mod tests {
         assert!(message.contains("invalid random interval"), "{message}");
 
         // 拒否された呼び出しは乱数ドローを消費しません。
-        let (_lua2, math2) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
+        let (_lua2, math2) =
+            sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let random2: mlua::Function = math2.get("random").unwrap();
         let expected: i64 = random2.call(10).unwrap();
         let _ = random_error(&math, 1.5);

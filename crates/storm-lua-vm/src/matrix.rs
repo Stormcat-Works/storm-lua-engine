@@ -72,7 +72,10 @@ fn key_text(value: &Value) -> String {
     }
 }
 
-fn read(lua: &Lua, value: &Value) -> BackendResult<[f64; 16]> {
+/// Lua table を row-major の16要素として読みます。検証とエラー文字列は
+/// matrix テーブル本体と同一で、Component Mod の matrix 引数（renderMesh 等）も
+/// 同じ変換を使います。
+pub fn read_matrix(lua: &Lua, value: &Value) -> BackendResult<[f64; 16]> {
     let table = match value {
         Value::Nil => return Err(invalid("matrix was nil")),
         Value::Table(table) => table,
@@ -119,7 +122,8 @@ fn read(lua: &Lua, value: &Value) -> BackendResult<[f64; 16]> {
     Ok(m)
 }
 
-fn write(lua: &Lua, m: [f64; 16]) -> BackendResult<Table> {
+/// 16要素を Lua の連番 table（キー1〜16）として構築します。
+pub fn write_matrix(lua: &Lua, m: [f64; 16]) -> BackendResult<Table> {
     lua.create_sequence_from(m)
 }
 
@@ -240,7 +244,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
     let matrix = lua.create_table()?;
     matrix.raw_set(
         "identity",
-        lua.create_function(|lua, _: Variadic<Value>| write(lua, identity()))?,
+        lua.create_function(|lua, _: Variadic<Value>| write_matrix(lua, identity()))?,
     )?;
     matrix.raw_set(
         "translation",
@@ -250,14 +254,14 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
             m[12] = number(lua, &args[0]);
             m[13] = number(lua, &args[1]);
             m[14] = number(lua, &args[2]);
-            write(lua, m)
+            write_matrix(lua, m)
         })?,
     )?;
     matrix.raw_set(
         "position",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 1)?;
-            let m = read(lua, &args[0])?;
+            let m = read_matrix(lua, &args[0])?;
             Ok((m[12], m[13], m[14]))
         })?,
     )?;
@@ -265,36 +269,36 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
         "multiply",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 2)?;
-            write(lua, multiply(read(lua, &args[0])?, read(lua, &args[1])?))
+            write_matrix(lua, multiply(read_matrix(lua, &args[0])?, read_matrix(lua, &args[1])?))
         })?,
     )?;
     matrix.raw_set(
         "transpose",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 1)?;
-            let m = read(lua, &args[0])?;
+            let m = read_matrix(lua, &args[0])?;
             let mut t = [0.0_f64; 16];
             for r in 0..4 {
                 for c in 0..4 {
                     t[c * 4 + r] = m[r * 4 + c];
                 }
             }
-            write(lua, t)
+            write_matrix(lua, t)
         })?,
     )?;
     matrix.raw_set(
         "invert",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 1)?;
-            write(lua, inverse(read(lua, &args[0])?)?)
+            write_matrix(lua, inverse(read_matrix(lua, &args[0])?)?)
         })?,
     )?;
     matrix.raw_set(
         "distance",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 2)?;
-            let a = read(lua, &args[0])?;
-            let b = read(lua, &args[1])?;
+            let a = read_matrix(lua, &args[0])?;
+            let b = read_matrix(lua, &args[1])?;
             Ok(
                 ((a[12] - b[12]).powi(2) + (a[13] - b[13]).powi(2) + (a[14] - b[14]).powi(2))
                     .sqrt(),
@@ -305,7 +309,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
         "multiplyXYZW",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 5)?;
-            let m = read(lua, &args[0])?;
+            let m = read_matrix(lua, &args[0])?;
             // 実ゲームはベクトル成分を f32 へ丸めてから f64 で計算する。
             let v = [
                 number(lua, &args[1]) as f32 as f64,
@@ -327,7 +331,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
             name,
             lua.create_function(move |lua, args: Variadic<Value>| {
                 arity(&args, 1)?;
-                write(lua, rotation(axis, number(lua, &args[0])))
+                write_matrix(lua, rotation(axis, number(lua, &args[0])))
             })?,
         )?;
     }
@@ -335,7 +339,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
         "rotationToFaceXZ",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 2)?;
-            write(
+            write_matrix(
                 lua,
                 rotation_to_face_xz(number(lua, &args[0]), number(lua, &args[1])),
             )
@@ -346,7 +350,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
             "scale",
             lua.create_function(|lua, args: Variadic<Value>| {
                 arity(&args, 3)?;
-                write(
+                write_matrix(
                     lua,
                     scale(
                         number(lua, &args[0]),

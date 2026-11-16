@@ -4,6 +4,10 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 
 ## 未完了の作業
 
+### Component Mod の TypeScript SDK 公開（2026-11-16）
+
+Rust側（`storm-lua-component`）は完了し v0.5.0 に含まれる。TS SDK への公開は未実施。必要な作業は、WASM セッションへの Component モード（mode 3）と制御アクション（parse / add_to_simulation / tick / render / remove_from_simulation / status）の追加、`packages/lua-engine/src/component.ts`（`AddonVm` と同型の `ComponentVm`）と生成カタログへの Component 項目の追加、そしてホスト提供ドメイン（スロット・描画・物理など47関数＋parser）を TS ホストから供給するブリッジの設計である。ブリッジは addon の `server.*` 登録とは形が異なり（固定名・固定署名の同期コールバック群）、設計判断を含むため v0.5.0 の Rust 側とは切り分けた。build/minify パイプラインの Component 入口（`storm-lua-build` 側）も併せて未実施であり、同じ後続作業で扱う。
+
 ### v0.4.1のローカル公開候補（2026-11-04、準備完了・公開工程は残る）
 
 目標文字数を指定した探索の再開経路が一括実行と異なる勝者を選ぶ不具合と、サイズ計測が印字時のlocal統合・dead-if除去を数えて印字長より大きくなる不具合を修正し、版番号を0.4.1へ更新した。現行コーパス全件のFULL検証、ワークスペーステスト1,832件を確認済み。[候補記録](docs/verification/release-candidate-0.4.1.md)。

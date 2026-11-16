@@ -8,7 +8,7 @@ members = [
     "crates/storm-lua-build",
     "crates/storm-lua-spec", "crates/storm-screen-raster", "crates/storm-lua-vm",
     "crates/storm-lua-microcontroller", "crates/storm-lua-wasm", "crates/storm-screen-wasm",
-    "conformance", "xtask", "crates/storm-lua-bridge", "crates/storm-lua-addon",
+    "conformance", "xtask", "crates/storm-lua-bridge", "crates/storm-lua-addon", "crates/storm-lua-component",
 ]
 
 [workspace.package]
@@ -25,6 +25,7 @@ storm-lua-analysis = { path = "crates/storm-lua-analysis" }
 storm-lua-minify = { path = "crates/storm-lua-minify" }
 storm-lua-build = { path = "crates/storm-lua-build" }
 storm-lua-addon = { path = "crates/storm-lua-addon", default-features = false }
+storm-lua-component = { path = "crates/storm-lua-component", default-features = false }
 storm-lua-bridge = { path = "crates/storm-lua-bridge" }
 storm-lua-spec = { path = "crates/storm-lua-spec" }
 storm-screen-raster = { path = "crates/storm-screen-raster" }

@@ -26,6 +26,7 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 |---|---|
 | ビークルLuaの開発・検証 | `onTick`／`onDraw`、Composite I/O、プロパティ、描画命令 |
 | アドオンLuaの実行 | 独立したAddonモード、イベント、`g_savedata`、メニュープロパティ、`matrix.*`、ホストの`server.*` |
+| コンポーネントLuaの実行 | 独立したComponent Modモード、ライフサイクル、`component.*`／`parser.*`、ホスト提供ドメイン、`matrix.*`（Component集合） |
 | 画面表示・画像生成 | CPUラスタライザ、同梱ビットマップフォント、描画専用WASM |
 | IDE・テストハーネス | ブレークポイント、ステップ実行、変数・テーブル検査、watch、ログ配送 |
 | 自分のワールドとの接続 | `drawMap`の地図プロバイダー、同期サーバー関数、HTTP要求・返信キュー |
@@ -41,6 +42,8 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 **アドオン:** `const addon = engine.createAddon({ newWorld: true, server: hostFunctions });`
 
 `addon.load(source)`、`addon.start()`、`addon.tick(1)`の順に駆動します。プレイヤーやビークルの状態は`hostFunctions`で接続し、イベントは`addon.dispatch(...)`で渡します。AddonにはComposite I/Oや`draw()`はありません。
+
+**コンポーネント:** Rustの`storm-lua-component`クレートを使います。`Component::new(ComponentConfig { providers, ..Default::default() })`で作り、`load(source, lua_filename)`、`parse()`、`add_to_simulation()`、`tick(game_ticks)`／`render()`、`remove_from_simulation()`の順に駆動します。スロットや描画などのホスト依存機能は`ComponentProviders`で提供した分だけ有効になります。TypeScript SDKへの公開は未実施です（[TASKS](TASKS.md)参照）。契約は[Component Mod仕様](docs/specs/component.md)。
 
 **描画だけ:** `/raster`の`loadRaster()`を使用します。Lua VMをロードせず、バイナリ命令バッチからRGBAを生成できます。
 

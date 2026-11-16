@@ -2,6 +2,13 @@
 
 ## 未公開
 
+### Component Mod プロファイルの追加
+
+- 第3のプロファイルとして Component Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`が、順序付きライフサイクル（`load`→`parse`→`add_to_simulation`→`tick`/`render`→`remove_from_simulation`）と実ゲームのエラーステータス（onTick=2、ロード=3、その他=5。timeoutは数値が未確定のため数値を主張しない表現）を所有する。tickだけがステータスゲートを持ち、自動復帰はない。
+- 64関数のうち`matrix`の13関数（Component集合、`scale`を含む）と`debug.log`はエンジン実装で、残り50関数はホスト提供ドメイン（sub-trait 11種、parserを含む）として、提供された分だけ登録される。引数の個数が合わない呼び出しはLuaエラー（`Wrong number of args`）になり、型は無言変換される（共有matrixの`identity`だけは実ゲームに個数検査が無いため例外）。`debug.log`は個数だけがエラーで型は無言という関数単位の例外（Component系統のみ）。
+- スクリプトの読み込みはホスト契約とし、新しいAPIは作らなかった。定義XMLの`lua_filename`属性を、パッケージ内アセット→実ファイルの順で解決し、属性値そのままのチャンク名で読み込む。
+- 解析側にComponentプロファイルの経路（`component_api_roots`、`component_diagnostics`、`lint_module_component`）と、予約語へのComponentコールバック名4件の追加を行った。build/minifyパイプラインのComponent入口とTypeScript SDKへの公開は未実施で、[TASKS](TASKS.md)に残した。
+
 ### 依存関係の更新
 
 - `bincode`（RUSTSEC-2025-0141で保守終了が宣言された）を外し、minifyの候補探索がWorker境界で使う符号化を、serde駆動の自前バイナリコーデック（`crates/storm-lua-minify/src/job_codec.rs`）へ置き換えた。公開関数のシグネチャと符号化の意味は変えていない。

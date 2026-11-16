@@ -716,6 +716,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "storm-lua-component"
+version = "0.4.1"
+dependencies = [
+ "storm-lua-spec",
+ "storm-lua-vm",
+]
+
+[[package]]
 name = "storm-lua-conformance"
 version = "0.4.1"
 dependencies = [
@@ -724,6 +732,7 @@ dependencies = [
  "storm-lua-addon",
  "storm-lua-analysis",
  "storm-lua-build",
+ "storm-lua-component",
  "storm-lua-microcontroller",
  "storm-lua-minify",
  "storm-lua-spec",

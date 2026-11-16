@@ -99,7 +99,8 @@
       "storm-lua-addon",
       "storm-lua-analysis",
       "storm-lua-build",
-      "storm-lua-minify"
+      "storm-lua-minify",
+      "storm-lua-component"
     ],
     "external": [
       "serde_json",
@@ -114,6 +115,9 @@
       ],
       "storm-lua-vm": [
         "backend-mlua",
+        "debug"
+      ],
+      "storm-lua-component": [
         "debug"
       ]
     }
@@ -262,6 +266,20 @@
       "target": "wasm32-unknown-unknown",
       "forbidden_transitive": [
         "lua-src"
+      ]
+    }
+  },
+  "storm-lua-component": {
+    "role": "product",
+    "normal": [
+      "storm-lua-spec",
+      "storm-lua-vm"
+    ],
+    "dev": [],
+    "external": [],
+    "features": {
+      "storm-lua-vm": [
+        "backend-mlua"
       ]
     }
   }

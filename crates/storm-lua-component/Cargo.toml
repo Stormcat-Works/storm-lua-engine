@@ -1,0 +1,19 @@
+[package]
+name = "storm-lua-component"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Host-driven Stormworks Component Mod Lua lifecycle, callbacks and host bindings"
+
+[lints]
+workspace = true
+
+[dependencies]
+storm-lua-spec = { workspace = true }
+storm-lua-vm = { workspace = true, features = ["backend-mlua"] }
+
+[features]
+default = []
+debug = ["storm-lua-vm/debug"]

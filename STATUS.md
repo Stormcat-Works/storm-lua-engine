@@ -6,6 +6,12 @@ v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`
 
 正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
+## Component Mod プロファイルの追加（2026-11-16、未公開）
+
+第3のプロファイルとしてComponent Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`がライフサイクル（load→parse→add_to_simulation→tick/render→remove_from_simulation、tickのみステータスゲート）とエラーステータス（0/2/3/5、timeoutは数値を主張しない表現）を所有する。64関数のうち`matrix`13関数と`debug.log`はエンジン実装、残り50関数はホスト提供ドメイン（sub-trait 11種）で、提供された分だけ登録される。引数意味論は実ゲーム v1.15.26 の静的解析の確定どおり（個数不一致はLuaエラー（共有matrixのidentityは例外）、型は無言変換、`debug.log`は個数のみエラー）。analysis側にはComponentプロファイルのルート集合・診断・lint経路を足した。契約は[Component Mod仕様](docs/specs/component.md)。
+
+TypeScript SDKへの公開（WASMのモード追加とプロバイダのブリッジ設計を含む）は切り分けて[TASKS](TASKS.md)に残した。Rust側のワークスペーステストとconformanceのカタログ照合は通過している。3ブラウザでの実行は未実施（Component Modは当面Rustのみ）。
+
 ## 依存関係の更新（2026-11-15、未公開）
 
 bincodeを自前コーデックへ置換し、Rustとnpmの依存を最新化した。ワークスペースのテスト1,875件、TypeScriptの単体テスト（lua-engine 37件、app 38件）、appのビルドと`wrangler deploy --dry-run`、`wrangler dev`の起動が通過した。mluaの0.11/0.12化とtypescriptの5.9以降への更新は、上流の挙動・型の変更で既存テストとビルドが壊れるため見送り、理由をCHANGELOGの未公開節に記録した。appのビルド確認に使うWASM成果物は、この環境のemccとwasm-optの版の不一致でローカル生成できないため、公開済み0.4.1の成果物を使った（依存更新とは無関係の既存の環境問題）。

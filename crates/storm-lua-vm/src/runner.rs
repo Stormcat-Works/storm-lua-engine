@@ -412,6 +412,18 @@ impl Vm {
         vm.synchronous.addon_callbacks.set(true);
         Ok(vm)
     }
+    /// Component Mod環境のVMです。Addonと同じ保持モード（通常のLuaエラーで
+    /// VMが失敗状態にならず、関数でないコールバックを不在として扱う）を
+    /// 使います。Component固有のライフサイクルとエラーステータスの管理は
+    /// storm-lua-component側が所有します。
+    pub fn with_component_environment(
+        limits: ExecutionLimits,
+        environment_profile: storm_lua_spec::environment::EnvironmentProfile,
+    ) -> Result<Self, VmError> {
+        let vm = Self::with_environment(limits, environment_profile)?;
+        vm.synchronous.addon_callbacks.set(true);
+        Ok(vm)
+    }
     /// Install host-shared Windows CRT math.random/randomseed semantics while idle.
     /// Lua argument/distribution/seed-discard behavior remains owned by this VM.
     pub fn install_crt_random(

@@ -101,13 +101,44 @@ enum Stage {
     Destroyed,
     Failed,
 }
+/// 実ゲームのエラーステータス（スクリプト状態の +0x78 相当）とエラーリング。
+/// 0=正常、2=onTick失敗、3=ロード失敗、5=onTick以外のコールバック失敗。
+/// ステータス5は報告後に自動復帰し、ステータス2/3はリロードまで残ります（E9）。
+#[derive(Default)]
+pub(crate) struct ErrorState {
+    status: Cell<u32>,
+    errors: RefCell<Vec<String>>,
+}
+impl ErrorState {
+    pub(crate) fn status(&self) -> u32 {
+        self.status.get()
+    }
+    /// 通常のLuaエラーを記録します。後からの失敗がステータスを上書きします。
+    pub(crate) fn record(&self, status: u32, message: &str) {
+        self.status.set(status);
+        let mut errors = self.errors.borrow_mut();
+        if errors.len() > 10 {
+            errors.remove(0);
+        }
+        errors.push(message.to_owned());
+    }
+    /// ステータス5の報告完了に伴うクリア（ステータス・リング・未報告分）です。
+    pub(crate) fn clear(&self) {
+        self.status.set(0);
+        self.errors.borrow_mut().clear();
+    }
+    pub(crate) fn log(&self) -> Vec<String> {
+        self.errors.borrow().clone()
+    }
+}
+
 /// A synchronous entry for host-generated Addon events, including reentrant events.
 /// Handles share the actual VM and lifecycle; reload/drop invalidates older handles.
 #[derive(Clone)]
 pub struct SynchronousEvents {
     callbacks: storm_lua_vm::runner::SynchronousCallbacks,
     stage: Weak<Cell<Stage>>,
-    tick_disabled: Weak<Cell<bool>>,
+    error_state: Weak<ErrorState>,
     scoped: bool,
 }
 impl SynchronousEvents {
@@ -119,8 +150,9 @@ impl SynchronousEvents {
             && self.callbacks.is_live()
     }
     /// Execute a documented event before its triggering host call returns.
-    /// Errors retain side effects. Ordinary Lua errors stop ticking but allow other
-    /// events; resource failures stop immediately. Host state is not rolled back.
+    /// Errors retain side effects. Ordinary Lua errors are recorded as status 5
+    /// (auto-recovering; other events remain deliverable); resource failures stop
+    /// immediately. Host state is not rolled back.
     pub fn dispatch(&self, callback: &str, arguments: &[LuaValue]) -> Result<RunOutcome, VmError> {
         if !storm_lua_spec::addon::EVENTS.contains(&callback) {
             return Err(invalid("unknown or reserved addon callback"));
@@ -139,8 +171,8 @@ impl SynchronousEvents {
         let result = self.callbacks.call_if_function(callback, arguments);
         if let Err(error) = &result {
             if error.kind == ErrorKind::Lua && self.callbacks.is_live() {
-                if let Some(tick_disabled) = self.tick_disabled.upgrade() {
-                    tick_disabled.set(true);
+                if let Some(error_state) = self.error_state.upgrade() {
+                    error_state.record(5, &error.message);
                 }
             } else if !self.scoped || !self.callbacks.is_live() {
                 stage.set(Stage::Failed);
@@ -185,7 +217,9 @@ pub struct Addon {
     stage: Rc<Cell<Stage>>,
     source: Vec<u8>,
     source_name: String,
-    tick_disabled: Rc<Cell<bool>>,
+    error_state: Rc<ErrorState>,
+    /// 実行中の入口に対応するエラーステータス。継続の再開でも入口の値を保ちます。
+    entry_error_status: Cell<u32>,
 }
 fn invalid(message: &str) -> VmError {
     VmError::new(ErrorKind::InvalidArgument, message)
@@ -206,7 +240,7 @@ impl Addon {
         SynchronousEvents {
             callbacks: self.vm.borrow().synchronous_callbacks(),
             stage: Rc::downgrade(&self.stage),
-            tick_disabled: Rc::downgrade(&self.tick_disabled),
+            error_state: Rc::downgrade(&self.error_state),
             scoped: false,
         }
     }
@@ -218,7 +252,7 @@ impl Addon {
         let events = SynchronousEvents {
             callbacks: pass.callbacks(),
             stage: owner.stage.clone(),
-            tick_disabled: owner.tick_disabled.clone(),
+            error_state: owner.error_state.clone(),
             scoped: true,
         };
         Ok(SynchronousEventPass {
@@ -315,12 +349,12 @@ impl Addon {
             vm.register_function("server", name, Rc::clone(handler))?;
         }
         let stage = Rc::new(Cell::new(Stage::Empty));
-        let tick_disabled = Rc::new(Cell::new(false));
+        let error_state = Rc::new(ErrorState::default());
         let vm = Rc::new(RefCell::new(vm));
         let callbacks = AddonCallback::new(
             Rc::clone(&vm),
             Rc::clone(&stage),
-            Rc::clone(&tick_disabled),
+            Rc::clone(&error_state),
             &config.scoped_server,
         )?;
         Ok(Self {
@@ -331,7 +365,8 @@ impl Addon {
             stage,
             source: Vec::new(),
             source_name: String::new(),
-            tick_disabled,
+            error_state,
+            entry_error_status: Cell::new(3),
         })
     }
     fn require(&self, stage: Stage) -> Result<(), VmError> {
@@ -363,6 +398,7 @@ impl Addon {
         self.source = source.to_vec();
         self.source_name = name.to_owned();
         self.stage.set(Stage::Loading);
+        self.entry_error_status.set(3);
         let _execution = self.callbacks.enter();
         let result = self.vm.borrow_mut().execute(source, name);
         self.finish(result)
@@ -372,6 +408,7 @@ impl Addon {
         self.require(Stage::Loaded)?;
         self.stage.set(Stage::Creating);
         let _execution = self.callbacks.enter();
+        self.entry_error_status.set(5);
         let result = self
             .vm
             .borrow_mut()
@@ -379,16 +416,20 @@ impl Addon {
         self.finish(result)
     }
     /// Composite信号ではなくゲーム進行倍率を用いて、アドオンの1 tickを駆動します。
-    /// 通常のLuaエラー後はonTickを抑止し、Missingを返します。
-    pub fn tick(&mut self, game_ticks: u32) -> Result<RunOutcome, VmError> {
+    /// game_ticksは実ゲームでは符号付き整数として渡され、0以下も拒否されません（E18）。
+    /// エラー状態の間はonTickをスキップします。ステータス5は報告済みのため
+    /// この呼び出しでクリアされ、onTickは次のtickから再開します（E9）。
+    pub fn tick(&mut self, game_ticks: i32) -> Result<RunOutcome, VmError> {
         self.require(Stage::Ready)?;
-        if game_ticks == 0 {
-            return Err(invalid("game_ticks must be positive"));
+        match self.error_state.status() {
+            0 => {}
+            5 => {
+                self.error_state.clear();
+                return Ok(RunOutcome::Missing);
+            }
+            _ => return Ok(RunOutcome::Missing),
         }
-        if self.tick_disabled.get() {
-            return Ok(RunOutcome::Missing);
-        }
-        self.run_event("onTick", &[LuaValue::Integer(i64::from(game_ticks))])
+        self.run_event("onTick", &[LuaValue::Integer(i64::from(game_ticks))], 2)
     }
     /// ドキュメント化されたアドオンコールバックをディスパッチします。ライフサイクル／tick／HTTPコールバックは専用メソッドを使用します。
     pub fn dispatch(
@@ -403,8 +444,14 @@ impl Addon {
     pub fn callback_target(&self) -> AddonCallback {
         self.callbacks.clone()
     }
-    fn run_event(&mut self, callback: &str, arguments: &[LuaValue]) -> Result<RunOutcome, VmError> {
+    fn run_event(
+        &mut self,
+        callback: &str,
+        arguments: &[LuaValue],
+        error_status: u32,
+    ) -> Result<RunOutcome, VmError> {
         self.stage.set(Stage::Callback);
+        self.entry_error_status.set(error_status);
         let _execution = self.callbacks.enter();
         let result = self.vm.borrow_mut().call_with(callback, arguments);
         self.finish(result)
@@ -413,6 +460,7 @@ impl Addon {
     pub fn destroy(&mut self) -> Result<RunOutcome, VmError> {
         self.require(Stage::Ready)?;
         self.stage.set(Stage::Destroying);
+        self.entry_error_status.set(5);
         let _execution = self.callbacks.enter();
         let result = self.vm.borrow_mut().call("onDestroy");
         self.finish(result)
@@ -426,9 +474,10 @@ impl Addon {
                 self.stage.set(Stage::Failed);
                 return result;
             }
-            // Ordinary script errors stop ticking, but retain globals and allow
-            // later non-tick callbacks, including onCreate and onDestroy.
-            self.tick_disabled.set(true);
+            // 通常のLuaエラーは実ゲームのエラーステータスとリングへ記録します（E9）。
+            // onTickの恒久抑止はしません（ステータス5は次のtickで自動復帰します）。
+            self.error_state
+                .record(self.entry_error_status.get(), &error.message);
         }
         self.stage.set(match self.stage.get() {
             Stage::Loading => {
@@ -522,6 +571,7 @@ impl Addon {
                 LuaValue::Bytes(request.to_vec()),
                 LuaValue::Bytes(reply.to_vec()),
             ],
+            5,
         )
     }
     /// 応答を検証し、送信済みtokenを消費して元要求を返します。
@@ -555,6 +605,15 @@ impl Addon {
     /// 通常のLuaエラーではfalseのまま通常イベントを配送できます。
     pub fn is_failed(&self) -> bool {
         self.stage.get() == Stage::Failed || self.vm.borrow_mut().is_failed()
+    }
+    /// 実ゲームのエラーステータス（0=正常、2=onTick失敗、3=ロード失敗、
+    /// 5=onTick以外のコールバック失敗）。ステータス5は次のtickで自動復帰します。
+    pub fn error_status(&self) -> u32 {
+        self.error_state.status()
+    }
+    /// 記録されたエラーメッセージ（最大11件、古い順）。
+    pub fn error_log(&self) -> Vec<String> {
+        self.error_state.log()
     }
 }
 

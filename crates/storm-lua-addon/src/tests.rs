@@ -65,6 +65,63 @@ fn tick_lua_error_retains_globals_and_delivers_events_and_destroy() -> Result<()
 }
 
 #[test]
+fn status_five_auto_recovers_on_the_next_tick() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデル（E9）: onTick以外のコールバック失敗はステータス5となり、
+    // 報告後のtickでクリアされてonTickが再開します。onTick失敗（ステータス2）は残ります。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        g_savedata.ticks = 0
+        function onTick() g_savedata.ticks = g_savedata.ticks + 1 end
+        function onPlayerJoin() error('join failed') end
+    "#,
+        "=status-five",
+    )?;
+    addon.start()?;
+    assert_eq!(
+        addon
+            .dispatch("onPlayerJoin", &[])
+            .err()
+            .ok_or("expected Lua error")?
+            .kind,
+        ErrorKind::Lua
+    );
+    assert_eq!(addon.error_status(), 5);
+    assert_eq!(addon.error_log().len(), 1);
+    // 報告済みのため、このtickでステータスはクリアされ、onTickはまだ走りません。
+    assert_eq!(addon.tick(1)?, RunOutcome::Missing);
+    assert_eq!(addon.error_status(), 0);
+    assert!(addon.error_log().is_empty());
+    // 次のtickからonTickが再開します。
+    assert_eq!(addon.tick(1)?, RunOutcome::Completed);
+    assert_eq!(field(&addon, "ticks")?, Some(LuaValue::Integer(1)));
+    Ok(())
+}
+
+#[test]
+fn tick_accepts_zero_and_negative_game_ticks_as_integers() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのonTick引数は符号付き整数で、0以下も拒否されません（E18）。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        function onTick(game_ticks) g_savedata.seen = game_ticks end
+    "#,
+        "=game-ticks",
+    )?;
+    addon.start()?;
+    addon.tick(0)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(0)));
+    addon.tick(-30)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(-30)));
+    addon.tick(2147483647)?;
+    assert_eq!(
+        field(&addon, "seen")?,
+        Some(LuaValue::Integer(2147483647))
+    );
+    Ok(())
+}
+
+#[test]
 fn source_lua_error_still_restores_savedata_and_calls_create() -> Result<(), Box<dyn Error>> {
     let mut addon = Addon::new(AddonConfig {
         is_world_create: false,

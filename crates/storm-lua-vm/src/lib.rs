@@ -53,6 +53,8 @@ pub struct ExecutionLimits {
 #[cfg(feature = "backend-mlua")]
 mod backend_support;
 #[cfg(feature = "backend-mlua")]
+pub mod matrix;
+#[cfg(feature = "backend-mlua")]
 pub mod runner;
 #[cfg(feature = "backend-mlua")]
 mod sandbox;

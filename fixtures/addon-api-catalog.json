@@ -54,7 +54,8 @@
     "matrix.multiplyXYZW",
     "matrix.rotationX",
     "matrix.rotationY",
-    "matrix.rotationZ"
+    "matrix.rotationZ",
+    "matrix.rotationToFaceXZ"
   ],
   "profile": "addon"
 }

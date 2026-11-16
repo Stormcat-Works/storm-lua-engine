@@ -22,7 +22,7 @@ Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終
 
 ## APIと精度
 
-実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z。列優先の16要素table、移動成分はLua index 13〜15、計算はf64。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。`rotationToFaceXZ`はまだ未実装で、一般的な式を推測して対応済みにしない。
+実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z、rotationToFaceXZ。実装はstorm-lua-vmの共有モジュールにあり、Component Modと共用する（`scale`はComponent Mod専用でaddonにはない）。row-majorの16要素table、移動成分はLua index 13〜15、計算はf64（ただしmultiplyXYZWのベクトル成分は実ゲームどおりf32へ丸める）。multiplyの合成順序・rotation系コンストラクタ・rotationToFaceXZの式は実ゲームの静的解析で確定し、検証済み。引数の検証とエラー文字列（`bad matrix size`、`matrix was nil`等）も実ゲームに合わせ、有限性は要求しない。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。
 
 menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。矛盾する重複宣言、不正な範囲・型はエラー。自動clampや刻みへの丸めはしない。
 

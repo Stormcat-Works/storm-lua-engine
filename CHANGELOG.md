@@ -5,7 +5,7 @@
 ### Component Mod プロファイルの追加
 
 - 第3のプロファイルとして Component Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`が、順序付きライフサイクル（`load`→`parse`→`add_to_simulation`→`tick`/`render`→`remove_from_simulation`）と実ゲームのエラーステータス（onTick=2、ロード=3、その他=5。timeoutは数値が未確定のため数値を主張しない表現）を所有する。tickだけがステータスゲートを持ち、自動復帰はない。
-- 64関数のうち`matrix`の13関数（Component集合、`scale`を含む）と`debug.log`はエンジン実装で、残り50関数はホスト提供ドメイン（sub-trait 11種、parserを含む）として、提供された分だけ登録される。引数の個数が合わない呼び出しは全関数でLuaエラー（`Wrong number of args`）になり、型は無言変換される。`debug.log`は個数だけがエラーで型は無言という関数単位の例外（Component系統のみ）。
+- 64関数のうち`matrix`の13関数（Component集合、`scale`を含む）と`debug.log`はエンジン実装で、残り50関数はホスト提供ドメイン（sub-trait 11種、parserを含む）として、提供された分だけ登録される。引数の個数が合わない呼び出しはLuaエラー（`Wrong number of args`）になり、型は無言変換される（共有matrixの`identity`だけは実ゲームに個数検査が無いため例外）。`debug.log`は個数だけがエラーで型は無言という関数単位の例外（Component系統のみ）。
 - スクリプトの読み込みはホスト契約とし、新しいAPIは作らなかった。定義XMLの`lua_filename`属性を、パッケージ内アセット→実ファイルの順で解決し、属性値そのままのチャンク名で読み込む。
 - 解析側にComponentプロファイルの経路（`component_api_roots`、`component_diagnostics`、`lint_module_component`）と、予約語へのComponentコールバック名4件の追加を行った。build/minifyパイプラインのComponent入口とTypeScript SDKへの公開は未実施で、[TASKS](TASKS.md)に残した。
 
@@ -21,7 +21,7 @@
 
 - matrix 実装を `storm-lua-addon` から `storm-lua-vm` の共有モジュールへ移し、addon は re-export で使う。Component Mod と共用する土台になる。
 - `matrix.rotationToFaceXZ` を追加した（実ゲームの静的解析で式を確定）。`matrix.scale` は Component Mod 用の集合にだけ追加し、addon には入れていない。
-- 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も完全一致を要求する（`Wrong number of args`。当初は identity だけ検査が無かったが、Component Mod のカタログ確定に合わせて identity にも検査を足した）。
+- 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も identity を除き完全一致を要求する（`Wrong number of args`）。
 - multiply の合成順序は、実ゲームのバイナリと現行実装が一致することを乱数行列200ケースの数値比較で確認したため変更していない。
 - `multiplyXYZW` のベクトル成分を、実ゲームどおり f32 へ丸めてから計算するようにした。
 ### VMコア意味論の実ゲーム仕様への整合

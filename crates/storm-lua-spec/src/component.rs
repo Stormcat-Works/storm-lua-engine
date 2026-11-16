@@ -1,7 +1,8 @@
 //! Component Mod Lua のAPIおよびコールバックカタログ（docs/specs/component.md 参照）。
 //!
 //! 64関数の名前・arity・引数型は実ゲーム v1.15.26 の静的解析で確定した内容です。
-//! 引数不一致は全関数でLuaエラー（`Wrong number of args`）となり、型は無言で
+//! 引数不一致はLuaエラー（`Wrong number of args`）となり（共有matrixの
+//! `identity` だけは実ゲームに個数検査が無いため例外）、型は無言で
 //! 変換されます（table必須引数と `debug.log` の型ゲートだけが例外）。
 //! `phase` は既存語彙（any/tick/draw）による情報目的の記録であり、
 //! phase制限の存在を主張するものではありません（実ゲームにphase制限の

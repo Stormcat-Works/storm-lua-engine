@@ -244,10 +244,7 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
     let matrix = lua.create_table()?;
     matrix.raw_set(
         "identity",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            arity(&args, 0)?;
-            write_matrix(lua, identity())
-        })?,
+        lua.create_function(|lua, _: Variadic<Value>| write_matrix(lua, identity()))?,
     )?;
     matrix.raw_set(
         "translation",

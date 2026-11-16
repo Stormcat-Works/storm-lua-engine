@@ -671,7 +671,8 @@ fn dummy_arg(parameter: &str) -> &'static str {
 
 #[test]
 fn every_catalog_function_enforces_its_arity() {
-    // U1: 全64関数は引数の個数が合わない呼び出しを Lua エラーにする。
+    // U1: 引数の個数が合わない呼び出しは Lua エラーになる（matrix.identity
+    // だけは共有モジュールの確定挙動として個数検査が無い）。
     // 正しい個数では（モックホストの既定応答で）エラーにならない。
     for function in storm_lua_spec::component::FUNCTIONS {
         let args: Vec<&str> = if function.parameters.is_empty() {
@@ -694,15 +695,20 @@ fn every_catalog_function_enforces_its_arity() {
         let mut extra = args.clone();
         extra.push("1");
         let script = format!("{}({})", function.path, extra.join(", "));
-        let error = component
-            .load(script.as_bytes(), "=arity")
-            .expect_err("too many args must fail");
-        assert!(
-            error.message.contains("Wrong number of args"),
-            "{}: {}",
-            function.path,
-            error.message
-        );
+        let result = component.load(script.as_bytes(), "=arity");
+        if function.path == "matrix.identity" {
+            // 例外: 共有 matrix の identity は実ゲームに個数検査が無い
+            // （matrix 側の確定。conformance の addon テストが根拠）。
+            assert!(result.is_ok(), "identity must accept extra args: {:?}", result.err());
+        } else {
+            let error = result.expect_err("too many args must fail");
+            assert!(
+                error.message.contains("Wrong number of args"),
+                "{}: {}",
+                function.path,
+                error.message
+            );
+        }
 
         if !args.is_empty() {
             let (mut component, _mock) = full_component();

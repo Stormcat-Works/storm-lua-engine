@@ -22,7 +22,7 @@ Empty → Loading → Loaded → Parsing → Parsed → Adding → InSimulation�
 
 ## APIと引数意味論
 
-引数の個数が合わない呼び出しは、全64関数でLuaエラー（`Wrong number of args`）になる。値の型は無言で変換され、整数・数値は変換できない場合に0、boolは`lua_toboolean`相当（falseとnilだけが偽）になる。table必須の引数（matrixとComposite）だけは型不一致がLuaエラーになる（matrixは共有モジュールの文面、Compositeは`lua_table_to_composite: invalid table`）。
+引数の個数が合わない呼び出しは、Luaエラー（`Wrong number of args`）になる。唯一の例外は共有matrixの`matrix.identity`で、実ゲームの実装に個数検査が無いため、余分な引数を渡してもエラーにならない（Componentでも共有モジュールの挙動をそのまま使う）。値の型は無言で変換され、整数・数値は変換できない場合に0、boolは`lua_toboolean`相当（falseとnilだけが偽）になる。table必須の引数（matrixとComposite）だけは型不一致がLuaエラーになる（matrixは共有モジュールの文面、Compositeは`lua_table_to_composite: invalid table`）。
 
 `debug.log`は関数単位の例外で、引数の個数が合わない場合はエラーになるが、型は無言であり、文字列と数値以外は記録されない（上限・件数の制限はない）。これは他の2系統の`debug.log`（個数を検査しない）とは異なる、Component系統だけの契約である。
 

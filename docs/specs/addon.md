@@ -4,7 +4,7 @@
 
 `storm-lua-addon`がAddonの名前空間、初期化順、イベント、menu property、HTTPキューを所有する。`storm-lua-vm`の制限・debugger・owned values・loggingを共有し、microcontrollerやrasterへ依存しない。
 
-Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
+Addonの通常環境には`server`、`matrix`、Addon用`property`、`debug.log`、`g_savedata`がある。`debug.log`は実ゲームの契約どおり、引数1個の文字列（数値は文字列として通る）だけを記録し、それ以外は無言で、上限・エラーはない。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
 
 server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。通常の`server`登録では`httpGet`は予約名。`scoped_server`への明示登録はHTTP要求の所有をhostへ移し、SDK内キューの代わりに借用host操作を呼ぶ。
 

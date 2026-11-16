@@ -149,7 +149,7 @@ fn menu_properties_logs_and_reload_checkpoint() -> Result<(), Box<dyn Error>> {
     let mut addon = Addon::new(config)?;
     addon.load(&assertion_support::with_assertions(br#"g_savedata={rate=property.slider('Rate',0,10,0.5,1),enabled=property.checkbox('Enabled',true)}
 print('loaded',string.char(255))
-function onCreate(new) debug.log('started',new); assert(g_savedata.rate==2.5 and g_savedata.enabled) end"#), "=menu")?;
+function onCreate(new) debug.log('started'); assert(g_savedata.rate==2.5 and g_savedata.enabled) end"#), "=menu")?;
     addon.start()?;
     assert_eq!(addon.property_definitions().len(), 2);
     let logs = addon.drain_log_records();

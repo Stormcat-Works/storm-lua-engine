@@ -1,4 +1,4 @@
-//! VMごとの上限付きロギング。ログの配信およびテキストデコードはホスト側の責務です。
+//! VMごとのロギング。printは上限付きの開発用拡張、debug.logは実ゲームの契約（引数1個の文字列のみ記録し、上限・エラーなし）に従います。ログの配信およびテキストデコードはホスト側の責務です。
 use crate::runner::{ErrorKind, VmError};
 use mlua::{Lua, Table, Value, Variadic};
 use std::{cell::RefCell, rc::Rc};
@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub enum LogSource {
     /// 明示的な開発用print拡張。
     Print,
-    /// 制限付きのdebug.log（Luaの標準debugライブラリではありません）。
+    /// 実ゲームのdebug.log（Luaの標準debugライブラリではありません）。
     Debug,
 }
 /// 呼び出し時点のLuaチャンク名と実行行。最適化前ソースへの対応はホストが管理します。
@@ -53,11 +53,7 @@ fn caller_location(lua: &Lua) -> Option<LogLocation> {
     }
     None
 }
-fn function(
-    lua: &Lua,
-    buffer: Rc<RefCell<LogBuffer>>,
-    source: LogSource,
-) -> mlua::Result<mlua::Function> {
+fn print_function(lua: &Lua, buffer: Rc<RefCell<LogBuffer>>) -> mlua::Result<mlua::Function> {
     lua.create_function(move |lua, values: Variadic<Value>| {
         let mut line = Vec::new();
         for (i, value) in values.into_iter().enumerate() {
@@ -95,10 +91,42 @@ fn function(
         }
         buffer.bytes += record_bytes;
         buffer.records.push(LogRecord {
-            source,
+            source: LogSource::Print,
             bytes: line,
             location,
         });
+        Ok(())
+    })
+}
+fn debug_log_function(lua: &Lua, buffer: Rc<RefCell<LogBuffer>>) -> mlua::Result<mlua::Function> {
+    lua.create_function(move |lua, values: Variadic<Value>| {
+        // 実ゲームの契約: 引数が1個で文字列のときだけ記録します。数値は文字列として通ります。
+        // それ以外（0個・複数・nil・真偽値・テーブル等）は何も出力せず、エラーにもなりません。
+        // 件数・byte数の上限も存在しないため、上限到達でスクリプトを止めることはありません。
+        if values.len() == 1 {
+            let bytes = match &values[0] {
+                Value::String(text) => Some(text.as_bytes().to_vec()),
+                Value::Number(_) | Value::Integer(_) => lua
+                    .coerce_string(values[0].clone())
+                    .ok()
+                    .flatten()
+                    .map(|text| text.as_bytes().to_vec()),
+                _ => None,
+            };
+            if let Some(bytes) = bytes {
+                let location = caller_location(lua);
+                let record_bytes =
+                    bytes.len() + location.as_ref().map_or(0, |location| location.chunk.len());
+                if let Ok(mut buffer) = buffer.try_borrow_mut() {
+                    buffer.bytes += record_bytes;
+                    buffer.records.push(LogRecord {
+                        source: LogSource::Debug,
+                        bytes,
+                        location,
+                    });
+                }
+            }
+        }
         Ok(())
     })
 }
@@ -109,13 +137,10 @@ pub(crate) fn install(
     print: bool,
 ) -> mlua::Result<()> {
     if print {
-        env.raw_set(
-            "print",
-            function(lua, Rc::clone(&buffer), LogSource::Print)?,
-        )?;
+        env.raw_set("print", print_function(lua, Rc::clone(&buffer))?)?;
     }
     let debug = lua.create_table()?;
-    debug.raw_set("log", function(lua, buffer, LogSource::Debug)?)?;
+    debug.raw_set("log", debug_log_function(lua, buffer)?)?;
     env.raw_set("debug", debug)?;
     Ok(())
 }
@@ -134,7 +159,7 @@ impl LogReader {
 }
 
 impl crate::runner::Vm {
-    /// 明示的な開発用拡張として print および制限付き debug.log を組み込みます。
+    /// 明示的な開発用拡張として print を組み込みます。debug.log は対象プロファイルへ別途組み込まれます。
     pub fn enable_logs(&mut self) -> Result<(), VmError> {
         self.ensure_idle()?;
         if self.environment_profile != storm_lua_spec::environment::EnvironmentProfile::Extended {
@@ -201,6 +226,44 @@ mod tests {
                 line: 2,
             })
         );
+        Ok(())
+    }
+
+    #[test]
+    fn debug_log_records_only_a_single_string_or_number() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let env = lua.create_table()?;
+        let buffer = Rc::new(RefCell::new(LogBuffer::default()));
+        install(&lua, &env, Rc::clone(&buffer), false)?;
+        lua.load(
+            "debug.log('one')\ndebug.log(42)\ndebug.log(1.5)\ndebug.log()\ndebug.log('a', 'b')\ndebug.log(nil)\ndebug.log(true)\ndebug.log({})\ndebug.log(function() end)",
+        )
+        .set_environment(env)
+        .exec()?;
+        let records = &buffer.borrow().records;
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].bytes, b"one");
+        assert_eq!(records[1].bytes, b"42");
+        assert_eq!(records[2].bytes, b"1.5");
+        assert!(records
+            .iter()
+            .all(|record| record.source == LogSource::Debug));
+        Ok(())
+    }
+
+    #[test]
+    fn debug_log_has_no_line_or_buffer_limits() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let env = lua.create_table()?;
+        let buffer = Rc::new(RefCell::new(LogBuffer::default()));
+        install(&lua, &env, Rc::clone(&buffer), false)?;
+        env.raw_set("payload", lua.create_string("x".repeat(100000))?)?;
+        lua.load("debug.log(payload)\nfor _ = 1, 200 do debug.log('row') end")
+            .set_environment(env)
+            .exec()?;
+        let records = &buffer.borrow().records;
+        assert_eq!(records.len(), 201);
+        assert_eq!(records[0].bytes.len(), 100000);
         Ok(())
     }
 }

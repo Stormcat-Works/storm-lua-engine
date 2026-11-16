@@ -24,7 +24,7 @@ Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終
 
 実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z、rotationToFaceXZ。実装はstorm-lua-vmの共有モジュールにあり、Component Modと共用する（`scale`はComponent Mod専用でaddonにはない）。row-majorの16要素table、移動成分はLua index 13〜15、計算はf64（ただしmultiplyXYZWのベクトル成分は実ゲームどおりf32へ丸める）。multiplyの合成順序・rotation系コンストラクタ・rotationToFaceXZの式は実ゲームの静的解析で確定し、検証済み。引数の検証とエラー文字列（`bad matrix size`、`matrix was nil`等）も実ゲームに合わせ、有限性は要求しない。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。
 
-menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。矛盾する重複宣言、不正な範囲・型はエラー。自動clampや刻みへの丸めはしない。
+menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。宣言は実ゲームの契約どおり検証でエラーを投げず、同名の再宣言は最後の宣言が有効になる。自動clampや刻みへの丸めはしない。host overrideの型が宣言と合わない場合だけ、ホスト入力の誤りとしてエラーにする。
 
 一般イベントは[callback catalog](../../fixtures/addon-api-catalog.json)に列挙する。onCreate/onTick/onDestroy/httpReplyは専用操作。可変長の引数列と末尾nilを保持し、不要なf32量子化を行わない。
 

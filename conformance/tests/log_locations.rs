@@ -4,7 +4,7 @@ use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::environment::EnvironmentProfile;
 use storm_lua_vm::{
     logging::{LogLocation, LogRecord, LogSource},
-    runner::{ErrorKind, RunOutcome, StepMode},
+    runner::{RunOutcome, StepMode},
     source::{RequireLoader, SourceChunk},
 };
 
@@ -92,27 +92,29 @@ fn logs_before_suspension_and_failure_retain_original_call_sites(
 fn addon_game_logs_keep_bytes_and_do_not_expose_debug_inspection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut vm = Addon::new(AddonConfig::default())?;
-    vm.load(b"debug.log(type(print),type(debug.getinfo))\nfunction onTick(ticks)\n debug.log(string.char(255),ticks)\nend", "@addon.lua")?;
+    vm.load(b"debug.log(type(print));debug.log(type(debug.getinfo))\nfunction onTick(ticks)\n debug.log(string.char(255))\nend", "@addon.lua")?;
     let top = vm.drain_log_records();
-    assert_eq!(top[0].bytes, b"nil\tnil");
+    assert_eq!(top.len(), 2);
+    assert_eq!(top[0].bytes, b"nil");
+    assert_eq!(top[1].bytes, b"nil");
     assert_eq!(top[0].location, location("@addon.lua", 1));
     vm.start()?;
     vm.tick(3)?;
     let records = vm.drain_log_records();
     assert_eq!(records[0].location, location("@addon.lua", 3));
-    assert_eq!(records[0].bytes, b"\xff\t3");
+    assert_eq!(records[0].bytes, b"\xff");
     Ok(())
 }
 
 #[test]
-fn source_metadata_participates_in_the_bounded_log_buffer() -> Result<(), Box<dyn std::error::Error>>
-{
+fn debug_log_is_not_bounded_by_buffer_limits() -> Result<(), Box<dyn std::error::Error>> {
+    // 実ゲームの契約: debug.logに件数・byte数の上限はなく、長いチャンク名の位置情報が
+    // 付いてもエラーにならず、全件が記録されます（上限付きなのは開発用printだけです）。
     let mut vm = Microcontroller::new(Default::default())?;
     let name = format!("@{}", "x".repeat(1023));
-    let result = vm.load(b"for i=1,128 do debug.log('') end", &name);
-    assert!(matches!(result, Err(error) if error.kind == ErrorKind::Limit));
+    vm.load(b"for i=1,128 do debug.log('') end", &name)?;
     let records = vm.drain_log_records();
-    assert_eq!(records.len(), 64);
+    assert_eq!(records.len(), 128);
     assert_eq!(records[0].location, location(&name, 1));
     Ok(())
 }

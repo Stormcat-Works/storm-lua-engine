@@ -20,7 +20,7 @@ function onCreate(new)
  local players=server.getPlayers();assert(players[1].id==7 and players[1].name=='tester')
  local r=table.pack(server.echo(9223372036854775807,string.char(0,255),nil))
  assert(r.n==4 and r[1]==9223372036854775807 and r[2]==string.char(0,255) and r[3]==nil and r[4]==nil)
- server.httpGet(8080,'/status');debug.log('created',new)
+ server.httpGet(8080,'/status');debug.log('created')
 end
 function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;print('ticks',dt) end
 function onChatMessage(peer,name,message) g_savedata.message=message end

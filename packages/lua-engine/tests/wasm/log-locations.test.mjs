@@ -40,12 +40,13 @@ test('a builtin invoked directly by the host has no fabricated source location',
 test('Addon game logs preserve raw bytes and leave Lua debug inspection unavailable',()=>{
   const logs=[];const vm=engine.createAddon({onLog:r=>logs.push(r)});
   try{
-    vm.load('debug.log(type(print),type(debug.getinfo))\nfunction onTick(ticks)\n debug.log(string.char(255),ticks)\nend','@addon.lua');
-    assert.equal(new TextDecoder().decode(logs[0].bytes),'nil\tnil');
+    vm.load('debug.log(type(print));debug.log(type(debug.getinfo))\nfunction onTick(ticks)\n debug.log(string.char(255))\nend','@addon.lua');
+    assert.equal(new TextDecoder().decode(logs[0].bytes),'nil');
+    assert.equal(new TextDecoder().decode(logs[1].bytes),'nil');
     assert.deepEqual(logs[0].location,at('@addon.lua',1));
     vm.start();vm.tick(3);
-    assert.deepEqual(logs[1].bytes,new Uint8Array([255,9,51]));
-    assert.deepEqual(logs[1].location,at('@addon.lua',3));
+    assert.deepEqual(logs[2].bytes,new Uint8Array([255]));
+    assert.deepEqual(logs[2].location,at('@addon.lua',3));
   }finally{vm.dispose();}
 });
 test('non-minified maps translate recorded generated log positions without VM reentry',async()=>{

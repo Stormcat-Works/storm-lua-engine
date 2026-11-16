@@ -29,8 +29,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
     addon.load(
         br#"g_savedata={ticks=0}
-function onCreate(new) server.announce('native','ready');debug.log('started',new) end
-function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;debug.log('tick',dt) end"#,
+function onCreate(new) server.announce('native','ready');debug.log('started') end
+function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;debug.log('tick') end"#,
         "=native-addon",
     )?;
     addon.start()?;

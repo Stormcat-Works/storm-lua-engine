@@ -134,9 +134,7 @@ end"#,
     // Microcontroller: async.httpGet も同じ契約。
     let mut vm = Microcontroller::new(Default::default())?;
     vm.load(
-        &assertion_support::with_assertions(
-            b"async.httpGet(0, '')\nasync.httpGet(-1, 'relative')",
-        ),
+        &assertion_support::with_assertions(b"async.httpGet(0, '')\nasync.httpGet(-1, 'relative')"),
         "=mc-http-validation",
     )?;
     let requests = vm.drain_http_requests();

@@ -8,11 +8,12 @@
 //! base 環境の subset です。スロットや描画などのホスト依存機能は
 //! [`ComponentProviders`] で提供されたドメインの分だけ登録されます。
 mod bindings;
-/// ホスト提供ドメインのトレイトとプロバイダ集合。
-pub mod host;
 #[cfg(feature = "debug")]
 mod debugger;
+/// ホスト提供ドメインのトレイトとプロバイダ集合。
+pub mod host;
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::type_complexity)]
 mod tests;
 
 use host::ComponentProviders;
@@ -255,13 +256,12 @@ impl Component {
             }
             // 通常のLuaエラーは実ゲームのエラーステータスへ記録します。
             // ステータスは自動復帰せず、tick は正常に戻るまで抑止されます。
-            self.status = if self.entry_status == ComponentStatus::TickFailed
-                && is_timeout_error(error)
-            {
-                ComponentStatus::TimedOut
-            } else {
-                self.entry_status
-            };
+            self.status =
+                if self.entry_status == ComponentStatus::TickFailed && is_timeout_error(error) {
+                    ComponentStatus::TimedOut
+                } else {
+                    self.entry_status
+                };
         }
         self.stage = match self.stage {
             Stage::Loading => Stage::Loaded,

@@ -194,8 +194,7 @@ pub trait ParseHandlers {
     /// `parser.parseNumber(key, value)`。値は定義データ側の精度（f32）です。
     fn parse_number(&self, key: &[u8], value: f32) -> Result<Option<(f32, bool)>, VmError>;
     /// `parser.parseString(key, value)`
-    fn parse_string(&self, key: &[u8], value: &[u8])
-        -> Result<Option<(Vec<u8>, bool)>, VmError>;
+    fn parse_string(&self, key: &[u8], value: &[u8]) -> Result<Option<(Vec<u8>, bool)>, VmError>;
 }
 
 /// ホストが提供するドメイン実装の集合。`None` のドメインは登録されません。

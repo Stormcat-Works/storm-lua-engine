@@ -191,13 +191,10 @@ impl FluidContents for MockHost {
 }
 
 impl Heater for MockHost {
-    fn set_sphere(
-        &self,
-        center: [f64; 3],
-        radius: f64,
-        temperature: f64,
-    ) -> Result<(), VmError> {
-        self.heater_sphere.borrow_mut().push((center, radius, temperature));
+    fn set_sphere(&self, center: [f64; 3], radius: f64, temperature: f64) -> Result<(), VmError> {
+        self.heater_sphere
+            .borrow_mut()
+            .push((center, radius, temperature));
         Ok(())
     }
     fn set_oriented_box(&self, _matrix: [f64; 16], _values: [f64; 4]) -> Result<(), VmError> {
@@ -232,20 +229,11 @@ impl Render for MockHost {
 }
 
 impl Physics for MockHost {
-    fn impulse(
-        &self,
-        position: [f64; 3],
-        force: [f64; 3],
-        local: bool,
-    ) -> Result<(), VmError> {
+    fn impulse(&self, position: [f64; 3], force: [f64; 3], local: bool) -> Result<(), VmError> {
         self.impulse.borrow_mut().push((position, force, local));
         Ok(())
     }
-    fn raycast(
-        &self,
-        origin: [f64; 3],
-        direction: [f64; 3],
-    ) -> Result<Vec<LuaValue>, VmError> {
+    fn raycast(&self, origin: [f64; 3], direction: [f64; 3]) -> Result<Vec<LuaValue>, VmError> {
         self.raycast_args.borrow_mut().push((origin, direction));
         Ok(vec![LuaValue::Number(9.5), LuaValue::Bool(true)])
     }
@@ -296,11 +284,7 @@ impl ParseHandlers for MockHost {
             ParseMode::Missing => Some((0.0, false)),
         })
     }
-    fn parse_string(
-        &self,
-        key: &[u8],
-        value: &[u8],
-    ) -> Result<Option<(Vec<u8>, bool)>, VmError> {
+    fn parse_string(&self, key: &[u8], value: &[u8]) -> Result<Option<(Vec<u8>, bool)>, VmError> {
         self.parse_calls.borrow_mut().push(format!(
             "parseString({},{})",
             String::from_utf8_lossy(key),
@@ -348,10 +332,7 @@ fn start(component: &mut Component, source: &[u8]) {
 fn probe_type(component: &mut Component, expression: &str) -> String {
     component
         .vm
-        .execute(
-            format!("__probe = type({expression})").as_bytes(),
-            "=probe",
-        )
+        .execute(format!("__probe = type({expression})").as_bytes(), "=probe")
         .expect("probe executes");
     match component.vm.global("__probe") {
         Ok(LuaValue::Bytes(bytes)) => String::from_utf8(bytes).expect("utf8"),
@@ -368,13 +349,23 @@ fn base_environment_matches_the_shared_game_subset() {
     let mut component = bare_component();
     component.load(b"", "=test").expect("load");
     // Game 系統と共通の subset: 存在しない base 関数。
-    for name in ["select", "pcall", "error", "print", "_G", "server", "property", "input", "output"] {
+    for name in [
+        "select", "pcall", "error", "print", "_G", "server", "property", "input", "output",
+    ] {
         assert_eq!(probe_type(&mut component, name), "nil", "{name}");
     }
     // base 6 関数と完全な math/table/string（string.dump を含む）。
     for name in [
-        "ipairs", "next", "pairs", "tonumber", "tostring", "type", "math.floor", "table.insert",
-        "string.format", "string.dump",
+        "ipairs",
+        "next",
+        "pairs",
+        "tonumber",
+        "tostring",
+        "type",
+        "math.floor",
+        "table.insert",
+        "string.format",
+        "string.dump",
     ] {
         assert_eq!(probe_type(&mut component, name), "function", "{name}");
     }
@@ -391,7 +382,10 @@ fn provider_domains_gate_registration() {
     let mut bare = bare_component();
     bare.load(b"", "=test").expect("load");
     // 未提供ドメインの関数は登録されない（stub で埋めない）。
-    assert_eq!(probe_type(&mut bare, "component.getInputLogicSlotBool"), "nil");
+    assert_eq!(
+        probe_type(&mut bare, "component.getInputLogicSlotBool"),
+        "nil"
+    );
     assert_eq!(probe_type(&mut bare, "component.renderMesh0"), "nil");
     assert_eq!(probe_type(&mut bare, "parser.parseBool"), "nil");
     // エンジン実装分は常にある（matrix は component 集合の13関数、scale を含む）。
@@ -408,8 +402,14 @@ fn provider_domains_gate_registration() {
     })
     .expect("component");
     logic_only.load(b"", "=test").expect("load");
-    assert_eq!(probe_type(&mut logic_only, "component.getInputLogicSlotBool"), "function");
-    assert_eq!(probe_type(&mut logic_only, "component.slotTorqueIsConnected"), "nil");
+    assert_eq!(
+        probe_type(&mut logic_only, "component.getInputLogicSlotBool"),
+        "function"
+    );
+    assert_eq!(
+        probe_type(&mut logic_only, "component.slotTorqueIsConnected"),
+        "nil"
+    );
 }
 
 #[test]
@@ -493,7 +493,10 @@ fn game_ticks_is_passed_as_an_integer_including_zero() {
     component.tick(0).expect("tick 0");
     assert_eq!(global(&component, "__t"), LuaValue::Integer(0));
     component.tick(u32::MAX).expect("tick max");
-    assert_eq!(global(&component, "__t"), LuaValue::Integer(i64::from(u32::MAX)));
+    assert_eq!(
+        global(&component, "__t"),
+        LuaValue::Integer(i64::from(u32::MAX))
+    );
 }
 
 #[test]
@@ -572,7 +575,9 @@ fn composite_argument_must_be_a_table() {
     );
     let error = component.tick(1).expect_err("tick");
     assert!(
-        error.message.contains("lua_table_to_composite: invalid table"),
+        error
+            .message
+            .contains("lua_table_to_composite: invalid table"),
         "{}",
         error.message
     );
@@ -595,16 +600,25 @@ fn debug_log_has_arity_errors_and_a_type_gate() {
     component.tick(1).expect("tick");
     let records = component.drain_log_records();
     assert_eq!(records.len(), 2);
-    assert!(records.iter().any(|record| String::from_utf8_lossy(&record.bytes).contains("hello")));
+    assert!(records
+        .iter()
+        .any(|record| String::from_utf8_lossy(&record.bytes).contains("hello")));
 
     let mut component = bare_component();
     start(&mut component, b"function onTick(t) debug.log() end");
     let error = component.tick(1).expect_err("tick");
-    assert!(error.message.contains("Wrong number of args"), "{}", error.message);
+    assert!(
+        error.message.contains("Wrong number of args"),
+        "{}",
+        error.message
+    );
     assert_eq!(component.status(), ComponentStatus::TickFailed);
 
     let mut component = bare_component();
-    start(&mut component, b"function onTick(t) debug.log('a', 'b') end");
+    start(
+        &mut component,
+        b"function onTick(t) debug.log('a', 'b') end",
+    );
     assert!(component.tick(1).is_err());
 }
 
@@ -699,7 +713,11 @@ fn every_catalog_function_enforces_its_arity() {
         if function.path == "matrix.identity" {
             // 例外: 共有 matrix の identity は実ゲームに個数検査が無い
             // （matrix 側の確定。conformance の addon テストが根拠）。
-            assert!(result.is_ok(), "identity must accept extra args: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "identity must accept extra args: {:?}",
+                result.err()
+            );
         } else {
             let error = result.expect_err("too many args must fail");
             assert!(

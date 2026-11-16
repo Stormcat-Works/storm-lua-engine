@@ -114,7 +114,14 @@ impl TorqueSlots for AllProviders {
     }
 }
 impl FluidSlots for AllProviders {
-    fn resolve_flow(&self, _a: i64, _b: i64, _x: f64, _y: f64, _r: [i64; 4]) -> Result<f64, VmError> {
+    fn resolve_flow(
+        &self,
+        _a: i64,
+        _b: i64,
+        _x: f64,
+        _y: f64,
+        _r: [i64; 4],
+    ) -> Result<f64, VmError> {
         Ok(0.0)
     }
     fn resolve_flow_to_slot(
@@ -275,10 +282,11 @@ fn component_catalog_matches_provider_availability() -> Result<(), Box<dyn std::
         environment: Some(all.clone()),
         parse: Some(all.clone()),
     };
-    let mut component = storm_lua_component::Component::new(storm_lua_component::ComponentConfig {
-        providers,
-        ..Default::default()
-    })?;
+    let mut component =
+        storm_lua_component::Component::new(storm_lua_component::ComponentConfig {
+            providers,
+            ..Default::default()
+        })?;
     let mut script =
         String::from("assert(server==nil and property==nil and input==nil and output==nil)\n");
     let mut seen = std::collections::HashSet::new();

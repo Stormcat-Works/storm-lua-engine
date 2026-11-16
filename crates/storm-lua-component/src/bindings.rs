@@ -16,7 +16,9 @@ use super::host::{
 };
 use std::rc::Rc;
 use storm_lua_spec::io::CompositeSignal;
-use storm_lua_vm::backend::{self, BackendError, BackendResult, Function, Lua, MultiValue, Table, Value, Variadic};
+use storm_lua_vm::backend::{
+    self, BackendError, BackendResult, Function, Lua, MultiValue, Table, Value, Variadic,
+};
 
 /// 実ゲームの arity エラー。呼び出した Lua コード側の通常エラーとして扱うため、
 /// ErrorKind::Lua になる RuntimeError で送出します。
@@ -137,11 +139,7 @@ fn wrap_debug_log(lua: &Lua, env: &Table) -> BackendResult<()> {
     Ok(())
 }
 
-pub(super) fn install(
-    lua: &Lua,
-    env: &Table,
-    providers: &ComponentProviders,
-) -> BackendResult<()> {
+pub(super) fn install(lua: &Lua, env: &Table, providers: &ComponentProviders) -> BackendResult<()> {
     storm_lua_vm::matrix::install_component(lua, env)?;
     wrap_debug_log(lua, env)?;
     let component = lua.create_table()?;
@@ -596,8 +594,11 @@ fn install_render(lua: &Lua, table: &Table, provider: Rc<dyn Render>) -> Backend
         "renderLight",
         lua.create_function(move |lua, args: Variadic<Value>| {
             arity(&args, 9)?;
-            p.render_light(numbers(lua, &args, 0), [boolean(&args[7]), boolean(&args[8])])
-                .map_err(BackendError::external)
+            p.render_light(
+                numbers(lua, &args, 0),
+                [boolean(&args[7]), boolean(&args[8])],
+            )
+            .map_err(BackendError::external)
         })?,
     )?;
     table.raw_set(
@@ -619,8 +620,12 @@ fn install_physics(lua: &Lua, table: &Table, provider: Rc<dyn Physics>) -> Backe
         "physicsImpulse",
         lua.create_function(move |lua, args: Variadic<Value>| {
             arity(&args, 7)?;
-            p.impulse(numbers(lua, &args, 0), numbers(lua, &args, 3), boolean(&args[6]))
-                .map_err(BackendError::external)
+            p.impulse(
+                numbers(lua, &args, 0),
+                numbers(lua, &args, 3),
+                boolean(&args[6]),
+            )
+            .map_err(BackendError::external)
         })?,
     )?;
     let p = Rc::clone(&provider);
@@ -693,7 +698,9 @@ fn install_environment(
         "getWindVelocity",
         lua.create_function(move |_, args: Variadic<Value>| {
             arity(&args, 0)?;
-            let v = provider.get_wind_velocity().map_err(BackendError::external)?;
+            let v = provider
+                .get_wind_velocity()
+                .map_err(BackendError::external)?;
             Ok((v[0], v[1], v[2]))
         })?,
     )?;

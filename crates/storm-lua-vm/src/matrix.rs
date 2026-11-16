@@ -269,7 +269,10 @@ fn install_impl(lua: &Lua, env: &Table, component: bool) -> BackendResult<()> {
         "multiply",
         lua.create_function(|lua, args: Variadic<Value>| {
             arity(&args, 2)?;
-            write_matrix(lua, multiply(read_matrix(lua, &args[0])?, read_matrix(lua, &args[1])?))
+            write_matrix(
+                lua,
+                multiply(read_matrix(lua, &args[0])?, read_matrix(lua, &args[1])?),
+            )
         })?,
     )?;
     matrix.raw_set(

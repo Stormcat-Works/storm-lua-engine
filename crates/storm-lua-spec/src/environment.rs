@@ -93,8 +93,19 @@ pub fn valid_binding_path(path: &str) -> bool {
 
 /// Builtin roots visible to a Component Mod script, including the restricted logging table.
 pub const COMPONENT_ROOTS: &[&str] = &[
-    "math", "string", "table", "debug", "matrix", "parser", "component", "ipairs", "next", "pairs",
-    "tonumber", "tostring", "type",
+    "math",
+    "string",
+    "table",
+    "debug",
+    "matrix",
+    "parser",
+    "component",
+    "ipairs",
+    "next",
+    "pairs",
+    "tonumber",
+    "tostring",
+    "type",
 ];
 /// Vehicle callbacks invoked externally, not ordinary dead global functions.
 pub const VEHICLE_CALLBACKS: &[&str] = &["onTick", "onDraw", "httpReply"];

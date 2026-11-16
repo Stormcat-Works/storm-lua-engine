@@ -55,19 +55,39 @@ function httpReply(p,q,r) debug.log(r) end",
     Ok(())
 }
 #[test]
-fn queue_limits_apply_to_inflight_requests_and_foreign_tokens_reject() -> Result<(), Box<dyn Error>>
-{
+fn requests_pass_through_without_game_absent_validation_and_foreign_tokens_reject(
+) -> Result<(), Box<dyn Error>> {
     use storm_lua_spec::http::HttpQueue;
     let mut q = HttpQueue::new()?;
-    for path in [b"//evil".as_slice(), b"http://evil", b"/a\r\nb", b"/a\0b"] {
-        assert!(q.request(80, path).is_err());
+    // 実ゲームにない拒否はしない: 先頭が / でない・// 始まり・CR/LF・NUL混入・空・4096byte超も通す。
+    for path in [
+        b"//evil".as_slice(),
+        b"http://evil",
+        b"/a\r\nb",
+        b"/a\0b",
+        b"",
+        b"relative",
+        &[b'x'; 5000][..],
+    ] {
+        q.request(80, path)?;
     }
-    assert!(q.request(0, b"/").is_err());
-    for _ in 0..128 {
+    // ポートは符号付き整数の下位16bitへ切り捨てる。0も負数も拒否しない。
+    q.request(0, b"/zero")?;
+    q.request(-1, b"/negative")?;
+    q.request(70000, b"/wrapped")?;
+    // 件数の上限も設けない。
+    for _ in 0..256 {
         q.request(80, b"/ok")?;
     }
     let requests = q.drain();
-    assert!(q.request(80, b"/overflow").is_err());
+    assert_eq!(requests.len(), 7 + 3 + 256);
+    assert_eq!(requests[0].request, b"//evil");
+    assert_eq!(requests[3].request, b"/a\0b");
+    assert_eq!(requests[5].request, b"relative");
+    assert_eq!(requests[6].request.len(), 5000);
+    assert_eq!(requests[7].port, 0);
+    assert_eq!(requests[8].port, u16::MAX);
+    assert_eq!(requests[9].port, 4464);
     let mut other = HttpQueue::new()?;
     assert!(other.reply(requests[0].token, b"foreign").is_err());
     q.cancel(requests[0].token)?;
@@ -76,12 +96,52 @@ fn queue_limits_apply_to_inflight_requests_and_foreign_tokens_reject() -> Result
 }
 
 #[test]
-fn oversized_aggregate_reply_does_not_consume_the_request() -> Result<(), Box<dyn std::error::Error>>
-{
+fn large_reply_is_accepted_and_consumes_the_request() -> Result<(), Box<dyn std::error::Error>> {
     let mut queue = storm_lua_spec::http::HttpQueue::new()?;
     queue.request(8080, b"/status")?;
     let request = queue.drain().pop().ok_or("request")?;
-    assert!(queue.reply(request.token, &vec![0; 1024 * 1024]).is_err());
-    queue.reply(request.token, b"small valid reply")?;
+    // 応答サイズの上限はない。大きな応答でも精算でき、トークンは消費される。
+    let resolved = queue.reply(request.token, &vec![0; 2 * 1024 * 1024])?;
+    assert_eq!(resolved, request);
+    assert!(queue.reply(request.token, b"duplicate").is_err());
+    Ok(())
+}
+
+#[test]
+fn http_get_never_rejects_what_the_game_accepts() -> Result<(), Box<dyn Error>> {
+    // Addon: server.httpGet はポート・リクエストの形でエラーを投げない。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        &assertion_support::with_assertions(
+            br#"function onCreate()
+  server.httpGet(0, '')
+  server.httpGet(-1, 'relative')
+  server.httpGet(70000, '//double')
+  server.httpGet(80, '/with\0nul')
+end"#,
+        ),
+        "=http-validation",
+    )?;
+    addon.start()?;
+    let requests = addon.drain_http_requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0].port, 0);
+    assert_eq!(requests[0].request, b"");
+    assert_eq!(requests[1].port, u16::MAX);
+    assert_eq!(requests[1].request, b"relative");
+    assert_eq!(requests[2].port, 4464);
+    assert_eq!(requests[3].request, b"/with\0nul");
+    // Microcontroller: async.httpGet も同じ契約。
+    let mut vm = Microcontroller::new(Default::default())?;
+    vm.load(
+        &assertion_support::with_assertions(
+            b"async.httpGet(0, '')\nasync.httpGet(-1, 'relative')",
+        ),
+        "=mc-http-validation",
+    )?;
+    let requests = vm.drain_http_requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].port, 0);
+    assert_eq!(requests[1].port, u16::MAX);
     Ok(())
 }

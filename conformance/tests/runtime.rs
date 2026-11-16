@@ -111,9 +111,9 @@ fn drawing_calls_share_lua_state_but_not_composite_write_access() -> Result<(), 
     Ok(())
 }
 #[test]
-fn unsafe_libraries_and_string_dump_are_not_reachable() -> Result<(), Box<dyn Error>> {
+fn unsafe_libraries_are_not_reachable_and_string_is_complete() -> Result<(), Box<dyn Error>> {
     let mut vm = Microcontroller::new(Default::default())?;
-    vm.load(&assertion_support::with_assertions(b"assert(os==nil and io==nil and debug.getinfo==nil and type(debug.log)=='function' and package==nil and require==nil and load==nil and _G==nil and coroutine==nil);assert(string.dump==nil and ('x').dump==nil)"),"=test")?;
+    vm.load(&assertion_support::with_assertions(b"assert(os==nil and io==nil and debug.getinfo==nil and type(debug.log)=='function' and package==nil and require==nil and load==nil and _G==nil and coroutine==nil);assert(type(string.dump)=='function' and type(('x').dump)=='function' and type(string.dump(function() end))=='string')"),"=test")?;
     assert_eq!(vm.tick(&CompositeSignal::default())?, RunOutcome::Missing);
     Ok(())
 }

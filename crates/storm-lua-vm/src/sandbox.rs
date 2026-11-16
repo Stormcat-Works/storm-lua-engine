@@ -24,10 +24,9 @@ pub(crate) fn environment(
     for name in ["string", "table", "math"] {
         env.raw_set(name, globals.raw_get::<Table>(name)?)?;
     }
-    // Lua文字列値はこのメタテーブルを共有するため、元のテーブルからもバイトコードダンプ（string.dump）を削除します。
-    globals
-        .get::<Table>("string")?
-        .raw_set("dump", Value::Nil)?;
+    // string ライブラリは実ゲームと同じ完全版です（string.dump を含む）。
+    // チャンクの読み込みはテキスト専用のため、ダンプしたバイトコードを
+    // 実行に戻す経路はありません（E14）。
     if profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
         env.raw_set(
             "unpack",

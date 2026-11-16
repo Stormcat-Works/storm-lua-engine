@@ -294,12 +294,8 @@ impl Addon {
             definitions: BTreeMap::new(),
             http: HttpQueue::new().map_err(http_error)?,
         }));
-        vm.configure(|lua, env| {
-            if config.environment.is_addon_unavailable("select") {
-                env.raw_set("select", storm_lua_vm::backend::Value::Nil)?;
-            }
-            bindings::install(lua, env, Rc::clone(&state))
-        })?;
+        // select は環境定義そのものに含まれないため、ここでの個別の除去は不要です（E13）。
+        vm.configure(|lua, env| bindings::install(lua, env, Rc::clone(&state)))?;
         vm.install_bindings(&config.bindings)?;
         if let Some(loader) = &config.require_loader {
             vm.install_require_loader(loader)?;

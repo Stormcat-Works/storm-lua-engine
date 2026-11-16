@@ -61,6 +61,51 @@ fn game_globals_are_absent_and_debug_has_exactly_log() {
     assert!(entries.contains(&(LuaValue::Bytes(b"members".to_vec()), LuaValue::Integer(1))));
 }
 #[test]
+fn select_is_absent_in_game_and_present_in_extended() {
+    // 実ゲームのbase部分集合は6関数のみで、selectはVehicle/Addonとも不在です（E13）。
+    let mut vm = Microcontroller::new(Default::default()).unwrap();
+    vm.load(
+        br#"function onTick()
+      output.setBool(1, select == nil)
+    end"#,
+        "=game-select",
+    )
+    .unwrap();
+    vm.tick(&Default::default()).unwrap();
+    assert!(vm.output().booleans[0]);
+    let mut addon = storm_lua_addon::Addon::new(Default::default()).unwrap();
+    addon
+        .load(b"g_savedata={absent=select==nil}", "=addon-select")
+        .unwrap();
+    addon.start().unwrap();
+    let LuaValue::Table(entries) = addon.savedata().unwrap() else {
+        panic!("expected table")
+    };
+    assert!(entries.contains(&(LuaValue::Bytes(b"absent".to_vec()), LuaValue::Bool(true))));
+    // Extended（開発用プロファイル）では引き続き利用できます。
+    let mut vm = Microcontroller::new(configured(EnvironmentProfile::Extended)).unwrap();
+    vm.load(
+        br#"function onTick()
+      output.setNumber(1, select('#', 10, 20, 30))
+    end"#,
+        "=extended-select",
+    )
+    .unwrap();
+    vm.tick(&Default::default()).unwrap();
+    assert_eq!(vm.output().numbers[0], 3.0);
+    // 静的解析も、ゲーム環境でのselect使用を利用不可として報告します。
+    let lint = analyze(
+        &project("function onTick() select('#') end"),
+        &AnalyzeOptions::default(),
+    );
+    assert!(
+        lint.diagnostics
+            .iter()
+            .any(|d| d.code == "sw-unavailable-global"),
+        "{lint:?}"
+    );
+}
+#[test]
 fn builtin_rejections_match_single_source_projects_and_editing_diagnostics() {
     for name in ["pcall", "xpcall", "error", "assert", "print", "unpack"] {
         let source = format!("function onTick(){name}()end");

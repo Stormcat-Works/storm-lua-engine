@@ -72,6 +72,13 @@ struct State {
     size: (u32, u32),
     http: storm_lua_spec::http::HttpQueue,
     commands: CommandBuffer,
+    /// 実ゲームのエラーステータス（スクリプト状態の +0x350 相当）。
+    /// 0=正常、1=onDraw失敗、2=onTick失敗/時間超過、3=ロード失敗、5=httpReply失敗。
+    error_status: u32,
+    /// エラーリング（実ゲームのhandle_errorと同じく最大11件、古い順）。
+    errors: Vec<String>,
+    /// 実行中の入口に対応するエラーステータス。継続の再開でも入口の値を保ちます。
+    entry_error_status: u32,
 }
 /// 明示的なtick/draw駆動と再利用可能なコマンドストレージを備えたスレッド拘束型VM。
 pub struct Microcontroller {
@@ -113,6 +120,9 @@ impl Microcontroller {
             size: (0, 0),
             http: storm_lua_spec::http::HttpQueue::new().map_err(http_error)?,
             commands: CommandBuffer::new(65536, 1024 * 1024),
+            error_status: 0,
+            errors: Vec::new(),
+            entry_error_status: 3,
         }));
         vm.configure(|lua, env| bindings::install(lua, env, Rc::clone(&state)))?;
         let bindings = controls::with_controls(
@@ -179,7 +189,11 @@ impl Microcontroller {
             source: source.to_vec(),
             name: name.to_owned(),
         });
-        self.state.borrow_mut().phase = Phase::Init;
+        {
+            let mut state = self.state.borrow_mut();
+            state.phase = Phase::Init;
+            state.entry_error_status = 3;
+        }
         let result = self.vm.execute(source, name);
         self.finish(result)
     }
@@ -200,6 +214,12 @@ impl Microcontroller {
             let mut state = self.state.borrow_mut();
             state.input = *input;
             state.phase = Phase::Tick;
+            state.entry_error_status = 2;
+        }
+        // エラー状態の間、実ゲームはonTickをスキップします（E9）。入力の取り込みだけ行います。
+        if self.state.borrow().error_status != 0 {
+            self.state.borrow_mut().phase = Phase::Idle;
+            return Ok(RunOutcome::Missing);
         }
         let result = self.vm.call_with(name, arguments);
         self.finish(result)
@@ -230,6 +250,12 @@ impl Microcontroller {
             state.phase = Phase::Draw;
             state.size = (width, height);
             state.commands.clear();
+            state.entry_error_status = 1;
+        }
+        // エラー状態の間、実ゲームはonDrawをスキップします（E9）。
+        if self.state.borrow().error_status != 0 {
+            self.state.borrow_mut().phase = Phase::Idle;
+            return Ok(RunOutcome::Missing);
         }
         let result = self.vm.call_with(name, arguments);
         self.finish(result)
@@ -241,6 +267,18 @@ impl Microcontroller {
                 if result.is_ok() {
                     self.source_bytes += chunk.source.len();
                     self.sources.push(chunk);
+                }
+            }
+            // 通常のLuaエラーは実ゲームのエラーステータスとリングへ記録します（E9）。
+            // 制限・ホスト等の異常はVM側の失敗状態で表すため、ここでは記録しません。
+            if let Err(error) = &result {
+                if error.kind == ErrorKind::Lua {
+                    let mut state = self.state.borrow_mut();
+                    state.error_status = state.entry_error_status;
+                    if state.errors.len() > 10 {
+                        state.errors.remove(0);
+                    }
+                    state.errors.push(error.message.clone());
                 }
             }
         }
@@ -329,9 +367,20 @@ impl Microcontroller {
     pub fn is_suspended(&self) -> bool {
         self.vm.is_suspended()
     }
-    /// 実行時エラーの発生後にこのVMをリセットする必要があるかどうか。
+    /// 制限・ホスト等の異常でVMが失敗状態かどうか。通常のLuaエラーでは
+    /// 失敗状態になりません（[`Microcontroller::error_status`]を参照）。
     pub fn is_failed(&self) -> bool {
         self.vm.is_failed()
+    }
+    /// 実ゲームのエラーステータス（0=正常、1=onDraw失敗、2=onTick失敗/時間超過、
+    /// 3=ロード失敗、5=httpReply失敗）。エラー状態の間はonTick/onDrawが
+    /// スキップされます。リセットで0に戻ります。
+    pub fn error_status(&self) -> u32 {
+        self.state.borrow().error_status
+    }
+    /// 記録されたエラーメッセージ（最大11件、古い順）。
+    pub fn error_log(&self) -> Vec<String> {
+        self.state.borrow().errors.clone()
     }
     /// Recreate with current properties/bindings and replay all completed loads
     /// in order. Module caches are fresh; the host loader is called again.
@@ -392,6 +441,8 @@ impl Microcontroller {
             .reply(token, reply)
             .map_err(http_error)?;
         use storm_lua_vm::value::LuaValue;
+        // httpReplyはエラー状態でも配送されます（実ゲームはtick末尾の保守処理を継続します、E9）。
+        self.state.borrow_mut().entry_error_status = 5;
         let result = self.vm.call_with(
             "httpReply",
             &[

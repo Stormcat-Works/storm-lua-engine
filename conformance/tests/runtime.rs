@@ -165,41 +165,97 @@ fn non_function_callback_is_absent_not_an_error() -> Result<(), Box<dyn Error>> 
 #[test]
 fn ordinary_lua_error_does_not_fail_the_vm() -> Result<(), Box<dyn Error>> {
     // 実ゲームのエラーモデルでは、通常のLuaエラー後もVMは生存します（E9）。
+    // MCはエラー状態の間コールバックをスキップし、リセットで回復します。
     let mut vm = loaded(
-        "n=0\nfunction onTick()\n  n=n+1\n  if n==1 then error('boom') end\n  output.setNumber(1,n)\nend",
+        "function onTick() if input.getNumber(1) > 0 then error('boom') end output.setNumber(1, 42) end",
+    )?;
+    let mut input = CompositeSignal::default();
+    input.numbers[0] = 1.0;
+    let error = vm.tick(&input).err().ok_or("error was swallowed")?;
+    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
+    assert!(!vm.is_failed());
+    assert_eq!(vm.error_status(), 2);
+    assert_eq!(vm.tick(&input)?, RunOutcome::Missing);
+    vm.reset()?;
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(vm.output().numbers[0], 42.0);
+    Ok(())
+}
+#[test]
+fn error_status_skips_callbacks_but_http_reply_is_still_delivered() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデル（E9）: エラー後はonTick/onDrawがスキップされ、
+    // tick末尾の保守処理（完了したHTTP応答の処理）は継続します。
+    let mut vm = loaded(
+        "function onTick()\n  async.httpGet(80, '/x')\n  error('boom')\nend\nfunction httpReply(port, request, reply)\n  debug.log('replied')\nend",
     )?;
     let error = vm
         .tick(&CompositeSignal::default())
         .err()
         .ok_or("error was swallowed")?;
-    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
-    assert!(!vm.is_failed());
+    assert_eq!(error.kind, ErrorKind::Lua);
+    assert_eq!(vm.error_status(), 2);
+    assert_eq!(vm.error_log().len(), 1);
+    // エラー状態の間、onTick/onDrawはスキップされます。
+    assert_eq!(
+        vm.tick(&CompositeSignal::default())?,
+        RunOutcome::Missing
+    );
+    assert_eq!(vm.draw(32, 32)?, RunOutcome::Missing);
+    // それでもhttpReplyは配送されます。
+    let request = vm.drain_http_requests().pop().ok_or("no request")?;
+    assert_eq!(
+        vm.http_reply(request.token, b"ok")?,
+        RunOutcome::Completed
+    );
+    assert_eq!(vm.drain_logs(), vec![b"replied".to_vec()]);
+    // httpReplyの失敗はステータスを5へ上書きします。
+    let mut vm = loaded(
+        "function onTick() async.httpGet(80, '/x') end\nfunction httpReply() error('bad reply') end",
+    )?;
     vm.tick(&CompositeSignal::default())?;
-    assert_eq!(vm.output().numbers[0], 2.0);
+    let request = vm.drain_http_requests().pop().ok_or("no request")?;
+    assert!(vm.http_reply(request.token, b"ok").is_err());
+    assert_eq!(vm.error_status(), 5);
+    // リセットするとステータスとリングは初期化されます。
+    vm.reset()?;
+    assert_eq!(vm.error_status(), 0);
+    assert!(vm.error_log().is_empty());
+    Ok(())
+}
+#[test]
+fn error_ring_is_capped_at_eleven_entries() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーリング上限は11件です（E9）。
+    let mut vm = Microcontroller::new(MicrocontrollerConfig::default())?;
+    for _ in 0..12 {
+        assert!(vm.load(b"error('load failure')", "=ring").is_err());
+    }
+    assert_eq!(vm.error_status(), 3);
+    assert_eq!(vm.error_log().len(), 11);
     Ok(())
 }
 #[test]
 fn time_limit_matches_the_game_and_does_not_fail_the_vm() -> Result<(), Box<dyn Error>> {
     // 実ゲームの時間制限は1001msで、超過は通常のLuaエラーとして報告され、VMは失敗状態になりません。
     let mut vm = loaded(
-        "n=0\nfunction onTick()\n  n=n+1\n  if n==1 then while true do end end\n  output.setNumber(1,n)\nend",
+        "function onTick()\n  if input.getNumber(1) > 0 then while true do end end\n  output.setNumber(1, 7)\nend",
     )?;
-    let error = vm
-        .tick(&CompositeSignal::default())
-        .err()
-        .ok_or("loop was accepted")?;
+    let mut input = CompositeSignal::default();
+    input.numbers[0] = 1.0;
+    let error = vm.tick(&input).err().ok_or("loop was accepted")?;
     assert_eq!(error.kind, ErrorKind::Lua, "{error}");
     assert!(
         error
             .message
-            .contains("max execution time exceeded (1000ms). stopped at line 4"),
+            .contains("max execution time exceeded (1000ms). stopped at line 2"),
         "{}",
         error.message
     );
     assert!(!vm.is_failed());
-    // 次のtickは通常どおり実行できます。
+    assert_eq!(vm.error_status(), 2);
+    // リセットすれば通常どおり実行できます。
+    vm.reset()?;
     vm.tick(&CompositeSignal::default())?;
-    assert_eq!(vm.output().numbers[0], 2.0);
+    assert_eq!(vm.output().numbers[0], 7.0);
     Ok(())
 }
 #[test]

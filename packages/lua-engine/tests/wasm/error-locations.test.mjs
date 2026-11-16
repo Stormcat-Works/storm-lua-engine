@@ -60,9 +60,9 @@ test('the instruction limit reports where the script was running',()=>{
   }
 });
 test('errors raised by a host function point at the Lua caller',()=>{
-  const vm=engine.createVehicle();
+  const vm=engine.createVehicle({environment:'extended'});
   try{
-    vm.load('function onDraw()\n  local x = 1\n  screen.drawText(0, 0)\nend','@main.lua');
+    vm.load('function onDraw()\n  local x = 1\n  input.getNumber(1)\nend','@main.lua');
     const error=failure(()=>vm.draw(32,32));
     assert.deepEqual(error.detail.location,at('@main.lua',3));
     assert.deepEqual(error.detail.stack.map(frame=>frame.line),[-1,3]);
@@ -74,7 +74,10 @@ test('host argument errors have no detail, and a later error does not inherit an
     vm.load('function onDraw() missing() end','@main.lua');
     assert.equal(failure(()=>vm.draw(0,0)).detail,undefined);
     assert.equal(failure(()=>vm.draw(32,32)).detail.stage,'runtime');
-    const failed=failure(()=>vm.draw(32,32));
-    assert.equal(failed.code,STATUS.failed);assert.equal(failed.detail,undefined);
+    // E9: 通常のLuaエラーではVMは失敗状態にならず、エラーが記録されている間はonDrawがスキップされる。
+    assert.equal(vm.draw(32,32),'missing');
+    // reset後は再び実行され、新しいエラーは古いdetailを引き継がず自身のdetailを持つ。
+    vm.reset();
+    assert.equal(failure(()=>vm.draw(32,32)).detail.stage,'runtime');
   }finally{vm.dispose();}
 });

@@ -84,7 +84,7 @@ test('overflow keeps logical screen size and includes negative-coordinate pixels
   vm.callDraw('onDraw',32,32,[],4);const frame=vm.frame();
   assert.equal(frame.width,40);assert.equal(frame.height,40);
   assert.deepEqual(Array.from(frame.pixels.slice((3*40+2)*4,(3*40+2)*4+4)),[255,0,0,255]);
-  assert.deepEqual(vm.drainLogRecords().map(r=>new TextDecoder().decode(r.bytes)),['32','32']);
+  assert.deepEqual(vm.drainLogRecords().map(r=>new TextDecoder().decode(r.bytes)),['32.0','32.0']);
   assert.throws(()=>vm.callDraw('onDraw',32,32,[],4096));
  }finally{vm.dispose();}
 });

@@ -5,7 +5,7 @@ mod callbacks;
 pub use callbacks::{AddonCallback, ScopedServerCall, ScopedServerFunction};
 #[cfg(feature = "debug")]
 mod debugger;
-mod matrix;
+pub use storm_lua_vm::matrix;
 #[cfg(test)]
 mod tests;
 use std::{

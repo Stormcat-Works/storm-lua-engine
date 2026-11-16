@@ -313,7 +313,8 @@ export const ADDON_API_CATALOG = {
     "matrix.multiplyXYZW",
     "matrix.rotationX",
     "matrix.rotationY",
-    "matrix.rotationZ"
+    "matrix.rotationZ",
+    "matrix.rotationToFaceXZ"
   ],
   "profile": "addon"
 } as const;

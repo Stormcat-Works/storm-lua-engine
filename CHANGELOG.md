@@ -10,6 +10,14 @@
 - npm側は`vite` 8.3.8、`wrangler` 4.162.0、`playwright` 1.65.1、`@types/node` 26へ上げた。miniflareが厳密に固定する`undici` 7.28.0と`sharp` 0.35.2は、appの`overrides`で7.30.2と0.35.5へ寄せた。
 - `typescript`は5.8.3を維持する。5.9.3と7.0.2では`WebAssembly.instantiate`の戻り値の型が変わり、`packages/lua-engine/src/raster.ts`がTS2339で失敗する。
 
+### matrix の実ゲーム整合
+
+- matrix 実装を `storm-lua-addon` から `storm-lua-vm` の共有モジュールへ移し、addon は re-export で使う。Component Mod と共用する土台になる。
+- `matrix.rotationToFaceXZ` を追加した（実ゲームの静的解析で式を確定）。`matrix.scale` は Component Mod 用の集合にだけ追加し、addon には入れていない。
+- 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も identity を除き完全一致を要求する（`Wrong number of args`）。
+- multiply の合成順序は、実ゲームのバイナリと現行実装が一致することを乱数行列200ケースの数値比較で確認したため変更していない。
+- `multiplyXYZW` のベクトル成分を、実ゲームどおり f32 へ丸めてから計算するようにした。
+
 ### フレームが変わったかどうかの確かめ方
 
 - 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。

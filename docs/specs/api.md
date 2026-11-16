@@ -36,6 +36,6 @@ Vehicleのloadは現在の環境へチャンクを追加実行し、正常完了
 
 Compositeはf32固定I/O、画素は借用FrameLeaseまたは明示copy。Lua/host/saveの値はi64/f64/bytesを区別する。Addonの複合データにはcold-path codecを使用し、ゼロコピーを保証しない。[ABI](wasm-abi.md)
 
-実world、全server APIのゲーム側実処理、地形データ、ネットワーククライアント、VFS/IDE project管理、ゲームsaveXMLはエンジンが所有しない。matrix.rotationToFaceXZなど未確認の関数をstubで埋めない。ゲーム挙動の全edge caseの実測済みを主張せず、[TASKS](../../TASKS.md)に検証範囲を残す。
+実world、全server APIのゲーム側実処理、地形データ、ネットワーククライアント、VFS/IDE project管理、ゲームsaveXMLはエンジンが所有しない。未確認の関数をstubで埋めない。ゲーム挙動の全edge caseの実測済みを主張せず、[TASKS](../../TASKS.md)に検証範囲を残す。
 
 開発用のrequireLoaderはextendedの明示機能であり、ホストがソースと名前を供給する。[source loading契約](source-loading.md)がキャッシュ・継続・予算・load履歴を所有する。

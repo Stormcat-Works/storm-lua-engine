@@ -47,8 +47,13 @@ pub struct AddonConfig {
     /// Explicit host extensions, retained across savedata reload.
     pub bindings: storm_lua_vm::bindings::HostBindings,
     /// Optional Windows CRT execution-context stream shared with the host scene.
-    /// None retains the isolated deterministic default. The host saves its state.
+    /// None selects the engine's built-in shared CRT stream (the game default, J2);
+    /// the host saves state only for a context it supplies itself.
     pub random: Option<storm_lua_vm::random::SharedCrtRandom>,
+    /// trueの場合、Gameプロファイルの既定（共有CRT互換ストリーム）ではなく
+    /// VMごとの決定的ストリームを使います（J2のホスト選択肢）。
+    /// `random` を指定した場合はそちらが優先します。
+    pub deterministic_random: bool,
     /// Explicit development require; cache is recreated during savedata reload.
     pub require_loader: Option<storm_lua_vm::source::RequireLoader>,
 }
@@ -66,6 +71,7 @@ impl Default for AddonConfig {
             bindings: Default::default(),
             require_loader: None,
             random: None,
+            deterministic_random: false,
         }
     }
 }
@@ -279,6 +285,8 @@ impl Addon {
         let mut vm = Vm::with_addon_environment(config.limits, config.environment)?;
         if let Some(random) = &config.random {
             vm.install_crt_random(Rc::clone(random))?;
+        } else if config.deterministic_random {
+            vm.use_deterministic_random()?;
         }
         if let Some(savedata) = &config.savedata {
             if !matches!(savedata, LuaValue::Table(_)) {

@@ -20,7 +20,7 @@ use storm_lua_vm::{
 };
 
 /// トップレベルコードが実行される前にプロパティが組み込まれます。
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct MicrocontrollerConfig {
     /// 大文字小文字を区別する型付きプロパティ値（UIウィジェットのメタデータは含みません）。
     pub properties: PropertyBag,
@@ -35,6 +35,26 @@ pub struct MicrocontrollerConfig {
     /// Optional native state-control namespace for an extended development harness.
     /// Never installed in the game environment or selected implicitly.
     pub control_namespace: Option<String>,
+    /// ホスト共有のCRT乱数コンテキスト。指定した場合は `deterministic_random` より優先します。
+    /// 未指定時のGameプロファイル既定は、エンジン組み込みの共有CRT互換ストリームです（J2）。
+    pub random: Option<storm_lua_vm::random::SharedCrtRandom>,
+    /// trueの場合、Gameプロファイルの既定（共有CRT互換ストリーム）ではなく
+    /// VMごとの決定的ストリームを使います（J2のホスト選択肢）。
+    pub deterministic_random: bool,
+}
+impl std::fmt::Debug for MicrocontrollerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MicrocontrollerConfig")
+            .field("properties", &self.properties)
+            .field("limits", &self.limits)
+            .field("environment", &self.environment)
+            .field("bindings", &self.bindings)
+            .field("require_loader", &self.require_loader)
+            .field("control_namespace", &self.control_namespace)
+            .field("random", &self.random.as_ref().map(|_| "<host CRT context>"))
+            .field("deterministic_random", &self.deterministic_random)
+            .finish()
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -58,6 +78,8 @@ pub struct Microcontroller {
     vm: Vm,
     state: Rc<RefCell<State>>,
     limits: ExecutionLimits,
+    random: Option<storm_lua_vm::random::SharedCrtRandom>,
+    deterministic_random: bool,
     sources: Vec<storm_lua_vm::source::SourceChunk>,
     source_bytes: usize,
     pending_source: Option<storm_lua_vm::source::SourceChunk>,
@@ -77,6 +99,11 @@ impl Microcontroller {
             loader.validate_configuration(config.environment, &config.bindings)?;
         }
         let mut vm = Vm::with_environment(config.limits, config.environment)?;
+        if let Some(random) = &config.random {
+            vm.install_crt_random(Rc::clone(random))?;
+        } else if config.deterministic_random {
+            vm.use_deterministic_random()?;
+        }
         let state = Rc::new(RefCell::new(State {
             input: CompositeSignal::default(),
             input_changed: false,
@@ -117,6 +144,8 @@ impl Microcontroller {
             vm,
             state,
             limits: config.limits,
+            random: config.random,
+            deterministic_random: config.deterministic_random,
             sources: Vec::new(),
             source_bytes: 0,
             pending_source: None,
@@ -316,6 +345,8 @@ impl Microcontroller {
             bindings: self.bindings.clone(),
             control_namespace: self.control_namespace.clone(),
             require_loader: self.require_loader.clone(),
+            random: self.random.clone(),
+            deterministic_random: self.deterministic_random,
         };
         let mut next = Self::new(config)?;
         if self.dev_logs {

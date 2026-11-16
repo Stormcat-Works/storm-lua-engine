@@ -419,6 +419,14 @@ impl Vm {
         crate::random::install(&self.lua, &self.environment.get::<Table>("math")?, source)?;
         Ok(())
     }
+    /// Gameプロファイルの既定（CRT互換の共有ストリーム）を、VMごとの決定的
+    /// ストリームへ差し替えます（ホスト選択肢、J2）。Extendedではもともと
+    /// 決定的ストリームのため実質的に変わりません。
+    pub fn use_deterministic_random(&mut self) -> Result<(), VmError> {
+        self.ensure_idle()?;
+        crate::sandbox::install_random(&self.lua, &self.environment.get::<Table>("math")?)?;
+        Ok(())
+    }
     /// バックエンド密結合な明示的拡張フィーチャーを通じてホストバインディングを設定します。
     #[cfg(feature = "backend-mlua")]
     pub fn configure<T>(

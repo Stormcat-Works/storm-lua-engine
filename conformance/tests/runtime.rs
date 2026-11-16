@@ -294,9 +294,18 @@ fn memory_budget_and_syntax_failure_are_explicit() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 #[test]
-fn random_streams_are_independent() -> Result<(), Box<dyn Error>> {
+fn random_streams_are_independent_with_the_deterministic_option() -> Result<(), Box<dyn Error>> {
+    // 決定的ストリームはホスト選択肢として残り、VMごとに独立しています（J2）。
     let source = "math.randomseed(9);function onTick()output.setNumber(1,math.random())end";
-    let (mut a, mut b) = (loaded(source)?, loaded(source)?);
+    let deterministic = || -> Result<Microcontroller, Box<dyn Error>> {
+        let mut vm = Microcontroller::new(MicrocontrollerConfig {
+            deterministic_random: true,
+            ..Default::default()
+        })?;
+        vm.load(source.as_bytes(), "=test")?;
+        Ok(vm)
+    };
+    let (mut a, mut b) = (deterministic()?, deterministic()?);
     a.tick(&CompositeSignal::default())?;
     let first = a.output().numbers[0];
     for _ in 0..10 {
@@ -304,6 +313,56 @@ fn random_streams_are_independent() -> Result<(), Box<dyn Error>> {
     }
     b.tick(&CompositeSignal::default())?;
     assert_eq!(first, b.output().numbers[0]);
+    Ok(())
+}
+#[test]
+fn game_default_random_is_the_shared_builtin_crt_stream() -> Result<(), Box<dyn Error>> {
+    // Gameプロファイルの既定は実ゲームと同じCRT互換で、プロセス（スレッド）共有です（J2）。
+    use storm_lua_vm::random::{CrtRandomSource, MsvcCrtRandom};
+    let reference = MsvcCrtRandom::new();
+    reference.seed(2024)?;
+    reference.draw()?; // randomseed は1ドローを破棄します。
+    let mut expected = Vec::new();
+    for _ in 0..3 {
+        expected.push((f64::from(reference.draw()?) / 32768.0) as f32);
+    }
+    let mut a = loaded("math.randomseed(2024);function onTick()output.setNumber(1,math.random())end")?;
+    let mut b = loaded("function onTick()output.setNumber(1,math.random())end")?;
+    a.tick(&CompositeSignal::default())?;
+    assert_eq!(a.output().numbers[0], expected[0]);
+    // 2台目はseedし直さず、共有列の続きを引きます。
+    b.tick(&CompositeSignal::default())?;
+    assert_eq!(b.output().numbers[0], expected[1]);
+    a.tick(&CompositeSignal::default())?;
+    assert_eq!(a.output().numbers[0], expected[2]);
+    Ok(())
+}
+#[test]
+fn microcontroller_accepts_a_host_supplied_crt_context() -> Result<(), Box<dyn Error>> {
+    use std::rc::Rc;
+    use storm_lua_vm::random::{CrtRandomSource, MsvcCrtRandom, SharedCrtRandom};
+    let shared: SharedCrtRandom = Rc::new(MsvcCrtRandom::new());
+    let reference = MsvcCrtRandom::new();
+    reference.seed(3)?;
+    reference.draw()?;
+    let mut expected = Vec::new();
+    for _ in 0..2 {
+        expected.push((f64::from(reference.draw()?) / 32768.0) as f32);
+    }
+    let with_context = |source: &str| -> Result<Microcontroller, Box<dyn Error>> {
+        let mut vm = Microcontroller::new(MicrocontrollerConfig {
+            random: Some(Rc::clone(&shared)),
+            ..Default::default()
+        })?;
+        vm.load(source.as_bytes(), "=test")?;
+        Ok(vm)
+    };
+    let mut a = with_context("math.randomseed(3);function onTick()output.setNumber(1,math.random())end")?;
+    let mut b = with_context("function onTick()output.setNumber(1,math.random())end")?;
+    a.tick(&CompositeSignal::default())?;
+    assert_eq!(a.output().numbers[0], expected[0]);
+    b.tick(&CompositeSignal::default())?;
+    assert_eq!(b.output().numbers[0], expected[1]);
     Ok(())
 }
 #[test]

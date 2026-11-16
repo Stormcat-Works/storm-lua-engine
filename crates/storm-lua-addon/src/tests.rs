@@ -168,20 +168,32 @@ fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn ordinary_vm_still_fails_closed_after_lua_error() -> Result<(), Box<dyn Error>> {
+fn ordinary_vm_survives_lua_errors_but_limits_fail_closed() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデルでは、通常のLuaエラーでVMは失敗状態になりません（E9）。
     let mut vm = Vm::new(Default::default())?;
     assert_eq!(
         vm.execute(b"missing()", "=vehicle-policy")
             .err()
-            .ok_or("expected VM failure")?
+            .ok_or("expected Lua error")?
             .kind,
         ErrorKind::Lua
     );
-    assert!(vm.is_failed());
+    assert!(!vm.is_failed());
+    vm.execute(b"function onTick() end", "=vehicle-policy")?;
+    assert_eq!(vm.call("onTick")?, RunOutcome::Completed);
+    // 制限の超過は従来どおり失敗状態にします。
+    let mut vm = Vm::new(storm_lua_vm::ExecutionLimits {
+        instruction_budget: Some(std::num::NonZeroU64::new(100).ok_or("budget")?),
+        ..Default::default()
+    })?;
     assert_eq!(
-        vm.call("onTick").err().ok_or("expected VM failure")?.kind,
-        ErrorKind::Failed
+        vm.execute(b"while true do end", "=limit")
+            .err()
+            .ok_or("expected limit")?
+            .kind,
+        ErrorKind::Limit
     );
+    assert!(vm.is_failed());
     Ok(())
 }
 
@@ -297,10 +309,13 @@ fn borrowed_host_phase_supports_cached_alias_and_synchronous_callback() -> Resul
 
 #[test]
 fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error>> {
-    let mut addon = Addon::new(AddonConfig {
+    let mut config = AddonConfig {
         scoped_server: vec!["again".into()],
         ..Default::default()
-    })?;
+    };
+    config.limits.instruction_budget =
+        Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
+    let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let again = |_: &[LuaValue]| {
         target.dispatch("onVehicleSpawn", &[])?;

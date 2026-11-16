@@ -46,7 +46,7 @@ impl Context {
         // yield. Count against the same control so nested events cannot reset gas.
         thread.set_hook(
             HookTriggers::new().every_nth_instruction(quantum),
-            move |_, _| {
+            move |_, info| {
                 let mut state = control.borrow_mut();
                 if state.remaining <= u64::from(quantum) {
                     state.remaining = 0;
@@ -54,7 +54,13 @@ impl Context {
                 } else {
                     state.remaining -= u64::from(quantum);
                 }
-                if state.exhausted {
+                state.note_instructions(quantum);
+                if state.time_exceeded {
+                    state.limit_line = Some(info.curr_line());
+                    Err(mlua::Error::RuntimeError(
+                        "max execution time exceeded".into(),
+                    ))
+                } else if state.exhausted {
                     Err(mlua::Error::RuntimeError(
                         "instruction budget exceeded".into(),
                     ))
@@ -88,6 +94,18 @@ impl Context {
                 } else {
                     state.remaining -= u64::from(quantum);
                 }
+                state.note_instructions(quantum);
+            }
+            if state.time_exceeded {
+                // 時間制限も命令数バジェットと同じく、pcallで握りつぶせない形で入口を打ち切ります。
+                return if probe.can_yield() {
+                    state.limit_line = Some(info.curr_line());
+                    Ok(VmState::Yield)
+                } else {
+                    Err(mlua::Error::RuntimeError(
+                        "max execution time exceeded".into(),
+                    ))
+                };
             }
             if state.exhausted {
                 // mluaはyield不可能なCコールバック内のYieldを暗黙に無視するため、そこではエラーを送出します。
@@ -282,9 +300,10 @@ impl SynchronousCallbacks {
             ));
         }
         if context.active.get() == 0 {
-            let mut control = context.control.borrow_mut();
-            control.remaining = context.limits.instruction_budget.get();
-            control.exhausted = false;
+            context
+                .control
+                .borrow_mut()
+                .begin_entry(&context.limits);
         }
         let state = Rc::new(PassState {
             pending_failure: Cell::new(false),
@@ -360,9 +379,10 @@ impl SynchronousCallbacks {
             }
         };
         if context.active.get() == 0 && self.pass.is_none() {
-            let mut control = context.control.borrow_mut();
-            control.remaining = context.limits.instruction_budget.get();
-            control.exhausted = false;
+            context
+                .control
+                .borrow_mut()
+                .begin_entry(&context.limits);
         }
         let arguments = crate::value::encode(&context.lua, arguments).map_err(boundary_error)?;
         let thread = context
@@ -380,7 +400,20 @@ impl SynchronousCallbacks {
             return Err(error);
         }
         let attempted_yield = result.is_ok() && thread.status() == ThreadStatus::Resumable;
-        let outcome = if context.control.borrow().exhausted {
+        let outcome = if context.control.borrow().time_exceeded {
+            let line = {
+                let mut control = context.control.borrow_mut();
+                control.time_exceeded = false;
+                control.deadline = None;
+                control.limit_line.take()
+            };
+            let mut error = VmError::new(
+                ErrorKind::Lua,
+                context.limits.timeout_message(line),
+            );
+            attach_trace(&context.lua, &thread, &mut error, None, line);
+            Err(error)
+        } else if context.control.borrow().exhausted {
             let mut error = VmError::new(ErrorKind::Limit, "instruction budget exceeded");
             attach_trace(&context.lua, &thread, &mut error, None, None);
             Err(error)

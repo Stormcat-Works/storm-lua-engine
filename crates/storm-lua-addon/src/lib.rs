@@ -346,7 +346,14 @@ impl Addon {
     /// トップレベルコードを1度実行します。Luaエラー時も既存のsavedataを復元し、startを許可します。
     pub fn load(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.require(Stage::Empty)?;
-        if source.len() > 1024 * 1024 || name.len() > 1024 {
+        // ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+        if name.len() > 1024
+            || self
+                .config
+                .limits
+                .max_source_bytes
+                .is_some_and(|max| source.len() > max.get())
+        {
             return Err(invalid("addon source or name is too large"));
         }
         self.source = source.to_vec();

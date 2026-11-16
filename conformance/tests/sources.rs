@@ -193,7 +193,7 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
         })
     });
     let mut c = configured(l);
-    c.limits.instruction_budget = std::num::NonZeroU64::MIN.saturating_add(1999);
+    c.limits.instruction_budget = Some(std::num::NonZeroU64::MIN.saturating_add(1999));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"while true do pcall(require,'loop')end", "@main.lua")
@@ -224,7 +224,7 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
         Rc::default(),
     );
     let mut c = configured(allocation);
-    c.limits.lua_memory_bytes = std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1);
+    c.limits.lua_memory_bytes = Some(std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"require('alloc')", "@main.lua")

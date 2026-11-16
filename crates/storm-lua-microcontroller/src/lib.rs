@@ -134,9 +134,12 @@ impl Microcontroller {
     /// Chunk locals are distinct. A failed or abandoned suspended load is not saved.
     pub fn load(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.vm.ensure_idle()?;
-        storm_lua_vm::source::validate_source(source, name)?;
-        if self.sources.len() >= storm_lua_vm::source::MAX_PROGRAM_CHUNKS
-            || source.len() > storm_lua_vm::source::MAX_PROGRAM_BYTES - self.source_bytes
+        storm_lua_vm::source::validate_chunk_name(name)?;
+        // ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+        // 有効化時は保持プログラム全体の上限（128チャンク／8MiB）も併せて適用します。
+        if self.limits.max_source_bytes.is_some()
+            && (self.sources.len() >= storm_lua_vm::source::MAX_PROGRAM_CHUNKS
+                || source.len() > storm_lua_vm::source::MAX_PROGRAM_BYTES - self.source_bytes)
         {
             return Err(VmError::new(
                 ErrorKind::Limit,

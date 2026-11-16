@@ -149,7 +149,7 @@ fn carried_continue_and_a_step_that_stops_inside_the_entry_reserve_nothing() -> 
 type Polled = (Microcontroller, Rc<Cell<bool>>, Rc<Cell<u32>>);
 fn polled(source: &[u8], budget: u64) -> Result<Polled, Box<dyn Error>> {
     let mut config = MicrocontrollerConfig::default();
-    config.limits.instruction_budget = NonZeroU64::new(budget).ok_or("zero budget")?;
+    config.limits.instruction_budget = Some(NonZeroU64::new(budget).ok_or("zero budget")?);
     let mut vm = Microcontroller::new(config)?;
     vm.load(source, "@main.lua")?;
     let (flag, calls) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(0)));
@@ -273,7 +273,7 @@ fn pause_poll_inside_a_protected_call_stops_at_the_next_yieldable_instruction() 
         environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
         ..Default::default()
     };
-    config.limits.instruction_budget = NonZeroU64::new(1_000_000).ok_or("zero")?;
+    config.limits.instruction_budget = Some(NonZeroU64::new(1_000_000).ok_or("zero")?);
     let mut vm = Microcontroller::new(config)?;
     // table.sortの比較関数はCの関数をまたぐため、その中ではyieldできない。
     vm.load(

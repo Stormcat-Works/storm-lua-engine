@@ -253,6 +253,12 @@ pub(crate) struct HookControl {
     pub(crate) exhausted: bool,
     /// 命令数の上限でyieldしたときに、フックが報告した実行行。
     pub(crate) limit_line: Option<i32>,
+    /// 現在の入口の壁時計期限。時間制限が無効な入口ではNoneです。
+    pub(crate) deadline: Option<std::time::Instant>,
+    /// 時間制限を超過したかどうか。フックが記録し、入口側が実ゲーム文面のLuaエラーへ変換します。
+    pub(crate) time_exceeded: bool,
+    /// 次に時計を確認するまでの命令数。
+    pub(crate) time_countdown: u32,
     #[cfg(feature = "debug")]
     pub(crate) breakpoints: Vec<(String, i32)>,
     #[cfg(feature = "debug")]
@@ -280,6 +286,36 @@ pub(crate) struct HookControl {
     /// pollがtrueを返したが、yieldできない場所にいた。次にyieldできる命令で止まります。
     #[cfg(feature = "debug")]
     pub(crate) poll_pending: bool,
+}
+
+/// フックが時計を確認する間隔（命令数）。1001msの制限に対して検出遅れは無視できる範囲です。
+pub(crate) const TIME_CHECK_INTERVAL: u32 = 512;
+impl HookControl {
+    /// 入口の開始時に制限カウンタを初期化します。入れ子の呼び出しでは呼びません
+    /// （制限は入口単位であり、内側の呼び出しが延長することはありません）。
+    pub(crate) fn begin_entry(&mut self, limits: &ExecutionLimits) {
+        self.remaining = limits.instruction_allowance();
+        self.exhausted = false;
+        self.limit_line = None;
+        self.time_exceeded = false;
+        self.time_countdown = TIME_CHECK_INTERVAL;
+        self.deadline = limits
+            .time_limit
+            .map(|limit| std::time::Instant::now() + limit);
+    }
+    /// フックのカウントイベントごとに呼び、時間制限の超過を記録します。
+    pub(crate) fn note_instructions(&mut self, quantum: u32) {
+        if self.deadline.is_none() || self.time_exceeded {
+            return;
+        }
+        self.time_countdown = self.time_countdown.saturating_sub(quantum);
+        if self.time_countdown == 0 {
+            self.time_countdown = TIME_CHECK_INTERVAL;
+            if self.deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+                self.time_exceeded = true;
+            }
+        }
+    }
 }
 
 /// 1つのスレッド拘束型Lua状態。ホストコードがすべての呼び出しと継続を明示的に駆動します。
@@ -314,17 +350,19 @@ impl Vm {
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
         let lua = create_lua()?;
-        if lua.used_memory() > limits.lua_memory_bytes.get() {
-            return Err(VmError::new(
-                ErrorKind::Limit,
-                "Lua memory budget is smaller than initialization",
-            ));
+        if let Some(memory) = limits.lua_memory_bytes {
+            if lua.used_memory() > memory.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua memory budget is smaller than initialization",
+                ));
+            }
+            lua.set_memory_limit(memory.get())?;
         }
-        lua.set_memory_limit(limits.lua_memory_bytes.get())?;
         let environment = crate::sandbox::environment(&lua, environment_profile)?;
         let control = Rc::new(RefCell::new(HookControl::default()));
         if environment_profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
-            crate::sandbox::protect_calls(&lua, &environment, Rc::clone(&control))?;
+            crate::sandbox::protect_calls(&lua, &environment, Rc::clone(&control), limits)?;
         }
         let logs = Rc::default();
         crate::logging::install(
@@ -422,10 +460,11 @@ impl Vm {
     /// テキストのみをコンパイルし、ホストバインディング組み込み後にそのトップレベルを実行します。
     pub fn execute(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
-        crate::source::validate_source(source, name)?;
+        crate::source::validate_chunk_name(name)?;
+        self.check_source_len(source.len())?;
         let source = crate::dialect::rewrite(source)
             .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
-        crate::source::validate_source(&source, name)?;
+        self.check_source_len(source.len())?;
         let function = self
             .lua
             .load(source.as_ref())
@@ -467,13 +506,23 @@ impl Vm {
             )),
         }
     }
+    /// ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+    fn check_source_len(&self, len: usize) -> Result<(), VmError> {
+        if let Some(max) = self.limits.max_source_bytes {
+            if len > max.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua source exceeds the host source limit",
+                ));
+            }
+        }
+        Ok(())
+    }
     fn start(&mut self, function: Function, arguments: MultiValue) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
         {
             let mut control = self.control.borrow_mut();
-            control.remaining = self.limits.instruction_budget.get();
-            control.exhausted = false;
-            control.limit_line = None;
+            control.begin_entry(&self.limits);
             #[cfg(feature = "debug")]
             {
                 control.depth = 0;
@@ -510,6 +559,20 @@ impl Vm {
             self.failed.set(true);
             self.pending = None;
             self.synchronous.main_pending.set(false);
+            return Err(error);
+        }
+        if self.control.borrow().time_exceeded {
+            // 時間制限の超過は実ゲームでは通常のLuaエラーであり、VMは失敗状態になりません。
+            self.pending = None;
+            self.synchronous.main_pending.set(false);
+            let line = {
+                let mut control = self.control.borrow_mut();
+                control.time_exceeded = false;
+                control.deadline = None;
+                control.limit_line.take()
+            };
+            let mut error = VmError::new(ErrorKind::Lua, self.limits.timeout_message(line));
+            attach_trace(&self.lua, thread, &mut error, None, line);
             return Err(error);
         }
         if self.control.borrow().exhausted {
@@ -627,9 +690,16 @@ impl Vm {
     pub(crate) fn evaluate_watch_thread(&mut self, evaluator: &Thread) -> Result<Value, VmError> {
         let previous = {
             let mut control = self.control.borrow_mut();
-            let previous = (control.remaining, control.exhausted);
+            let previous = (
+                control.remaining,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            );
             control.remaining = 100_000;
             control.exhausted = false;
+            control.time_exceeded = false;
+            control.deadline = None;
             previous
         };
         self.synchronous.install_synchronous_hook(evaluator);
@@ -640,7 +710,12 @@ impl Vm {
         let exhausted = {
             let mut control = self.control.borrow_mut();
             let exhausted = control.exhausted;
-            (control.remaining, control.exhausted) = previous;
+            (
+                control.remaining,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            ) = previous;
             exhausted
         };
         if let Some(error) = self.synchronous.restore_error.borrow_mut().take() {

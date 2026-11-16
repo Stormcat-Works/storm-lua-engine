@@ -135,7 +135,7 @@ fn game_addon_base_globals_do_not_include_select() -> Result<(), Box<dyn Error>>
 fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onTick() while true do end end; function onDestroy() end",
@@ -482,7 +482,7 @@ fn borrowed_predicates_share_budget_and_propagate_caught_exhaustion() -> Result<
         scoped_server: vec!["choose".into()],
         ..Default::default()
     };
-    config.limits.instruction_budget = std::num::NonZeroU64::new(2000).ok_or("budget")?;
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let attempts = std::cell::Cell::new(0);
@@ -523,7 +523,7 @@ fn borrowed_predicate_allocator_memory_error_propagates() -> Result<(), Box<dyn 
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -550,7 +550,7 @@ fn borrowed_predicate_c_buffer_runtime_error_rejects_candidate() -> Result<(), B
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -653,7 +653,7 @@ fn sdk_http_settlement_is_independent_of_destroyed_vm() -> Result<(), Box<dyn Er
 fn sdk_http_settlement_survives_terminal_instruction_failure() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onCreate() server.httpGet(27180,'/pending') end; function onTick() while true do end end",

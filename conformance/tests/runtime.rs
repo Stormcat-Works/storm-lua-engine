@@ -140,7 +140,7 @@ fn instruction_limits_cannot_be_caught_forever() -> Result<(), Box<dyn Error>> {
             environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
             ..Default::default()
         };
-        config.limits.instruction_budget = std::num::NonZeroU64::new(3000).ok_or("budget")?;
+        config.limits.instruction_budget = Some(std::num::NonZeroU64::new(3000).ok_or("budget")?);
         let mut vm = Microcontroller::new(config)?;
         let error = vm
             .load(source.as_bytes(), "=budget")
@@ -152,9 +152,103 @@ fn instruction_limits_cannot_be_caught_forever() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 #[test]
+fn time_limit_matches_the_game_and_does_not_fail_the_vm() -> Result<(), Box<dyn Error>> {
+    // 実ゲームの時間制限は1001msで、超過は通常のLuaエラーとして報告され、VMは失敗状態になりません。
+    let mut vm = loaded(
+        "n=0\nfunction onTick()\n  n=n+1\n  if n==1 then while true do end end\n  output.setNumber(1,n)\nend",
+    )?;
+    let error = vm
+        .tick(&CompositeSignal::default())
+        .err()
+        .ok_or("loop was accepted")?;
+    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
+    assert!(
+        error
+            .message
+            .contains("max execution time exceeded (1000ms). stopped at line 4"),
+        "{}",
+        error.message
+    );
+    assert!(!vm.is_failed());
+    // 次のtickは通常どおり実行できます。
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(vm.output().numbers[0], 2.0);
+    Ok(())
+}
+#[test]
+fn time_limit_cannot_be_caught_forever_by_pcall() -> Result<(), Box<dyn Error>> {
+    let mut vm = Microcontroller::new(MicrocontrollerConfig {
+        environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
+        ..Default::default()
+    })?;
+    vm.load(
+        b"function onTick() while true do pcall(function() while true do end end) end end",
+        "=timeout-pcall",
+    )?;
+    let error = vm
+        .tick(&CompositeSignal::default())
+        .err()
+        .ok_or("loop was accepted")?;
+    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
+    assert!(
+        error.message.contains("max execution time exceeded (1000ms)"),
+        "{}",
+        error.message
+    );
+    assert!(!vm.is_failed());
+    Ok(())
+}
+#[test]
+fn custom_time_limit_is_host_configurable() -> Result<(), Box<dyn Error>> {
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.time_limit = Some(std::time::Duration::from_millis(50));
+    let mut vm = Microcontroller::new(config)?;
+    vm.load(b"function onTick() while true do end end", "=timeout-custom")?;
+    let error = vm
+        .tick(&CompositeSignal::default())
+        .err()
+        .ok_or("loop was accepted")?;
+    assert_eq!(error.kind, ErrorKind::Lua, "{error}");
+    assert!(
+        error
+            .message
+            .contains("max execution time exceeded (50ms). stopped at line 1"),
+        "{}",
+        error.message
+    );
+    Ok(())
+}
+#[test]
+fn instruction_memory_and_source_limits_are_off_by_default() -> Result<(), Box<dyn Error>> {
+    // 実ゲームにハード制限はないため、既定では旧既定値（100万命令・8MiB・1MiB）を超えても動作します。
+    let mut vm = Microcontroller::new(MicrocontrollerConfig::default())?;
+    let mut source = String::from("--");
+    source.push_str(&"x".repeat(1100 * 1024));
+    source.push_str("\nfunction onTick() local s=string.rep('y',9*1024*1024) output.setNumber(1,#s) end");
+    vm.load(source.as_bytes(), "=unbounded")?;
+    vm.tick(&CompositeSignal::default())?;
+    assert_eq!(vm.output().numbers[0], 9.0 * 1024.0 * 1024.0);
+    Ok(())
+}
+#[test]
+fn source_limit_applies_only_when_the_host_enables_it() -> Result<(), Box<dyn Error>> {
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.max_source_bytes = Some(std::num::NonZeroUsize::new(64).ok_or("nonzero")?);
+    let mut vm = Microcontroller::new(config)?;
+    let error = vm
+        .load(
+            b"function onTick() output.setNumber(1, 1) end -- padding padding padding",
+            "=limited-source",
+        )
+        .err()
+        .ok_or("oversized source was accepted")?;
+    assert_eq!(error.kind, ErrorKind::Limit, "{error}");
+    Ok(())
+}
+#[test]
 fn memory_budget_and_syntax_failure_are_explicit() -> Result<(), Box<dyn Error>> {
     let limits = ExecutionLimits {
-        lua_memory_bytes: std::num::NonZeroUsize::new(100_000).ok_or("memory")?,
+        lua_memory_bytes: Some(std::num::NonZeroUsize::new(100_000).ok_or("memory")?),
         ..Default::default()
     };
     let mut vm = Microcontroller::new(MicrocontrollerConfig {

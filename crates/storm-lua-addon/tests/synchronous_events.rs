@@ -160,7 +160,7 @@ fn short_nested_callbacks_share_one_instruction_budget() {
         })
     };
     let mut config = AddonConfig::default();
-    config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
     config.server.insert("spawn".into(), handler);
     let mut addon = Addon::new(config).unwrap();
     *target.borrow_mut() = Some(addon.synchronous_events());
@@ -218,7 +218,7 @@ fn nested_return_restores_each_callers_instruction_hook() {
             })
         };
         let mut config = AddonConfig::default();
-        config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+        config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
         config.server.insert("spawn".into(), handler);
         let mut addon = Addon::new(config).unwrap();
         *target.borrow_mut() = Some(addon.synchronous_events());
@@ -267,7 +267,7 @@ fn scoped_errors_retain_later_callbacks_until_the_host_call_returns() {
 #[test]
 fn scoped_idle_callbacks_share_budget_and_limits_are_immediately_terminal() {
     let mut config = AddonConfig::default();
-    config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
     let mut addon = Addon::new(config).unwrap();
     addon
         .load(

@@ -89,8 +89,9 @@ pub(crate) fn limits(instructions: u32, memory: u32) -> Result<ExecutionLimits, 
         ));
     }
     Ok(ExecutionLimits {
-        instruction_budget,
-        lua_memory_bytes,
+        instruction_budget: Some(instruction_budget),
+        lua_memory_bytes: Some(lua_memory_bytes),
+        ..ExecutionLimits::default()
     })
 }
 pub(crate) fn insert(vm: Script) -> Result<usize, BridgeError> {

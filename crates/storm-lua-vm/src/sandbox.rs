@@ -127,9 +127,15 @@ pub(crate) fn protect_calls(
     lua: &Lua,
     env: &Table,
     control: Rc<std::cell::RefCell<crate::runner::HookControl>>,
+    limits: crate::ExecutionLimits,
 ) -> mlua::Result<()> {
     let check = lua.create_function(move |_, ()| {
-        if control.borrow().exhausted {
+        let state = control.borrow();
+        if state.time_exceeded {
+            Err(mlua::Error::RuntimeError(
+                limits.timeout_message(state.limit_line),
+            ))
+        } else if state.exhausted {
             Err(mlua::Error::RuntimeError(
                 "instruction budget exceeded".into(),
             ))

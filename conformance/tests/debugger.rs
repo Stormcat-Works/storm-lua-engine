@@ -167,7 +167,7 @@ end",
 #[test]
 fn debug_enabled_does_not_disable_instruction_limits() -> Result<(), Box<dyn Error>> {
     let mut config = MicrocontrollerConfig::default();
-    config.limits.instruction_budget = std::num::NonZeroU64::new(3000).ok_or("budget")?;
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(3000).ok_or("budget")?);
     let mut vm = Microcontroller::new(config)?;
     vm.load(
         b"function onTick()

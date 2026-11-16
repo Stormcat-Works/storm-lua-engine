@@ -146,7 +146,7 @@ fn instruction_limit_reports_where_the_script_was_running() -> TestResult {
             environment,
             ..Default::default()
         };
-        config.limits.instruction_budget = NonZeroU64::MIN.saturating_add(9_999);
+        config.limits.instruction_budget = Some(NonZeroU64::MIN.saturating_add(9_999));
         let mut vm = Microcontroller::new(config)?;
         vm.load(
             b"local function spin()\n  while true do\n  end\nend\nfunction onTick()\n  spin()\nend",

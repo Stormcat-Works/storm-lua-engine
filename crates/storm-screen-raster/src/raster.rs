@@ -19,6 +19,9 @@ pub struct ScreenRaster {
     color: Rgba8,
     map_provider: Option<Rc<dyn MapProvider>>,
     map_colors: [Option<Rgba8>; 8],
+    /// 差分テスト専用。行スパンを1画素ずつ`plot`で描き、床除算を剰余2回で求める参照経路を選びます。
+    #[cfg(test)]
+    reference_paths: bool,
 }
 impl ScreenRaster {
     /// 境界付きフレームバッファを割り当てます。Luaバックエンドは不要です。
@@ -43,6 +46,8 @@ impl ScreenRaster {
             color: Rgba8([255; 4]),
             map_provider: None,
             map_colors: [None; 8],
+            #[cfg(test)]
+            reference_paths: false,
         })
     }
     /// Development viewport with an integer overflow margin.
@@ -122,8 +127,36 @@ impl ScreenRaster {
         if !from.is_finite() || !to.is_finite() || to <= from {
             return;
         }
-        for x in from as u32..to as u32 {
-            self.plot(f64::from(x), y);
+        // 切り詰めは従来の`from as u32..to as u32`と同じです。toは幅以下なので範囲は行内に収まります。
+        let (start, end) = (from as u32, to as u32);
+        #[cfg(test)]
+        if self.reference_paths {
+            for x in start..end {
+                self.plot(f64::from(x), y);
+            }
+            return;
+        }
+        if start >= end {
+            return;
+        }
+        // 行の検査とクリップは済んでいるので、画素ごとの境界検査を繰り返さず1行を続けて書きます。
+        let row = y as usize * self.width as usize;
+        let span = &mut self.pixels[(row + start as usize) * 4..(row + end as usize) * 4];
+        let color = self.color;
+        match color.0[3] {
+            255 => {
+                for pixel in span.chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&color.0);
+                }
+            }
+            0 => {}
+            _ => {
+                for pixel in span.chunks_exact_mut(4) {
+                    let blended =
+                        blend_pixel(color, Rgba8([pixel[0], pixel[1], pixel[2], pixel[3]]));
+                    pixel.copy_from_slice(&blended.0);
+                }
+            }
         }
     }
     fn line(&mut self, mut p: [[f64; 2]; 2]) {
@@ -162,6 +195,12 @@ impl ScreenRaster {
             }
             p = [[x + dx * lo, y + dy * lo], [x + dx * hi, y + dy * hi]];
         }
+        #[cfg(test)]
+        let floor_div = if self.reference_paths {
+            floor_div_reference
+        } else {
+            floor_div
+        };
         let (w, h) = (self.width, self.height);
         let [x1, y1] = [snap_units(p[0][0], w), snap_units(p[0][1], h)];
         let [x2, y2] = [snap_units(p[1][0], w), snap_units(p[1][1], h)];
@@ -510,7 +549,26 @@ fn snap_units(v: f64, size: u32) -> f64 {
 fn snap(v: f64, size: u32) -> f64 {
     snap_units(v, size) / 256.0
 }
+/// 整数除算で床除算を正確に求められる被演算数の絶対値の上限（2^52）。
+const EXACT_INTEGER_LIMIT: f64 = 4_503_599_627_370_496.0;
+/// 負の無限大方向へ丸める除算。直線の画素ごとに呼ばれます。
+///
+/// 直線の被演算数は1/256px単位の整数値なので、通常は整数除算で求めます。両方が2^52以下の
+/// 整数値でdが正なら、剰余2回の式も全段が丸めなしで計算され、結果は同じ値になります。
+/// それ以外（巨大座標の代替丸め、nがゼロで符号を保つ場合など）は元の式をそのまま使います。
 fn floor_div(n: f64, d: f64) -> f64 {
+    if d > 0.0
+        && d <= EXACT_INTEGER_LIMIT
+        && n != 0.0
+        && n.abs() <= EXACT_INTEGER_LIMIT
+        && n.fract() == 0.0
+        && d.fract() == 0.0
+    {
+        return (n as i64).div_euclid(d as i64) as f64;
+    }
+    floor_div_reference(n, d)
+}
+fn floor_div_reference(n: f64, d: f64) -> f64 {
     let remainder = ((n % d) + d) % d;
     (n - remainder) / d
 }
@@ -599,5 +657,207 @@ impl std::fmt::Debug for ScreenRaster {
             .field("height", &self.height)
             .field("map_provider", &self.map_provider.is_some())
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 依存を増やさない決定的な擬似乱数（SplitMix64）。
+    struct Random(u64);
+    impl Random {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+        fn below(&mut self, bound: u64) -> u64 {
+            self.next() % bound
+        }
+        /// 画面の内外、半端な小数、境界値、巨大値、非有限値を混ぜた座標。
+        fn coordinate(&mut self, size: u32) -> f64 {
+            let size = f64::from(size);
+            match self.below(16) {
+                0 => -(self.below(40) as f64),
+                1 => size + self.below(40) as f64,
+                2 => self.below(u64::from(size as u32) + 1) as f64,
+                3 => self.below(u64::from(size as u32) + 1) as f64 + 0.5,
+                4 => [1e9, -1e9, 70000.0, -70000.0, 1e300, -1e300][self.below(6) as usize],
+                5 => [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.0][self.below(4) as usize],
+                6 => (self.below(1 << 20) as f64 / 256.0) - 64.0,
+                _ => (self.next() as f64 / u64::MAX as f64) * (size + 40.0) - 20.0,
+            }
+        }
+        fn extent(&mut self, size: u32) -> f64 {
+            match self.below(8) {
+                0 => -(self.below(u64::from(size)) as f64),
+                1 => 0.0,
+                2 => self.coordinate(size),
+                _ => (self.next() as f64 / u64::MAX as f64) * f64::from(size) * 1.2,
+            }
+        }
+        fn command(&mut self, width: u32, height: u32) -> DrawCommand {
+            let x = |r: &mut Self| r.coordinate(width);
+            let y = |r: &mut Self| r.coordinate(height);
+            match self.below(8) {
+                0 | 1 => {
+                    let alpha = [0, 1, 127, 128, 254, 255, 255, 255][self.below(8) as usize];
+                    DrawCommand::SetColor(Rgba8([
+                        self.below(256) as u8,
+                        self.below(256) as u8,
+                        self.below(256) as u8,
+                        alpha,
+                    ]))
+                }
+                2 | 3 => DrawCommand::Rect(
+                    [x(self), y(self), self.extent(width), self.extent(height)],
+                    true,
+                ),
+                4 | 5 => {
+                    DrawCommand::Circle([x(self), y(self), self.extent(width.min(height))], true)
+                }
+                6 => DrawCommand::Triangle(
+                    [[x(self), y(self)], [x(self), y(self)], [x(self), y(self)]],
+                    self.below(4) != 0,
+                ),
+                _ => match self.below(8) {
+                    0 => DrawCommand::Clear,
+                    1 | 2 => DrawCommand::Rect(
+                        [x(self), y(self), self.extent(width), self.extent(height)],
+                        false,
+                    ),
+                    3 => DrawCommand::Circle(
+                        [x(self), y(self), self.extent(width.min(height))],
+                        false,
+                    ),
+                    _ => DrawCommand::Line([[x(self), y(self)], [x(self), y(self)]]),
+                },
+            }
+        }
+    }
+
+    /// 行スパンの一括書き込みと整数の床除算が、従来の経路（1画素ずつの`plot`と剰余2回の床除算）と
+    /// 全バイト一致することを確かめます。
+    #[test]
+    fn fast_paths_match_the_reference_paths() -> Result<(), ScreenError> {
+        let mut random = Random(0x5EED_2026_1116);
+        let mut compared = 0_u32;
+        for (width, height, margin) in [
+            (1, 1, 0),
+            (32, 32, 0),
+            (96, 96, 0),
+            (64, 32, 3),
+            (288, 160, 0),
+            (17, 250, 1),
+            (4096, 2, 0),
+        ] {
+            for _ in 0..40 {
+                let mut fast = ScreenRaster::with_margin(width, height, margin)?;
+                let mut reference = ScreenRaster::with_margin(width, height, margin)?;
+                reference.reference_paths = true;
+                let (w, h) = fast.dimensions();
+                for _ in 0..60 {
+                    let command = random.command(w, h);
+                    fast.submit(&command)?;
+                    reference.submit(&command)?;
+                    assert!(
+                        fast.pixels() == reference.pixels(),
+                        "{width}x{height} margin {margin}: {command:?}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 7 * 40 * 60);
+        Ok(())
+    }
+
+    /// 整数の床除算が、剰余2回の式とビット単位で同じ値を返すことを確かめます。
+    #[test]
+    fn floor_div_matches_the_reference_bit_for_bit() {
+        let mut random = Random(0xF100_D1F0);
+        let edges = [
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            255.0,
+            256.0,
+            -256.0,
+            0.5,
+            -0.5,
+            1.0 / 256.0,
+            EXACT_INTEGER_LIMIT,
+            -EXACT_INTEGER_LIMIT,
+            EXACT_INTEGER_LIMIT + 2.0,
+            -(EXACT_INTEGER_LIMIT + 2.0),
+            EXACT_INTEGER_LIMIT * 2.0,
+            9_007_199_254_740_992.0,
+            1e300,
+            -1e300,
+            f64::MIN_POSITIVE,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ];
+        let mut compared = 0_u32;
+        let mut check = |n: f64, d: f64| {
+            assert!(
+                floor_div(n, d).to_bits() == floor_div_reference(n, d).to_bits(),
+                "floor_div({n:?}, {d:?})"
+            );
+            compared += 1;
+        };
+        for n in edges {
+            for d in edges {
+                check(n, d);
+            }
+        }
+        for _ in 0..200_000 {
+            // 直線が実際に渡す規模（分子は2^50程度まで、分母は256の倍数）と、より広い整数。
+            let n_bits = 1 + random.below(53);
+            let d_bits = 1 + random.below(53);
+            let n = (random.next() >> (64 - n_bits)) as f64;
+            let d = (random.next() >> (64 - d_bits)) as f64;
+            let n = if random.below(2) == 0 { n } else { -n };
+            check(n, d);
+            check(n, -d);
+            check(n, d * 256.0);
+            check(n + 0.25, d);
+            check(n, d + 0.5);
+            check(n * 256.0 + 128.0 * d, 256.0 * d);
+        }
+        assert_eq!(compared, 22 * 22 + 200_000 * 6);
+    }
+
+    /// 参照経路との比較が空振りしないよう、塗りつぶしが実際に画素を書くことを確かめます。
+    #[test]
+    fn span_fill_writes_opaque_and_blended_pixels() -> Result<(), ScreenError> {
+        let mut raster = ScreenRaster::new(8, 4)?;
+        raster.submit(&DrawCommand::SetColor(Rgba8([10, 20, 30, 255])))?;
+        raster.submit(&DrawCommand::Rect([1.0, 1.0, 3.0, 2.0], true))?;
+        let written = raster
+            .pixels()
+            .chunks_exact(4)
+            .filter(|pixel| *pixel == [10, 20, 30, 255])
+            .count();
+        assert_eq!(written, 6);
+        raster.submit(&DrawCommand::SetColor(Rgba8([200, 100, 50, 128])))?;
+        raster.submit(&DrawCommand::Rect([0.0, 0.0, 8.0, 4.0], true))?;
+        let expected = blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([10, 20, 30, 255]));
+        let blended = raster
+            .pixels()
+            .chunks_exact(4)
+            .filter(|pixel| *pixel == expected.0)
+            .count();
+        assert_eq!(blended, 6);
+        assert_eq!(
+            &raster.pixels()[..4],
+            &blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([0; 4])).0
+        );
+        Ok(())
     }
 }

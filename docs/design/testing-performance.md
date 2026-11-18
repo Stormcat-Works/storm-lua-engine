@@ -31,6 +31,6 @@
 
 入力は[control.lua](../../fixtures/bench/control.lua)と[draw.lua](../../fixtures/bench/draw.lua)。Nativeは`cargo run --release -p storm-lua-conformance --example benchmark --locked`、WASMは`node tools/bench-wasm.mjs`を使用します。100回warm-up後の9batch平均の中央値と最大値で、個々のcallbackのp95ではありません。
 
-Lua生成・load、tick、96×96の描画を分けます。Canvas/GPU upload、Worker通信、初回module compile/downloadは別です。既存の[測定値](../verification/performance.json)は記録当時のbaselineであり、最新コードの性能保証ではありません。
+Lua生成・load、tick、96×96の描画を分けます。Luaの実行とラスタライズを分け、描画命令の種類ごとに測るNativeのベンチは`cargo run --release -p storm-lua-conformance --example runtime_breakdown --locked`です。Canvas/GPU upload、Worker通信、初回module compile/downloadは別です。既存の[測定値](../verification/performance.json)は記録当時のbaselineであり、最新コードの性能保証ではありません。
 
 正確性を優先し、SIMDやshared memoryの導入は実測と互換性の検証を伴う場合に限ります。Lua自身のallocation/GCまでゼロコストと主張しません。[実行記録](../verification/repository.md)を参照してください。

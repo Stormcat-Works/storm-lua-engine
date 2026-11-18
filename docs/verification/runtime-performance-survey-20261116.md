@@ -190,7 +190,8 @@ v0.5.0は、円の頂点生成（f32の逐次加算）、`drawText`と`drawTextB
 | `cargo test --workspace --all-features --locked` | 通過（1,935件、失敗0、無視0） |
 | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | 通過 |
 | `cargo fmt --all --check` | 通過 |
-| 実WASM、3ブラウザ、`cargo xtask check` | 未実施 |
+| 実WASM（v0.5.0へ本変更をマージした状態。`npm ci`、`node tools/build-wasm.mjs`、`node tools/build-compiler.mjs`、`node tools/test-wasm.mjs`） | 通過（Emscripten 6.0.6、Node 26.8.2、109件、失敗0。743件の契約をラスタライザ単体のWASMとLuaのWASMで描く2件を含む） |
+| 3ブラウザ、`cargo xtask check` | 未実施 |
 
 この測定の時点では、`runtime_breakdown`は命令数の上限を1億に設定していた。v0.5.0では`ExecutionLimits::instruction_budget`が`Option`になったので、その行を`Some(...)`へ書き換えて使った。その後、上限を設定せず既定の制限で測る形に改め、`develop`とv0.5.0の両方で同じコードがコンパイルできるようにした。`develop`で全入力が既定の上限（100万命令）に達せず、値も変わらないことを確かめた。
 

@@ -174,7 +174,8 @@ pub(crate) fn decode(values: MultiValue) -> Result<Vec<LuaValue>, VmError> {
         .collect()
 }
 /// 同期ホスト関数。Lua実行が継続する前にサーバーへの問い合わせが完了して返る必要があります。
-pub type HostFunction = std::rc::Rc<dyn Fn(&[LuaValue]) -> Result<Vec<LuaValue>, VmError>>;
+pub type HostFunction =
+    std::sync::Arc<dyn Fn(&[LuaValue]) -> Result<Vec<LuaValue>, VmError> + Send + Sync>;
 impl crate::runner::Vm {
     /// 明示的に提供されたホスト関数を登録します。これは信頼されたホストによる拡張です。
     pub fn register_function(
@@ -193,6 +194,8 @@ impl crate::runner::Vm {
                 encode(lua, &values).map_err(mlua::Error::external)
             })?,
         )?;
+        self.note_host_path(vec![namespace.to_string()]);
+        self.note_host_path(vec![namespace.to_string(), name.to_string()]);
         Ok(())
     }
     /// アイドル境界でグローバル変数の生データをコピーします（セーブスナップショット用）。

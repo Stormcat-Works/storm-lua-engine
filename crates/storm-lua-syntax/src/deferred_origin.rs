@@ -314,6 +314,31 @@ impl StoredOrigin {
             self.push_reason(OptimizationReason::action_shared(code, operation));
         }
     }
+    pub fn derive_action_many(
+        &mut self,
+        transformation: &str,
+        operation: ReasonOperation,
+        count: usize,
+    ) {
+        if count == 0 {
+            return;
+        }
+        self.derive_action(transformation, operation);
+        if count == 1 || operation == ReasonOperation::Rewrite {
+            return;
+        }
+        if self.last_is_action(transformation, operation) {
+            if let Some(tail) = self.tail.as_mut() {
+                let tail = Arc::make_mut(tail);
+                tail.repeats += count - 1;
+                tail.len += count - 1;
+                return;
+            }
+        }
+        for _ in 1..count {
+            self.derive_action(transformation, operation);
+        }
+    }
     /// Same as `transform`, but reuses a caller-owned code string instead of
     /// allocating a fresh `Arc<str>` per origin. The stored value is compared
     /// by string content, exactly like `transform`, so the recorded origin is

@@ -26,7 +26,7 @@ pub mod backend {
     }
     /// 独立した統合テストおよび数値境界テストに必要な直接のバックエンド型。
     pub use mlua::{
-        Error as BackendError, Function, Lua, MultiValue, Result as BackendResult,
+        Error as BackendError, FromLua, Function, Lua, MultiValue, Result as BackendResult,
         String as LuaString, Table, Value, Variadic,
     };
 }
@@ -42,26 +42,78 @@ const _: () = assert!(
 );
 
 /// ホスト実行制限。タイマー、スレッド、非同期ランタイムはここでは管理しません。
+///
+/// 実ゲームの制限モデルに合わせ、既定で有効なのは壁時計の時間制限だけです
+/// （[`ExecutionLimits::time_limit`]、実ゲームと同じ1001ms）。命令数・メモリ・
+/// ソース長は実ゲームにハード制限が存在しないため既定で無効（`None`）であり、
+/// ホストが明示的に有効化した場合だけ適用されます。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecutionLimits {
     /// コールバックごとの決定論的な命令数バジェット。デバッガによる中断をまたいで保持されます。
-    pub instruction_budget: std::num::NonZeroU64,
+    /// `None`（既定）では無制限です。
+    pub instruction_budget: Option<std::num::NonZeroU64>,
     /// Luaメモリ確保の上限。ホスト管理バッファは独自の上限を設ける必要があります。
-    pub lua_memory_bytes: std::num::NonZeroUsize,
+    /// `None`（既定）では無制限です。
+    pub lua_memory_bytes: Option<std::num::NonZeroUsize>,
+    /// 1回の入口実行あたりの壁時計制限。既定は実ゲームと同じ1001msで、
+    /// 超過時は実ゲームと同じ文面のLuaエラーになります。`None`で無効化できます。
+    pub time_limit: Option<std::time::Duration>,
+    /// 1チャンクのソース長上限（バイト）。`None`（既定）では無制限です。
+    /// 有効化すると、保持プログラム全体の上限（チャンク数・合計バイト数）も併せて適用されます。
+    pub max_source_bytes: Option<std::num::NonZeroUsize>,
+}
+
+impl ExecutionLimits {
+    /// 実ゲームの時間制限（1001ms）。超過メッセージの文面は実ゲームの表記どおり1000msです。
+    pub const GAME_TIME_LIMIT: std::time::Duration = std::time::Duration::from_millis(1001);
+    /// 命令数バジェットの実効値。無効時は枯渇しない値です。
+    #[cfg(feature = "backend-mlua")]
+    pub(crate) fn instruction_allowance(&self) -> u64 {
+        self.instruction_budget
+            .map_or(u64::MAX, |budget| budget.get())
+    }
+    /// 時間制限超過エラーの接頭辞。実ゲームは `max execution time exceeded (1000ms)` です。
+    #[cfg(feature = "backend-mlua")]
+    pub(crate) fn timeout_prefix(&self) -> String {
+        let limit = self.time_limit.unwrap_or(Self::GAME_TIME_LIMIT);
+        let millis = if limit == Self::GAME_TIME_LIMIT {
+            1000
+        } else {
+            limit.as_millis()
+        };
+        format!("max execution time exceeded ({millis}ms)")
+    }
+    /// 時間制限超過エラーの文面。実ゲームは `max execution time exceeded (1000ms). stopped at line <N>` です。
+    #[cfg(feature = "backend-mlua")]
+    pub(crate) fn timeout_message(&self, line: Option<i32>) -> String {
+        format!(
+            "{}. stopped at line {}",
+            self.timeout_prefix(),
+            line.filter(|line| *line > 0).unwrap_or(0)
+        )
+    }
 }
 
 #[cfg(feature = "backend-mlua")]
 mod backend_support;
 #[cfg(feature = "backend-mlua")]
+pub mod continuation;
+#[cfg(feature = "backend-mlua")]
+pub mod matrix;
+#[cfg(feature = "backend-mlua")]
 pub mod runner;
 #[cfg(feature = "backend-mlua")]
 mod sandbox;
+#[cfg(feature = "backend-mlua")]
+pub mod snapshot;
 
 impl Default for ExecutionLimits {
     fn default() -> Self {
         Self {
-            instruction_budget: std::num::NonZeroU64::MIN.saturating_add(999_999),
-            lua_memory_bytes: std::num::NonZeroUsize::MIN.saturating_add(8 * 1024 * 1024 - 1),
+            instruction_budget: None,
+            lua_memory_bytes: None,
+            time_limit: Some(Self::GAME_TIME_LIMIT),
+            max_source_bytes: None,
         }
     }
 }

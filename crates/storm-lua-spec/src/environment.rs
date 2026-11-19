@@ -13,11 +13,12 @@ pub enum EnvironmentProfile {
 }
 
 /// Standard global functions installed in the game-facing environment.
-pub const GAME_FUNCTIONS: &[&str] = &[
-    "ipairs", "next", "pairs", "select", "tonumber", "tostring", "type",
-];
+/// 実ゲームのbase部分集合は6関数のみで、`select` は両クラスとも不在です（E13）。
+pub const GAME_FUNCTIONS: &[&str] = &["ipairs", "next", "pairs", "tonumber", "tostring", "type"];
 /// Additional Lua globals exposed only by the extended environment.
-pub const EXTENDED_FUNCTIONS: &[&str] = &["assert", "error", "pcall", "xpcall", "unpack", "print"];
+pub const EXTENDED_FUNCTIONS: &[&str] = &[
+    "assert", "error", "pcall", "xpcall", "unpack", "print", "select",
+];
 /// Globals absent from the game-facing environment. `debug` exists with `log` only.
 /// `require` is handled separately by the static project linker.
 pub const GAME_UNAVAILABLE: &[&str] = &[
@@ -26,6 +27,7 @@ pub const GAME_UNAVAILABLE: &[&str] = &[
     "xpcall",
     "error",
     "assert",
+    "select",
     "setmetatable",
     "getmetatable",
     "rawget",
@@ -47,7 +49,7 @@ pub const GAME_UNAVAILABLE: &[&str] = &[
 /// Builtin roots visible to a Vehicle script, including the restricted logging table.
 pub const VEHICLE_ROOTS: &[&str] = &[
     "math", "input", "output", "property", "screen", "string", "table", "type", "ipairs", "pairs",
-    "next", "select", "tonumber", "tostring", "map", "self", "debug", "async",
+    "next", "tonumber", "tostring", "map", "self", "debug", "async",
 ];
 impl EnvironmentProfile {
     /// Whether this selected profile leaves a known Lua builtin absent.
@@ -55,9 +57,16 @@ impl EnvironmentProfile {
         GAME_UNAVAILABLE.contains(&name)
             && !(self == Self::Extended && EXTENDED_FUNCTIONS.contains(&name))
     }
-    /// Addon-specific base-function availability; Vehicle keeps `select`.
+    /// Addon-specific base-function availability. `select` は実ゲームでは
+    /// Vehicle/Addonの両クラスとも不在のため、現在は `is_unavailable` と同一です。
     pub fn is_addon_unavailable(self, name: &str) -> bool {
-        self.is_unavailable(name) || (self == Self::Game && name == "select")
+        self.is_unavailable(name)
+    }
+    /// Component Mod base-function availability. select is absent from the
+    /// shared game environment itself (E13), so this currently matches
+    /// the base predicate.
+    pub fn is_component_unavailable(self, name: &str) -> bool {
+        self.is_unavailable(name)
     }
     /// Stable wire/profile identifier.
     pub fn as_str(self) -> &'static str {
@@ -82,5 +91,29 @@ pub fn valid_binding_path(path: &str) -> bool {
         })
 }
 
+/// Builtin roots visible to a Component Mod script, including the restricted logging table.
+pub const COMPONENT_ROOTS: &[&str] = &[
+    "math",
+    "string",
+    "table",
+    "debug",
+    "matrix",
+    "parser",
+    "component",
+    "ipairs",
+    "next",
+    "pairs",
+    "tonumber",
+    "tostring",
+    "type",
+];
 /// Vehicle callbacks invoked externally, not ordinary dead global functions.
 pub const VEHICLE_CALLBACKS: &[&str] = &["onTick", "onDraw", "httpReply"];
+/// Component Mod callbacks invoked externally, not ordinary dead global functions.
+pub const COMPONENT_CALLBACKS: &[&str] = &[
+    "onParse",
+    "onAddToSimulation",
+    "onTick",
+    "onRender",
+    "onRemoveFromSimulation",
+];

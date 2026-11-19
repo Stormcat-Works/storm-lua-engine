@@ -1,11 +1,26 @@
 //! ベースラインの安全なLua環境およびVMごとの乱数状態。
 use mlua::{Lua, Table, Value, Variadic};
-use std::{cell::Cell, rc::Rc};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
+
+/// `math.random` が使うストリームの所有者ハンドル。状態はVMヒープの外にあるため
+/// スナップショットには含まれず、アイドル境界で明示的に往復させます。
+pub(crate) enum MathRandom {
+    /// VMローカルの決定論ストリーム（Extended既定、または `use_deterministic_random`）。
+    /// 値は次回生成前のベース状態です。
+    Local(Arc<AtomicU64>),
+    /// Gameプロファイル既定の組み込みMSVC CRT互換ストリーム（J2）。
+    BuiltinCrt(Arc<crate::random::MsvcCrtRandom>),
+    /// ホスト共有CRTストリームへ差し替え済み。状態はホストが所有します。
+    HostShared,
+}
 
 pub(crate) fn environment(
     lua: &Lua,
     profile: storm_lua_spec::environment::EnvironmentProfile,
-) -> mlua::Result<Table> {
+) -> mlua::Result<(Table, MathRandom)> {
     let globals = lua.globals();
     let env = lua.create_table()?;
     for name in storm_lua_spec::environment::GAME_FUNCTIONS
@@ -24,26 +39,37 @@ pub(crate) fn environment(
     for name in ["string", "table", "math"] {
         env.raw_set(name, globals.raw_get::<Table>(name)?)?;
     }
-    // Lua文字列値はこのメタテーブルを共有するため、元のテーブルからもバイトコードダンプ（string.dump）を削除します。
-    globals
-        .get::<Table>("string")?
-        .raw_set("dump", Value::Nil)?;
+    // string ライブラリは実ゲームと同じ完全版です（string.dump を含む）。
+    // チャンクの読み込みはテキスト専用のため、ダンプしたバイトコードを
+    // 実行に戻す経路はありません（E14）。
     if profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
         env.raw_set(
             "unpack",
             globals.get::<Table>("table")?.raw_get::<Value>("unpack")?,
         )?;
     }
-    install_random(lua, &env.get::<Table>("math")?)?;
-    Ok(env)
+    let math = env.get::<Table>("math")?;
+    let stream = if profile == storm_lua_spec::environment::EnvironmentProfile::Game {
+        // Gameプロファイルの既定は、実ゲームと同じCRT互換の共有ストリームです（J2）。
+        // VMごとの決定的ストリームはホストが明示的に選択した場合だけ使います。
+        let crt = crate::random::shared_builtin_crt_arc();
+        crate::random::install(
+            lua,
+            &math,
+            Arc::clone(&crt) as crate::random::SharedCrtRandom,
+        )?;
+        MathRandom::BuiltinCrt(crt)
+    } else {
+        let local = Arc::new(AtomicU64::new(1_u64));
+        install_random(lua, &math, Arc::clone(&local))?;
+        MathRandom::Local(local)
+    };
+    Ok((env, stream))
 }
 /// `math.random` の区間引数を PUC Lua 5.3 の `luaL_checkinteger` と同じ規則で検証します。
 /// mlua の `i64` 変換は小数部を切り捨ててしまうため、ここでは `lua_tointegerx` 相当の
 /// `coerce_integer`（整数表現を正確に持つ値だけを受理し、数値文字列も強制する）を使います。
 /// 整数表現を持たない数は PUC と同じ文面で、数でない値は型名つきの PUC 文面で拒否します。
-/// 位置接頭辞は Rust コールバックからは付けられないため文面のみを揃えます（接頭辞が
-/// 無いのは VM のコールバック・エラー全体に共通する既存の形で、区間エラー
-/// `invalid random interval` の契約差と同じ扱い）。
 fn random_interval_arg(lua: &Lua, value: &Value, index: usize) -> mlua::Result<i64> {
     if let Some(integer) = lua.coerce_integer(value.clone())? {
         return Ok(integer);
@@ -63,15 +89,15 @@ fn random_interval_arg(lua: &Lua, value: &Value, index: usize) -> mlua::Result<i
     }
 }
 
-fn install_random(lua: &Lua, math: &Table) -> mlua::Result<()> {
-    // PUC-Lua 5.3のC言語RNGはプロセス全体で共有されます。ローカルな決定論的ストリームによりVM間の結合を回避します。
-    // これは再現性と分離を保証するものであり、ゲームの未ドキュメントの乱数列を再現するものではありません。
-    let seed = Rc::new(Cell::new(1_u64));
-    let state = Rc::clone(&seed);
+pub(crate) fn install_random(lua: &Lua, math: &Table, seed: Arc<AtomicU64>) -> mlua::Result<()> {
+    // VMごとの決定的ストリームです。Gameプロファイルの既定は実ゲームと同じ
+    // CRT互換の共有ストリームであり、こちらはホストが明示的に選択した場合
+    // （およびExtendedプロファイル）だけ使われます（J2）。
+    let state = Arc::clone(&seed);
     math.raw_set(
         "randomseed",
         lua.create_function(move |_, value: i64| {
-            state.set(value as u64);
+            state.store(value as u64, Ordering::Relaxed);
             Ok(())
         })?,
     )?;
@@ -79,8 +105,9 @@ fn install_random(lua: &Lua, math: &Table) -> mlua::Result<()> {
         "random",
         lua.create_function(move |lua, args: Variadic<Value>| {
             let next = || {
-                let z = seed.get().wrapping_add(0x9e3779b97f4a7c15);
-                seed.set(z);
+                let z = seed
+                    .fetch_add(0x9e3779b97f4a7c15, Ordering::Relaxed)
+                    .wrapping_add(0x9e3779b97f4a7c15);
                 let z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
                 let z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
                 z ^ (z >> 31)
@@ -126,10 +153,16 @@ fn install_random(lua: &Lua, math: &Table) -> mlua::Result<()> {
 pub(crate) fn protect_calls(
     lua: &Lua,
     env: &Table,
-    control: Rc<std::cell::RefCell<crate::runner::HookControl>>,
+    control: Arc<Mutex<crate::runner::HookControl>>,
+    limits: crate::ExecutionLimits,
 ) -> mlua::Result<()> {
     let check = lua.create_function(move |_, ()| {
-        if control.borrow().exhausted {
+        let state = crate::runner::lock(&control);
+        if state.time_exceeded {
+            Err(mlua::Error::RuntimeError(
+                limits.timeout_message(state.limit_line),
+            ))
+        } else if state.exhausted {
             Err(mlua::Error::RuntimeError(
                 "instruction budget exceeded".into(),
             ))
@@ -165,7 +198,7 @@ mod tests {
 
     fn sandbox_math(profile: storm_lua_spec::environment::EnvironmentProfile) -> (Lua, Table) {
         let lua = Lua::new();
-        let env = environment(&lua, profile).unwrap();
+        let (env, _) = environment(&lua, profile).unwrap();
         let math = env.get::<Table>("math").unwrap();
         (lua, math)
     }
@@ -178,9 +211,7 @@ mod tests {
 
     #[test]
     fn random_rejects_numbers_without_integer_representation() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
-        // わずかでも小数部を持つ数、範囲外の数、NaN は PUC と同じ文面で拒否します
-        // （以前は mlua の i64 変換が切り捨てて受理していました）。
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         for arg in [1.5, 2.5, 0.5, -1.5, 1e19, f64::NAN, f64::INFINITY] {
             let message = random_error(&math, arg);
             assert!(
@@ -189,26 +220,23 @@ mod tests {
                 "arg {arg}: {message}"
             );
         }
-        // 数値文字列の小数形も同様に拒否します（PUC の lua_tointegerx と同じ）。
         let message = random_error(&math, "3.5");
         assert!(
             message.contains("number has no integer representation"),
             "{message}"
         );
-        // 第2引数の検証は引数番号つきで報告します。
         let message = random_error(&math, (1, 3.5));
         assert!(
             message.contains("bad argument #2 to 'random' (number has no integer representation)"),
             "{message}"
         );
-        // 両方とも不正なら第1引数から報告します。
         let message = random_error(&math, (1.5, 2.5));
         assert!(message.contains("bad argument #1 to 'random'"), "{message}");
     }
 
     #[test]
     fn random_rejects_non_numbers_with_puc_type_error() {
-        let (lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let message = random_error(&math, true);
         assert!(
             message.contains("bad argument #1 to 'random' (number expected, got boolean)"),
@@ -228,41 +256,36 @@ mod tests {
 
     #[test]
     fn random_accepts_integral_and_coerced_forms_unchanged() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let random: mlua::Function = math.get("random").unwrap();
-        // 整数値 float は従来どおり受理します。
         let value: i64 = random.call(3.0).unwrap();
         assert!((1..=3).contains(&value));
         let value: i64 = random.call((2.0, 2.0)).unwrap();
         assert_eq!(value, 2);
-        // 数値文字列の強制も従来どおり受理します。
         let value: i64 = random.call("3").unwrap();
         assert!((1..=3).contains(&value));
         let value: i64 = random.call("0x10").unwrap();
         assert!((1..=16).contains(&value));
-        // 整数引数と無引数形も不変です。
         let value: i64 = random.call(5).unwrap();
         assert!((1..=5).contains(&value));
         let value: i64 = random.call((2, 9)).unwrap();
         assert!((2..=9).contains(&value));
         let value: f64 = random.call(()).unwrap();
         assert!((0.0..1.0).contains(&value));
-        // randomseed の小数切り捨ては PUC 自身と同じため対象外（不変）です。
         let randomseed: mlua::Function = math.get("randomseed").unwrap();
         randomseed.call::<()>(42.9).unwrap();
     }
 
     #[test]
     fn random_interval_contract_and_draw_accounting_unchanged() {
-        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
-        // 空区間は文書化済みの VM 文面のままです（契約差として記録済み）。
+        let (_lua, math) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let message = random_error(&math, (3, 1));
         assert!(message.contains("invalid random interval"), "{message}");
         let message = random_error(&math, 0);
         assert!(message.contains("invalid random interval"), "{message}");
 
-        // 拒否された呼び出しは乱数ドローを消費しません。
-        let (_lua2, math2) = sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Game);
+        let (_lua2, math2) =
+            sandbox_math(storm_lua_spec::environment::EnvironmentProfile::Extended);
         let random2: mlua::Function = math2.get("random").unwrap();
         let expected: i64 = random2.call(10).unwrap();
         let _ = random_error(&math, 1.5);

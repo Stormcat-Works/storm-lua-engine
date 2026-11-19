@@ -24,9 +24,9 @@ mapは描画命令列の中で同期providerを呼び、正確な寸法のRGBA�
 
 ## HTTPとログ
 
-HTTPはvehicleのasync.httpGet、Addonのserver.httpGetからbounded request queueへ記録する。hostがdrainして通信し、idleでhttpReplyを配送する。VM世代付きtokenによりstale/foreign/duplicate replyをrejectする。cancelは失敗したtransportを明示破棄する操作で、架空のLua返信を作らない。
+HTTPはvehicleのasync.httpGet、Addonのserver.httpGetからrequest queueへ記録する。実ゲームの契約に合わせ、ポートは符号付き整数の下位16bitへ切り捨て、リクエスト・応答bytesは検証せず保持する。キューの件数にも上限を設けない。hostがdrainして通信し、idleでhttpReplyを配送する。VM世代付きtokenによりstale/foreign/duplicate replyをrejectする。cancelは失敗したtransportを明示破棄する操作で、架空のLua返信を作らない。
 
-loggingはVM側が共通所有する。制限付きdebug.logとprintの公開はprofile/opt-inで区別する。レコードはsourceとbytes、および取得できた場合のlocation（chunkと1始まりのline）。TSのonLogはLuaから復帰後に呼び、失敗したcallbackが出したログも取り出す。配送先の例外とLuaエラーは両方保持する。ログcallbackも同期である。Promiseの戻り値はエラーとして観測し、別の未処理Promise rejectionを発生させないよう、そのPromiseは結果を採用せず監視する。
+loggingはVM側が共通所有する。debug.logは実ゲームの契約（引数1個の文字列のみ記録、それ以外は無言、上限・エラーなし）に従い、両プロファイルの標準APIとして公開する。上限付きの開発用拡張printの公開はprofile/opt-inで区別する。レコードはsourceとbytes、および取得できた場合のlocation（chunkと1始まりのline）。TSのonLogはLuaから復帰後に呼び、失敗したcallbackが出したログも取り出す。配送先の例外とLuaエラーは両方保持する。ログcallbackも同期である。Promiseの戻り値はエラーとして観測し、別の未処理Promise rejectionを発生させないよう、そのPromiseは結果を採用せず監視する。
 
 各サービスの上限、利用側のネットワークpolicy、手動配送と自動配送の選択は[host services guide](../guide/host-services.md)を参照。
 
@@ -93,10 +93,14 @@ Compilerのanalyze(project,{mode:'runtime'})は、Engineで直接実行する名
 ## Development overflow viewport
 
 Vehicle callDraw accepts an optional integer margin. The raster remains Engine-owned, translates geometry into an expanded viewport, and keeps screen.getWidth/getHeight and host map requests at their logical sizes. Zero margin is the unchanged game frame contract. The output is GameRGBA, not premultiplied RGBA, and the frame remains subject to the same allocation limits. Normal draw delegates to zero margin; debugger continuation replays only new commands into the same viewport. Host rotation is a presentation transform of rendered pixels, not another primitive rasterizer.
+## Execution limits
+
+`ExecutionLimits` follows the actual game's model. The only limit enabled by default is the wall-clock time limit of 1001 ms per entry; exceeding it raises a Lua error with the game's own wording (`max execution time exceeded (1000ms). stopped at line <N>`), does not fail the VM, and cannot be caught forever by pcall. The instruction budget, the Lua memory limit and the source-length limit are disabled by default (the game has no such hard limits) and apply only when the host sets them explicitly. Enabling the source-length limit also enables the retained-program caps (128 chunks / 8 MiB) described in [source loading](source-loading.md).
+
 ## Explicit shared CRT random context
 
 `Vm::install_crt_random` and `AddonConfig.random` accept a `SharedCrtRandom` owned by the host. Its `CrtRandomSource` supplies raw values in 0..=32767 and an exact `srand(u32)` operation. A value above that range or a provider error is reported as an execution error. The provider captures its own shared state; it must not re-enter the VM. The host checkpoints this state together with its scene consumers.
 
 This optional mode applies Windows CRT Lua 5.3 sampling in the Engine: each `math.random` consumes one draw before validating its argument count and exact integer bounds. Zero arguments return a Number in [0,1); integer sampling scales that value once and truncates without rejection sampling. Invalid intervals still consume the draw. `math.randomseed` coerces its first argument to Number, truncates through signed 64-bit conversion (the native indefinite integer for nonfinite/out-of-range input), writes its low 32 bits, then discards exactly one draw. Additional seed arguments are ignored and the call returns no values.
 
-Creating/reloading an addon does not implicitly seed or draw from the supplied context. Top-level script calls still execute normally. Cloning the config retains the shared resource. Omitting the provider retains the existing isolated deterministic generator; it does not claim a shared native random sequence. This Rust host API adds no WASM ABI provider or automatic global state.
+Creating/reloading an addon does not implicitly seed or draw from the supplied context. Top-level script calls still execute normally. Cloning the config retains the shared resource. Omitting the provider selects the engine's built-in MSVC CRT stream, shared per host thread, which is the game-profile default (the actual game shares one CRT sequence per process). The isolated deterministic generator remains available as an explicit host option (`deterministic_random` on the Vehicle/Addon configs, or `Vm::use_deterministic_random`); the Extended profile always uses it. This Rust host API adds no WASM ABI provider.

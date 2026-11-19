@@ -156,8 +156,9 @@
 //!   and the call arguments must still be total. Same-block aliases
 //!   keep precedence: the v5 scan runs first and the outer map is
 //!   only a fallback.
-//! - The runner ignores out-of-range channels and non-tick phases
-//!   without error, so a removed store can never be the one that errors.
+//! - Out-of-range channels are ignored without error, while non-`onTick`
+//!   calls raise a runtime phase error (`E4`), so overwritten stores may
+//!   only be removed inside blocks proven [`CallbackPhase::TickOnly`].
 //! - The pass only removes statements; it never introduces names, so no
 //!   scope renaming is needed afterwards.
 //!
@@ -170,7 +171,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use storm_lua_analysis::effects::{mutated_builtin_roots, EffectAnalyzer};
+use storm_lua_analysis::effects::{mutated_builtin_roots, CallbackPhase, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
 use storm_lua_syntax::ast_utils;
@@ -1032,14 +1033,31 @@ fn total_call_is_bool(
         args.iter()
             .all(|arg| is_total_number(source, analyzer, ctx, *arg, alias))
     };
+    let phase = analyzer.callback_phase(call);
     match (root, member) {
-        ("input", "getNumber") if args.len() == 1 && is_int_literal(source, args[0]) => Some(false),
-        ("input", "getBool") if args.len() == 1 && is_int_literal(source, args[0]) => Some(true),
+        ("input", "getNumber")
+            if phase == CallbackPhase::TickOnly
+                && args.len() == 1
+                && is_int_literal(source, args[0]) =>
+        {
+            Some(false)
+        }
+        ("input", "getBool")
+            if phase == CallbackPhase::TickOnly
+                && args.len() == 1
+                && is_int_literal(source, args[0]) =>
+        {
+            Some(true)
+        }
         ("property", "getNumber") if args.len() == 1 && is_str_literal(source, args[0]) => {
             Some(false)
         }
         ("property", "getBool") if args.len() == 1 && is_str_literal(source, args[0]) => Some(true),
-        ("screen", "getWidth" | "getHeight") if args.is_empty() => Some(false),
+        ("screen", "getWidth" | "getHeight")
+            if phase == CallbackPhase::DrawOnly && args.is_empty() =>
+        {
+            Some(false)
+        }
         ("math", "log") if (1..=2).contains(&args.len()) && all_numbers() => Some(false),
         ("math", "atan2" | "fmod" | "pow") if args.len() == 2 && all_numbers() => Some(false),
         ("math", "max" | "min") if !args.is_empty() && all_numbers() => Some(false),
@@ -1470,6 +1488,13 @@ impl<'a> Transformer<'a> {
         for statement in &statements {
             self.transform_statement(*statement);
         }
+        // In v0.5.0 (`E4`), `output.set*` outside `onTick` raises a runtime
+        // phase error at its own call site instead of silently returning, so
+        // an earlier store outside `TickOnly` aborts before any later store or
+        // intervening assignment can run.
+        if self.analyzer.callback_phase(block) != CallbackPhase::TickOnly {
+            return;
+        }
         // Backwards scan: `seen` holds the (kind, channel) pairs for
         // which a later literal store exists with no barrier between it
         // and the current position. A store whose key is already seen is
@@ -1882,12 +1907,14 @@ mod tests {
     }
 
     #[test]
-    fn screen_call_binding_is_proven() {
+    fn non_tick_phase_does_not_remove_throwing_output_stores() {
+        // v0.5.0 (`E4`): `output.setNumber` inside `onDraw` raises a runtime
+        // phase error, so the earlier store aborts before the later one runs.
         let (code, removed) = run(
             "function onDraw() local w=screen.getWidth() output.setNumber(1,w) output.setNumber(1,9) end",
         );
-        assert_eq!(removed, 1, "code: {code}");
-        assert_eq!(code.matches("output.setNumber").count(), 1, "code: {code}");
+        assert_eq!(removed, 0, "code: {code}");
+        assert_eq!(code.matches("output.setNumber").count(), 2, "code: {code}");
     }
 
     #[test]
@@ -2160,12 +2187,24 @@ mod tests {
     }
 
     #[test]
-    fn alias_screen_call_binding_is_proven() {
+    fn alias_screen_call_in_on_tick_is_not_proven_due_to_phase_error() {
+        // v0.5.0 (`E4`): `screen.getWidth()` inside `onTick` raises a runtime error,
+        // while `property.getNumber` is phase-independent and still proves `number`.
         let (code, removed) = run(
             "function onTick() local g=screen.getWidth local x=g() output.setNumber(1,x) output.setNumber(1,9) end",
         );
-        assert_eq!(removed, 1, "code: {code}");
-        assert_eq!(code.matches("output.setNumber").count(), 1, "code: {code}");
+        assert_eq!(removed, 0, "code: {code}");
+        assert_eq!(code.matches("output.setNumber").count(), 2, "code: {code}");
+
+        let (prop_code, prop_removed) = run(
+            "function onTick() local g=property.getNumber local x=g(\"k\") output.setNumber(1,x) output.setNumber(1,9) end",
+        );
+        assert_eq!(prop_removed, 1, "code: {prop_code}");
+        assert_eq!(
+            prop_code.matches("output.setNumber").count(),
+            1,
+            "code: {prop_code}"
+        );
     }
 
     #[test]

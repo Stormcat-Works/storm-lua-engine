@@ -7,7 +7,23 @@ use mlua::{
     ChunkMode, DebugEvent, Function, HookTriggers, Lua, MultiValue, Table, Thread, ThreadStatus,
     Value, VmState,
 };
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{
+    fmt,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
+    },
+};
+
+/// Acquire an engine-internal mutex, recovering the value from a poisoned lock.
+///
+/// A panic unwound through a hook or a host callback poisons the mutex, but the
+/// panic itself has already propagated; refusing the guard afterwards would
+/// only turn a recoverable execution into a permanently stuck VM. Locks taken
+/// through this helper are always leaves (see the crate lock discipline).
+pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 mod synchronous;
 pub use synchronous::{SynchronousCallbackPass, SynchronousCallbacks};
@@ -223,6 +239,22 @@ pub enum RunOutcome {
     /// ホストデバッガのためにその継続が中断（一時停止）しています。
     Suspended,
 }
+/// VMヒープの外にある `math.random` ストリームの状態。
+///
+/// 車両VMの既定ストリームはエンジンが所有し、ヒープのスナップショットには
+/// 含まれないため、continuation はこの値を明示的に往復させる必要があります。
+/// ホスト共有CRTストリームへ差し替えたVMでは状態はホストが所有し、エンジンは
+/// 車両用ストリームと混同せずに区別します。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RandomStreamState {
+    /// エンジン所有の決定論ストリーム。値は次回生成前のベース状態
+    /// （`math.randomseed` が書き込むのと同じスロット）。
+    Engine(u64),
+    /// Gameプロファイル既定の組み込みCRT互換ストリーム。値は32bit内部状態ワード。
+    BuiltinCrt(u32),
+    /// ホスト共有CRTストリーム（[`Vm::install_crt_random`]）。エンジンは状態を運びません。
+    HostOwned,
+}
 /// 中断中のコールバックを再開する際に適用されるステップ実行モード。
 #[cfg(feature = "debug")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,7 +274,7 @@ pub enum StepMode {
 /// コールバックを中断します。VMやLuaの値へはアクセスできません。エラーを返すと、
 /// 実行中のスクリプトへそのエラーを送出します（続行にも停止にも読み替えません）。
 #[cfg(feature = "debug")]
-pub type PausePoll = Rc<dyn Fn() -> Result<bool, VmError>>;
+pub type PausePoll = Arc<dyn Fn() -> Result<bool, VmError> + Send + Sync>;
 /// [`PausePoll`]を呼ぶ間隔（Lua VMの命令数）。
 #[cfg(feature = "debug")]
 pub const PAUSE_POLL_INTERVAL: u32 = 4096;
@@ -250,9 +282,19 @@ pub const PAUSE_POLL_INTERVAL: u32 = 4096;
 #[derive(Default)]
 pub(crate) struct HookControl {
     pub(crate) remaining: u64,
+    pub(crate) active_quantum: u32,
     pub(crate) exhausted: bool,
     /// 命令数の上限でyieldしたときに、フックが報告した実行行。
     pub(crate) limit_line: Option<i32>,
+    /// 現在の入口の壁時計期限。時間制限が無効な入口ではNoneです。
+    pub(crate) deadline: Option<std::time::Instant>,
+    /// デバッガ中断中に保持する残りの壁時計時間。中断中に時計が進まないようにします。
+    #[cfg(feature = "debug")]
+    pub(crate) paused_remaining: Option<std::time::Duration>,
+    /// 時間制限を超過したかどうか。フックが記録し、入口側が実ゲーム文面のLuaエラーへ変換します。
+    pub(crate) time_exceeded: bool,
+    /// 次に時計を確認するまでの命令数。
+    pub(crate) time_countdown: u32,
     #[cfg(feature = "debug")]
     pub(crate) breakpoints: Vec<(String, i32)>,
     #[cfg(feature = "debug")]
@@ -282,21 +324,76 @@ pub(crate) struct HookControl {
     pub(crate) poll_pending: bool,
 }
 
-/// 1つのスレッド拘束型Lua状態。ホストコードがすべての呼び出しと継続を明示的に駆動します。
+/// フックが時計を確認する間隔（命令数）。1001msの制限に対して検出遅れは無視できる範囲です。
+pub(crate) const TIME_CHECK_INTERVAL: u32 = 512;
+impl HookControl {
+    /// 入口の開始時に制限カウンタを初期化します。入れ子の呼び出しでは呼びません
+    /// （制限は入口単位であり、内側の呼び出しが延長することはありません）。
+    pub(crate) fn begin_entry(&mut self, limits: &ExecutionLimits) {
+        self.remaining = limits.instruction_allowance();
+        self.exhausted = false;
+        self.limit_line = None;
+        self.time_exceeded = false;
+        self.time_countdown = TIME_CHECK_INTERVAL;
+        #[cfg(feature = "debug")]
+        {
+            self.paused_remaining = None;
+        }
+        self.deadline = limits
+            .time_limit
+            .map(|limit| std::time::Instant::now() + limit);
+    }
+    /// フックのカウントイベントごとに呼び、時間制限の超過を記録します。
+    pub(crate) fn note_instructions(&mut self, quantum: u32) {
+        if self.deadline.is_none() || self.time_exceeded {
+            return;
+        }
+        self.time_countdown = self.time_countdown.saturating_sub(quantum);
+        if self.time_countdown == 0 {
+            self.time_countdown = TIME_CHECK_INTERVAL;
+            if self
+                .deadline
+                .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
+                self.time_exceeded = true;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VmFlavor {
+    Standard = 0,
+    Addon = 1,
+    Component = 2,
+}
+
+/// 1つのLua状態。ホストコードがすべての呼び出しと継続を明示的に駆動します。
 pub struct Vm {
     pub(crate) lua: Lua,
     pub(crate) environment: Table,
     pub(crate) pending: Option<Thread>,
-    pub(crate) control: Rc<RefCell<HookControl>>,
+    pub(crate) idle_thread: Option<(Thread, usize, bool)>,
+    active_thread_meta: Option<(usize, bool)>,
+    pub(crate) control: Arc<Mutex<HookControl>>,
     pub(crate) limits: ExecutionLimits,
-    failed: Rc<std::cell::Cell<bool>>,
-    addon_callbacks: bool,
-    synchronous: Rc<synchronous::Context>,
-    _synchronous_owner: Rc<()>,
+    failed: Arc<AtomicBool>,
+    pub(crate) vm_flavor: VmFlavor,
+    synchronous: Arc<synchronous::Context>,
+    _synchronous_owner: Arc<()>,
     pub(crate) environment_profile: storm_lua_spec::environment::EnvironmentProfile,
-    pub(crate) logs: Rc<RefCell<crate::logging::LogBuffer>>,
+    pub(crate) logs: Arc<Mutex<crate::logging::LogBuffer>>,
     /// requireが読んだチャンクの構文エラー位置。実行中のエラーへ付けるまで保持します。
-    pub(crate) syntax_site: Rc<RefCell<Option<crate::logging::LogLocation>>>,
+    pub(crate) syntax_site: Arc<Mutex<Option<crate::logging::LogLocation>>>,
+    pub(crate) host_paths: Vec<Vec<String>>,
+    /// ホストパス登録時点に解決されたルート化済みの値（来歴）。捕捉時に
+    /// スクリプトによる差し替え・削除と区別し、GCによるポインタ再利用も防ぐ。
+    pub(crate) host_provenance: std::collections::HashMap<Vec<String>, Value>,
+    pub(crate) snapshot_capture_paths: std::collections::BTreeMap<Vec<String>, Vec<String>>,
+    /// 開発用 `require` ローダが組み込まれているかどうか（continuation 非対応）。
+    pub(crate) has_require_loader: bool,
+    /// `math.random` のストリーム所有者。ヒープ外の状態をcontinuationで往復させる。
+    pub(crate) random_stream: crate::sandbox::MathRandom,
     #[cfg(feature = "debug")]
     pub(crate) debugger: crate::debug::Debugger,
 }
@@ -314,62 +411,92 @@ impl Vm {
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
         let lua = create_lua()?;
-        if lua.used_memory() > limits.lua_memory_bytes.get() {
-            return Err(VmError::new(
-                ErrorKind::Limit,
-                "Lua memory budget is smaller than initialization",
-            ));
+        if let Some(memory) = limits.lua_memory_bytes {
+            if lua.used_memory() > memory.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua memory budget is smaller than initialization",
+                ));
+            }
+            lua.set_memory_limit(memory.get())?;
         }
-        lua.set_memory_limit(limits.lua_memory_bytes.get())?;
-        let environment = crate::sandbox::environment(&lua, environment_profile)?;
-        let control = Rc::new(RefCell::new(HookControl::default()));
+        let (environment, random_stream) = crate::sandbox::environment(&lua, environment_profile)?;
+        let control = Arc::new(Mutex::new(HookControl::default()));
         if environment_profile == storm_lua_spec::environment::EnvironmentProfile::Extended {
-            crate::sandbox::protect_calls(&lua, &environment, Rc::clone(&control))?;
+            crate::sandbox::protect_calls(&lua, &environment, Arc::clone(&control), limits)?;
         }
-        let logs = Rc::default();
+        let logs = Arc::default();
         crate::logging::install(
             &lua,
             &environment,
-            Rc::clone(&logs),
+            Arc::clone(&logs),
             environment_profile == storm_lua_spec::environment::EnvironmentProfile::Extended,
         )?;
         #[cfg(feature = "debug")]
         let debugger = crate::debug::Debugger::new(&lua)?;
-        let synchronous_owner = Rc::new(());
+        let synchronous_owner = Arc::new(());
         let synchronous = synchronous::Context::new(
             &lua,
             &environment,
-            Rc::clone(&control),
+            Arc::clone(&control),
             limits,
-            Rc::downgrade(&synchronous_owner),
+            Arc::downgrade(&synchronous_owner),
         );
-        let failed = Rc::clone(&synchronous.failed);
-        Ok(Self {
+        let failed = Arc::clone(&synchronous.failed);
+        let mut vm = Self {
             lua,
             environment,
             pending: None,
+            idle_thread: None,
+            active_thread_meta: None,
             control,
             limits,
             failed,
-            addon_callbacks: false,
+            vm_flavor: VmFlavor::Standard,
             synchronous,
             _synchronous_owner: synchronous_owner,
             environment_profile,
             logs,
-            syntax_site: Rc::default(),
+            syntax_site: Arc::default(),
+            host_paths: Vec::new(),
+            host_provenance: std::collections::HashMap::new(),
+            snapshot_capture_paths: Default::default(),
+            has_require_loader: false,
+            random_stream,
             #[cfg(feature = "debug")]
             debugger,
-        })
+        };
+        vm.register_seed_host_paths()?;
+        Ok(vm)
     }
-    /// Addon callbacks retain their VM after ordinary Lua errors. Resource limits
-    /// still fail closed; non-function callback globals are treated as absent.
+    /// Addon環境のVMです。通常のLuaエラーでVMが失敗状態にならない点と、
+    /// 関数でないコールバックを不在として扱う点は全プロファイル共通になりました。
+    /// Addon固有の差は同期ホストイベント側にあり、そちらの通常のLuaエラーは
+    /// 呼び出し元へ戻して回復可能にします（制限は失敗状態にします）。
     pub fn with_addon_environment(
         limits: ExecutionLimits,
         environment_profile: storm_lua_spec::environment::EnvironmentProfile,
     ) -> Result<Self, VmError> {
         let mut vm = Self::with_environment(limits, environment_profile)?;
-        vm.addon_callbacks = true;
-        vm.synchronous.addon_callbacks.set(true);
+        vm.vm_flavor = VmFlavor::Addon;
+        vm.synchronous
+            .addon_callbacks
+            .store(true, Ordering::Relaxed);
+        Ok(vm)
+    }
+    /// Component Mod環境のVMです。Addonと同じ保持モード（通常のLuaエラーで
+    /// VMが失敗状態にならず、関数でないコールバックを不在として扱う）を
+    /// 使います。Component固有のライフサイクルとエラーステータスの管理は
+    /// storm-lua-component側が所有します。
+    pub fn with_component_environment(
+        limits: ExecutionLimits,
+        environment_profile: storm_lua_spec::environment::EnvironmentProfile,
+    ) -> Result<Self, VmError> {
+        let mut vm = Self::with_environment(limits, environment_profile)?;
+        vm.vm_flavor = VmFlavor::Component;
+        vm.synchronous
+            .addon_callbacks
+            .store(true, Ordering::Relaxed);
         Ok(vm)
     }
     /// Install host-shared Windows CRT math.random/randomseed semantics while idle.
@@ -380,6 +507,25 @@ impl Vm {
     ) -> Result<(), VmError> {
         self.ensure_idle()?;
         crate::random::install(&self.lua, &self.environment.get::<Table>("math")?, source)?;
+        self.random_stream = crate::sandbox::MathRandom::HostShared;
+        self.note_host_path(vec!["math".into(), "random".into()]);
+        self.note_host_path(vec!["math".into(), "randomseed".into()]);
+        Ok(())
+    }
+    /// Gameプロファイルの既定（CRT互換の共有ストリーム）を、VMごとの決定的
+    /// ストリームへ差し替えます（ホスト選択肢、J2）。Extendedではもともと
+    /// 決定的ストリームのため実質的に変わりません。
+    pub fn use_deterministic_random(&mut self) -> Result<(), VmError> {
+        self.ensure_idle()?;
+        let stream = Arc::new(std::sync::atomic::AtomicU64::new(1_u64));
+        crate::sandbox::install_random(
+            &self.lua,
+            &self.environment.get::<Table>("math")?,
+            Arc::clone(&stream),
+        )?;
+        self.random_stream = crate::sandbox::MathRandom::Local(stream);
+        self.note_host_path(vec!["math".into(), "random".into()]);
+        self.note_host_path(vec!["math".into(), "randomseed".into()]);
         Ok(())
     }
     /// バックエンド密結合な明示的拡張フィーチャーを通じてホストバインディングを設定します。
@@ -393,13 +539,13 @@ impl Vm {
     }
     /// 中断中のコールバックと重複する、または故障状態を再利用しようとするコマンドを拒否します。
     pub fn ensure_idle(&self) -> Result<(), VmError> {
-        if self.failed.get() {
+        if self.failed.load(Ordering::Relaxed) {
             return Err(VmError::new(
                 ErrorKind::Failed,
                 "reset the VM after failure",
             ));
         }
-        if self.pending.is_some() || self.synchronous.active.get() != 0 {
+        if self.pending.is_some() || self.synchronous.active.load(Ordering::Relaxed) != 0 {
             return Err(VmError::new(
                 ErrorKind::Busy,
                 "callback is active or suspended",
@@ -413,7 +559,7 @@ impl Vm {
     }
     /// 実行が失敗したかどうか。リセットするにはホストがこのインスタンスを再作成する必要があります。
     pub fn is_failed(&self) -> bool {
-        self.failed.get()
+        self.failed.load(Ordering::Relaxed)
     }
     /// ホストバッファを除いた現在のLuaヒープ使用量。
     pub fn used_memory(&self) -> usize {
@@ -422,10 +568,11 @@ impl Vm {
     /// テキストのみをコンパイルし、ホストバインディング組み込み後にそのトップレベルを実行します。
     pub fn execute(&mut self, source: &[u8], name: &str) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
-        crate::source::validate_source(source, name)?;
+        crate::source::validate_chunk_name(name)?;
+        self.check_source_len(source.len())?;
         let source = crate::dialect::rewrite(source)
             .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
-        crate::source::validate_source(&source, name)?;
+        self.check_source_len(source.len())?;
         let function = self
             .lua
             .load(source.as_ref())
@@ -460,37 +607,75 @@ impl Vm {
             Value::Function(function) => {
                 self.start(function, crate::value::encode(&self.lua, arguments)?)
             }
-            _ if self.addon_callbacks => Ok(RunOutcome::Missing),
-            _ => Err(VmError::new(
-                ErrorKind::InvalidArgument,
-                format!("{name} is not a function"),
-            )),
+            // 実ゲームの共通呼び出し（call_lua_function）は、対象が関数でなければ
+            // 何も実行せずエラーも記録しません。全プロファイルで「不在」として扱います。
+            _ => Ok(RunOutcome::Missing),
         }
+    }
+    /// ソース長制限はホストが有効化した場合だけ適用します（実ゲームにハード制限はありません）。
+    pub(crate) fn check_source_len(&self, len: usize) -> Result<(), VmError> {
+        if let Some(max) = self.limits.max_source_bytes {
+            if len > max.get() {
+                return Err(VmError::new(
+                    ErrorKind::Limit,
+                    "Lua source exceeds the host source limit",
+                ));
+            }
+        }
+        Ok(())
     }
     fn start(&mut self, function: Function, arguments: MultiValue) -> Result<RunOutcome, VmError> {
         self.ensure_idle()?;
-        {
-            let mut control = self.control.borrow_mut();
-            control.remaining = self.limits.instruction_budget.get();
-            control.exhausted = false;
-            control.limit_line = None;
+        let (quantum, want_line_debug) = {
+            let mut control = lock(&self.control);
+            control.begin_entry(&self.limits);
+            let budget = control.remaining;
             #[cfg(feature = "debug")]
-            {
+            let want_line_debug = {
                 control.depth = 0;
                 control.step = None;
                 control.carry_step = false;
                 control.skip_first_line = false;
                 control.poll_countdown = PAUSE_POLL_INTERVAL;
                 control.poll_pending = false;
+                !control.breakpoints.is_empty() || control.pause_requested
+            };
+            #[cfg(not(feature = "debug"))]
+            let want_line_debug = false;
+            let sync_issued = self.synchronous.issued.load(Ordering::Relaxed);
+            let q = synchronous::select_quantum(budget, want_line_debug, sync_issued);
+            control.active_quantum = q;
+            (q, want_line_debug)
+        };
+        let (thread, state_id, line_debug) = match self.idle_thread.take() {
+            Some((thread, state_id, installed_line_debug)) => {
+                thread.reset(function)?;
+                let fast_ok = installed_line_debug == want_line_debug
+                    && self.synchronous.main_hook_state.load(Ordering::Relaxed) == state_id
+                    && crate::backend_support::reset_thread_count_hook(
+                        &self.lua, state_id, quantum,
+                    )
+                    .unwrap_or(false);
+                if fast_ok {
+                    (thread, state_id, installed_line_debug)
+                } else {
+                    let (new_id, ld) = self.synchronous.install_main_hook(&thread)?;
+                    (thread, new_id, ld)
+                }
             }
-        }
-        let thread = self.lua.create_thread(function)?;
-        self.install_hook(&thread)?;
+            None => {
+                let thread = self.lua.create_thread(function)?;
+                let (state_id, ld) = self.synchronous.install_main_hook(&thread)?;
+                (thread, state_id, ld)
+            }
+        };
         self.pending = Some(thread);
-        self.synchronous.main_pending.set(true);
+        self.active_thread_meta = Some((state_id, line_debug));
+        self.synchronous.main_pending.store(true, Ordering::Relaxed);
         self.resume_inner(arguments)
     }
-    pub(crate) fn install_hook(&self, thread: &Thread) -> Result<(), VmError> {
+    #[cfg(feature = "debug")]
+    pub(crate) fn install_hook(&self, thread: &Thread) -> Result<(usize, bool), VmError> {
         self.synchronous.install_main_hook(thread)
     }
     fn resume_inner(&mut self, arguments: MultiValue) -> Result<RunOutcome, VmError> {
@@ -501,48 +686,92 @@ impl Vm {
             .clone()
             .ok_or_else(|| VmError::new(ErrorKind::InvalidArgument, "no suspended callback"))?;
         let thread = &thread;
-        self.syntax_site.borrow_mut().take();
+        lock(&self.syntax_site).take();
         let result = {
             let _active = synchronous::ActiveCall::enter(&self.synchronous, thread, true);
-            thread.resume::<MultiValue>(arguments)
+            thread.resume::<()>(arguments)
         };
-        if let Some(error) = self.synchronous.restore_error.borrow_mut().take() {
-            self.failed.set(true);
+        if let Some(error) = lock(&self.synchronous.restore_error).take() {
+            self.failed.store(true, Ordering::Relaxed);
             self.pending = None;
-            self.synchronous.main_pending.set(false);
+            self.active_thread_meta = None;
+            self.synchronous
+                .main_pending
+                .store(false, Ordering::Relaxed);
             return Err(error);
         }
-        if self.control.borrow().exhausted {
-            self.failed.set(true);
+        if lock(&self.control).time_exceeded {
+            // 時間制限の超過は実ゲームでは通常のLuaエラーであり、VMは失敗状態になりません。
             self.pending = None;
-            self.synchronous.main_pending.set(false);
+            self.active_thread_meta = None;
+            self.synchronous
+                .main_pending
+                .store(false, Ordering::Relaxed);
+            let line = {
+                let mut control = lock(&self.control);
+                control.time_exceeded = false;
+                control.deadline = None;
+                control.limit_line.take()
+            };
+            let mut error = VmError::new(ErrorKind::Lua, self.limits.timeout_message(line));
+            attach_trace(&self.lua, thread, &mut error, None, line);
+            return Err(error);
+        }
+        if lock(&self.control).exhausted {
+            self.failed.store(true, Ordering::Relaxed);
+            self.pending = None;
+            self.active_thread_meta = None;
+            self.synchronous
+                .main_pending
+                .store(false, Ordering::Relaxed);
             let mut error = VmError::new(ErrorKind::Limit, "instruction budget exceeded");
-            let line = self.control.borrow_mut().limit_line.take();
+            let line = lock(&self.control).limit_line.take();
             attach_trace(&self.lua, thread, &mut error, None, line);
             return Err(error);
         }
         match result {
             Err(error) => {
                 let mut error = VmError::from(error);
-                let site = self.syntax_site.borrow_mut().take();
+                let site = lock(&self.syntax_site).take();
                 attach_trace(&self.lua, thread, &mut error, site, None);
-                self.failed.set(
-                    self.failed.get() || !self.addon_callbacks || error.kind != ErrorKind::Lua,
+                // 通常のLuaエラーではVMは失敗状態になりません（実ゲームのエラーステータス
+                // モデル: エラー後もVMは生存し、クラス側がステータスで管理します）。
+                // 制限・ホスト等の異常だけが従来どおり失敗状態にします。
+                self.failed.store(
+                    self.failed.load(Ordering::Relaxed) || error.kind != ErrorKind::Lua,
+                    Ordering::Relaxed,
                 );
                 self.pending = None;
-                self.synchronous.main_pending.set(false);
+                self.active_thread_meta = None;
+                self.synchronous
+                    .main_pending
+                    .store(false, Ordering::Relaxed);
                 Err(error)
             }
-            Ok(_) => {
+            Ok(()) => {
                 if thread.status() == ThreadStatus::Resumable {
+                    #[cfg(feature = "debug")]
+                    {
+                        let mut control = lock(&self.control);
+                        if let Some(deadline) = control.deadline.take() {
+                            control.paused_remaining =
+                                Some(deadline.saturating_duration_since(std::time::Instant::now()));
+                        }
+                    }
                     Ok(RunOutcome::Suspended)
                 } else {
-                    self.pending = None;
-                    self.synchronous.main_pending.set(false);
+                    if let (Some(finished), Some((sid, ld))) =
+                        (self.pending.take(), self.active_thread_meta.take())
+                    {
+                        self.idle_thread = Some((finished, sid, ld));
+                    }
+                    self.synchronous
+                        .main_pending
+                        .store(false, Ordering::Relaxed);
                     #[cfg(feature = "debug")]
                     {
                         // 入口の終わりを越えたステップは、指定があれば次の入口の最初の行へ引き継ぎます。
-                        let mut control = self.control.borrow_mut();
+                        let mut control = lock(&self.control);
                         let stepping = matches!(
                             control.step,
                             Some(StepMode::Into | StepMode::Over | StepMode::Out)
@@ -565,22 +794,22 @@ impl Vm {
     /// 呼び出しでは消えません。実行中のスクリプトを止めるには[`Vm::set_pause_poll`]を使います。
     #[cfg(feature = "debug")]
     pub fn request_pause(&mut self) -> Result<(), VmError> {
-        if self.failed.get() {
+        if self.failed.load(Ordering::Relaxed) {
             return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
         }
-        self.control.borrow_mut().pause_requested = true;
+        lock(&self.control).pause_requested = true;
         Ok(())
     }
     /// 止まっていない一時停止の予約を取り消します。予約がなければ何もしません。
     #[cfg(feature = "debug")]
     pub fn cancel_pause(&mut self) {
-        self.control.borrow_mut().pause_requested = false;
+        lock(&self.control).pause_requested = false;
     }
     /// 実行中の一時停止を問い合わせる関数を設定または解除します。アイドル中に呼びます。
     #[cfg(feature = "debug")]
     pub fn set_pause_poll(&mut self, poll: Option<PausePoll>) -> Result<(), VmError> {
         self.ensure_idle()?;
-        self.control.borrow_mut().pause_poll = poll;
+        lock(&self.control).pause_poll = poll;
         Ok(())
     }
     /// 残りの命令数バジェットを維持したまま、同一の中断中の継続を再開します。
@@ -592,7 +821,7 @@ impl Vm {
     /// 次に実行する入口の最初の行で止まります。`StepMode::Continue`には影響しません。
     #[cfg(feature = "debug")]
     pub fn resume_with(&mut self, mode: StepMode, carry: bool) -> Result<RunOutcome, VmError> {
-        if self.failed.get() {
+        if self.failed.load(Ordering::Relaxed) {
             return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
         }
         if self.pending.is_none() {
@@ -602,11 +831,19 @@ impl Vm {
             ));
         }
         {
-            let mut state = self.control.borrow_mut();
+            let mut state = lock(&self.control);
             state.target_depth = state.depth;
             state.step = Some(mode);
             state.carry_step = carry;
             state.skip_first_line = true;
+            if let Some(rem) = state.paused_remaining.take() {
+                state.deadline = Some(std::time::Instant::now() + rem);
+                state.time_countdown = if rem.is_zero() {
+                    1
+                } else {
+                    TIME_CHECK_INTERVAL
+                };
+            }
         }
         // ウォッチ式の評価が別のコルーチンを使用した可能性があるため、mluaの単一フックを復元します。
         let thread = self
@@ -614,22 +851,31 @@ impl Vm {
             .as_ref()
             .ok_or_else(|| VmError::new(ErrorKind::InvalidArgument, "no callback"))?;
         if self.debugger.hook_dirty {
-            let mut state = self.control.borrow_mut();
+            let mut state = lock(&self.control);
             state.remaining = state.remaining.saturating_sub(100);
         }
         // 行フックは必要なときだけ付けます。行フックなしで始めた実行がpollで止まった後でも
         // ステップや後から置いたブレークポイントが働くよう、再開のたびにフックを付け直します。
-        self.install_hook(thread)?;
+        let meta = self.install_hook(thread)?;
+        self.active_thread_meta = Some(meta);
         self.debugger.hook_dirty = false;
         self.resume_inner(MultiValue::new())
     }
     #[cfg(feature = "debug")]
     pub(crate) fn evaluate_watch_thread(&mut self, evaluator: &Thread) -> Result<Value, VmError> {
         let previous = {
-            let mut control = self.control.borrow_mut();
-            let previous = (control.remaining, control.exhausted);
+            let mut control = lock(&self.control);
+            let previous = (
+                control.remaining,
+                control.active_quantum,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            );
             control.remaining = 100_000;
             control.exhausted = false;
+            control.time_exceeded = false;
+            control.deadline = None;
             previous
         };
         self.synchronous.install_synchronous_hook(evaluator);
@@ -638,13 +884,19 @@ impl Vm {
             evaluator.resume::<Value>(())
         };
         let exhausted = {
-            let mut control = self.control.borrow_mut();
+            let mut control = lock(&self.control);
             let exhausted = control.exhausted;
-            (control.remaining, control.exhausted) = previous;
+            (
+                control.remaining,
+                control.active_quantum,
+                control.exhausted,
+                control.time_exceeded,
+                control.deadline,
+            ) = previous;
             exhausted
         };
-        if let Some(error) = self.synchronous.restore_error.borrow_mut().take() {
-            self.failed.set(true);
+        if let Some(error) = lock(&self.synchronous.restore_error).take() {
+            self.failed.store(true, Ordering::Relaxed);
             return Err(error);
         }
         if exhausted {
@@ -668,7 +920,70 @@ impl Vm {
                 "invalid breakpoint list",
             ));
         }
-        self.control.borrow_mut().breakpoints = breakpoints;
+        lock(&self.control).breakpoints = breakpoints;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::value::LuaValue;
+    use std::num::NonZeroU64;
+    use storm_lua_spec::environment::EnvironmentProfile;
+
+    #[test]
+    fn adaptive_quantum_enforces_tail_budget_and_xpcall_error_handler_loops() {
+        // 5000 crosses 4096 + 904, exercising tighten_count_hook on the remainder.
+        let limits = ExecutionLimits {
+            instruction_budget: NonZeroU64::new(5000),
+            ..Default::default()
+        };
+        for code in [
+            "local x = 0; while true do x = x + 1 end",
+            "table.sort({1, 2}, function() while true do pcall(function() end) end end)",
+            "table.sort({1, 2}, function() while true do xpcall(function() while true do end end, function() return 1 end) end end)",
+        ] {
+            let mut vm = Vm::with_environment(limits, EnvironmentProfile::Extended).unwrap();
+            let err = vm.execute(code.as_bytes(), "=quantum").unwrap_err();
+            assert_eq!(err.kind, ErrorKind::Limit);
+            assert!(vm.is_failed());
+        }
+    }
+
+    #[test]
+    fn idle_coroutine_reuse_preserves_state_across_calls_and_snapshots() {
+        let mut vm = Vm::new(ExecutionLimits::default()).unwrap();
+        vm.execute(
+            b"count = 0; function step() count = count + 1; return count, count + 1 end",
+            "=reuse",
+        )
+        .unwrap();
+        for _ in 0..10 {
+            assert_eq!(vm.call("step").unwrap(), RunOutcome::Completed);
+        }
+        assert_eq!(vm.global("count").unwrap(), LuaValue::Integer(10));
+        let blob = vm.snapshot().unwrap();
+        let mut restored = Vm::new(ExecutionLimits::default()).unwrap();
+        restored.restore(&blob).unwrap();
+        assert_eq!(restored.call("step").unwrap(), RunOutcome::Completed);
+        assert_eq!(restored.global("count").unwrap(), LuaValue::Integer(11));
+
+        // Grow the cached idle_thread coroutine stack, then verify restore drops it.
+        vm.execute(
+            b"function deep(n) if n <= 0 then return 1 end return 1 + deep(n - 1) end",
+            "=deep",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.call_with("deep", &[LuaValue::Integer(180)]).unwrap(),
+            RunOutcome::Completed
+        );
+        assert!(vm.idle_thread.is_some());
+        vm.restore(&blob).unwrap();
+        assert!(vm.idle_thread.is_none());
+        assert_eq!(vm.call("step").unwrap(), RunOutcome::Completed);
+        assert_eq!(vm.global("count").unwrap(), LuaValue::Integer(11));
     }
 }

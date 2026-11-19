@@ -41,7 +41,7 @@ fn controls_change_standard_properties_in_the_same_chunk_and_rebind_on_reset(
 fn input_controls_quantize_at_io_and_named_callbacks_do_not_replace_on_tick(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut vm = Microcontroller::new(config())?;
-    vm.load(b"function custom(n) harness.setInputNumber(1,n);harness.setInputBool(1,true);output.setNumber(1,input.getNumber(1));output.setBool(1,input.getBool(1)) end function onTick()output.setNumber(2,7)end function paint(n) screen.drawRectF(0,0,n,1);debug.log(screen.getWidth(),screen.getHeight())end", "@phase.lua")?;
+    vm.load(b"function custom(n) harness.setInputNumber(1,n);harness.setInputBool(1,true);output.setNumber(1,input.getNumber(1));output.setBool(1,input.getBool(1)) end function onTick()output.setNumber(2,7)end function paint(n) screen.drawRectF(0,0,n,1);debug.log(screen.getWidth());debug.log(screen.getHeight())end", "@phase.lua")?;
     let input = CompositeSignal::default();
     vm.call_tick("custom", &[LuaValue::Number(16777217.0)], &input)?;
     assert_eq!(vm.input().numbers[0], 16777216.0);
@@ -52,7 +52,8 @@ fn input_controls_quantize_at_io_and_named_callbacks_do_not_replace_on_tick(
     vm.call_draw("paint", &[LuaValue::Integer(2)], 64, 32)?;
     assert!(!vm.commands().is_empty());
     assert_eq!(vm.output().numbers[1], 7.0);
-    assert_eq!(vm.drain_logs(), vec![b"64\t32".to_vec()]);
+    // E8: debug.logは引数1個だけを記録する。E19: getWidth/getHeightはdoubleで返るため文字列化では"64.0"になる。
+    assert_eq!(vm.drain_logs(), vec![b"64.0".to_vec(), b"32.0".to_vec()]);
     assert_eq!(vm.call_tick("missing", &[], &input)?, RunOutcome::Missing);
     Ok(())
 }

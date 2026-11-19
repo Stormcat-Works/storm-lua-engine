@@ -1,5 +1,12 @@
 //! 一時停止の予約、入口をまたぐステップ、実行中の一時停止、ブレークポイントを置ける行。
-use std::{cell::Cell, error::Error, num::NonZeroU64, rc::Rc};
+use std::{
+    error::Error,
+    num::NonZeroU64,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
+};
 use storm_lua_addon::{Addon, AddonConfig};
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::io::CompositeSignal;
@@ -146,17 +153,20 @@ fn carried_continue_and_a_step_that_stops_inside_the_entry_reserve_nothing() -> 
 }
 
 /// pollを登録したVM、止めるかどうかのフラグ、pollが呼ばれた回数。
-type Polled = (Microcontroller, Rc<Cell<bool>>, Rc<Cell<u32>>);
+type Polled = (Microcontroller, Arc<AtomicBool>, Arc<AtomicU32>);
 fn polled(source: &[u8], budget: u64) -> Result<Polled, Box<dyn Error>> {
     let mut config = MicrocontrollerConfig::default();
-    config.limits.instruction_budget = NonZeroU64::new(budget).ok_or("zero budget")?;
+    config.limits.instruction_budget = Some(NonZeroU64::new(budget).ok_or("zero budget")?);
     let mut vm = Microcontroller::new(config)?;
     vm.load(source, "@main.lua")?;
-    let (flag, calls) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(0)));
-    let (pause, counter) = (Rc::clone(&flag), Rc::clone(&calls));
-    let poll: PausePoll = Rc::new(move || {
-        counter.set(counter.get() + 1);
-        Ok(pause.get())
+    let (flag, calls) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicU32::new(0)),
+    );
+    let (pause, counter) = (Arc::clone(&flag), Arc::clone(&calls));
+    let poll: PausePoll = Arc::new(move || {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Ok(pause.load(Ordering::Relaxed))
     });
     vm.set_pause_poll(Some(poll))?;
     Ok((vm, flag, calls))
@@ -173,10 +183,10 @@ end";
 #[test]
 fn pause_poll_stops_a_running_loop_and_the_vm_stays_inspectable() -> TestResult {
     let (mut vm, flag, calls) = polled(LOOP, 1_000_000)?;
-    flag.set(true);
+    flag.store(true, Ordering::Relaxed);
     assert_eq!(vm.tick(&signal())?, RunOutcome::Suspended);
     // 最初の問い合わせで止まる。上限エラーにはならず、VMは検査できる。
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!vm.is_failed());
     let (source, line) = top(&vm)?;
     assert_eq!(source, "@main.lua");
@@ -186,7 +196,7 @@ fn pause_poll_stops_a_running_loop_and_the_vm_stays_inspectable() -> TestResult 
         storm_lua_vm::debug::DebugValue::Integer(n) if n > 0
     ));
     // 行フックなしで始まった実行でも、止まった後のステップは次の行で止まる。
-    flag.set(false);
+    flag.store(false, Ordering::Relaxed);
     assert_eq!(vm.resume(StepMode::Over)?, RunOutcome::Suspended);
     let (_, next) = top(&vm)?;
     assert!((3..=6).contains(&next) && next != line, "{line} -> {next}");
@@ -206,17 +216,17 @@ fn pause_poll_is_called_once_per_interval_and_never_without_registration() -> Te
         vm.tick(&signal()).err().ok_or("no limit")?.kind,
         ErrorKind::Limit
     );
-    assert_eq!(calls.get(), 10);
+    assert_eq!(calls.load(Ordering::Relaxed), 10);
     let (mut short, _flag, calls) = polled(SCRIPT, 1_000_000)?;
     assert_eq!(short.tick(&signal())?, RunOutcome::Completed);
-    assert_eq!(calls.get(), 0);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
     Ok(())
 }
 
 #[test]
 fn pause_poll_survives_reset_and_can_be_removed() -> TestResult {
     let (mut vm, flag, calls) = polled(LOOP, 1_000_000)?;
-    flag.set(true);
+    flag.store(true, Ordering::Relaxed);
     assert_eq!(vm.tick(&signal())?, RunOutcome::Suspended);
     // 中断中は設定を変えられない。
     assert_eq!(
@@ -225,14 +235,14 @@ fn pause_poll_survives_reset_and_can_be_removed() -> TestResult {
     );
     vm.reset()?;
     assert_eq!(vm.tick(&signal())?, RunOutcome::Suspended);
-    assert_eq!(calls.get(), 2);
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
     vm.reset()?;
     vm.set_pause_poll(None)?;
     assert_eq!(
         vm.tick(&signal()).err().ok_or("no limit")?.kind,
         ErrorKind::Limit
     );
-    assert_eq!(calls.get(), 2);
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
     Ok(())
 }
 
@@ -245,21 +255,21 @@ function onTick()
   output.setNumber(1, 1)
 end";
     let mut vm = vehicle(source)?;
-    let calls = Rc::new(Cell::new(0));
-    let counter = Rc::clone(&calls);
-    let poll: PausePoll = Rc::new(move || {
-        counter.set(counter.get() + 1);
+    let calls = Arc::new(AtomicU32::new(0));
+    let counter = Arc::clone(&calls);
+    let poll: PausePoll = Arc::new(move || {
+        counter.fetch_add(1, Ordering::Relaxed);
         Ok(true)
     });
     vm.set_pause_poll(Some(poll))?;
     vm.reset()?;
     assert!(!vm.is_suspended() && !vm.is_failed());
-    assert_eq!(calls.get(), 0);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
     // 再生後のVMは通常どおり入口を受け付け、pollも引き継いでいる。
     assert_eq!(vm.draw(32, 32)?, RunOutcome::Missing);
     let mut looping =
         vehicle(b"for i = 1, 20000 do x = i end\nfunction onTick() while true do end end")?;
-    let poll: PausePoll = Rc::new(|| Ok(true));
+    let poll: PausePoll = Arc::new(|| Ok(true));
     looping.set_pause_poll(Some(poll))?;
     looping.reset()?;
     assert!(!looping.is_suspended());
@@ -273,7 +283,7 @@ fn pause_poll_inside_a_protected_call_stops_at_the_next_yieldable_instruction() 
         environment: storm_lua_spec::environment::EnvironmentProfile::Extended,
         ..Default::default()
     };
-    config.limits.instruction_budget = NonZeroU64::new(1_000_000).ok_or("zero")?;
+    config.limits.instruction_budget = Some(NonZeroU64::new(1_000_000).ok_or("zero")?);
     let mut vm = Microcontroller::new(config)?;
     // table.sortの比較関数はCの関数をまたぐため、その中ではyieldできない。
     vm.load(
@@ -288,7 +298,7 @@ function onTick()
 end",
         "@main.lua",
     )?;
-    let poll: PausePoll = Rc::new(|| Ok(true));
+    let poll: PausePoll = Arc::new(|| Ok(true));
     vm.set_pause_poll(Some(poll))?;
     assert_eq!(vm.tick(&signal())?, RunOutcome::Suspended);
     // 比較関数の途中では止まらず、sortが終わった後の行で止まる。
@@ -300,7 +310,7 @@ end",
 #[test]
 fn pause_poll_failure_reaches_the_script_as_a_host_error() -> TestResult {
     let mut vm = vehicle(LOOP)?;
-    let poll: PausePoll = Rc::new(|| {
+    let poll: PausePoll = Arc::new(|| {
         Err(storm_lua_vm::runner::VmError::new(
             ErrorKind::Host,
             "poll failed",

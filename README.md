@@ -1,6 +1,6 @@
 # Storm Lua Engine
 
-v0.4.1では、目標文字数を指定した探索を途中経過から再開した場合に一括実行と異なる結果が選ばれる不具合と、サイズ計測が印字結果より大きくなる不具合を修正しました。[変更点](CHANGELOG.md)と[検証記録](docs/verification/release-candidate-0.4.1.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.4.1)で確認できます。
+v0.5.0では、第3のプロファイルとしてComponent Mod（コンポーネント埋め込みLua）を追加し、Vehicle／Addonの意味論（引数の扱い、エラー後の回復、実行制限、描画）を実ゲームの仕様へ合わせました。[変更点](CHANGELOG.md)を参照してください。最終公開状態・配布物・CIは[GitHub Release](https://github.com/Stormcat-Works/storm-lua-engine/releases/tag/v0.5.0)で確認できます。
 
 **StormworksのLuaを、あなたのアプリケーションで動かす。**
 
@@ -14,11 +14,11 @@ SDKの機能を試すCLI/Webを`app/`に実装しています。Storm MinのCLI/
 
 ## インストール
 
-TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.4.1`。新しいバージョンのJavaScript・型定義・WASMを一組で使用してください。
+TypeScript／JavaScript: `npm install @stormcat-works/storm-lua-engine@0.5.0`。新しいバージョンのJavaScript・型定義・WASMを一組で使用してください。
 
 実行用・描画専用WASM、型定義、フォントを同梱しています。利用するだけならRustやEmscriptenは不要です。[GitHub Releases](https://github.com/Stormcat-Works/storm-lua-engine/releases)ではnpm tarballと、そのまま配信できるPlaygroundも配布します。
 
-Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.4.1" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
+Rust: 必要なクレートを公開Gitタグで参照します。例えば`storm-lua-addon = { git = "https://github.com/Stormcat-Works/storm-lua-engine", tag = "v0.5.0" }`。詳しい設定は[導入ガイド](docs/guide/getting-started.md)を参照してください。
 
 ## できること
 
@@ -26,6 +26,7 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 |---|---|
 | ビークルLuaの開発・検証 | `onTick`／`onDraw`、Composite I/O、プロパティ、描画命令 |
 | アドオンLuaの実行 | 独立したAddonモード、イベント、`g_savedata`、メニュープロパティ、`matrix.*`、ホストの`server.*` |
+| コンポーネントLuaの実行 | 独立したComponent Modモード、ライフサイクル、`component.*`／`parser.*`、ホスト提供ドメイン、`matrix.*`（Component集合） |
 | 画面表示・画像生成 | CPUラスタライザ、同梱ビットマップフォント、描画専用WASM |
 | IDE・テストハーネス | ブレークポイント、ステップ実行、変数・テーブル検査、watch、ログ配送 |
 | 自分のワールドとの接続 | `drawMap`の地図プロバイダー、同期サーバー関数、HTTP要求・返信キュー |
@@ -41,6 +42,8 @@ Rust: 必要なクレートを公開Gitタグで参照します。例えば`stor
 **アドオン:** `const addon = engine.createAddon({ newWorld: true, server: hostFunctions });`
 
 `addon.load(source)`、`addon.start()`、`addon.tick(1)`の順に駆動します。プレイヤーやビークルの状態は`hostFunctions`で接続し、イベントは`addon.dispatch(...)`で渡します。AddonにはComposite I/Oや`draw()`はありません。
+
+**コンポーネント:** Rustの`storm-lua-component`クレート、またはTypeScript SDKの`engine.createComponent({ providers })`を使います。`load(source, lua_filename)`、`parse()`、`add_to_simulation()`（TSでは`addToSimulation()`）、`tick(game_ticks)`／`render()`、`remove_from_simulation()`（TSでは`removeFromSimulation()`）の順に駆動し、エラーステータスは`status()`で参照します。スロットや描画などのホスト依存機能は、プロバイダで提供したドメインの分だけ有効になります。契約は[Component Mod仕様](docs/specs/component.md)。
 
 **描画だけ:** `/raster`の`loadRaster()`を使用します。Lua VMをロードせず、バイナリ命令バッチからRGBAを生成できます。
 

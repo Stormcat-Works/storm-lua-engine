@@ -1,21 +1,24 @@
 //! アドオン、ログ、HTTPのコールドパス要求。ゲームセマンティクスは各プロファイルの所有元に留まります。
 use crate::{
-    codec, host,
+    codec, component_host, host,
     script::Script,
     session::{self, convert, outcome},
     value_codec::{self, decimal, invalid, number},
 };
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, rc::Rc};
+use std::collections::BTreeMap;
+#[cfg(feature = "debug")]
+use std::sync::Arc;
 use storm_lua_addon::{Addon, AddonConfig, MenuProperty};
 use storm_lua_bridge::{BridgeError, Status};
+use storm_lua_component::{Component, ComponentConfig, ComponentStatus};
 use storm_lua_spec::http::HttpToken;
 use storm_lua_vm::{
     logging::LogSource,
     runner::{ErrorKind, VmError},
     value::HostFunction,
 };
-fn host_error(error: BridgeError) -> VmError {
+pub(crate) fn host_error(error: BridgeError) -> VmError {
     VmError::new(
         match error.status {
             Status::Busy => ErrorKind::Busy,
@@ -68,7 +71,7 @@ fn bindings(
                 return Err(invalid("missing host binding provider"));
             }
             let name = path.clone();
-            let function: HostFunction = Rc::new(move |args| {
+            let function: HostFunction = std::sync::Arc::new(move |args| {
                 let request = json!({"kind":"binding","name":name,"args":args.iter().map(value_codec::encode).collect::<Vec<_>>()});
                 let bytes = host::call(host_key, &request).map_err(host_error)?;
                 let value = codec::parse(&bytes).map_err(host_error)?;
@@ -136,6 +139,8 @@ pub(crate) fn create_vehicle(
                 Some(Value::String(name)) => Some(name.clone()),
                 _ => return Err(invalid("controlNamespace must be text")),
             },
+            random: None,
+            deterministic_random: false,
         },
     )
     .map_err(convert)?;
@@ -148,7 +153,7 @@ pub(crate) fn create_vehicle(
                 return Err(invalid("missing pause poll provider"));
             }
             #[cfg(feature = "debug")]
-            vm.set_pause_poll(Some(Rc::new(move || {
+            vm.set_pause_poll(Some(Arc::new(move || {
                 // 応答は1バイトの0または1。それ以外を続行や停止に読み替えません。
                 match host::call(host_key, &json!({"kind":"pausePoll"}))
                     .map_err(host_error)?
@@ -193,7 +198,7 @@ pub(crate) fn create_addon(
             .ok_or_else(|| invalid("server function name must be text"))?
             .to_owned();
         let method = name.clone();
-        let function: HostFunction = Rc::new(move |args| {
+        let function: HostFunction = std::sync::Arc::new(move |args| {
             let request = json!({"kind":"server","name":method,"args":args.iter().map(value_codec::encode).collect::<Vec<_>>()});
             let bytes = host::call(host_key, &request).map_err(host_error)?;
             let value = codec::parse(&bytes).map_err(host_error)?;
@@ -221,6 +226,7 @@ pub(crate) fn create_addon(
         scoped_server: Vec::new(),
         dev_logs: false,
         random: None,
+        deterministic_random: false,
         environment: environment(&request)?,
         bindings: bindings(&request, host_key)?,
         require_loader: require_loader(&request, host_key)?,
@@ -229,6 +235,96 @@ pub(crate) fn create_addon(
         Addon::new(config).map_err(convert)?,
     )))
 }
+pub(crate) fn create_component(
+    instructions: u32,
+    memory: u32,
+    host_key: u32,
+    bytes: &[u8],
+) -> Result<usize, BridgeError> {
+    let request = codec::parse(bytes)?;
+    match request.get("requireLoader") {
+        None | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => {
+            return Err(BridgeError::new(
+                Status::Unsupported,
+                "requireLoader is not supported for component sessions",
+            ));
+        }
+        Some(_) => return Err(invalid("requireLoader must be Boolean")),
+    }
+    // providers はドメイン名の配列です。実体はホスト登録側にあり、
+    // 名前のあるドメインだけが Lua 環境へ登録されます（addon の server と同じ原則）。
+    let names = match request.get("providers") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| invalid("providers must be a list of domain names"))?
+            .iter()
+            .map(|entry| {
+                entry
+                    .as_str()
+                    .ok_or_else(|| invalid("provider domain name must be text"))
+                    .map(str::to_owned)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    let config = ComponentConfig {
+        limits: session::limits(instructions, memory)?,
+        environment: environment(&request)?,
+        bindings: bindings(&request, host_key)?,
+        // ComponentConfig には require loader の入口が無いため、黙って
+        // 無視せず呼び出し側（TS）で明示的に拒否します。
+        random: None,
+        deterministic_random: false,
+        providers: component_host::providers(&names, host_key)?,
+    };
+    session::insert(Script::Component(Box::new(
+        Component::new(config).map_err(convert)?,
+    )))
+}
+pub(crate) fn component(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
+    let request = codec::parse(bytes)?;
+    session::with(handle, |session| {
+        let vm = session.vm.component()?;
+        let mut status = Status::Ok;
+        let response = match request["action"].as_str() {
+            Some("parse") => {
+                status = outcome(vm.parse().map_err(convert)?);
+                Value::Null
+            }
+            Some("add_to_simulation") => {
+                status = outcome(vm.add_to_simulation().map_err(convert)?);
+                Value::Null
+            }
+            Some("tick") => {
+                status = outcome(vm.tick(number(&request["gameTicks"])?).map_err(convert)?);
+                Value::Null
+            }
+            Some("render") => {
+                status = outcome(vm.render().map_err(convert)?);
+                Value::Null
+            }
+            Some("remove_from_simulation") => {
+                status = outcome(vm.remove_from_simulation().map_err(convert)?);
+                Value::Null
+            }
+            Some("status") => {
+                // timeout は数値コードが未確定のため code は null です。
+                let (name, code) = match vm.status() {
+                    ComponentStatus::Ok => ("ok", Some(0)),
+                    ComponentStatus::TickFailed => ("tickFailed", Some(2)),
+                    ComponentStatus::LoadFailed => ("loadFailed", Some(3)),
+                    ComponentStatus::CallbackFailed => ("callbackFailed", Some(5)),
+                    ComponentStatus::TimedOut => ("timedOut", None),
+                };
+                json!({"status":name,"code":code})
+            }
+            _ => return Err(invalid("unknown component operation")),
+        };
+        codec::respond(&response)?;
+        Ok(status)
+    })
+}
 pub(crate) fn addon(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
     let request = codec::parse(bytes)?;
     session::with(handle, |session| {
@@ -236,7 +332,7 @@ pub(crate) fn addon(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> {
         let mut status = Status::Ok;
         let response=match request["action"].as_str() {
             Some("start")=>{status=outcome(vm.start().map_err(convert)?);Value::Null},
-            Some("tick")=>{status=outcome(vm.tick(number(&request["gameTicks"])?).map_err(convert)?);Value::Null},
+            Some("tick")=>{status=outcome(vm.tick(value_codec::integer(&request["gameTicks"])?).map_err(convert)?);Value::Null},
             Some("dispatch")=>{
                 let callback=request["callback"].as_str().ok_or_else(|| invalid("callback name is missing"))?;
                 status=outcome(vm.dispatch(callback,&value_codec::values(&request["arguments"])?).map_err(convert)?);Value::Null
@@ -359,4 +455,53 @@ pub(crate) fn vehicle(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> 
         codec::respond(&Value::Null)?;
         Ok(status)
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bug_t1_08_create_component_rejects_require_loader_explicitly() {
+        // Normal TS wire format passes `"requireLoader": false`; omitted is also valid.
+        let ok_handle = create_component(
+            100_000,
+            4 * 1024 * 1024,
+            0,
+            br#"{"environment":"game","requireLoader":false,"bindings":{"values":{},"functions":[]},"providers":[]}"#,
+        )
+        .expect("requireLoader:false must succeed");
+        session::dispose(ok_handle as u32).expect("dispose");
+
+        // Passing `"requireLoader": true` at the WASM ABI boundary must be explicitly rejected,
+        // never silently ignored!
+        let err = create_component(
+            100_000,
+            4 * 1024 * 1024,
+            1,
+            br#"{"environment":"extended","requireLoader":true,"bindings":{"values":{},"functions":[]},"providers":[]}"#,
+        )
+        .expect_err("requireLoader:true must be rejected for component sessions");
+        assert!(
+            matches!(err.status, Status::Unsupported | Status::InvalidArgument),
+            "unexpected status: {:?}",
+            err.status
+        );
+        assert!(
+            err.message.contains("requireLoader"),
+            "unexpected message: {}",
+            err.message
+        );
+
+        // Non-boolean `"requireLoader"` must also be rejected.
+        let bad_type = create_component(
+            100_000,
+            4 * 1024 * 1024,
+            0,
+            br#"{"environment":"game","requireLoader":"yes","providers":[]}"#,
+        )
+        .expect_err("non-boolean requireLoader must be rejected");
+        assert_eq!(bad_type.status, Status::InvalidArgument);
+    }
 }

@@ -26,11 +26,11 @@ raw形式は`GameRgba8`です。Canvas内部のpremultiplicationとは別の値�
 | RectF | 1/256 snap（下記）。Xはceil境界、Yはfloor境界の半開区間。負寸法と空区間もケースで規定 |
 | Line | snap済み端点でdiamond-exit。終端を除外し、major-axisと方向に対応するcorner ownershipを保持 |
 | Rect/Triangleの輪郭 | 各辺をlineと同じ規則で処理。重複画素を勝手に除去しない |
-| TriangleF | snap済みpolygon、Y sample offset1、境界符号-1 |
-| Circle | segments=min(16,max(8,floor(abs(radius)/2)))。頂点位置でf32へ丸める |
+| TriangleF | 頂点を (f(x), f(f(y)−1)) へ移すwrapper規則（実ゲームの頂点生成）。snap済みpolygon、境界符号-1 |
+| Circle | segments=min(16,max(8,floor(abs(radius)/2)))。角度はf32のtau/segmentsを0から逐次加算し、outlineはtau以下、filledはtau未満の間点を追加する（実ゲームの生成規則。点数がsegmentsとずれることがある）。頂点位置でf32へ丸める |
 | CircleF | 同じpolygon、Y sample offset0、境界符号-1 |
-| Text | 4×5glyph、文字送り5、行送り6、位置はfloor |
-| TextBox | 文字数はUTF-16コード単位。空白・折返し・配置・丸め順序は採用ケースで規定 |
+| Text | 4×5glyph、文字送り5、行送り6、位置はfloor。文字列はbyte単位でglyph IDとして照合し（UTF-8 decodeしない）、対応glyphがないbyteは送りも描画もしない |
+| TextBox | UTF-8をdecodeし、glyphがあるcodepoint（32〜126）だけをトークンとする。LFは改行トークン、TABは空白glyphの送り4倍。折返しはトークン単位（幅超過かつ行に2トークン以上で戻し、最後の空白まで戻す）。配置用幅は (トークン数−1)×5+4、全行高さは (行数−1)×6+5 |
 
 座標は1/256px単位へsnapします。格子点どうしのちょうど中間（k+1/512）に乗った値は、上下の格子点までの距離が等しく、スクリプト座標上の丸め規則では丸める向きが決まりません。f32で投影（半画素オフセットを含む）、viewportの乗算と加算を行い、最近接偶数丸めで固定小数点化した結果に従います。xは画面幅、yは画面高さを使うため、同じ値でも画面の大きさで向きが変わります。f32へ収まらない座標だけは、JavaScriptのMath.round相当で扱います。
 
@@ -38,7 +38,7 @@ raw形式は`GameRgba8`です。Canvas内部のpremultiplicationとは別の値�
 
 ## フォントとリソース
 
-[同梱フォント](../../data/fonts/README.md)はprintable ASCII95文字とdegree記号です。小文字は大文字相当のグリフ、未知文字は枠状の代替グリフを使います。日本語フォント一式を提供するものではありません。
+[同梱フォント](../../data/fonts/README.md)はprintable ASCII95文字とdegree記号です。小文字は大文字相当のグリフ、未知文字は枠状の代替グリフを使います。日本語フォント一式を提供するものではありません。ただしゲーム互換の描画経路（drawText/drawTextBox）では代替グリフを使いません（byte/codepoint照合で対応がないものは描画も送りもしません）。代替グリフはフォント参照用の`glyph_for`に残ります。
 
 フォントの正本はJSON数値表です。`cargo xtask generate`はその表からRust定数だけを再生成し、外部データを取得しません。描画構成要素に含まれる第三者由来部分の権利表示は[MIT許諾原文](../../licenses/screen-components-MIT.txt)に保持します。
 

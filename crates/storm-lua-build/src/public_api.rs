@@ -17,7 +17,9 @@ use storm_lua_minify::config::{
     PropertyConfig, PropertyMode, SearchMode,
 };
 use storm_lua_minify::pass_ids::{OPTIMIZATION_PASS_IDS, PASS_RECORD_NAMES};
-use storm_lua_minify::search::{compile_code, CandidateSize, CompileCodeResult, SearchStats};
+#[cfg(test)]
+use storm_lua_minify::search::compile_code;
+use storm_lua_minify::search::{CandidateSize, CompileCodeResult, SearchStats};
 use storm_lua_syntax::parser::{parse_source, parse_source_with_diagnostic_positions};
 use storm_lua_syntax::print::token_minified_utf16_len;
 use storm_lua_syntax::source_position::LineIndex;
@@ -543,8 +545,18 @@ fn search_stats(stats: SearchStats, options: &CompileOptions) -> ApiSearchStats 
 fn success(
     source: &str,
     options: &CompileOptions,
+    result: CompileCodeResult,
+    diagnostics: Vec<Diagnostic>,
+) -> ApiCompileResult {
+    success_with_preencoded_map(source, options, result, diagnostics, None)
+}
+
+fn success_with_preencoded_map(
+    source: &str,
+    options: &CompileOptions,
     mut result: CompileCodeResult,
     diagnostics: Vec<Diagnostic>,
+    preencoded_map: Option<String>,
 ) -> ApiCompileResult {
     let lexical = result.stats.winner_structural == "lexical";
     let original = storm_lua_syntax::source_position::utf16_len(source);
@@ -563,8 +575,10 @@ fn success(
             1e-6
         },
     });
-    let map = if let Some(lexical) = result.lexical_origins.take() {
-        match crate::optimized_source_map::encode_compact_lexical_for_options(
+    let map = if let Some(map) = preencoded_map {
+        Some(map)
+    } else if let Some(lexical) = result.lexical_origins.take() {
+        match crate::optimized_source_map::encode_prevalidated_compact_lexical_for_options(
             &result.code,
             lexical.as_ref(),
             options,
@@ -575,15 +589,17 @@ fn success(
         }
     } else {
         match result.origins.take() {
-            Some(origins) => match crate::optimized_source_map::encode_owned_for_options(
-                &result.code,
-                origins,
-                options,
-                Some(&result.stats),
-            ) {
-                Ok(map) => Some(map),
-                Err(error) => return ApiCompileResult::failure(source, error),
-            },
+            Some(origins) => {
+                match crate::optimized_source_map::encode_prevalidated_owned_for_options(
+                    &result.code,
+                    origins,
+                    options,
+                    Some(&result.stats),
+                ) {
+                    Ok(map) => Some(map),
+                    Err(error) => return ApiCompileResult::failure(source, error),
+                }
+            }
             None => None,
         }
     };
@@ -683,11 +699,14 @@ pub fn compile(source: &str, options: &ApiCompileOptions) -> ApiCompileResult {
         Err(error) => return ApiCompileResult::invalid_options(error),
     };
     let mut diagnostics = None;
-    let result = storm_lua_minify::search::compile_code_with_source_inspection_compact(
+    let result = storm_lua_minify::search::compile_code_with_fallible_inspection_compact(
         source,
         &core_options,
         |ast, root, positions| {
-            diagnostics = Some(hazards_from_parsed(ast, root, positions, &core_options));
+            let found = hazards_from_parsed(ast, root, positions, &core_options);
+            let ok = !found.iter().any(|d| d.severity == Severity::Error);
+            diagnostics = Some(found);
+            ok
         },
     );
     match diagnostics {
@@ -1022,21 +1041,7 @@ pub fn compile_project(
         };
     }
 
-    let compiled = finish_compile_result(
-        &linked_source,
-        &core_options,
-        compile_code(&linked_source, &core_options).and_then(|mut result| {
-            if let Some(origins) = result.origins.as_ref() {
-                result.origins = Some(crate::map_composition::compose(
-                    project,
-                    &link,
-                    &result.code,
-                    origins,
-                )?);
-            }
-            Ok(result)
-        }),
-    );
+    let compiled = compile_and_compose_project(&linked_source, &core_options, project, &link);
     let mut diagnostics =
         remap_diagnostics_to_modules(compiled.diagnostics.clone(), project, &link);
     // 構造/sw_restrict 診断（到達不能モジュールの Error を含む）を合流する。ok:true でも
@@ -1049,6 +1054,56 @@ pub fn compile_project(
         link.injected_ambient,
         diagnostics,
     )
+}
+
+fn compile_and_compose_project(
+    source: &str,
+    options: &CompileOptions,
+    project: &LuaProject,
+    link: &LinkResult,
+) -> ApiCompileResult {
+    let diagnostics = match detect_hazards(source, options) {
+        Ok(diagnostics) => diagnostics,
+        Err(error) => return ApiCompileResult::failure(source, error),
+    };
+    if let Some(error) = diagnostics.iter().find(|d| d.severity == Severity::Error) {
+        return ApiCompileResult::with_error(error.message.clone(), diagnostics);
+    }
+    let mut result = match storm_lua_minify::search::compile_code_compact(source, options) {
+        Ok(result) => result,
+        Err(error) => return ApiCompileResult::failure(source, error),
+    };
+    let mut preencoded_map = None;
+    if let Some(lexical) = result.lexical_origins.take() {
+        match crate::optimized_source_map::try_encode_composed_lexical_project(
+            project,
+            link,
+            &result.code,
+            lexical.as_ref(),
+            options,
+            Some(&result.stats),
+        ) {
+            Ok(Some(map)) => preencoded_map = Some(map),
+            Ok(None) => {
+                let lexical = match std::sync::Arc::try_unwrap(lexical) {
+                    Ok(owned) => owned,
+                    Err(shared) => shared.as_ref().clone(),
+                };
+                let generated = lexical.into_generated();
+                match crate::map_composition::compose(project, link, &result.code, &generated) {
+                    Ok(composed) => result.origins = Some(composed),
+                    Err(error) => return ApiCompileResult::failure(source, error),
+                }
+            }
+            Err(error) => return ApiCompileResult::failure(source, error),
+        }
+    } else if let Some(origins) = result.origins.as_ref() {
+        match crate::map_composition::compose(project, link, &result.code, origins) {
+            Ok(composed) => result.origins = Some(composed),
+            Err(error) => return ApiCompileResult::failure(source, error),
+        }
+    }
+    success_with_preencoded_map(source, options, result, diagnostics, preencoded_map)
 }
 
 fn prepare_metadata<'a>(
@@ -1129,21 +1184,7 @@ pub fn compile_lifeboat(
             ..Default::default()
         };
     }
-    let compiled = finish_compile_result(
-        source,
-        &core,
-        compile_code(source, &core).and_then(|mut result| {
-            if let Some(origins) = result.origins.as_ref() {
-                result.origins = Some(crate::map_composition::compose(
-                    project,
-                    &link,
-                    &result.code,
-                    origins,
-                )?);
-            }
-            Ok(result)
-        }),
-    );
+    let compiled = compile_and_compose_project(source, &core, project, &link);
     diagnostics.extend(remap_diagnostics_to_modules(
         compiled.diagnostics.clone(),
         project,

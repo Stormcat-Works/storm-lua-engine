@@ -1,6 +1,6 @@
 # リリース手順
 
-v0.4.0は2026-11-04にGitHub Releaseとnpmで公開済み。現在の公開状態は[STATUS](../STATUS.md)を参照してください。以下の共通手順と、後半の過去版の準備記録を分けて扱います。
+最新の公開版はv0.4.1（2026-11-04、GitHub Releaseとnpmで公開済み）。現在の公開状態は[STATUS](../STATUS.md)を参照してください。以下の共通手順と、後半の過去版の準備記録を分けて扱います。
 
 リリースは管理者の明示指示で行います。GitHub CIは検証を担当し、通常の開発pushからregistryへ公開しません。検査済みGitHub Releaseの公開後、[publish.yml](design/publication-workflow.md)がOIDCで同じtarballをnpmへ自動公開・再検証します。Cloudflare Workers BuildsはreleaseブランチへのpushだけでPlaygroundを更新します。RustクレートはGitタグ、JavaScript／TypeScript SDKはnpm、ビルド済み配布物はGitHub Releasesで提供します。
 
@@ -55,6 +55,14 @@ Addon Labの現在のソース・CI参照は撤去済みです。過去版Releas
 ## 過去版の準備条件と検証記録
 
 以下の対象版・候補ブランチ・未実施工程は、それぞれの準備時点の記録です。当時の検証条件や制限を保持し、現在の公開待ち項目として扱いません。公開の実施記録と、ローカル候補の検証は区別します。
+
+### v0.5.0の公開前準備
+
+v0.5.0は、第3のプロファイルComponent Mod（コンポーネント埋め込みLua）の追加と、Vehicle／Addon意味論の実ゲーム整合（引数意味論、エラー回復モデル、実行制限、`math.random`既定、matrix、描画、AddonのHTTP・`debug.log`・プロパティ宣言）、依存関係の更新を一つの公開候補にまとめる。意味論の正本は実ゲーム v1.15.26 の挙動で確認した仕様であり、エンジンの既定挙動が広範囲に変わる。公開APIの非互換変更（`ExecutionLimits`の`Option`化、`Addon::tick`の引数型、`HttpError::Invalid`の削除、`MicrocontrollerConfig`への項目追加）を含む。
+
+ローカル候補は統合ブランチ`muse/v050-spec-alignment`の先端で検証した。本節の準備だけでは公開済みにしない。公開工程（候補スカッシュの再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認）はv0.4.0と同じ手順で行う。
+
+Component ModはRustのみで、TypeScript SDKへの公開とbuild/minifyパイプラインのComponent入口は後続作業として[TASKS](../TASKS.md)に残した。描画命令ABI、Composite I/O、savedata、Source Map v3とx_storm schema2、Playground保存形式は維持する。
 
 ### v0.4.1の公開前準備
 

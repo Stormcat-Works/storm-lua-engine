@@ -31,16 +31,19 @@ fn lua_backend_has_binary64_arithmetic_and_integer64() -> Result<(), Box<dyn Err
 }
 #[test]
 fn lua_callback_conversion_matches_the_wire_contract() -> Result<(), Box<dyn Error>> {
-    use std::{cell::Cell, rc::Rc};
+    use std::sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    };
     let lua = Lua::new();
-    let written = Rc::new(Cell::new(0.0_f32));
-    let captured = Rc::clone(&written);
+    let written = Arc::new(AtomicU32::new(0.0_f32.to_bits()));
+    let captured = Arc::clone(&written);
     lua.globals()
         .set("get", lua.create_function(|_, ()| Ok(16_777_217.0_f32))?)?;
     lua.globals().set(
         "set",
         lua.create_function(move |_, value: f64| {
-            captured.set(value as f32);
+            captured.store((value as f32).to_bits(), Ordering::Relaxed);
             Ok(())
         })?,
     )?;
@@ -49,7 +52,10 @@ fn lua_callback_conversion_matches_the_wire_contract() -> Result<(), Box<dyn Err
         .eval()?;
     assert_eq!(input, 16_777_216.0);
     assert_eq!(internal, 16_777_217.0);
-    assert_eq!(written.get(), 16_777_216.0_f32);
+    assert_eq!(
+        f32::from_bits(written.load(Ordering::Relaxed)),
+        16_777_216.0_f32
+    );
     Ok(())
 }
 #[test]

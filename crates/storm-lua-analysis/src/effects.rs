@@ -482,6 +482,311 @@ pub fn mutated_builtin_roots(
         .collect()
 }
 
+/// Statically proven Vehicle callback phase for an AST node.
+///
+/// In v0.5.0 (`E4`), `input.*` / `output.*` raise a runtime Lua error outside
+/// `onTick`, and `screen.*` raises a runtime Lua error outside `onDraw`.
+/// Nodes whose execution is not statically confined to a single host callback
+/// remain [`CallbackPhase::Unknown`], where phase-restricted APIs must be
+/// treated as `may_throw = true`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CallbackPhase {
+    #[default]
+    Unknown,
+    TickOnly,
+    DrawOnly,
+}
+
+fn compute_callback_phases(
+    ast: &Ast,
+    res: &Resolution,
+    root: NodeId,
+    writes: &[u32],
+) -> Vec<CallbackPhase> {
+    let mut node_phase = vec![CallbackPhase::Unknown; ast.nodes.len()];
+    if (root as usize) >= ast.nodes.len() || !matches!(ast.node(root), Node::Block(_)) {
+        return node_phase;
+    }
+    if res
+        .bindings
+        .iter()
+        .skip(1)
+        .any(|b| ast.strings.get(b.name) == "_ENV")
+    {
+        return node_phase;
+    }
+    let mut reachable = Vec::new();
+    walk(ast, root, &mut reachable);
+
+    let mut reads = vec![0u32; res.bindings.len()];
+    for &nid in &reachable {
+        if let Node::Name(sid) = ast.nodes[nid as usize] {
+            let name = ast.strings.get(sid);
+            if name == "_ENV" {
+                return node_phase;
+            }
+            if matches!(name, "_G" | "rawget" | "rawset" | "load" | "loadstring") {
+                if let Some(bid) = res.node_bid[nid as usize] {
+                    if res.bindings[bid as usize].kind == BindingKind::Global {
+                        return node_phase;
+                    }
+                }
+            }
+            if let Some(bid) = res.node_bid[nid as usize] {
+                if !res.node_write[nid as usize] {
+                    reads[bid as usize] += 1;
+                }
+            }
+        }
+    }
+
+    // Certify global `onTick` / `onDraw` function literals when the script
+    // never reads/calls that global itself and every write assigns a literal
+    // `Node::Function` directly.
+    let mut fn_phase: std::collections::HashMap<NodeId, CallbackPhase> =
+        std::collections::HashMap::new();
+    for (bid_idx, binding) in res.bindings.iter().enumerate().skip(1) {
+        if binding.kind != BindingKind::Global {
+            continue;
+        }
+        let target_phase = match ast.strings.get(binding.name) {
+            "onTick" => CallbackPhase::TickOnly,
+            "onDraw" => CallbackPhase::DrawOnly,
+            _ => continue,
+        };
+        let bid = bid_idx as BindingId;
+        if reads[bid_idx] != 0 || writes[bid_idx] == 0 {
+            continue;
+        }
+        let mut assigned_fns = Vec::new();
+        let mut all_valid = true;
+        for &nid in &reachable {
+            match &ast.nodes[nid as usize] {
+                Node::Funcstat(target, fn_node) => {
+                    if matches!(ast.node(*target), Node::Name(_))
+                        && res.node_bid[*target as usize] == Some(bid)
+                    {
+                        if matches!(ast.node(*fn_node), Node::Function(..)) {
+                            assigned_fns.push(*fn_node);
+                        } else {
+                            all_valid = false;
+                        }
+                    }
+                }
+                Node::Assign(targets, exprs) => {
+                    for (idx, &target) in targets.iter().enumerate() {
+                        if matches!(ast.node(target), Node::Name(_))
+                            && res.node_bid[target as usize] == Some(bid)
+                        {
+                            // Reject if an earlier RHS could multi-expand or RHS is missing/non-Function.
+                            let earlier_clean = exprs
+                                .iter()
+                                .take(idx)
+                                .all(|&e| !matches!(ast.node(e), Node::Call(..) | Node::Vararg));
+                            match exprs.get(idx) {
+                                Some(&expr)
+                                    if earlier_clean
+                                        && matches!(ast.node(expr), Node::Function(..)) =>
+                                {
+                                    assigned_fns.push(expr);
+                                }
+                                _ => all_valid = false,
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if all_valid && assigned_fns.len() == writes[bid_idx] as usize {
+            for fn_node in assigned_fns {
+                fn_phase.insert(fn_node, target_phase);
+            }
+        }
+    }
+
+    if fn_phase.is_empty() {
+        return node_phase;
+    }
+
+    // Identify non-escaping internal helper bindings whose sole definition is
+    // `binding.function_node` and whose only references are direct calls.
+    let mut direct_callee_names = std::collections::HashSet::new();
+    let mut def_target_names = std::collections::HashSet::new();
+    for &nid in &reachable {
+        match &ast.nodes[nid as usize] {
+            Node::Call(callee, _, None) if matches!(ast.node(*callee), Node::Name(_)) => {
+                direct_callee_names.insert(*callee);
+            }
+            Node::Funcstat(target, _) if matches!(ast.node(*target), Node::Name(_)) => {
+                def_target_names.insert(*target);
+            }
+            _ => {}
+        }
+    }
+    let mut non_call_ref = vec![false; res.bindings.len()];
+    for &nid in &reachable {
+        if matches!(ast.node(nid), Node::Name(_))
+            && !direct_callee_names.contains(&nid)
+            && !def_target_names.contains(&nid)
+        {
+            if let Some(bid) = res.node_bid[nid as usize] {
+                non_call_ref[bid as usize] = true;
+            }
+        }
+    }
+
+    let mut helper_fns: Vec<(BindingId, NodeId)> = Vec::new();
+    let mut is_helper = vec![false; res.bindings.len()];
+    for (bid_idx, binding) in res.bindings.iter().enumerate().skip(1) {
+        let Some(fn_node) = binding.function_node else {
+            continue;
+        };
+        if fn_phase.contains_key(&fn_node) || non_call_ref[bid_idx] {
+            continue;
+        }
+        let eligible = match binding.kind {
+            BindingKind::Localfunc => writes[bid_idx] == 0,
+            BindingKind::Local => writes[bid_idx] == 0,
+            BindingKind::Global => {
+                let name = ast.strings.get(binding.name);
+                let is_host_entrypoint = name == "httpReply"
+                    || (name.starts_with("on")
+                        && name.as_bytes().get(2).is_some_and(u8::is_ascii_uppercase));
+                !is_host_entrypoint && writes[bid_idx] == 1
+            }
+            _ => false,
+        };
+        if eligible {
+            is_helper[bid_idx] = true;
+            helper_fns.push((bid_idx as BindingId, fn_node));
+        }
+    }
+
+    // Collect each helper's direct call sites along with the enclosing `Node::Function` (None = chunk root).
+    let mut helper_call_containers: Vec<Vec<Option<NodeId>>> = vec![Vec::new(); res.bindings.len()];
+    fn collect_calls(
+        ast: &Ast,
+        res: &Resolution,
+        is_helper: &[bool],
+        node: NodeId,
+        enclosing_fn: Option<NodeId>,
+        out: &mut [Vec<Option<NodeId>>],
+    ) {
+        let next_fn = if matches!(ast.node(node), Node::Function(..)) {
+            Some(node)
+        } else {
+            enclosing_fn
+        };
+        if let Node::Call(callee, _, None) = ast.node(node) {
+            if matches!(ast.node(*callee), Node::Name(_)) {
+                if let Some(bid) = res.node_bid[*callee as usize] {
+                    if is_helper[bid as usize] {
+                        out[bid as usize].push(enclosing_fn);
+                    }
+                }
+            }
+        }
+        for_each_child(ast, node, &mut |child| {
+            collect_calls(ast, res, is_helper, child, next_fn, out);
+        });
+    }
+    collect_calls(
+        ast,
+        res,
+        &is_helper,
+        root,
+        None,
+        &mut helper_call_containers,
+    );
+
+    // Monotonic fixpoint over helper call sites: None = unreached so far,
+    // Some(TickOnly / DrawOnly / Unknown) = joined phase of reached callers.
+    let mut helper_state: Vec<Option<CallbackPhase>> = vec![None; res.bindings.len()];
+    let join_phase =
+        |acc: Option<CallbackPhase>, incoming: CallbackPhase| -> Option<CallbackPhase> {
+            Some(match acc {
+                None => incoming,
+                Some(prev) if prev == incoming => prev,
+                Some(_) => CallbackPhase::Unknown,
+            })
+        };
+    for _ in 0..=helper_fns.len() {
+        let mut changed = false;
+        for &(bid, fn_node) in &helper_fns {
+            let sites = &helper_call_containers[bid as usize];
+            if sites.is_empty() {
+                continue;
+            }
+            let mut next = helper_state[bid as usize];
+            for &container in sites {
+                let caller_phase = match container {
+                    None => Some(CallbackPhase::Unknown),
+                    Some(caller_fn) => {
+                        if let Some(&root_p) = fn_phase.get(&caller_fn) {
+                            Some(root_p)
+                        } else {
+                            // Find if `caller_fn` is itself one of `helper_fns`.
+                            helper_fns
+                                .iter()
+                                .find(|&&(_, f)| f == caller_fn)
+                                .map_or(Some(CallbackPhase::Unknown), |&(caller_bid, _)| {
+                                    helper_state[caller_bid as usize]
+                                })
+                        }
+                    }
+                };
+                if let Some(cp) = caller_phase {
+                    next = join_phase(next, cp);
+                }
+            }
+            if next != helper_state[bid as usize] {
+                helper_state[bid as usize] = next;
+                if let Some(resolved) = next {
+                    fn_phase.insert(fn_node, resolved);
+                }
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for &(bid, fn_node) in &helper_fns {
+        let resolved = helper_state[bid as usize].unwrap_or(CallbackPhase::Unknown);
+        fn_phase.insert(fn_node, resolved);
+    }
+
+    fn stamp_phases(
+        ast: &Ast,
+        node: NodeId,
+        current: CallbackPhase,
+        fn_phase: &std::collections::HashMap<NodeId, CallbackPhase>,
+        out: &mut [CallbackPhase],
+    ) {
+        out[node as usize] = current;
+        let child_phase = if matches!(ast.node(node), Node::Function(..)) {
+            fn_phase
+                .get(&node)
+                .copied()
+                .unwrap_or(CallbackPhase::Unknown)
+        } else {
+            current
+        };
+        for_each_child(ast, node, &mut |child| {
+            stamp_phases(ast, child, child_phase, fn_phase, out);
+        });
+    }
+    stamp_phases(
+        ast,
+        root,
+        CallbackPhase::Unknown,
+        &fn_phase,
+        &mut node_phase,
+    );
+    node_phase
+}
+
 pub struct EffectAnalyzer<'a> {
     ast: &'a Ast,
     res: &'a Resolution,
@@ -493,6 +798,7 @@ pub struct EffectAnalyzer<'a> {
     /// bid → エイリアス名（挿入順の決定性のため Vec で保持。dump はこの順で出力）。
     pub api_alias_order: Vec<(BindingId, String)>,
     api_alias_map: Vec<Option<String>>,
+    node_phase: Vec<CallbackPhase>,
 }
 
 impl<'a> EffectAnalyzer<'a> {
@@ -506,6 +812,7 @@ impl<'a> EffectAnalyzer<'a> {
             summaries: vec![None; res.bindings.len()],
             api_alias_order: Vec::new(),
             api_alias_map: vec![None; res.bindings.len()],
+            node_phase: Vec::new(),
         };
 
         // Count actual root-reachable occurrences and collect builtin roots in
@@ -616,6 +923,8 @@ impl<'a> EffectAnalyzer<'a> {
                 }
             }
         }
+
+        analyzer.node_phase = compute_callback_phases(ast, res, root, &writes);
 
         // functions / summaries（bid 昇順。TS は bindings Map の挿入順＝bid 順）
         let mut function_bindings = Vec::new();
@@ -831,6 +1140,55 @@ impl<'a> EffectAnalyzer<'a> {
         self.api_alias_map[bid as usize] = Some(alias);
     }
 
+    /// Statically proven Vehicle callback phase at `id` (`Unknown` unless
+    /// certified inside `onTick` or `onDraw`).
+    pub fn callback_phase(&self, id: NodeId) -> CallbackPhase {
+        self.node_phase
+            .get(id as usize)
+            .copied()
+            .unwrap_or(CallbackPhase::Unknown)
+    }
+
+    fn is_lua_integer_literal(&self, id: NodeId) -> bool {
+        match self.ast.node(id) {
+            Node::Num(raw) => storm_lua_syntax::numeric::integer_literal_value(raw).is_some(),
+            Node::Paren(inner) => self.is_lua_integer_literal(*inner),
+            Node::Un(op, inner) if op == "-" => self.is_lua_integer_literal(*inner),
+            _ => false,
+        }
+    }
+
+    /// True when `id` is a `Node::Name` resolving to an unmutated integer
+    /// numeric-for loop variable (`Node::Fornum` with integer `start` and
+    /// `step`), which Lua 5.3 `OP_FORPREP` guarantees is a `LUA_TNUMINT`
+    /// (`i64`) on every iteration.
+    pub fn is_unmutated_fornum_counter(&self, id: NodeId) -> bool {
+        let Node::Name(_) = self.ast.node(id) else {
+            return false;
+        };
+        let Some(bid) = self.res.node_bid.get(id as usize).copied().flatten() else {
+            return false;
+        };
+        let binding = self.res.binding(bid);
+        binding.kind == BindingKind::For
+            && self
+                .res
+                .binding_write_counts
+                .get(bid as usize)
+                .copied()
+                .unwrap_or(1)
+                == 0
+            && binding
+                .decl_node
+                .is_some_and(|decl| match self.ast.node(decl) {
+                    Node::Fornum(_, start, _, step, _) => {
+                        self.is_lua_integer_literal(*start)
+                            && step.is_none_or(|s| self.is_lua_integer_literal(s))
+                    }
+                    _ => false,
+                })
+    }
+
     /// 証明済み single-write エイリアスのみを通してビルトイン root/member を解決する。
     pub fn resolve_builtin_reference(&self, x: NodeId) -> Option<String> {
         self.builtin_reference(x)
@@ -976,17 +1334,21 @@ impl<'a> EffectAnalyzer<'a> {
             {
                 e.calls = true;
                 e.ordered = true;
+                e.may_throw |= self.callback_phase(iter) != CallbackPhase::DrawOnly;
                 e.stable = false;
                 return;
             }
             if is_pure_api(&full) {
-                e.may_throw |= !is_total_api(&full);
+                e.may_throw |= !is_total_api(&full)
+                    || (full.starts_with("input.")
+                        && self.callback_phase(iter) != CallbackPhase::TickOnly);
                 e.stable &= self.stable_reads
                     || (!full.starts_with("input.") && !full.starts_with("property."));
                 return;
             }
             if is_effect_api(&full) {
                 e.calls = true;
+                e.may_throw |= self.callback_phase(iter) != CallbackPhase::TickOnly;
                 e.stable = false;
                 return;
             }
@@ -1113,17 +1475,21 @@ impl<'a> EffectAnalyzer<'a> {
                     {
                         e.calls = true;
                         e.ordered = true;
+                        e.may_throw |= self.callback_phase(x) != CallbackPhase::DrawOnly;
                         e.stable = false;
                         return;
                     }
                     if is_pure_api(full) {
-                        e.may_throw |= self.total_api_call_throws(full, args);
+                        e.may_throw |= self.total_api_call_throws(full, args)
+                            || (full.starts_with("input.")
+                                && self.callback_phase(x) != CallbackPhase::TickOnly);
                         e.stable &= self.stable_reads
                             || (!full.starts_with("input.") && !full.starts_with("property."));
                         return;
                     }
                     if is_effect_api(full) {
                         e.calls = true;
+                        e.may_throw |= self.callback_phase(x) != CallbackPhase::TickOnly;
                         e.stable = false;
                         return;
                     }
@@ -1216,6 +1582,7 @@ impl<'a> EffectAnalyzer<'a> {
                     {
                         e.calls = true;
                         e.ordered = true;
+                        e.may_throw |= self.callback_phase(x) != CallbackPhase::DrawOnly;
                         e.stable = false;
                         return;
                     }
@@ -1224,13 +1591,16 @@ impl<'a> EffectAnalyzer<'a> {
                             base: std::borrow::Cow::Borrowed(full),
                             member: None,
                         };
-                        e.may_throw |= self.total_api_call_throws(&reference, args);
+                        e.may_throw |= self.total_api_call_throws(&reference, args)
+                            || (full.starts_with("input.")
+                                && self.callback_phase(x) != CallbackPhase::TickOnly);
                         e.stable &= self.stable_reads
                             || (!full.starts_with("input.") && !full.starts_with("property."));
                         return;
                     }
                     if EFFECT_API.contains(&full) {
                         e.calls = true;
+                        e.may_throw |= self.callback_phase(x) != CallbackPhase::TickOnly;
                         e.stable = false;
                         return;
                     }
@@ -1651,6 +2021,7 @@ impl<'a> EffectAnalyzer<'a> {
             summaries: vec![None; res.bindings.len()],
             api_alias_order: Vec::new(),
             api_alias_map: vec![None; res.bindings.len()],
+            node_phase: Vec::new(),
         };
 
         // 未解決・未 write の global API root だけがビルトイン。
@@ -1757,6 +2128,8 @@ impl<'a> EffectAnalyzer<'a> {
                 }
             }
         }
+
+        analyzer.node_phase = compute_callback_phases(ast, res, root, &writes);
 
         // functions / summaries（bid 昇順。TS は bindings Map の挿入順＝bid 順）
         for bid in 1..res.bindings.len() as BindingId {
@@ -2795,5 +3168,39 @@ mod borrowing_form_tests {
         }
         assert_eq!(out, expected.effects_for_statement(root));
         let _ = before;
+    }
+
+    #[test]
+    fn local_env_and_host_on_entrypoints_are_not_certified_as_tick_only() {
+        for source in [
+            "local _ENV = custom\nfunction onTick()\n  local x = input.getNumber(1)\nend",
+            "local function wrap(_ENV)\n  function onTick()\n    local x = input.getNumber(1)\n  end\nend",
+            "function onRender()\n  local x = input.getNumber(1)\nend\nfunction onTick()\n  if false then onRender() end\nend",
+            "function onCustomCommand()\n  local x = input.getNumber(1)\nend\nfunction onTick()\n  if false then onCustomCommand() end\nend",
+        ] {
+            let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
+            let res = crate::resolver::resolve(&ast, root);
+            let analyzer = EffectAnalyzer::new(&ast, &res, root, true);
+            let mut found = false;
+            storm_lua_syntax::ast_utils::walk(&ast, root, &mut |id| {
+                if let Node::Call(callee, _, _) = ast.node(id) {
+                    if analyzer.resolve_builtin_reference(*callee).as_deref()
+                        == Some("input.getNumber")
+                    {
+                        found = true;
+                        assert_eq!(
+                            analyzer.callback_phase(id),
+                            CallbackPhase::Unknown,
+                            "unexpected phase certification in: {source}"
+                        );
+                        assert!(
+                            analyzer.effects_for_expr(id).may_throw,
+                            "expected may_throw in: {source}"
+                        );
+                    }
+                }
+            });
+            assert!(found, "did not find input.getNumber call in: {source}");
+        }
     }
 }

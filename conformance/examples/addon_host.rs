@@ -1,5 +1,9 @@
 //! ネイティブコンシューマの例: 明示的なワールドサービス、ログ、チェックポイント、およびマップ描画。
-use std::{cell::RefCell, collections::BTreeMap, error::Error, rc::Rc};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    sync::{Arc, Mutex},
+};
 use storm_lua_addon::{Addon, AddonConfig};
 use storm_lua_microcontroller::Microcontroller;
 use storm_lua_spec::{map::MapRequest, screen::Rgba8};
@@ -10,16 +14,19 @@ use storm_lua_vm::{
 use storm_screen_raster::raster::ScreenRaster;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let messages = Rc::new(RefCell::new(Vec::<Vec<LuaValue>>::new()));
-    let captured = Rc::clone(&messages);
-    let announce: HostFunction = Rc::new(move |args| {
+    let messages = Arc::new(Mutex::new(Vec::<Vec<LuaValue>>::new()));
+    let captured = Arc::clone(&messages);
+    let announce: HostFunction = Arc::new(move |args| {
         if args.len() != 2 {
             return Err(VmError::new(
                 ErrorKind::Host,
                 "announce expects title and message",
             ));
         }
-        captured.borrow_mut().push(args.to_vec());
+        captured
+            .lock()
+            .map_err(|_| VmError::new(ErrorKind::Host, "message log is poisoned"))?
+            .push(args.to_vec());
         Ok(Vec::new())
     });
     let mut addon = Addon::new(AddonConfig {
@@ -29,8 +36,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
     addon.load(
         br#"g_savedata={ticks=0}
-function onCreate(new) server.announce('native','ready');debug.log('started',new) end
-function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;debug.log('tick',dt) end"#,
+function onCreate(new) server.announce('native','ready');debug.log('started') end
+function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;debug.log('tick') end"#,
         "=native-addon",
     )?;
     addon.start()?;
@@ -56,13 +63,18 @@ function onTick(dt) g_savedata.ticks=g_savedata.ticks+dt;debug.log('tick',dt) en
     {
         return Err("checkpoint did not survive reload".into());
     }
-    if messages.borrow().len() != 2 {
+    if messages
+        .lock()
+        .map_err(|_| "message log is poisoned")?
+        .len()
+        != 2
+    {
         return Err("server callback was not invoked".into());
     }
     addon.destroy()?;
 
     let mut raster = ScreenRaster::new(16, 16)?;
-    raster.set_map_provider(Some(Rc::new(|request: &MapRequest| {
+    raster.set_map_provider(Some(std::sync::Arc::new(|request: &MapRequest| {
         // バンドルされたゲームワールドの実装ではなく、テスト用の合成地形。
         let water = request.colors[0].unwrap_or(Rgba8([16, 48, 80, 255]));
         Ok(water.0.repeat((request.width * request.height) as usize))

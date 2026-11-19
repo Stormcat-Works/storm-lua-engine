@@ -4,7 +4,7 @@
 
 `storm-lua-addon`がAddonの名前空間、初期化順、イベント、menu property、HTTPキューを所有する。`storm-lua-vm`の制限・debugger・owned values・loggingを共有し、microcontrollerやrasterへ依存しない。
 
-Addonの通常環境には`server`、`matrix`、Addon用`property`、制限付き`debug.log`、`g_savedata`がある。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
+Addonの通常環境には`server`、`matrix`、Addon用`property`、`debug.log`、`g_savedata`がある。`debug.log`は実ゲームの契約どおり、引数1個の文字列（数値は文字列として通る）だけを記録し、それ以外は無言で、上限・エラーはない。`input`、`output`、`screen`、vehicleの`async`と`property.get*`は登録しない。base関数は`ipairs`、`next`、`pairs`、`tonumber`、`tostring`、`type`。`select`は通常のAddon環境へ登録しない。`print`は開発支援のopt-in。OS・ファイル・package loader・raw debugを公開しない。
 
 server関数はホストが名前と同期実装を明示登録する。エンジン自身が登録するserver関数は`server.httpGet`。他の名前に固定値・成功stubを作らない。登録名は識別子、最大512個、1名128bytes以下。通常の`server`登録では`httpGet`は予約名。`scoped_server`への明示登録はHTTP要求の所有をhostへ移し、SDK内キューの代わりに借用host操作を呼ぶ。
 
@@ -12,7 +12,7 @@ server関数はホストが名前と同期実装を明示登録する。エン�
 
 ## Lifecycle
 
-Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。中断中は別のcallbackやstartを重ねない。通常のLuaエラーは呼び出し元へ返して保持し、以後のonTickを抑止するが、同じVMの通常イベント・onCreate・onDestroyは実行できる。sourceの実行がLuaエラーになった場合もcheckpointの復元とonCreateへ進める。命令数・メモリ制限やホスト境界の失敗は再利用せず、明示的にreload／recreateする。callbackのglobalがfunction以外なら未定義として扱い、Luaの返値は捨てる。errorのpeerへの報告と、通常callbackエラーの報告後のtick再開は現在のホストAPIでは未対応。
+Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終了はReady → Destroying → Destroyed。Luaが停止した場合はその段階を保持してresumeする。中断中は別のcallbackやstartを重ねない。通常のLuaエラーは呼び出し元へ返し、実ゲームのエラーステータス（onTick失敗=2、ロード失敗=3、それ以外のコールバック失敗=5）と最大11件のエラーリングへ記録する。ステータスが0でない間はonTickをスキップするが、同じVMの通常イベント・onCreate・onDestroyは実行できる。ステータス5は報告後のtickでクリアされ、onTickは自動的に再開する。ステータス2・3はreloadまで残る。peerへの`[Server]`報告そのものはホストの責務であり、エンジンは`error_status`/`error_log`で状態を公開する。sourceの実行がLuaエラーになった場合もcheckpointの復元とonCreateへ進める。命令数・メモリ制限やホスト境界の失敗は再利用せず、明示的にreload／recreateする。callbackのglobalがfunction以外なら未定義として扱い、Luaの返値は捨てる。
 
 新規ワールドではtop-levelの初期g_savedataを保持する。既存ワールドではcheckpointを事前検証し、top-levelが完了した後にg_savedataへ適用してからonCreate(false)を実行する。checkpointの適用で古いテーブル参照・upvalueを自動書き換えしない。
 
@@ -22,9 +22,9 @@ Empty → Loading → Loaded → Creating → Ready → Callback → Ready、終
 
 ## APIと精度
 
-実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z。列優先の16要素table、移動成分はLua index 13〜15、計算はf64。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。`rotationToFaceXZ`はまだ未実装で、一般的な式を推測して対応済みにしない。
+実装済みmatrix関数はidentity、translation、position、multiply、transpose、invert、distance、multiplyXYZW、rotationX/Y/Z、rotationToFaceXZ。実装はstorm-lua-vmの共有モジュールにあり、Component Modと共用する（`scale`はComponent Mod専用でaddonにはない）。row-majorの16要素table、移動成分はLua index 13〜15、計算はf64（ただしmultiplyXYZWのベクトル成分は実ゲームどおりf32へ丸める）。multiplyの合成順序・rotation系コンストラクタ・rotationToFaceXZの式は実ゲームの挙動で確認済み。引数の検証とエラー文字列（`bad matrix size`、`matrix was nil`等）も実ゲームに合わせ、有限性は要求しない。逆行列の特異行列は明示エラー。行列恒等式・典型入力・Native/WASMを検証するが、実ゲーム全入力のbit一致は保証しない。
 
-menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。矛盾する重複宣言、不正な範囲・型はエラー。自動clampや刻みへの丸めはしない。
+menu propertyはcheckboxとslider。新規ワールド時はhost overrideまたはdefault、既存ワールド時はnil。宣言は`menuProperties`／`property_definitions`から取得できる。宣言は実ゲームの契約どおり検証でエラーを投げず、同名の再宣言は最後の宣言が有効になる。自動clampや刻みへの丸めはしない。host overrideの型が宣言と合わない場合だけ、ホスト入力の誤りとしてエラーにする。
 
 一般イベントは[callback catalog](../../fixtures/addon-api-catalog.json)に列挙する。onCreate/onTick/onDestroy/httpReplyは専用操作。可変長の引数列と末尾nilを保持し、不要なf32量子化を行わない。
 
@@ -64,6 +64,20 @@ A phase can combine data-only `ScopedServerFunction` handlers with
 supply every configured scoped name exactly once. `HostCall` borrows the current
 arguments for that invocation; it cannot retain a Lua function in `LuaValue` or a
 checkpoint. `HostReturn::Argument` preserves an original argument's identity.
+`HostReturn::CalledFunction` returns the stable registered public dispatcher
+function. Lua-held aliases keep the same identity at runtime even when the script
+overwrites `server[name]`. The explicit backend adapter
+`HostCallContext::invoke_with_function` receives that dispatcher from the SDK;
+`invoke` rejects this result when no dispatcher was supplied. Owned `LuaValue`
+remains data-only, and the VM/Addon snapshot formats are unchanged. Snapshot
+capture retains the existing environment-path registry contract: overwriting a
+registered path can still make an older alias uncapturable. This identity result
+does not extend that capture contract.
+
+`HostCall::truthy` reads Lua truthiness directly from a borrowed argument. Only
+nil and boolean false are false; zero, empty strings, functions and cyclic tables
+are true. It neither decodes owned data nor invokes the value. A missing argument
+index remains an explicit error.
 
 `HostCall::truthy` reads Lua truthiness directly from a borrowed argument. Only
 nil and boolean false are false; zero, empty strings, functions and cyclic tables
@@ -83,4 +97,4 @@ world guards before invoking a predicate and project selected world objects afte
 all predicate calls when the native operation requires that order. Borrowed phases
 must finish synchronously; debugger suspension across their lifetime is unsupported.
 
-複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenと応答のサイズを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、Readyを確認してから同じ検証・消費を行い、そのAddonのcallbackを呼びます。`dispatch_http_reply`はu32のportをLua整数として渡し、要求・応答のNULを含む全bytesを保持します。NativeのC文字列境界やport変換はhostの責務です。`HostCall::integer`はLuaのinteger conversionを使い、非整数numberや非変換値をNoneとして返します。hostは変換失敗の扱いを明示します。`HostCall::number`と`string`は元のLua値に数値・文字列のcoercionを適用するため、hostは関数引数をowned valueへ変換する前に読み取れます。実HTTP transportと複数scriptの配送範囲はhostが所有します。
+複数Addonを持つhostは、`resolve_http_reply`で送信済みtokenを検証し、元要求を消費した後、自身のcontainer順で`httpReply`を配送できます。応答bytesのサイズは検証しません。この操作は要求元のcallbackを呼びません。拒否時はtokenを保持します。単一Addonへ返す`http_reply`は、Readyを確認してから同じ検証・消費を行い、そのAddonのcallbackを呼びます。`dispatch_http_reply`はu32のportをLua整数として渡し、要求・応答のNULを含む全bytesを保持します。NativeのC文字列境界やport変換はhostの責務です。`HostCall::integer`はLuaのinteger conversionを使い、非整数numberや非変換値をNoneとして返します。hostは変換失敗の扱いを明示します。`HostCall::number`と`string`は元のLua値に数値・文字列のcoercionを適用するため、hostは関数引数をowned valueへ変換する前に読み取れます。実HTTP transportと複数scriptの配送範囲はhostが所有します。

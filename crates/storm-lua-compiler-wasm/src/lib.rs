@@ -321,3 +321,34 @@ pub fn build_addon(project: JsValue, options: JsValue) -> Result<JsValue, JsValu
     to_js(&storm_lua_build::addon::build_addon(&project, &options))
         .map_err(|e| JsValue::from_str(&format!("failed to encode Addon build result: {e}")))
 }
+
+/// Non-optimizing Component Mod include-once build. Never applies Vehicle phase/size rules.
+#[wasm_bindgen(js_name = buildComponent)]
+pub fn build_component(project: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
+    let project = decode_project(project)?;
+    let options = if options.is_null() || options.is_undefined() {
+        storm_lua_build::component::ComponentBuildOptions::default()
+    } else {
+        if !options.is_object() || Array::is_array(&options) {
+            return Err(JsValue::from_str(
+                "invalid Component build options: expected an object",
+            ));
+        }
+        for key in Reflect::own_keys(&options)?.iter() {
+            if !matches!(
+                key.as_string().as_deref(),
+                Some("environment" | "metadataTag")
+            ) {
+                return Err(JsValue::from_str(
+                    "invalid Component build options: unknown field",
+                ));
+            }
+        }
+        serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("invalid Component build options: {e}")))?
+    };
+    to_js(&storm_lua_build::component::build_component(
+        &project, &options,
+    ))
+    .map_err(|e| JsValue::from_str(&format!("failed to encode Component build result: {e}")))
+}

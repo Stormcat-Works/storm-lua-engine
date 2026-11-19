@@ -13,6 +13,9 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<DrawCommand>, ScreenError> {
     }
     let mut remaining = bytes;
     let mut commands = Vec::new();
+    commands
+        .try_reserve((bytes.len() / 32).min(4096))
+        .map_err(|_| ScreenError::LimitExceeded)?;
     let mut text_bytes = 0_usize;
     while !remaining.is_empty() {
         let header = remaining.get(..8).ok_or(ScreenError::InvalidCommand)?;

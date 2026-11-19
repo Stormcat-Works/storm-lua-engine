@@ -1,8 +1,8 @@
 //! Synchronous event order, ownership and shared-budget contracts.
-#![allow(clippy::unwrap_used, clippy::panic)]
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use std::sync::{
+    atomic::{AtomicI64, AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 use storm_lua_addon::{Addon, AddonConfig, SynchronousEvents};
 use storm_lua_vm::{
@@ -12,36 +12,45 @@ use storm_lua_vm::{
 
 #[test]
 fn nested_events_observe_committed_owner_and_post_callback_snapshots() {
-    let targets = Rc::new(RefCell::new(Vec::<SynchronousEvents>::new()));
-    let owner = Rc::new(Cell::new(0_i64));
-    let snapshots = Rc::new(RefCell::new(Vec::new()));
-    let trace = Rc::new(RefCell::new(Vec::new()));
+    let targets = Arc::new(Mutex::new(Vec::<SynchronousEvents>::new()));
+    let owner = Arc::new(AtomicI64::new(0_i64));
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
     let spawn: HostFunction = {
         let targets = targets.clone();
         let owner = owner.clone();
         let snapshots = snapshots.clone();
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [LuaValue::Integer(value)] = args else {
                 panic!("integer argument expected")
             };
-            let accepted = *value > owner.get();
+            let accepted = *value > owner.load(Ordering::Relaxed);
             if accepted {
-                owner.set(*value);
-                let recipients = targets.borrow().clone();
+                owner.store(*value, Ordering::Relaxed);
+                let recipients = targets
+                    .lock()
+                    .map_err(|_| VmError::new(ErrorKind::Host, "target list is poisoned"))?
+                    .clone();
                 for target in recipients {
                     if target.is_live() {
                         target.dispatch("onTsunami", args)?;
                     }
                 }
-                snapshots.borrow_mut().push(owner.get());
+                snapshots
+                    .lock()
+                    .map_err(|_| VmError::new(ErrorKind::Host, "snapshots are poisoned"))?
+                    .push(owner.load(Ordering::Relaxed));
             }
             Ok(vec![LuaValue::Bool(accepted)])
         })
     };
+    let trace = Arc::new(Mutex::new(Vec::new()));
     let record: HostFunction = {
         let trace = trace.clone();
-        Rc::new(move |args| {
-            trace.borrow_mut().push(args.to_vec());
+        Arc::new(move |args| {
+            trace
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "trace is poisoned"))?
+                .push(args.to_vec());
             Ok(vec![])
         })
     };
@@ -51,7 +60,8 @@ fn nested_events_observe_committed_owner_and_post_callback_snapshots() {
     let mut a = Addon::new(config.clone()).unwrap();
     let mut b = Addon::new(config).unwrap();
     targets
-        .borrow_mut()
+        .lock()
+        .unwrap()
         .extend([a.synchronous_events(), b.synchronous_events()]);
     a.load(br#"function onTsunami(m) server.record(1,m); if m==1 then g_savedata.inner=server.spawn(2) end end
 function onCreate() g_savedata.outer=server.spawn(1); server.record(3,99) end"#,"a").unwrap();
@@ -62,9 +72,9 @@ function onCreate() g_savedata.outer=server.spawn(1); server.record(3,99) end"#,
         .into_iter()
         .map(|(a, b)| vec![LuaValue::Integer(a), LuaValue::Integer(b)])
         .collect::<Vec<_>>();
-    assert_eq!(*trace.borrow(), expected);
-    assert_eq!(*snapshots.borrow(), [2, 2]);
-    assert_eq!(owner.get(), 2);
+    assert_eq!(*trace.lock().unwrap(), expected);
+    assert_eq!(*snapshots.lock().unwrap(), [2, 2]);
+    assert_eq!(owner.load(Ordering::Relaxed), 2);
     let saved = a.savedata().unwrap();
     let LuaValue::Table(saved) = saved else {
         panic!("savedata table expected")
@@ -79,21 +89,25 @@ function onCreate() g_savedata.outer=server.spawn(1); server.record(3,99) end"#,
 
 #[test]
 fn failed_event_does_not_rollback_host_admission_or_abort_outer_host_call() {
-    let target = Rc::new(RefCell::new(None::<SynchronousEvents>));
-    let owner = Rc::new(Cell::new(false));
-    let failure = Rc::new(RefCell::new(None));
+    let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
+    let owner = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failure = Arc::new(Mutex::new(None));
     let spawn: HostFunction = {
         let target = target.clone();
         let owner = owner.clone();
         let failure = failure.clone();
-        Rc::new(move |_| {
-            owner.set(true);
-            *failure.borrow_mut() = target
-                .borrow()
+        Arc::new(move |_| {
+            owner.store(true, Ordering::Relaxed);
+            let handle = target
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "target is poisoned"))?
                 .as_ref()
-                .unwrap()
-                .dispatch("onTsunami", &[])
-                .err();
+                .cloned()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "target is not installed"))?;
+            *failure
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "failure slot is poisoned"))? =
+                handle.dispatch("onTsunami", &[]).err();
             Ok(vec![LuaValue::Bool(true)])
         })
     };
@@ -101,26 +115,29 @@ fn failed_event_does_not_rollback_host_admission_or_abort_outer_host_call() {
     config.server.insert("spawn".into(), spawn);
     config.server.insert(
         "fail".into(),
-        Rc::new(|_| Err(VmError::new(ErrorKind::Host, "expected callback failure"))),
+        Arc::new(|_| Err(VmError::new(ErrorKind::Host, "expected callback failure"))),
     );
-    let observations = Rc::new(RefCell::new(Vec::new()));
+    let observations = Arc::new(Mutex::new(Vec::new()));
     let record = observations.clone();
     config.server.insert(
         "record".into(),
-        Rc::new(move |args| {
-            *record.borrow_mut() = args.to_vec();
+        Arc::new(move |args| {
+            *record
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "observations are poisoned"))? =
+                args.to_vec();
             Ok(vec![])
         }),
     );
     let mut addon = Addon::new(config).unwrap();
     let handle = addon.synchronous_events();
-    *target.borrow_mut() = Some(handle.clone());
+    *target.lock().unwrap() = Some(handle.clone());
     addon.load(b"function onTsunami() g_savedata.changed=true;server.fail() end function onCreate() g_savedata.accepted=server.spawn();g_savedata.after=true;server.record(g_savedata.changed,g_savedata.accepted,g_savedata.after) end","fail").unwrap();
     assert_eq!(addon.start().unwrap(), RunOutcome::Completed);
-    assert!(owner.get());
-    assert!(failure.borrow().is_some());
+    assert!(owner.load(Ordering::Relaxed));
+    assert!(failure.lock().unwrap().is_some());
     assert!(!handle.is_live());
-    assert_eq!(*observations.borrow(), vec![LuaValue::Bool(true); 3]);
+    assert_eq!(*observations.lock().unwrap(), vec![LuaValue::Bool(true); 3]);
     assert!(addon.tick(1).is_err());
 }
 
@@ -147,31 +164,36 @@ fn synchronous_events_reject_destroyed_and_reloaded_owners() {
 
 #[test]
 fn short_nested_callbacks_share_one_instruction_budget() {
-    let target = Rc::new(RefCell::new(None::<SynchronousEvents>));
-    let calls = Rc::new(Cell::new(0));
+    let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
+    let calls = Arc::new(AtomicUsize::new(0));
     let handler: HostFunction = {
         let target = target.clone();
         let calls = calls.clone();
-        Rc::new(move |args| {
-            calls.set(calls.get() + 1);
-            let handle = target.borrow().as_ref().unwrap().clone();
+        Arc::new(move |args| {
+            calls.fetch_add(1, Ordering::Relaxed);
+            let handle = target
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "target is poisoned"))?
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "target is not installed"))?;
             let _callback_result = handle.dispatch("onTsunami", args);
             Ok(vec![LuaValue::Bool(true)])
         })
     };
     let mut config = AddonConfig::default();
-    config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
     config.server.insert("spawn".into(), handler);
     let mut addon = Addon::new(config).unwrap();
-    *target.borrow_mut() = Some(addon.synchronous_events());
+    *target.lock().unwrap() = Some(addon.synchronous_events());
     addon.load(b"function onTsunami(n) if n<20 then server.spawn(n+1) end end function onCreate() server.spawn(1) end","budget").unwrap();
     assert_eq!(addon.start().unwrap_err().kind, ErrorKind::Limit);
+    let attempts = calls.load(Ordering::Relaxed);
     assert!(
-        calls.get() > 1 && calls.get() < 20,
-        "nested callbacks reset the instruction budget: {}",
-        calls.get()
+        attempts > 1 && attempts < 20,
+        "nested callbacks reset the instruction budget: {attempts}"
     );
-    assert!(!target.borrow().as_ref().unwrap().is_live());
+    assert!(!target.lock().unwrap().as_ref().unwrap().is_live());
 }
 
 #[cfg(feature = "debug")]
@@ -208,20 +230,24 @@ fn nested_return_restores_each_callers_instruction_hook() {
         "function onTsunami(n) end function onCreate() server.spawn(1); for i=1,10000 do g_savedata.n=i end end",
         "function onTsunami(n) if n==1 then server.spawn(2); for i=1,10000 do g_savedata.n=i end end end function onCreate() server.spawn(1) end",
     ] {
-        let target = Rc::new(RefCell::new(None::<SynchronousEvents>));
+        let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
         let handler: HostFunction = {
             let target = target.clone();
-            Rc::new(move |args| {
-                let handle = target.borrow().as_ref().unwrap().clone();
+            Arc::new(move |args| {
+                let handle = target
+                    .lock()
+                    .map_err(|_| VmError::new(ErrorKind::Host, "target is poisoned"))?
+                    .clone()
+                    .ok_or_else(|| VmError::new(ErrorKind::Host, "target is not installed"))?;
                 let _callback_result = handle.dispatch("onTsunami", args);
                 Ok(vec![])
             })
         };
         let mut config = AddonConfig::default();
-        config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+        config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
         config.server.insert("spawn".into(), handler);
         let mut addon = Addon::new(config).unwrap();
-        *target.borrow_mut() = Some(addon.synchronous_events());
+        *target.lock().unwrap() = Some(addon.synchronous_events());
         addon.load(source.as_bytes(), "restore-budget").unwrap();
         assert_eq!(addon.start().unwrap_err().kind, ErrorKind::Limit);
     }
@@ -232,7 +258,7 @@ fn scoped_errors_retain_later_callbacks_until_the_host_call_returns() {
     let mut config = AddonConfig::default();
     config.server.insert(
         "fail".into(),
-        Rc::new(|_| Err(VmError::new(ErrorKind::Host, "expected"))),
+        Arc::new(|_| Err(VmError::new(ErrorKind::Host, "expected"))),
     );
     let mut addon = Addon::new(config).unwrap();
     addon
@@ -267,7 +293,7 @@ fn scoped_errors_retain_later_callbacks_until_the_host_call_returns() {
 #[test]
 fn scoped_idle_callbacks_share_budget_and_limits_are_immediately_terminal() {
     let mut config = AddonConfig::default();
-    config.limits.instruction_budget = std::num::NonZeroU64::new(60).unwrap();
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(60).unwrap());
     let mut addon = Addon::new(config).unwrap();
     addon
         .load(
@@ -309,13 +335,18 @@ fn nonfunction_addon_callbacks_are_missing() {
 #[test]
 fn nested_lua_error_restores_debugger_and_preserves_non_tick_callbacks() {
     use storm_lua_vm::runner::StepMode;
-    let target = Rc::new(RefCell::new(None::<SynchronousEvents>));
+    let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
     let mut config = AddonConfig::default();
     let callbacks = target.clone();
     config.server.insert(
         "spawn".into(),
-        Rc::new(move |_| {
-            let events = callbacks.borrow().as_ref().unwrap().clone();
+        Arc::new(move |_| {
+            let events = callbacks
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "target is poisoned"))?
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "target is not installed"))?;
             let _callback_error = events.dispatch("onTsunami", &[]);
             Ok(vec![])
         }),
@@ -324,13 +355,13 @@ fn nested_lua_error_restores_debugger_and_preserves_non_tick_callbacks() {
     addon.load(b"function onTsunami() error('expected') end\nfunction onTick()\n server.spawn()\n g_savedata.after=true\nend", "=debug-nested").unwrap();
     addon.start().unwrap();
     let pass = addon.begin_synchronous_event_pass().unwrap();
-    *target.borrow_mut() = Some(pass.events());
+    *target.lock().unwrap() = Some(pass.events());
     addon
         .set_breakpoints(vec![("=debug-nested".into(), 4)])
         .unwrap();
     assert_eq!(addon.tick(1).unwrap(), RunOutcome::Suspended);
     drop(pass);
-    assert!(!target.borrow().as_ref().unwrap().is_live());
+    assert!(!target.lock().unwrap().as_ref().unwrap().is_live());
     assert!(!addon.is_failed());
     assert_eq!(
         addon.resume(StepMode::Continue).unwrap(),
@@ -346,25 +377,42 @@ fn nested_lua_error_restores_debugger_and_preserves_non_tick_callbacks() {
 
 #[test]
 fn synchronous_callbacks_reject_regular_vm_reentry_without_resetting_the_budget() {
-    let owner = Rc::new(RefCell::new(None::<Addon>));
-    let target = Rc::new(RefCell::new(None::<SynchronousEvents>));
+    // Regular (non-synchronous) re-entry into the owning Addon must report Busy
+    // while the synchronous callback is active, without resetting its budget.
+    let owner: Arc<Mutex<Option<Addon>>> = Arc::new(Mutex::new(None));
+    let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
     let mut config = AddonConfig::default();
-    let weak_owner = Rc::downgrade(&owner);
+    let weak_owner = Arc::downgrade(&owner);
     let events = target.clone();
     config.server.insert(
         "probe".into(),
-        Rc::new(move |_| {
-            let shared = weak_owner.upgrade().unwrap();
-            let mut guard = shared.borrow_mut();
-            let addon = guard.as_mut().unwrap();
-            assert_eq!(addon.tick(1).unwrap_err().kind, ErrorKind::Busy);
+        Arc::new(move |_| {
+            let shared = weak_owner
+                .upgrade()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "owner was dropped"))?;
+            let mut guard = shared
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "owner is poisoned"))?;
+            let addon = guard
+                .as_mut()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "owner is not installed"))?;
+            let busy = |result: Result<RunOutcome, VmError>| {
+                assert_eq!(result.unwrap_err().kind, ErrorKind::Busy);
+            };
+            busy(addon.tick(1));
+            busy(addon.dispatch("onWhirlpool", &[]));
+            busy(addon.destroy());
             assert_eq!(
-                addon.dispatch("onWhirlpool", &[]).unwrap_err().kind,
-                ErrorKind::Busy
+                addon.savedata().unwrap_err().kind,
+                ErrorKind::Busy,
+                "savedata must reject a busy owner"
             );
-            assert_eq!(addon.destroy().unwrap_err().kind, ErrorKind::Busy);
-            assert_eq!(addon.savedata().unwrap_err().kind, ErrorKind::Busy);
-            let target = events.borrow().as_ref().unwrap().clone();
+            let target = events
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "target is poisoned"))?
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "target is not installed"))?;
             assert_eq!(
                 target.dispatch("onWhirlpool", &[]).unwrap(),
                 RunOutcome::Completed
@@ -376,14 +424,14 @@ fn synchronous_callbacks_reject_regular_vm_reentry_without_resetting_the_budget(
     addon.load(b"function onTsunami() server.probe() end function onWhirlpool() g_savedata.nested=true end", "regular-reentry").unwrap();
     addon.start().unwrap();
     let events = addon.synchronous_events();
-    *target.borrow_mut() = Some(events.clone());
-    *owner.borrow_mut() = Some(addon);
+    *target.lock().unwrap() = Some(events.clone());
+    *owner.lock().unwrap() = Some(addon);
     assert_eq!(
         events.dispatch("onTsunami", &[]).unwrap(),
         RunOutcome::Completed
     );
     assert!(events.is_live());
-    assert!(owner.borrow().as_ref().unwrap().savedata().is_ok());
+    assert!(owner.lock().unwrap().as_ref().unwrap().savedata().is_ok());
 }
 
 #[test]
@@ -425,4 +473,98 @@ fn ordinary_synchronous_lua_error_stops_ticks_and_retains_event_delivery() {
             .iter()
             .any(|(k, _)| k == &LuaValue::Bytes(b"ticked".to_vec())));
     }
+}
+
+#[test]
+fn synchronous_pass_and_nested_callbacks_count_every_instruction_above_64_budget() {
+    use std::num::NonZeroU64;
+    use storm_lua_vm::ExecutionLimits;
+
+    // Bypass A: Idle SynchronousEventPass with budget > 64 across many short dispatches.
+    let cfg_a = AddonConfig {
+        limits: ExecutionLimits {
+            instruction_budget: Some(NonZeroU64::new(500).unwrap()),
+            ..ExecutionLimits::default()
+        },
+        ..AddonConfig::default()
+    };
+    let mut addon_a = Addon::new(cfg_a).unwrap();
+    addon_a
+        .load(
+            b"function onTsunami() g_savedata[1] = (g_savedata[1] or 0) + 1 end",
+            "=pass-budget-500",
+        )
+        .unwrap();
+    addon_a.start().unwrap();
+    let pass = addon_a.begin_synchronous_event_pass().unwrap();
+    let events = pass.events();
+    let mut hit_limit = false;
+    for _ in 0..200 {
+        match events.dispatch("onTsunami", &[]) {
+            Ok(RunOutcome::Completed) => {}
+            Err(err) => {
+                assert_eq!(err.kind, ErrorKind::Limit);
+                hit_limit = true;
+                break;
+            }
+            other => panic!("unexpected outcome: {other:?}"),
+        }
+    }
+    assert!(
+        hit_limit,
+        "200 dispatches must exhaust instruction_budget=500"
+    );
+    drop(pass);
+    assert!(addon_a.is_failed());
+
+    // Bypass B: Nested SynchronousCallbacks from Lua after ~1,000-instruction inner loops.
+    let target = Arc::new(Mutex::new(None::<SynchronousEvents>));
+    let target_cb = target.clone();
+    let mut cfg_b = AddonConfig {
+        limits: ExecutionLimits {
+            instruction_budget: Some(NonZeroU64::new(5000).unwrap()),
+            ..ExecutionLimits::default()
+        },
+        ..AddonConfig::default()
+    };
+    cfg_b.server.insert(
+        "ping".into(),
+        Arc::new(move |_| {
+            let ev = target_cb
+                .lock()
+                .map_err(|_| VmError::new(ErrorKind::Host, "poisoned"))?
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| VmError::new(ErrorKind::Host, "missing"))?;
+            ev.dispatch("onTsunami", &[])?;
+            Ok(vec![])
+        }),
+    );
+    let mut addon_b = Addon::new(cfg_b).unwrap();
+    *target.lock().unwrap() = Some(addon_b.synchronous_events());
+    addon_b
+        .load(
+            br#"
+            function onTsunami()
+                g_savedata[1] = (g_savedata[1] or 0) + 1
+            end
+            function onTick()
+                for outer = 1, 20 do
+                    local s = 0
+                    for i = 1, 250 do
+                        s = s + i
+                    end
+                    server.ping()
+                end
+            end
+            "#,
+            "=nested-budget-5000",
+        )
+        .unwrap();
+    addon_b.start().unwrap();
+    let err = addon_b
+        .tick(1)
+        .expect_err("20 * ~1000 instructions must exceed instruction_budget=5000");
+    assert_eq!(err.kind, ErrorKind::Limit);
+    assert!(addon_b.is_failed());
 }

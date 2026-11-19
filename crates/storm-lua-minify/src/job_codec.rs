@@ -33,8 +33,12 @@ use serde::ser::{
 use serde::{Serialize, Serializer};
 use std::fmt::Display;
 
+const MAX_COLLECTION_LEN: usize = 16 * 1024 * 1024;
+const MAX_SIZE_HINT: usize = 4096;
+const MAX_ZST_ELEMENTS: usize = 65_536;
+
 #[derive(Debug)]
-pub(crate) struct CodecError(String);
+struct CodecError(String);
 
 impl Display for CodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -448,7 +452,7 @@ impl<'de> Deserializer<'de> {
         let mut shift: u32 = 0;
         loop {
             let byte = self.read_byte()?;
-            if shift >= 128 {
+            if shift >= 128 || (shift == 126 && byte > 0x03) {
                 return err("variable-length integer is too large");
             }
             value |= u128::from(byte & 0x7f) << shift;
@@ -461,7 +465,12 @@ impl<'de> Deserializer<'de> {
 
     fn read_len(&mut self) -> Result<usize> {
         let value = self.read_uleb128()?;
-        usize::try_from(value).map_err(|_| CodecError("length does not fit usize".to_owned()))
+        let len = usize::try_from(value)
+            .map_err(|_| CodecError("length does not fit usize".to_owned()))?;
+        if len > MAX_COLLECTION_LEN {
+            return err("collection length exceeds maximum");
+        }
+        Ok(len)
     }
 
     fn read_signed(&mut self) -> Result<i128> {
@@ -611,6 +620,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_seq(SeqReader {
             de: self,
             remaining: len,
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -618,6 +628,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_seq(SeqReader {
             de: self,
             remaining: len,
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -630,6 +641,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_seq(SeqReader {
             de: self,
             remaining: len,
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -642,6 +654,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_seq(SeqReader {
             de: self,
             remaining: fields.len(),
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -650,6 +663,8 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_map(MapReader {
             de: self,
             remaining: len,
+            key_start_pos: 0,
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -669,6 +684,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
 struct SeqReader<'a, 'de> {
     de: &'a mut Deserializer<'de>,
     remaining: usize,
+    zst_budget: usize,
 }
 
 impl<'de> SeqAccess<'de> for SeqReader<'_, 'de> {
@@ -679,17 +695,31 @@ impl<'de> SeqAccess<'de> for SeqReader<'_, 'de> {
             return Ok(None);
         }
         self.remaining -= 1;
-        seed.deserialize(&mut *self.de).map(Some)
+        let before = self.de.pos;
+        let element = seed.deserialize(&mut *self.de)?;
+        if self.de.pos == before {
+            if self.zst_budget == 0 {
+                return err("zero-sized sequence exceeds maximum length");
+            }
+            self.zst_budget -= 1;
+        }
+        Ok(Some(element))
     }
 
     fn size_hint(&self) -> Option<usize> {
-        Some(self.remaining)
+        Some(
+            self.remaining
+                .min(self.de.input.len().saturating_sub(self.de.pos))
+                .min(MAX_SIZE_HINT),
+        )
     }
 }
 
 struct MapReader<'a, 'de> {
     de: &'a mut Deserializer<'de>,
     remaining: usize,
+    key_start_pos: usize,
+    zst_budget: usize,
 }
 
 impl<'de> MapAccess<'de> for MapReader<'_, 'de> {
@@ -699,16 +729,28 @@ impl<'de> MapAccess<'de> for MapReader<'_, 'de> {
         if self.remaining == 0 {
             return Ok(None);
         }
+        self.key_start_pos = self.de.pos;
         seed.deserialize(&mut *self.de).map(Some)
     }
 
     fn next_value_seed<V2: DeserializeSeed<'de>>(&mut self, seed: V2) -> Result<V2::Value> {
         self.remaining -= 1;
-        seed.deserialize(&mut *self.de)
+        let value = seed.deserialize(&mut *self.de)?;
+        if self.de.pos == self.key_start_pos {
+            if self.zst_budget == 0 {
+                return err("zero-sized map exceeds maximum length");
+            }
+            self.zst_budget -= 1;
+        }
+        Ok(value)
     }
 
     fn size_hint(&self) -> Option<usize> {
-        Some(self.remaining)
+        Some(
+            self.remaining
+                .min(self.de.input.len().saturating_sub(self.de.pos))
+                .min(MAX_SIZE_HINT),
+        )
     }
 }
 
@@ -749,6 +791,7 @@ impl<'de> VariantAccess<'de> for VariantReader<'_, 'de> {
         visitor.visit_seq(SeqReader {
             de: self.de,
             remaining: len,
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 
@@ -760,6 +803,7 @@ impl<'de> VariantAccess<'de> for VariantReader<'_, 'de> {
         visitor.visit_seq(SeqReader {
             de: self.de,
             remaining: fields.len(),
+            zst_budget: MAX_ZST_ELEMENTS,
         })
     }
 }
@@ -830,5 +874,176 @@ mod tests {
         assert!(decode::<u32>(&bytes).is_err());
         assert!(decode::<u64>(&[0x80]).is_err());
         assert!(decode::<bool>(&[2]).is_err());
+    }
+
+    #[test]
+    fn bug_t1_09_uleb128_19th_byte_overflow_and_bounded_size_hints() {
+        // 1) 19th byte (`shift == 126`) carries only 2 remaining bits (`0..=3`).
+        // Byte `0x04` represents `2^128`, which previously wrapped silently to `Ok(0)`.
+        let mut two_pow_128 = vec![0x80_u8; 18];
+        two_pow_128.push(0x04);
+        assert!(
+            decode::<u128>(&two_pow_128).is_err(),
+            "2^128 must be rejected, not truncated to 0"
+        );
+        // `u128::MAX` (`18 * 0xff`, then `0x03`) must still round-trip cleanly.
+        let max_bytes = encode(&u128::MAX).unwrap();
+        assert_eq!(decode::<u128>(&max_bytes).unwrap(), u128::MAX);
+
+        // 2) Untrusted varint sequence/map lengths must never surface unbounded `size_hint`
+        // (which causes `SmallVec` / eager collectors to allocate multi-GB buffers on tiny inputs),
+        // and ZST `Vec<()>` with huge declared length must fail fast instead of spinning.
+        struct ProbeHint;
+        impl<'de> Deserialize<'de> for ProbeHint {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                struct HintVisitor;
+                impl<'de> serde::de::Visitor<'de> for HintVisitor {
+                    type Value = ProbeHint;
+                    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.write_str("bounded hint probe")
+                    }
+                    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                        self,
+                        seq: A,
+                    ) -> Result<Self::Value, A::Error> {
+                        let hint = seq.size_hint().unwrap_or(0);
+                        assert!(
+                            hint <= 4096,
+                            "SeqReader::size_hint returned unbounded untrusted length: {hint}"
+                        );
+                        Err(serde::de::Error::custom("probe done"))
+                    }
+                }
+                deserializer.deserialize_seq(HintVisitor)
+            }
+        }
+        // Encode a sequence claiming 10_000_000 elements in 4 bytes.
+        let mut huge_len = encode(&10_000_000_usize).unwrap();
+        huge_len.push(0);
+        let _ = decode::<ProbeHint>(&huge_len);
+        assert!(
+            decode::<Vec<()>>(&encode(&10_000_000_usize).unwrap()).is_err(),
+            "huge ZST Vec<()> on tiny payload must be rejected"
+        );
+        assert!(
+            decode::<std::collections::BTreeMap<(), ()>>(&encode(&10_000_000_usize).unwrap())
+                .is_err(),
+            "huge ZST BTreeMap<(), ()> on tiny payload must be rejected"
+        );
+    }
+
+    #[test]
+    fn bug_t1_10_binary_ast_interner_and_candidate_job_integrity() {
+        use crate::config::CompileOptions;
+        use crate::search::{
+            decode_and_evaluate_candidate_job, encode_candidate_job, prepare_search,
+        };
+        use storm_lua_syntax::ast::{Ast, Interner, Node, SymbolId};
+
+        // 1) Corrupt `Interner`: `map` empty, `strings` has `["alpha"]`.
+        #[derive(Serialize)]
+        struct CorruptInternerWire {
+            map: BTreeMap<String, SymbolId>,
+            strings: Vec<String>,
+        }
+        let corrupt_interner_bytes = encode(&CorruptInternerWire {
+            map: BTreeMap::new(),
+            strings: vec!["alpha".to_owned()],
+        })
+        .unwrap();
+        assert!(
+            decode::<Interner>(&corrupt_interner_bytes).is_err(),
+            "Interner with desynchronized map/strings must be rejected"
+        );
+
+        // 2) Corrupt `Ast`: `Node::Name(SymbolId(7))` with empty `Interner`.
+        let mut bad_sym_ast = Ast::new();
+        bad_sym_ast.push(Node::Block(Vec::new()));
+        bad_sym_ast.push(Node::Name(SymbolId(7)));
+        let bad_sym_bytes = encode(&bad_sym_ast).unwrap();
+        assert!(
+            decode::<Ast>(&bad_sym_bytes).is_err(),
+            "Ast with out-of-bounds SymbolId must be rejected"
+        );
+
+        // 3) Cyclic `Ast`: `Node 0 = Paren(0)`.
+        let mut cyclic_ast = Ast::new();
+        cyclic_ast.push(Node::Paren(0));
+        let cyclic_bytes = encode(&cyclic_ast).unwrap();
+        assert!(
+            decode::<Ast>(&cyclic_bytes).is_err(),
+            "Cyclic Ast must be rejected on binary decode"
+        );
+
+        // 4) Out-of-bounds `NodeId` child: `Node 0 = Paren(99)`.
+        let mut oob_child_ast = Ast::new();
+        oob_child_ast.push(Node::Paren(99));
+        let oob_child_bytes = encode(&oob_child_ast).unwrap();
+        assert!(
+            decode::<Ast>(&oob_child_bytes).is_err(),
+            "Ast with out-of-bounds child NodeId must be rejected"
+        );
+
+        // 5) `CandidateJob` with out-of-bounds `Variant.root` must return `Err`, never panic.
+        let (_ctx, jobs) = prepare_search(
+            "function onTick() output.setNumber(1, 1) end",
+            &CompileOptions::default(),
+        )
+        .unwrap();
+        let valid_bytes = encode_candidate_job(&jobs[0]).unwrap();
+        // `Variant` ends with `(ast, root, passes: Vec<PassRecord>)`; construct an invalid root
+        // by encoding a `Variant` wire tuple with `root = 99_999`.
+        let mut empty_block_ast = Ast::new();
+        empty_block_ast.push(Node::Num("1".into()));
+        let non_block_root_job = {
+            #[derive(Serialize)]
+            struct BadVariant<'a> {
+                name: &'a str,
+                ast: &'a Ast,
+                root: u32,
+                passes: Vec<crate::config::PassRecord>,
+            }
+            #[derive(Serialize)]
+            struct BadJob<'a> {
+                lexical_origins: Option<()>,
+                lexical_source: Option<String>,
+                variant: BadVariant<'a>,
+                aggressive: bool,
+                toggles: u128,
+                numeric_tolerance: Option<crate::config::NumericTolerance>,
+                exact_safe_constant_folding: bool,
+                zero_cost_newlines: bool,
+                order_base: usize,
+                target_speed: bool,
+                target_size: Option<usize>,
+            }
+            let _ = valid_bytes;
+            encode(&BadJob {
+                lexical_origins: None,
+                lexical_source: None,
+                variant: BadVariant {
+                    name: "bad",
+                    ast: &empty_block_ast,
+                    root: 99_999,
+                    passes: Vec::new(),
+                },
+                aggressive: false,
+                toggles: 0,
+                numeric_tolerance: None,
+                exact_safe_constant_folding: true,
+                zero_cost_newlines: false,
+                order_base: 0,
+                target_speed: false,
+                target_size: None,
+            })
+            .unwrap()
+        };
+        let eval_outcome =
+            std::panic::catch_unwind(|| decode_and_evaluate_candidate_job(&non_block_root_job));
+        assert!(
+            matches!(eval_outcome, Ok(Err(_))),
+            "corrupt Variant.root must return Err without panicking, got: {:?}",
+            eval_outcome.as_ref().map(|r| r.is_err())
+        );
     }
 }

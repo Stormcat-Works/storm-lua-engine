@@ -83,13 +83,15 @@ impl<'a> NumericProof<'a> {
             {
                 Some(Number::Float)
             }
-            Node::Call(function, _, None)
-                if matches!(
-                    self.analyzer
-                        .resolve_builtin_reference(*function)
-                        .as_deref(),
-                    Some("input.getNumber" | "property.getNumber")
-                ) =>
+            Node::Call(function, args, None)
+                if args.len() == 1
+                    && !matches!(self.ast.node(args[0]), Node::Call(..) | Node::Vararg)
+                    && matches!(
+                        self.analyzer
+                            .resolve_builtin_reference(*function)
+                            .as_deref(),
+                        Some("input.getNumber" | "property.getNumber")
+                    ) =>
             {
                 Some(Number::Float)
             }

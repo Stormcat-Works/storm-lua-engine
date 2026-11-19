@@ -1,4 +1,26 @@
 {
+  "componentCallbacks": [
+    "onParse",
+    "onAddToSimulation",
+    "onTick",
+    "onRender",
+    "onRemoveFromSimulation"
+  ],
+  "componentRoots": [
+    "math",
+    "string",
+    "table",
+    "debug",
+    "matrix",
+    "parser",
+    "component",
+    "ipairs",
+    "next",
+    "pairs",
+    "tonumber",
+    "tostring",
+    "type"
+  ],
   "default": "game",
   "extendedFunctions": [
     "assert",
@@ -6,13 +28,13 @@
     "pcall",
     "xpcall",
     "unpack",
-    "print"
+    "print",
+    "select"
   ],
   "gameFunctions": [
     "ipairs",
     "next",
     "pairs",
-    "select",
     "tonumber",
     "tostring",
     "type"
@@ -23,6 +45,7 @@
     "xpcall",
     "error",
     "assert",
+    "select",
     "setmetatable",
     "getmetatable",
     "rawget",
@@ -65,7 +88,6 @@
     "ipairs",
     "pairs",
     "next",
-    "select",
     "tonumber",
     "tostring",
     "map",

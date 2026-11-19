@@ -281,7 +281,7 @@ impl ClassifierData {
         }
         binding.kind == BindingKind::Global
     }
-    fn normalize(&self, ast: &Ast, res: &Resolution, call: &mut Call) {
+    fn normalize(&self, ast: &Ast, res: &Resolution, call: &mut Call, capture_origins: bool) {
         let mut seen = HashSet::new();
         loop {
             if !matches!(ast.node(call.callee), Node::Name(_)) {
@@ -337,7 +337,7 @@ impl ClassifierData {
             for &arg in args {
                 if let Some(atom) = Atom::read(ast, arg) {
                     mapped.push(atom);
-                    if ast.nodes.tracks_origins() {
+                    if capture_origins {
                         origin_arguments.push(arg);
                     }
                 } else if matches!(ast.node(arg), Node::Name(_)) {
@@ -348,7 +348,7 @@ impl ClassifierData {
                         return;
                     };
                     mapped.push(value.clone());
-                    if ast.nodes.tracks_origins() {
+                    if capture_origins {
                         origin_arguments.push(call.origin_arguments[pos]);
                     }
                 } else {
@@ -360,7 +360,17 @@ impl ClassifierData {
             call.origin_arguments = origin_arguments;
         }
     }
+    #[cfg(test)]
     fn call(&self, ast: &Ast, res: &Resolution, statement: NodeId) -> Option<Call> {
+        self.call_capturing(ast, res, statement, ast.nodes.tracks_origins())
+    }
+    fn call_capturing(
+        &self,
+        ast: &Ast,
+        res: &Resolution,
+        statement: NodeId,
+        capture_origins: bool,
+    ) -> Option<Call> {
         let Node::Callstat(expression) = ast.node(statement) else {
             return None;
         };
@@ -381,13 +391,13 @@ impl ClassifierData {
             total_read: false,
             args: atoms,
             origin_call: *expression,
-            origin_arguments: if ast.nodes.tracks_origins() {
+            origin_arguments: if capture_origins {
                 args.clone()
             } else {
                 Vec::new()
             },
         };
-        self.normalize(ast, res, &mut call);
+        self.normalize(ast, res, &mut call, capture_origins);
         call.total_read = self.total_callee_read(ast, res, call.callee);
         call.key = super::immutable_values::expression_key(ast, res, call.callee);
         Some(call)
@@ -1471,6 +1481,7 @@ pub fn pack_draw_records(ast: &mut Ast, root: NodeId, rename: bool) -> PassResul
 /// consumer (the record planner and the regular/shared synthesizers used
 /// to re-derive them with separate walks). Thresholds stay at the
 /// consumers; only the predicates are shared.
+#[derive(Clone, Copy)]
 struct InputFacts {
     screen: bool,
     potential: usize,
@@ -1559,26 +1570,38 @@ struct SharedInput {
     input: Ast,
     root: NodeId,
     facts: InputFacts,
+    capture_call_ids: bool,
     closed_key_space: std::cell::OnceCell<bool>,
     chunk_locals: std::cell::OnceCell<usize>,
     analysis: std::cell::OnceCell<InputAnalysis>,
 }
 
 impl SharedInput {
-    fn new(input: Ast, root: NodeId, facts: InputFacts) -> Self {
+    fn new_with_capture(
+        input: Ast,
+        root: NodeId,
+        facts: InputFacts,
+        capture_call_ids: bool,
+    ) -> Self {
         Self {
             input,
             root,
             facts,
+            capture_call_ids,
             closed_key_space: std::cell::OnceCell::new(),
             chunk_locals: std::cell::OnceCell::new(),
             analysis: std::cell::OnceCell::new(),
         }
     }
 
+    #[cfg(test)]
     fn from_input(input: Ast, root: NodeId) -> Self {
+        Self::from_input_with_capture(input, root, false)
+    }
+
+    fn from_input_with_capture(input: Ast, root: NodeId, capture_call_ids: bool) -> Self {
         let facts = InputFacts::compute(&input, root);
-        Self::new(input, root, facts)
+        Self::new_with_capture(input, root, facts, capture_call_ids)
     }
 
     fn facts(&self) -> &InputFacts {
@@ -1618,131 +1641,262 @@ impl SharedInput {
 
     fn call(&self, statement: NodeId) -> Option<Call> {
         let analysis = self.analysis();
-        analysis.data.call(&self.input, &analysis.res, statement)
+        analysis.data.call_capturing(
+            &self.input,
+            &analysis.res,
+            statement,
+            self.input.nodes.tracks_origins() || self.capture_call_ids,
+        )
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DrawVariantKind {
+    Unchanged,
+    Legacy,
+    Enhanced,
+    Regular,
+    Dense,
+    DenseRegular,
+    Shared,
+}
+
+struct PackPlan {
+    helpers: Vec<Helper>,
+    plans: BTreeMap<NodeId, Vec<Plan>>,
+    dense: bool,
+    chunk_locals: usize,
+}
+
+#[derive(Default)]
+pub(crate) struct DrawReplayCache {
+    legacy_plan: Option<PackPlan>,
+    enhanced_plan: Option<PackPlan>,
+    regular_synth_plan: Option<regular::RegularPlan>,
+    regular_plan: Option<PackPlan>,
+    dense_plan: Option<PackPlan>,
+    dense_regular_plan: Option<PackPlan>,
+    shared_synth_plan: Option<shared::SharedPlan>,
+    shared_plan: Option<PackPlan>,
+}
+
+pub(crate) fn has_eligible_draws(ast: &Ast, root: NodeId) -> bool {
+    let facts = InputFacts::compute(ast, root);
+    facts.screen && facts.potential >= 4
+}
+
 pub(crate) fn record_variants(ast: &Ast, root: NodeId, rename: bool) -> Vec<(Ast, PassResult)> {
+    record_variants_tagged_impl(ast, root, rename, false)
+        .0
+        .into_iter()
+        .map(|(_, variant_ast, res)| (variant_ast, res))
+        .collect()
+}
+
+pub(crate) fn record_variants_tagged(
+    ast: &Ast,
+    root: NodeId,
+    rename: bool,
+) -> (Vec<(DrawVariantKind, Ast, PassResult)>, DrawReplayCache) {
+    record_variants_tagged_impl(ast, root, rename, true)
+}
+
+fn record_variants_tagged_impl(
+    ast: &Ast,
+    root: NodeId,
+    rename: bool,
+    for_replay: bool,
+) -> (Vec<(DrawVariantKind, Ast, PassResult)>, DrawReplayCache) {
     // Most onTick programs contain no eligible drawing input. Do not pay
     // for several resolvers, planners and final cleanups on that path.
     let facts = InputFacts::compute(ast, root);
     if !facts.screen || facts.potential < 4 {
-        return vec![(
-            ast.clone(),
-            PassResult {
-                root,
-                saved: Some(0),
-                details: None,
-            },
-        )];
+        return (
+            vec![(
+                DrawVariantKind::Unchanged,
+                ast.clone(),
+                PassResult {
+                    root,
+                    saved: Some(0),
+                    details: None,
+                },
+            )],
+            DrawReplayCache::default(),
+        );
     }
-    let input = SharedInput::new(ast.clone(), root, facts);
     let mut shared_costs = BTreeMap::<Shape, usize>::new();
+    let input = SharedInput::new_with_capture(ast.clone(), root, facts, for_replay);
+    let mut cache = DrawReplayCache::default();
+
     let mut legacy = ast.clone();
-    let result = pack_impl(
-        &mut legacy,
-        root,
-        rename,
-        false,
-        false,
-        &mut shared_costs,
-        &input,
-    );
+    let legacy_plan = plan_pack(false, false, &mut shared_costs, &input, for_replay);
+    let result = apply_optional_pack_plan(&mut legacy, root, rename, legacy_plan.as_ref());
+    if for_replay {
+        cache.legacy_plan = legacy_plan;
+    }
+
     let mut enhanced = ast.clone();
-    let extra = pack_impl(
-        &mut enhanced,
-        root,
-        rename,
-        true,
-        false,
-        &mut shared_costs,
-        &input,
-    );
-    let mut out = vec![(legacy, result)];
-    if enhanced.nodes != out[0].0.nodes || !enhanced.strings.same_symbols(&out[0].0.strings) {
-        out.push((enhanced, extra));
+    let enhanced_plan = plan_pack(true, false, &mut shared_costs, &input, for_replay);
+    let extra = apply_optional_pack_plan(&mut enhanced, root, rename, enhanced_plan.as_ref());
+    let mut out = vec![(DrawVariantKind::Legacy, legacy, result)];
+    if enhanced.nodes != out[0].1.nodes || !enhanced.strings.same_symbols(&out[0].1.strings) {
+        if for_replay {
+            cache.enhanced_plan = enhanced_plan;
+        }
+        out.push((DrawVariantKind::Enhanced, enhanced, extra));
     }
     let mut regular = ast.clone();
-    let loops = regular::synthesize(&mut regular, root, rename, &input);
+    let regular_synth = regular::plan(&input);
+    let loops = match &regular_synth {
+        Some(plan) => regular::apply_plan(&mut regular, root, rename, plan),
+        None => 0,
+    };
+    if for_replay && loops > 0 {
+        cache.regular_synth_plan = regular_synth;
+    }
     let dense_regular = (loops > 0).then(|| regular.clone());
     // Both packs below run on the synthesized content, so they share one bundle.
-    let reg_input = (loops > 0).then(|| SharedInput::from_input(regular.clone(), root));
+    let reg_input = (loops > 0)
+        .then(|| SharedInput::from_input_with_capture(regular.clone(), root, for_replay));
     if let Some(reg_input) = &reg_input {
-        let mut result = pack_impl(
-            &mut regular,
-            root,
-            rename,
-            true,
-            false,
-            &mut shared_costs,
-            reg_input,
-        );
+        let regular_plan = plan_pack(true, false, &mut shared_costs, reg_input, for_replay);
+        let mut result =
+            apply_optional_pack_plan(&mut regular, root, rename, regular_plan.as_ref());
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&regular, root)) as u64);
         result
             .details
             .get_or_insert_with(Vec::new)
             .push(format!("exact_inline_loops={loops}"));
-        out.push((regular, result));
+        if for_replay {
+            cache.regular_plan = regular_plan;
+        }
+        out.push((DrawVariantKind::Regular, regular, result));
     }
     let mut dense = ast.clone();
-    let result = pack_impl(
-        &mut dense,
-        root,
-        rename,
-        true,
-        true,
-        &mut shared_costs,
-        &input,
-    );
+    let dense_plan = plan_pack(true, true, &mut shared_costs, &input, for_replay);
+    let result = apply_optional_pack_plan(&mut dense, root, rename, dense_plan.as_ref());
     if !out
         .iter()
-        .any(|(a, _)| a.nodes == dense.nodes && a.strings.same_symbols(&dense.strings))
+        .any(|(_, a, _)| a.nodes == dense.nodes && a.strings.same_symbols(&dense.strings))
     {
-        out.push((dense, result));
+        if for_replay {
+            cache.dense_plan = dense_plan;
+        }
+        out.push((DrawVariantKind::Dense, dense, result));
     }
     if let (Some(mut dense_regular), Some(reg_input)) = (dense_regular, &reg_input) {
-        let mut result = pack_impl(
+        let dense_regular_plan = plan_pack(true, true, &mut shared_costs, reg_input, for_replay);
+        let mut result = apply_optional_pack_plan(
             &mut dense_regular,
             root,
             rename,
-            true,
-            true,
-            &mut shared_costs,
-            reg_input,
+            dense_regular_plan.as_ref(),
         );
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&dense_regular, root)) as u64);
-        if !out.iter().any(|(a, _)| {
+        if !out.iter().any(|(_, a, _)| {
             a.nodes == dense_regular.nodes && a.strings.same_symbols(&dense_regular.strings)
         }) {
-            out.push((dense_regular, result));
+            if for_replay {
+                cache.dense_regular_plan = dense_regular_plan;
+            }
+            out.push((DrawVariantKind::DenseRegular, dense_regular, result));
         }
     }
     let mut shared = ast.clone();
-    let dictionaries = shared::synthesize(&mut shared, root, rename, &input);
+    let shared_synth = shared::plan(&input);
+    let dictionaries = match &shared_synth {
+        Some(plan) => shared::apply_plan(&mut shared, root, rename, plan),
+        None => 0,
+    };
     if dictionaries > 0 {
-        let shared_input = SharedInput::from_input(shared.clone(), root);
-        let mut result = pack_impl(
-            &mut shared,
-            root,
-            rename,
-            true,
-            true,
-            &mut shared_costs,
-            &shared_input,
-        );
+        if for_replay {
+            cache.shared_synth_plan = shared_synth;
+        }
+        let shared_input = SharedInput::from_input_with_capture(shared.clone(), root, for_replay);
+        let shared_plan = plan_pack(true, true, &mut shared_costs, &shared_input, for_replay);
+        let mut result = apply_optional_pack_plan(&mut shared, root, rename, shared_plan.as_ref());
         result.saved =
             Some(measure_size(ast, root).saturating_sub(measure_size(&shared, root)) as u64);
         result
             .details
             .get_or_insert_with(Vec::new)
             .push(format!("shared_pair_decoders={dictionaries}"));
-        out.push((shared, result));
+        if for_replay {
+            cache.shared_plan = shared_plan;
+        }
+        out.push((DrawVariantKind::Shared, shared, result));
     }
-    out
+    (out, cache)
 }
 
+pub(crate) fn apply_variant(
+    ast: &mut Ast,
+    root: NodeId,
+    rename: bool,
+    kind: DrawVariantKind,
+    cache: DrawReplayCache,
+) -> PassResult {
+    match kind {
+        DrawVariantKind::Unchanged => PassResult {
+            root,
+            saved: Some(0),
+            details: None,
+        },
+        DrawVariantKind::Legacy => {
+            apply_optional_pack_plan(ast, root, rename, cache.legacy_plan.as_ref())
+        }
+        DrawVariantKind::Enhanced => {
+            apply_optional_pack_plan(ast, root, rename, cache.enhanced_plan.as_ref())
+        }
+        DrawVariantKind::Dense => {
+            apply_optional_pack_plan(ast, root, rename, cache.dense_plan.as_ref())
+        }
+        DrawVariantKind::Regular => {
+            let before_size = measure_size(ast, root);
+            let loops = match &cache.regular_synth_plan {
+                Some(plan) => regular::apply_plan(ast, root, rename, plan),
+                None => 0,
+            };
+            let mut result =
+                apply_optional_pack_plan(ast, root, rename, cache.regular_plan.as_ref());
+            result.saved = Some(before_size.saturating_sub(measure_size(ast, root)) as u64);
+            result
+                .details
+                .get_or_insert_with(Vec::new)
+                .push(format!("exact_inline_loops={loops}"));
+            result
+        }
+        DrawVariantKind::DenseRegular => {
+            let before_size = measure_size(ast, root);
+            if let Some(plan) = &cache.regular_synth_plan {
+                let _loops = regular::apply_plan(ast, root, rename, plan);
+            }
+            let mut result =
+                apply_optional_pack_plan(ast, root, rename, cache.dense_regular_plan.as_ref());
+            result.saved = Some(before_size.saturating_sub(measure_size(ast, root)) as u64);
+            result
+        }
+        DrawVariantKind::Shared => {
+            let before_size = measure_size(ast, root);
+            let dictionaries = match &cache.shared_synth_plan {
+                Some(plan) => shared::apply_plan(ast, root, rename, plan),
+                None => 0,
+            };
+            let mut result =
+                apply_optional_pack_plan(ast, root, rename, cache.shared_plan.as_ref());
+            result.saved = Some(before_size.saturating_sub(measure_size(ast, root)) as u64);
+            result
+                .details
+                .get_or_insert_with(Vec::new)
+                .push(format!("shared_pair_decoders={dictionaries}"));
+            result
+        }
+    }
+}
+
+#[cfg(test)]
 fn pack_impl(
     ast: &mut Ast,
     root: NodeId,
@@ -1752,22 +1906,30 @@ fn pack_impl(
     costs: &mut BTreeMap<Shape, usize>,
     input: &SharedInput,
 ) -> PassResult {
-    let unchanged = || PassResult {
-        root,
-        saved: Some(0),
-        details: None,
-    };
+    let plan = plan_pack(enhanced, dense, costs, input, ast.nodes.tracks_origins());
+    apply_optional_pack_plan(ast, root, rename, plan.as_ref())
+}
+
+fn plan_pack(
+    enhanced: bool,
+    dense: bool,
+    costs: &mut BTreeMap<Shape, usize>,
+    input: &SharedInput,
+    capture_origins: bool,
+) -> Option<PackPlan> {
     if input.facts().potential < 4 || input.facts().jumps || !input.closed_key_space() {
-        return unchanged();
+        return None;
     }
     let source = input.source();
     let mut helpers = Vec::<Helper>::new();
     let mut by_shape = BTreeMap::<Shape, usize>::new();
     let mut plans = BTreeMap::<NodeId, Vec<Plan>>::new();
-    let helper_budget = MAX_HELPERS.min(175usize.saturating_sub(input.chunk_locals()));
+    let chunk_locals_count = input.chunk_locals();
+    let helper_budget = MAX_HELPERS.min(175usize.saturating_sub(chunk_locals_count));
     if helper_budget == 0 {
-        return unchanged();
+        return None;
     }
+    let keep_origins = source.nodes.tracks_origins() || capture_origins;
     for block in input.blocks().iter().copied() {
         let Node::Block(stmts) = source.node(block) else {
             unreachable!()
@@ -1917,7 +2079,7 @@ fn pack_impl(
                         id
                     };
                     plans.entry(block).or_default().push(Plan {
-                        origins: if source.nodes.tracks_origins() {
+                        origins: if keep_origins {
                             calls[at..best.stop].to_vec()
                         } else {
                             Vec::new()
@@ -1937,12 +2099,35 @@ fn pack_impl(
         }
     }
     if plans.is_empty() {
-        return unchanged();
+        return None;
     }
     // Include a pessimistic allowance for pooled payloads below.
     if input.max_inherited() + helpers.len() + 24 > 245 {
-        return unchanged();
+        return None;
     }
+    Some(PackPlan {
+        helpers,
+        plans,
+        dense,
+        chunk_locals: chunk_locals_count,
+    })
+}
+
+fn apply_optional_pack_plan(
+    ast: &mut Ast,
+    root: NodeId,
+    rename: bool,
+    plan: Option<&PackPlan>,
+) -> PassResult {
+    let unchanged = || PassResult {
+        root,
+        saved: Some(0),
+        details: None,
+    };
+    let Some(pack_plan) = plan else {
+        return unchanged();
+    };
+    let source = ast.clone();
     let mut target = source.clone();
     let mut taken = source
         .strings
@@ -1950,15 +2135,17 @@ fn pack_impl(
         .into_iter()
         .collect::<HashSet<_>>();
     let mut serial = 0;
-    let helper_names = helpers
+    let helper_names = pack_plan
+        .helpers
         .iter()
         .map(|_| fresh(&mut target, &mut taken, "draw_replay", &mut serial))
         .collect::<Vec<_>>();
     let mut definitions = Vec::new();
-    for (i, helper) in helpers.iter().enumerate() {
+    for (i, helper) in pack_plan.helpers.iter().enumerate() {
         let first = target.nodes.len();
         let mut trace = source.nodes.tracks_origins().then(|| {
-            let batches = plans
+            let batches = pack_plan
+                .plans
                 .values()
                 .flatten()
                 .filter(|p| p.helper == i)
@@ -1974,14 +2161,14 @@ fn pack_impl(
             &mut trace,
         );
         if let Some(trace) = trace {
-            trace.finish(&mut target, source, first, definition);
+            trace.finish(&mut target, &source, first, definition);
         }
         definitions.push(definition);
     }
     // Repeated byte payloads (e.g. the common background of nine cards) share
     // one immutable string. No table allocation or identity is shared.
     let mut payload_counts = BTreeMap::<String, usize>::new();
-    for plan in plans.values().flatten() {
+    for plan in pack_plan.plans.values().flatten() {
         if let Some(text) = plan.payload.bytes_text() {
             *payload_counts.entry(text.into_owned()).or_default() += 1;
         }
@@ -1990,7 +2177,9 @@ fn pack_impl(
     let mut symbols = Vec::new();
     let mut values = Vec::new();
     for (bytes, count) in payload_counts {
-        if symbols.len() >= 24 || input.chunk_locals() + helpers.len() + symbols.len() >= 180 {
+        if symbols.len() >= 24
+            || pack_plan.chunk_locals + pack_plan.helpers.len() + symbols.len() >= 180
+        {
             break;
         }
         // The shared payload's rendered size, identical to the size
@@ -2004,7 +2193,8 @@ fn pack_impl(
         symbols.push(symbol);
         let payload = Payload::Bytes(BytesPayload::Literal(bytes.clone())).emit(&mut target);
         if target.nodes.tracks_origins() {
-            let originals = plans
+            let originals = pack_plan
+                .plans
                 .values()
                 .flatten()
                 .filter(|p| {
@@ -2018,12 +2208,12 @@ fn pack_impl(
             provenance::derive(
                 &mut target,
                 payload,
-                source,
+                &source,
                 &originals,
                 "draw-record-shared-payload",
             );
         }
-        if dense {
+        if pack_plan.dense {
             dictionary::compress_literal(&mut target, payload);
         }
         values.push(payload);
@@ -2037,7 +2227,7 @@ fn pack_impl(
         definitions.push(storage);
     }
     let mut batched = 0;
-    for (block, runs) in plans {
+    for (&block, runs) in &pack_plan.plans {
         let Node::Block(old) = source.node(block) else {
             unreachable!()
         };
@@ -2049,7 +2239,7 @@ fn pack_impl(
             let mut args = plan
                 .targets
                 .iter()
-                .map(|&n| copy_callee(source, &mut target, n))
+                .map(|&n| copy_callee(&source, &mut target, n))
                 .collect::<Vec<_>>();
             let payload = plan
                 .payload
@@ -2061,12 +2251,12 @@ fn pack_impl(
                 provenance::payload(
                     &mut target,
                     emitted,
-                    source,
+                    &source,
                     &plan.origins,
-                    &helpers[plan.helper].shape,
+                    &pack_plan.helpers[plan.helper].shape,
                 );
             }
-            if dense && payload.is_none() && matches!(plan.payload, Payload::Bytes(_)) {
+            if pack_plan.dense && payload.is_none() && matches!(plan.payload, Payload::Bytes(_)) {
                 dictionary::compress_literal(&mut target, emitted);
             }
             args.push(emitted);
@@ -2082,11 +2272,17 @@ fn pack_impl(
                     .iter()
                     .map(|c| c.origin_call)
                     .collect::<Vec<_>>();
-                provenance::derive(&mut target, c, source, &originals, "draw-record-batch-call");
+                provenance::derive(
+                    &mut target,
+                    c,
+                    &source,
+                    &originals,
+                    "draw-record-batch-call",
+                );
                 provenance::derive(
                     &mut target,
                     stmt,
-                    source,
+                    &source,
                     &originals,
                     "draw-record-batch-call",
                 );
@@ -2113,7 +2309,7 @@ fn pack_impl(
     if rename {
         target = scope_rename_fast(&target, root).ast;
     }
-    let before = measure_size(source, root);
+    let before = measure_size(&source, root);
     let after = measure_size(&target, root);
     if after >= before {
         return unchanged();
@@ -2124,7 +2320,7 @@ fn pack_impl(
         saved: Some((before - after) as u64),
         details: Some(vec![format!(
             "calls={batched};helpers={};shared_payloads={}",
-            helpers.len(),
+            pack_plan.helpers.len(),
             payload_symbols.len()
         )]),
     }
@@ -2529,6 +2725,66 @@ mod payload_size_tests {
                     .flat_map(|r| columns.iter().map(move |c| c[r].clone()))
                     .collect();
                 assert_eq!(*size, values_size(&flat));
+            }
+        }
+    }
+
+    #[test]
+    fn untracked_selection_and_cached_replay_match_tracked_variants_exactly() {
+        let rect_run: String = (0..24)
+            .map(|i| {
+                format!(
+                    "screen.setColor({},{},{})screen.drawRectF({},{},{},{}) ",
+                    (i * 37) % 256,
+                    (i * 73) % 256,
+                    (i * 109) % 256,
+                    i * 4,
+                    i * 2 + 1,
+                    3,
+                    5
+                )
+            })
+            .collect();
+        let shared_run: String = (0..3)
+            .map(|b| {
+                let body: String = (0..18)
+                    .map(|j| {
+                        format!(
+                            "screen.drawText({},{},{},{}) ",
+                            (b + j) % 29,
+                            (b * 5 + j * 11) % 31,
+                            if j % 3 == 0 { 16 } else { 2 },
+                            if j % 3 == 0 { 1 } else { 8 }
+                        )
+                    })
+                    .collect();
+                format!("do {body}end local sep{b}=1 ")
+            })
+            .collect();
+        for source in [format!("function onDraw() {rect_run}end"), shared_run] {
+            let (tracked_ast, root) =
+                storm_lua_syntax::parse_source_with_origins("draw.lua", &source).unwrap();
+            let untracked = storm_lua_syntax::ast_utils::clone_without_origins(&tracked_ast);
+            let (untracked_variants, _) = record_variants_tagged(&untracked, root, true);
+            assert!(untracked_variants.len() >= 2);
+            for (idx, (kind, u_ast, u_res)) in untracked_variants.iter().enumerate() {
+                let (_, fresh_cache) = record_variants_tagged(&untracked, root, true);
+                let mut replayed = tracked_ast.clone();
+                let r_res = apply_variant(&mut replayed, root, true, *kind, fresh_cache);
+                assert!(
+                    replayed.nodes == u_ast.nodes,
+                    "variant {idx} ({kind:?}) syntax mismatch"
+                );
+                assert!(replayed.strings.same_symbols(&u_ast.strings));
+                assert_eq!(r_res.saved, u_res.saved);
+                assert_eq!(r_res.details, u_res.details);
+                let printed = storm_lua_syntax::Printer::new(&replayed, false)
+                    .output_with_positions(r_res.root);
+                let origins =
+                    storm_lua_syntax::provenance::GeneratedOrigins::from_print(&replayed, &printed)
+                        .unwrap();
+                origins.validate_for_code(&printed.code).unwrap();
+                assert_eq!(origins.unknown_bytes(), 0);
             }
         }
     }

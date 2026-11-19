@@ -25,6 +25,21 @@ pub struct LineIndex<'a> {
 impl<'a> LineIndex<'a> {
     /// Index line starts without normalizing the source or its line endings.
     pub fn new(text: &'a str) -> Self {
+        if text.is_ascii() {
+            let bytes = text.as_bytes();
+            let mut starts = Vec::with_capacity(1 + bytes.len() / 32);
+            starts.push(0);
+            for (offset, &byte) in bytes.iter().enumerate() {
+                if byte == b'\n' {
+                    starts.push(offset + 1);
+                }
+            }
+            return Self {
+                text,
+                starts,
+                utf8_excess: Vec::new(),
+            };
+        }
         let mut starts = vec![0];
         let mut utf8_excess = Vec::new();
         let mut excess = 0;
@@ -42,6 +57,11 @@ impl<'a> LineIndex<'a> {
             starts,
             utf8_excess,
         }
+    }
+
+    /// Borrow the sorted zero-based byte offsets where each line starts (`starts[0] == 0`).
+    pub fn line_starts(&self) -> &[usize] {
+        &self.starts
     }
 
     /// Convert a valid UTF-8 character boundary to one-based line/byte-column.
@@ -157,7 +177,34 @@ impl Utf16Cursor<'_, '_> {
     /// Return the same zero-based line/UTF-16 column as LineIndex::utf16_position.
     pub fn position(&mut self, offset: usize) -> Option<(u32, u32)> {
         let index = self.index;
-        if offset > index.text.len() || !index.text.is_char_boundary(offset) {
+        if offset > index.text.len() {
+            return None;
+        }
+        if index.utf8_excess.is_empty() {
+            if offset < index.starts[self.line]
+                || index
+                    .starts
+                    .get(self.line + 1)
+                    .is_some_and(|&next| next <= offset)
+            {
+                if self.line + 1 < index.starts.len()
+                    && offset >= index.starts[self.line + 1]
+                    && index
+                        .starts
+                        .get(self.line + 2)
+                        .is_none_or(|&after| offset < after)
+                {
+                    self.line += 1;
+                } else {
+                    self.line = index.starts.partition_point(|&start| start <= offset) - 1;
+                }
+            }
+            return Some((
+                self.line.try_into().ok()?,
+                (offset - index.starts[self.line]).try_into().ok()?,
+            ));
+        }
+        if !index.text.is_char_boundary(offset) {
             return None;
         }
         if offset < index.starts[self.line]

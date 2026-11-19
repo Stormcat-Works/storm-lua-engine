@@ -189,7 +189,14 @@ fn is_simple_pure_expr(source: &Ast, id: NodeId) -> bool {
     )
 }
 
-fn classify(source: &Ast, analyzer: &EffectAnalyzer<'_>, statement: NodeId) -> StmtKind {
+fn classify(
+    source: &Ast,
+    resolution: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
+    has_metatables: bool,
+    env_mutated: bool,
+    statement: NodeId,
+) -> StmtKind {
     match source.node(statement).clone() {
         Node::Local(_, expressions) => {
             if expressions.iter().all(|e| is_simple_pure_expr(source, *e)) {
@@ -222,9 +229,35 @@ fn classify(source: &Ast, analyzer: &EffectAnalyzer<'_>, statement: NodeId) -> S
                 };
             }
             if builtin == "screen.drawClear" {
-                return StmtKind::DrawClear;
+                let may_change = arguments.iter().any(|arg| {
+                    arg_may_change_color(
+                        source,
+                        resolution,
+                        analyzer,
+                        has_metatables,
+                        env_mutated,
+                        *arg,
+                    )
+                });
+                return if may_change {
+                    StmtKind::Barrier
+                } else {
+                    StmtKind::DrawClear
+                };
             }
             if builtin.starts_with("screen.draw") {
+                if arguments.iter().any(|arg| {
+                    arg_may_change_color(
+                        source,
+                        resolution,
+                        analyzer,
+                        has_metatables,
+                        env_mutated,
+                        *arg,
+                    )
+                }) {
+                    return StmtKind::Barrier;
+                }
                 return match literal_coords(source, &arguments)
                     .and_then(|coords| draw_aabb(&builtin, &coords))
                 {
@@ -238,9 +271,148 @@ fn classify(source: &Ast, analyzer: &EffectAnalyzer<'_>, statement: NodeId) -> S
     }
 }
 
+fn chunk_uses_metatables(source: &Ast, root: NodeId) -> bool {
+    let mut found = false;
+    ast_utils::walk(source, root, &mut |id| {
+        if found {
+            return;
+        }
+        found = match source.node(id) {
+            Node::Name(sym) => matches!(
+                source.strings.get(*sym),
+                "setmetatable" | "getmetatable" | "debug"
+            ),
+            Node::Str(raw) => storm_lua_analysis::effects::decode_lua_string(raw)
+                .is_some_and(|s| matches!(s.as_str(), "setmetatable" | "getmetatable")),
+            _ => false,
+        };
+    });
+    found
+}
+
+fn is_color_preserving_builtin(builtin: &str, has_metatables: bool) -> bool {
+    if matches!(
+        builtin,
+        "screen.getWidth" | "screen.getHeight" | "screen.drawClear"
+    ) || builtin.starts_with("screen.draw")
+        || builtin.starts_with("input.")
+        || builtin.starts_with("output.")
+        || builtin.starts_with("property.")
+        || builtin.starts_with("map.")
+        || builtin.starts_with("utf8.")
+    {
+        return true;
+    }
+    if builtin.starts_with("math.") {
+        return !has_metatables || !matches!(builtin, "math.max" | "math.min");
+    }
+    matches!(
+        builtin,
+        "string.byte"
+            | "string.char"
+            | "string.dump"
+            | "string.find"
+            | "string.gmatch"
+            | "string.len"
+            | "string.lower"
+            | "string.match"
+            | "string.pack"
+            | "string.packsize"
+            | "string.rep"
+            | "string.reverse"
+            | "string.sub"
+            | "string.unpack"
+            | "string.upper"
+            | "table.insert"
+            | "table.move"
+            | "table.pack"
+            | "table.remove"
+            | "table.unpack"
+            | "tonumber"
+            | "type"
+            | "select"
+            | "rawequal"
+            | "rawget"
+            | "rawlen"
+    ) || (!has_metatables && matches!(builtin, "string.format" | "table.concat" | "tostring"))
+}
+
+/// True when evaluating `arg` (excluding uninvoked nested `Node::Function`
+/// literals) could execute `screen.setColor` directly or through a helper.
+fn arg_may_change_color(
+    source: &Ast,
+    resolution: &Resolution,
+    analyzer: &EffectAnalyzer<'_>,
+    has_metatables: bool,
+    env_mutated: bool,
+    arg: NodeId,
+) -> bool {
+    use storm_lua_analysis::resolver::BindingKind;
+    let mut stack = vec![arg];
+    while let Some(node) = stack.pop() {
+        match source.node(node) {
+            Node::Function(..) => continue,
+            Node::Index(..) if has_metatables => return true,
+            Node::Un(op, _) if has_metatables && op.as_str() != "not" => return true,
+            Node::Bin(op, _, _) if has_metatables && !matches!(op.as_str(), "and" | "or") => {
+                return true;
+            }
+            Node::Call(callee, _, method) => {
+                if method.is_some() {
+                    return true;
+                }
+                if let Some(builtin) = analyzer.resolve_builtin_reference(*callee) {
+                    if !is_color_preserving_builtin(&builtin, has_metatables) {
+                        return true;
+                    }
+                } else {
+                    let proven_color_free = matches!(source.node(*callee), Node::Name(_))
+                        && resolution
+                            .node_bid
+                            .get(*callee as usize)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|bid| {
+                                let unmutated = match resolution.binding(bid).kind {
+                                    BindingKind::Localfunc => {
+                                        resolution.binding_write_counts.get(bid as usize).copied()
+                                            == Some(0)
+                                    }
+                                    BindingKind::Global => {
+                                        !env_mutated
+                                            && resolution
+                                                .binding_write_counts
+                                                .get(bid as usize)
+                                                .copied()
+                                                == Some(1)
+                                    }
+                                    _ => false,
+                                };
+                                unmutated
+                                    && analyzer
+                                        .summaries
+                                        .get(bid as usize)
+                                        .and_then(Option::as_ref)
+                                        .is_some_and(|s| !s.calls && !s.ordered)
+                            });
+                    if !proven_color_free {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        ast_utils::for_each_child(source, node, &mut |child| stack.push(child));
+    }
+    false
+}
+
 struct Transformer<'a> {
     source: &'a Ast,
+    resolution: &'a Resolution,
     analyzer: EffectAnalyzer<'a>,
+    has_metatables: bool,
+    env_mutated: bool,
     output: Ast,
     removed_base: usize,
     removed_reorder: usize,
@@ -248,11 +420,15 @@ struct Transformer<'a> {
 }
 
 impl<'a> Transformer<'a> {
-    fn new(source: &'a Ast, root: NodeId, resolution: &'a Resolution) -> Self {
+    fn new(source: &'a Ast, root: NodeId, resolution: &'a Resolution, env_mutated: bool) -> Self {
         let analyzer = EffectAnalyzer::new(source, resolution, root, true);
+        let has_metatables = chunk_uses_metatables(source, root);
         Self {
             source,
+            resolution,
             analyzer,
+            has_metatables,
+            env_mutated,
             output: clone_source(source),
             removed_base: 0,
             removed_reorder: 0,
@@ -265,7 +441,16 @@ impl<'a> Transformer<'a> {
     fn rewrite_block_statements(&mut self, statements: &[NodeId]) -> Option<Vec<NodeId>> {
         let kinds: Vec<StmtKind> = statements
             .iter()
-            .map(|s| classify(self.source, &self.analyzer, *s))
+            .map(|s| {
+                classify(
+                    self.source,
+                    self.resolution,
+                    &self.analyzer,
+                    self.has_metatables,
+                    self.env_mutated,
+                    *s,
+                )
+            })
             .collect();
 
         // Phase 1: base removal, forward scan. The tracked color survives
@@ -618,14 +803,16 @@ pub fn eliminate_redundant_setcolors(ast: &mut Ast, root: NodeId) -> PassResult 
     }
     let source = clone_source(ast);
     let resolution = resolve(&source, root);
-    if mutated_builtin_roots(&source, &resolution, root).contains("screen") {
+    let mutated = mutated_builtin_roots(&source, &resolution, root);
+    if mutated.contains("screen") {
         return PassResult {
             root,
             saved: Some(0),
             details: None,
         };
     }
-    let mut transformer = Transformer::new(&source, root, &resolution);
+    let env_mutated = mutated.contains("_ENV") || mutated.contains("_G");
+    let mut transformer = Transformer::new(&source, root, &resolution, env_mutated);
     transformer.transform_block(root);
     let removed_base = transformer.removed_base;
     let removed_reorder = transformer.removed_reorder;

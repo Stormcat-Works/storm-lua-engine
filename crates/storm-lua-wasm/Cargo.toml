@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 storm-lua-addon = { workspace = true }
+storm-lua-component = { workspace = true }
 storm-lua-vm = { workspace = true, features = ["backend-mlua"] }
 serde_json = { workspace = true }
 storm-lua-bridge = { workspace = true }
@@ -21,7 +22,7 @@ storm-screen-raster = { workspace = true }
 
 [features]
 default = []
-debug = ["storm-lua-microcontroller/debug", "storm-lua-vm/debug", "storm-lua-addon/debug"]
+debug = ["storm-lua-microcontroller/debug", "storm-lua-vm/debug", "storm-lua-addon/debug", "storm-lua-component/debug"]
 
 [lib]
 crate-type = ["rlib"]

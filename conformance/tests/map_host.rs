@@ -1,5 +1,8 @@
 //! ホスト地形は明示的に順序付けられます。組み込みのジオメトリ描画が偽のマップで代用されることはありません。
-use std::{cell::RefCell, error::Error, rc::Rc};
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+};
 use storm_lua_microcontroller::Microcontroller;
 use storm_lua_spec::{
     draw::{DrawCommand, ScreenError, ScreenSink},
@@ -10,11 +13,14 @@ use storm_screen_raster::raster::ScreenRaster;
 #[test]
 fn provider_receives_palette_and_map_order_without_changing_draw_color(
 ) -> Result<(), Box<dyn Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&calls);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&calls);
     let mut raster = ScreenRaster::new(2, 2)?;
-    raster.set_map_provider(Some(Rc::new(move |request: &MapRequest| {
-        captured.borrow_mut().push(request.clone());
+    raster.set_map_provider(Some(std::sync::Arc::new(move |request: &MapRequest| {
+        captured
+            .lock()
+            .map_err(|_| ScreenError::Host("capture is poisoned".into()))?
+            .push(request.clone());
         Ok([0, 0, 64, 255].repeat((request.width * request.height) as usize))
     })));
     let mut vm = Microcontroller::new(Default::default())?;
@@ -23,7 +29,7 @@ fn provider_receives_palette_and_map_order_without_changing_draw_color(
     vm.replay(&mut raster)?;
     assert_eq!(&raster.pixels()[..4], &[255, 0, 0, 255]);
     assert_eq!(&raster.pixels()[4..], &[0, 0, 64, 255].repeat(3));
-    let request = &calls.borrow()[0];
+    let request = &calls.lock().map_err(|_| "capture is poisoned")?[0];
     assert_eq!(request.center, [4.0, 5.0]);
     assert_eq!(request.zoom, 6.0);
     assert_eq!(request.colors[0], Some(Rgba8([0, 0, 64, 255])));
@@ -40,7 +46,7 @@ fn invalid_provider_output_preserves_the_existing_prefix() -> Result<(), Box<dyn
         raster.submit(&DrawCommand::Map([0.0, 0.0, 1.0])),
         Err(ScreenError::MissingMapProvider)
     );
-    raster.set_map_provider(Some(Rc::new(|_: &MapRequest| Ok(vec![0; 3]))));
+    raster.set_map_provider(Some(std::sync::Arc::new(|_: &MapRequest| Ok(vec![0; 3]))));
     assert!(matches!(
         raster.submit(&DrawCommand::Map([0.0, 0.0, 1.0])),
         Err(ScreenError::Host(_))
@@ -63,18 +69,22 @@ fn map_palette_is_frame_local_and_binary_batches_preserve_the_slot() -> Result<(
             DrawCommand::Map([1.5, -2.5, 3.0])
         ]
     );
-    let seen = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&seen);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&seen);
     let mut raster = ScreenRaster::new(1, 1)?;
-    raster.set_map_provider(Some(Rc::new(move |request: &MapRequest| {
-        captured.borrow_mut().push(request.colors);
+    raster.set_map_provider(Some(std::sync::Arc::new(move |request: &MapRequest| {
+        captured
+            .lock()
+            .map_err(|_| ScreenError::Host("capture is poisoned".into()))?
+            .push(request.colors);
         Ok(vec![0; 4])
     })));
     raster.draw_batch(&commands)?;
     raster.begin_frame();
     raster.submit(&commands[1])?;
-    assert!(seen.borrow()[0][7].is_some());
-    assert!(seen.borrow()[1].iter().all(Option::is_none));
+    let seen = seen.lock().map_err(|_| "capture is poisoned")?;
+    assert!(seen[0][7].is_some());
+    assert!(seen[1].iter().all(Option::is_none));
     wire[8] = 8;
     assert!(storm_lua_spec::command_wire::decode(&wire).is_err());
     Ok(())

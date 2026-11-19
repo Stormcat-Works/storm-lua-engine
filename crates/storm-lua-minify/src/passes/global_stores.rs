@@ -141,6 +141,27 @@ fn rewrite(
     }
 }
 
+pub(crate) fn total_integer_expression(
+    ast: &Ast,
+    analyzer: &storm_lua_analysis::effects::EffectAnalyzer<'_>,
+    expression: NodeId,
+) -> bool {
+    match ast.node(expression) {
+        Node::Num(raw) => storm_lua_syntax::numeric::integer_literal_value(raw).is_some(),
+        Node::Name(_) => analyzer.is_unmutated_fornum_counter(expression),
+        Node::Paren(inner) => total_integer_expression(ast, analyzer, *inner),
+        Node::Un(op, inner) => {
+            matches!(op.as_str(), "-" | "~") && total_integer_expression(ast, analyzer, *inner)
+        }
+        Node::Bin(op, left, right) => {
+            matches!(op.as_str(), "+" | "-" | "*" | "&" | "|" | "~" | "<<" | ">>")
+                && total_integer_expression(ast, analyzer, *left)
+                && total_integer_expression(ast, analyzer, *right)
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn total_numeric_expression(
     ast: &Ast,
     analyzer: &storm_lua_analysis::effects::EffectAnalyzer<'_>,
@@ -148,24 +169,35 @@ pub(crate) fn total_numeric_expression(
 ) -> bool {
     match ast.node(expression) {
         Node::Num(_) => true,
+        Node::Name(_) => analyzer.is_unmutated_fornum_counter(expression),
         Node::Paren(inner) => total_numeric_expression(ast, analyzer, *inner),
         Node::Un(op, inner) => {
-            matches!(op.as_str(), "-" | "~") && total_numeric_expression(ast, analyzer, *inner)
+            (op == "-" && total_numeric_expression(ast, analyzer, *inner))
+                || (op == "~" && total_integer_expression(ast, analyzer, *inner))
         }
         Node::Bin(op, left, right) => {
-            matches!(
-                op.as_str(),
-                "+" | "-" | "*" | "/" | "^" | "&" | "|" | "~" | "<<" | ">>"
-            ) && total_numeric_expression(ast, analyzer, *left)
-                && total_numeric_expression(ast, analyzer, *right)
+            (matches!(op.as_str(), "+" | "-" | "*" | "/" | "^")
+                && total_numeric_expression(ast, analyzer, *left)
+                && total_numeric_expression(ast, analyzer, *right))
+                || (matches!(op.as_str(), "&" | "|" | "~" | "<<" | ">>")
+                    && total_integer_expression(ast, analyzer, *left)
+                    && total_integer_expression(ast, analyzer, *right))
         }
         Node::Call(function, arguments, _) => {
             let builtin = analyzer.resolve_builtin_reference(*function);
-            if matches!(
-                builtin.as_deref(),
-                Some("input.getNumber" | "property.getNumber")
-            ) {
-                return true;
+            if matches!(builtin.as_deref(), Some("property.getNumber")) {
+                return arguments.len() == 1
+                    && !matches!(ast.node(arguments[0]), Node::Call(..) | Node::Vararg)
+                    && (analyzer.is_droppable(arguments[0])
+                        || total_numeric_expression(ast, analyzer, arguments[0]));
+            }
+            if matches!(builtin.as_deref(), Some("input.getNumber")) {
+                return analyzer.callback_phase(expression)
+                    == storm_lua_analysis::effects::CallbackPhase::TickOnly
+                    && arguments.len() == 1
+                    && !matches!(ast.node(arguments[0]), Node::Call(..) | Node::Vararg)
+                    && (analyzer.is_droppable(arguments[0])
+                        || total_numeric_expression(ast, analyzer, arguments[0]));
             }
             // 引数ゼロは all() で素通りしてしまうが、PUC の math.* は
             // 引数が無いとエラーになる（Q04: `math.max()` 等）。下の
@@ -628,10 +660,17 @@ fn unread_droppable(
     analyzer: &storm_lua_analysis::effects::EffectAnalyzer<'_>,
     expression: NodeId,
 ) -> bool {
-    matches!(
+    if matches!(
         ast.node(expression),
         Node::Name(_) | Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil
-    ) || total_numeric_expression(ast, analyzer, expression)
+    ) {
+        return true;
+    }
+    let effect = analyzer.effects_for_expr(expression);
+    !effect.calls
+        && !effect.ordered
+        && effect.writes.is_empty()
+        && total_numeric_expression(ast, analyzer, expression)
 }
 
 fn remove_unread_rewrite(

@@ -1,7 +1,7 @@
 //! 画面契約に従うCPUラスタライザ。
 //! Copyright (c) 2026 Shannon-Toppo. MIT許諾原文: licenses/screen-components-MIT.txt。
-use crate::{blend::blend_pixel, font};
-use std::rc::Rc;
+use crate::{blend::PreparedBlend, font};
+use std::sync::Arc;
 use storm_lua_spec::map::{MapProvider, MapRequest};
 use storm_lua_spec::{
     draw::{DrawCommand, ScreenError, ScreenSink},
@@ -10,6 +10,21 @@ use storm_lua_spec::{
 
 /// 単体ラスタライザが許容する最大バッキングストレージ（16 MiB）。
 pub const MAX_RASTER_BYTES: usize = 16 * 1024 * 1024;
+
+#[inline]
+fn fill_opaque_slice(slice: &mut [u8], rgba: [u8; 4]) {
+    let (pixels, _) = slice.as_chunks_mut::<4>();
+    pixels.fill(rgba);
+}
+
+#[inline]
+fn blend_slice(slice: &mut [u8], blend: PreparedBlend) {
+    let (pixels, _) = slice.as_chunks_mut::<4>();
+    for px in pixels {
+        blend.apply(px);
+    }
+}
+
 /// 決定論的なCPUラスタライザ。フレーム開始時は透明な黒、現在の描画色は白になります。
 pub struct ScreenRaster {
     width: u32,
@@ -17,9 +32,9 @@ pub struct ScreenRaster {
     margin: u32,
     pixels: Vec<u8>,
     color: Rgba8,
-    map_provider: Option<Rc<dyn MapProvider>>,
+    map_provider: Option<Arc<dyn MapProvider + Send + Sync>>,
     map_colors: [Option<Rgba8>; 8],
-    /// 差分テスト専用。行スパンを1画素ずつ`plot`で描き、床除算を剰余2回で求める参照経路を選びます。
+    /// 差分テスト専用。行スパンを1画素ずつ描き、床除算を剰余2回で求める参照経路を選びます。
     #[cfg(test)]
     reference_paths: bool,
 }
@@ -95,7 +110,8 @@ impl ScreenRaster {
         }
         Ok(())
     }
-    fn plot(&mut self, x: f64, y: f64) {
+    #[inline]
+    fn plot_with_blend(&mut self, x: f64, y: f64, blend: Option<PreparedBlend>) {
         if !x.is_finite()
             || !y.is_finite()
             || x < 0.0
@@ -106,61 +122,44 @@ impl ScreenRaster {
             return;
         }
         let index = (y as usize * self.width as usize + x as usize) * 4;
-        if self.color.0[3] == 255 {
-            self.pixels[index..index + 4].copy_from_slice(&self.color.0);
-        } else if self.color.0[3] != 0 {
-            let d = Rgba8([
-                self.pixels[index],
-                self.pixels[index + 1],
-                self.pixels[index + 2],
-                self.pixels[index + 3],
-            ]);
-            self.pixels[index..index + 4].copy_from_slice(&blend_pixel(self.color, d).0);
+        match blend {
+            None => self.pixels[index..index + 4].copy_from_slice(&self.color.0),
+            Some(prep) => {
+                if let Ok(dst) = (&mut self.pixels[index..index + 4]).try_into() {
+                    prep.apply(dst);
+                }
+            }
         }
     }
-    fn run(&mut self, left: f64, right: f64, y: f64) {
-        if y < 0.0 || y >= f64::from(self.height) || !y.is_finite() {
-            return;
-        }
+    #[inline]
+    fn run_row(&mut self, left: f64, right: f64, py: u32, blend: Option<PreparedBlend>) {
         let from = left.max(0.0);
         let to = right.min(f64::from(self.width));
         if !from.is_finite() || !to.is_finite() || to <= from {
             return;
         }
-        // 切り詰めは従来の`from as u32..to as u32`と同じです。toは幅以下なので範囲は行内に収まります。
-        let (start, end) = (from as u32, to as u32);
+        let x0 = from as usize;
+        let x1 = to as usize;
+        if x0 >= x1 {
+            return;
+        }
         #[cfg(test)]
         if self.reference_paths {
-            for x in start..end {
-                self.plot(f64::from(x), y);
+            for x in x0..x1 {
+                self.plot_with_blend(f64::from(x as u32), f64::from(py), blend);
             }
             return;
         }
-        if start >= end {
-            return;
-        }
-        // 行の検査とクリップは済んでいるので、画素ごとの境界検査を繰り返さず1行を続けて書きます。
-        let row = y as usize * self.width as usize;
-        let span = &mut self.pixels[(row + start as usize) * 4..(row + end as usize) * 4];
-        let color = self.color;
-        match color.0[3] {
-            255 => {
-                for pixel in span.chunks_exact_mut(4) {
-                    pixel.copy_from_slice(&color.0);
-                }
-            }
-            0 => {}
-            _ => {
-                for pixel in span.chunks_exact_mut(4) {
-                    let blended =
-                        blend_pixel(color, Rgba8([pixel[0], pixel[1], pixel[2], pixel[3]]));
-                    pixel.copy_from_slice(&blended.0);
-                }
-            }
+        let row = py as usize * self.width as usize;
+        let slice = &mut self.pixels[(row + x0) * 4..(row + x1) * 4];
+        match blend {
+            None => fill_opaque_slice(slice, self.color.0),
+            Some(prep) => blend_slice(slice, prep),
         }
     }
     fn line(&mut self, mut p: [[f64; 2]; 2]) {
-        if !finite(p.iter().flatten().copied()) {
+        let alpha = self.color.0[3];
+        if alpha == 0 || !finite(p.iter().flatten().copied()) {
             return;
         }
         if p.iter().flatten().any(|v| v.abs() > 65536.0) {
@@ -227,13 +226,17 @@ impl ScreenRaster {
         if lo > hi {
             return;
         }
+        let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
+        let seg = [x1, y1, x2, y2];
+        let da_128 = 128.0 * da;
+        let da_256 = 256.0 * da;
         for ip in lo as u32..=hi as u32 {
             let p = f64::from(ip);
             let n = b1 * da + (p * 256.0 - a1) * db;
             let q = if xmajor {
-                floor_div(n + 128.0 * da, 256.0 * da)
+                floor_div(n + da_128, da_256)
             } else {
-                -floor_div(-(n - 128.0 * da), 256.0 * da)
+                -floor_div(-(n - da_128), da_256)
             };
             let (cx, cy) = if xmajor {
                 (p * 256.0, q * 256.0)
@@ -249,36 +252,40 @@ impl ScreenRaster {
             {
                 continue;
             }
-            if meets([x1, y1, x2, y2], cx, cy)
+            if meets(seg, cx, cy)
                 || corners
                     .iter()
-                    .any(|[ox, oy]| on_segment([x1, y1, x2, y2], cx + ox, cy + oy))
+                    .any(|[ox, oy]| on_segment(seg, cx + ox, cy + oy))
             {
                 if xmajor {
-                    self.plot(p, q);
+                    self.plot_with_blend(p, q, blend);
                 } else {
-                    self.plot(q, p);
+                    self.plot_with_blend(q, p, blend);
                 }
             }
         }
     }
     fn outline(&mut self, points: &[[f64; 2]]) {
-        if !finite(points.iter().flatten().copied()) {
+        if self.color.0[3] == 0 || !finite(points.iter().flatten().copied()) {
             return;
         }
-        for i in 0..points.len() {
-            self.line([points[i], points[(i + 1) % points.len()]]);
+        let n = points.len();
+        for i in 0..n {
+            let next = if i + 1 == n { 0 } else { i + 1 };
+            self.line([points[i], points[next]]);
         }
     }
     fn convex(&mut self, points: &[[f64; 2]], offset: f64, ysign: f64) {
-        if !finite(points.iter().flatten().copied()) {
+        let alpha = self.color.0[3];
+        if alpha == 0 || !finite(points.iter().flatten().copied()) {
             return;
         }
-        let mut snapped = [[0.0; 2]; 16];
+        let mut snapped = [[0.0; 2]; 20];
         for (out, point) in snapped.iter_mut().zip(points) {
             *out = [snap(point[0], self.width), snap(point[1], self.height)];
         }
-        let pts = &snapped[..points.len()];
+        let n = points.len().min(snapped.len());
+        let pts = &snapped[..n];
         if !finite(pts.iter().flatten().copied()) {
             return;
         }
@@ -289,12 +296,14 @@ impl ScreenRaster {
         if top > bottom {
             return;
         }
+        let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
         for py in top as u32..=bottom as u32 {
             let y = f64::from(py) + offset;
             let (mut left, mut right) = (f64::INFINITY, f64::NEG_INFINITY);
-            for i in 0..pts.len() {
+            for i in 0..n {
                 let [ax, ay] = pts[i];
-                let [bx, by] = pts[(i + 1) % pts.len()];
+                let next = if i + 1 == n { 0 } else { i + 1 };
+                let [bx, by] = pts[next];
                 let low = ay.min(by);
                 let high = ay.max(by);
                 if low == high
@@ -310,11 +319,15 @@ impl ScreenRaster {
                 right = right.max(x);
             }
             if left < right {
-                self.run(left.ceil(), right.ceil(), f64::from(py));
+                self.run_row(left.ceil(), right.ceil(), py, blend);
             }
         }
     }
     fn rectangle(&mut self, v: [f64; 4], fill: bool) {
+        let alpha = self.color.0[3];
+        if alpha == 0 {
+            return;
+        }
         let [x, y, w, h] = v;
         if !finite(v) {
             return;
@@ -335,104 +348,344 @@ impl ScreenRaster {
         if top >= bottom {
             return;
         }
-        for py in top as u32..bottom as u32 {
-            self.run(left, right, f64::from(py));
+        let from = left.max(0.0);
+        let to = right.min(f64::from(self.width));
+        if !from.is_finite() || !to.is_finite() || to <= from {
+            return;
+        }
+        let (ix0, ix1) = (from as usize, to as usize);
+        if ix0 >= ix1 {
+            return;
+        }
+        let (iy0, iy1) = (top as usize, bottom as usize);
+        let stride = self.width as usize;
+        if alpha == 255 {
+            let rgba = self.color.0;
+            if ix0 == 0 && ix1 == stride {
+                fill_opaque_slice(&mut self.pixels[iy0 * stride * 4..iy1 * stride * 4], rgba);
+            } else {
+                for py in iy0..iy1 {
+                    let row = py * stride;
+                    fill_opaque_slice(&mut self.pixels[(row + ix0) * 4..(row + ix1) * 4], rgba);
+                }
+            }
+        } else {
+            let blend = PreparedBlend::new(self.color);
+            if ix0 == 0 && ix1 == stride {
+                blend_slice(&mut self.pixels[iy0 * stride * 4..iy1 * stride * 4], blend);
+            } else {
+                for py in iy0..iy1 {
+                    let row = py * stride;
+                    blend_slice(&mut self.pixels[(row + ix0) * 4..(row + ix1) * 4], blend);
+                }
+            }
         }
     }
     fn circle(&mut self, v: [f64; 3], fill: bool) {
+        if self.color.0[3] == 0 {
+            return;
+        }
         let [x, y, r] = v;
         if !finite(v) {
             return;
         }
         let radius = r.abs();
         let n = (radius / 2.0).floor().clamp(8.0, 16.0) as usize;
-        let mut points = [[0.0; 2]; 16];
-        for (i, p) in points.iter_mut().enumerate().take(n) {
-            let a = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
-            *p = [
+        // 実ゲームはfloat32のtauを分割数で割ったstepを0から逐次加算して周辺点を
+        // 作ります（E24）。outlineは角度がtau以下の間、filledはtau未満の間点を
+        // 追加するため、実際の点数は分割数とずれることがあります。
+        let tau: f32 = std::f32::consts::TAU;
+        let step = tau / n as f32;
+        let mut points = [[0.0_f64; 2]; 20];
+        let mut count = 0_usize;
+        let mut angle: f32 = 0.0;
+        while (if fill { angle < tau } else { angle <= tau }) && count < points.len() {
+            let a = f64::from(angle);
+            points[count] = [
                 f64::from((x + radius * a.cos()) as f32),
                 f64::from((y + radius * a.sin()) as f32),
             ];
+            count += 1;
+            angle += step;
         }
         if fill {
-            self.convex(&points[..n], 0.0, -1.0);
+            self.convex(&points[..count], 0.0, -1.0);
         } else {
-            self.outline(&points[..n]);
+            self.outline(&points[..count]);
+        }
+    }
+    #[inline]
+    fn blit_glyph(&mut self, ch: char, x: f64, y: f64, blend: Option<PreparedBlend>) {
+        if y + 5.0 <= 0.0
+            || y >= f64::from(self.height)
+            || x + 4.0 <= 0.0
+            || x >= f64::from(self.width)
+        {
+            return;
+        }
+        let ix = x as i32;
+        let iy = y as i32;
+        let w = self.width as usize;
+        let rgba = self.color.0;
+        let rows = font::glyph_for(ch);
+        if ix >= 0 && (ix as u32) + 4 <= self.width && iy >= 0 && (iy as u32) + 5 <= self.height {
+            let ux = ix as usize;
+            let uy = iy as usize;
+            match blend {
+                None => {
+                    for (row, &bits) in rows.iter().enumerate() {
+                        if bits == 0 {
+                            continue;
+                        }
+                        let base = ((uy + row) * w + ux) * 4;
+                        if bits & 8 != 0 {
+                            self.pixels[base..base + 4].copy_from_slice(&rgba);
+                        }
+                        if bits & 4 != 0 {
+                            self.pixels[base + 4..base + 8].copy_from_slice(&rgba);
+                        }
+                        if bits & 2 != 0 {
+                            self.pixels[base + 8..base + 12].copy_from_slice(&rgba);
+                        }
+                        if bits & 1 != 0 {
+                            self.pixels[base + 12..base + 16].copy_from_slice(&rgba);
+                        }
+                    }
+                }
+                Some(prep) => {
+                    for (row, &bits) in rows.iter().enumerate() {
+                        if bits == 0 {
+                            continue;
+                        }
+                        let base = ((uy + row) * w + ux) * 4;
+                        for col in 0..4_usize {
+                            if bits & (1 << (3 - col)) != 0 {
+                                let idx = base + col * 4;
+                                if let Ok(dst) = (&mut self.pixels[idx..idx + 4]).try_into() {
+                                    prep.apply(dst);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            let w_i = self.width as i32;
+            let h_i = self.height as i32;
+            for (row, &bits) in rows.iter().enumerate() {
+                let py = iy + row as i32;
+                if py < 0 || py >= h_i || bits == 0 {
+                    continue;
+                }
+                for col in 0..4_i32 {
+                    if bits & (1 << (3 - col)) != 0 {
+                        let px = ix + col;
+                        if px >= 0 && px < w_i {
+                            let idx = (py as usize * w + px as usize) * 4;
+                            match blend {
+                                None => self.pixels[idx..idx + 4].copy_from_slice(&rgba),
+                                Some(prep) => {
+                                    if let Ok(dst) = (&mut self.pixels[idx..idx + 4]).try_into() {
+                                        prep.apply(dst);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     fn text(&mut self, position: [f64; 2], text: &str) {
-        if !finite(position) {
+        let alpha = self.color.0[3];
+        if alpha == 0 || !finite(position) {
             return;
         }
         let ox = position[0].floor();
         let (mut x, mut y) = (ox, position[1].floor());
-        for ch in text.chars() {
-            if ch == '\n' {
-                x = ox;
-                y += 6.0;
-                continue;
-            }
-            let rows = font::glyph_for(ch);
-            for (row, bits) in rows.iter().enumerate() {
-                for col in 0..4 {
-                    if bits & (1 << (3 - col)) != 0 {
-                        self.plot(x + f64::from(col), y + row as f64);
+        let h_f = f64::from(self.height);
+        let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
+        // 実ゲームのdrawTextは文字列をbyte単位でglyph IDとして照合します（E21）。
+        for byte in text.bytes() {
+            match byte {
+                b'\n' => {
+                    x = ox;
+                    y += 6.0;
+                    if y >= h_f {
+                        break;
                     }
                 }
+                32..=126 => {
+                    if y >= h_f {
+                        break;
+                    }
+                    self.blit_glyph(char::from(byte), x, y, blend);
+                    x += 5.0;
+                }
+                _ => {}
             }
-            x += 5.0;
         }
     }
     fn textbox(&mut self, v: [f64; 6], text: &str) {
-        if !finite(v) {
+        let alpha = self.color.0[3];
+        if alpha == 0 || !finite(v) {
             return;
         }
         let [x, y, w, h, ha, va] = v;
-        let cap = (w / 5.0).floor().max(1.0) as usize;
-        // JSの文字列スライスと文字長は、UTF-8バイトではなくUTF-16コードユニットを基準とします。
-        let units: Vec<u16> = text.encode_utf16().collect();
-        let mut lines: Vec<&[u16]> = Vec::new();
-        for paragraph in units.split(|u| *u == 10) {
-            let mut pos: usize = 0;
-            loop {
-                let mut end = pos.saturating_add(cap).min(paragraph.len());
-                if end < paragraph.len() && paragraph[end] != 32 {
-                    if let Some(space) = paragraph[pos..end].iter().rposition(|u| *u == 32) {
-                        end = pos + space + 1;
+        #[derive(Clone, Copy)]
+        struct Token {
+            glyph: char,
+            advance: f64,
+            space: bool,
+            line_feed: bool,
+        }
+        const EMPTY_TOKEN: Token = Token {
+            glyph: ' ',
+            advance: 0.0,
+            space: false,
+            line_feed: false,
+        };
+        let mut render_tokens = |tokens: &[Token]| {
+            let mut line_ranges = [(0_usize, 0_usize); 64];
+            let mut overflow_ranges: Vec<(usize, usize)> = Vec::new();
+            let mut range_count = 0_usize;
+            let mut push_range = |start: usize, end: usize| {
+                if overflow_ranges.is_empty() && range_count < line_ranges.len() {
+                    line_ranges[range_count] = (start, end);
+                    range_count += 1;
+                } else {
+                    if overflow_ranges.is_empty() {
+                        overflow_ranges.extend_from_slice(&line_ranges[..range_count]);
+                    }
+                    overflow_ranges.push((start, end));
+                }
+            };
+            let mut line_start = 0_usize;
+            let mut line_width = 0.0_f64;
+            let mut idx = 0_usize;
+            while idx < tokens.len() {
+                let token = tokens[idx];
+                if token.line_feed {
+                    push_range(line_start, idx + 1);
+                    line_start = idx + 1;
+                    line_width = 0.0;
+                    idx += 1;
+                    continue;
+                }
+                let cur_len = idx - line_start;
+                if line_width + token.advance > w && cur_len >= 2 {
+                    if let Some(rel_space) = tokens[line_start..idx].iter().rposition(|t| t.space) {
+                        let split_at = line_start + rel_space + 1;
+                        push_range(line_start, split_at);
+                        line_start = split_at;
+                        line_width = tokens[line_start..idx].iter().map(|t| t.advance).sum();
+                    } else {
+                        push_range(line_start, idx);
+                        line_start = idx;
+                        line_width = 0.0;
                     }
                 }
-                lines.push(&paragraph[pos..end]);
-                pos = end;
-                if pos >= paragraph.len() {
-                    break;
+                line_width += token.advance;
+                idx += 1;
+            }
+            push_range(line_start, tokens.len());
+            let ranges = if overflow_ranges.is_empty() {
+                &line_ranges[..range_count]
+            } else {
+                overflow_ranges.as_slice()
+            };
+            let total_height = (ranges.len() as f64 - 1.0) * 6.0 + 5.0;
+            let top = if va < 0.0 {
+                y
+            } else if va > 0.0 {
+                y + h - total_height
+            } else {
+                y + (h - total_height) / 2.0
+            };
+            let top_fl = top.floor();
+            let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
+            for (i, &(start, end)) in ranges.iter().enumerate() {
+                let line = &tokens[start..end];
+                let layout_width = if line.is_empty() {
+                    0.0
+                } else {
+                    (line.len() as f64 - 1.0) * 5.0 + 4.0
+                };
+                let left = if ha < 0.0 {
+                    x
+                } else if ha > 0.0 {
+                    x + w - layout_width
+                } else {
+                    x + (w - layout_width) / 2.0
+                };
+                let mut cursor = left.floor();
+                let row_y = top_fl + i as f64 * 6.0;
+                for token in line {
+                    if token.glyph != ' ' {
+                        self.blit_glyph(token.glyph, cursor, row_y, blend);
+                    }
+                    cursor += token.advance;
                 }
             }
-        }
-        let height = lines.len() as f64 * 6.0 - 1.0;
-        let top = if va < 0.0 {
-            y
-        } else if va > 0.0 {
-            y + h - height
-        } else {
-            y + (h - height) / 2.0
         };
-        for (i, line) in lines.iter().enumerate() {
-            let width = if line.is_empty() {
-                0.0
-            } else {
-                line.len() as f64 * 5.0 - 1.0
-            };
-            let left = if ha < 0.0 {
-                x
-            } else if ha > 0.0 {
-                x + w - width
-            } else {
-                x + (w - width) / 2.0
-            };
-            let decoded: String = char::decode_utf16(line.iter().copied())
-                .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
-                .collect();
-            self.text([left.floor(), top.floor() + i as f64 * 6.0], &decoded);
+
+        if text.len() <= 256 {
+            let mut stack_tokens = [EMPTY_TOKEN; 256];
+            let mut len = 0_usize;
+            for ch in text.chars() {
+                let tok = match ch {
+                    '\n' => Some(Token {
+                        glyph: ' ',
+                        advance: 5.0,
+                        space: false,
+                        line_feed: true,
+                    }),
+                    '\t' => Some(Token {
+                        glyph: ' ',
+                        advance: 20.0,
+                        space: false,
+                        line_feed: false,
+                    }),
+                    ' '..='~' => Some(Token {
+                        glyph: ch,
+                        advance: 5.0,
+                        space: ch == ' ',
+                        line_feed: false,
+                    }),
+                    _ => None,
+                };
+                if let Some(tok) = tok {
+                    stack_tokens[len] = tok;
+                    len += 1;
+                }
+            }
+            render_tokens(&stack_tokens[..len]);
+        } else {
+            let mut heap_tokens: Vec<Token> = Vec::with_capacity(text.len());
+            for ch in text.chars() {
+                match ch {
+                    '\n' => heap_tokens.push(Token {
+                        glyph: ' ',
+                        advance: 5.0,
+                        space: false,
+                        line_feed: true,
+                    }),
+                    '\t' => heap_tokens.push(Token {
+                        glyph: ' ',
+                        advance: 20.0,
+                        space: false,
+                        line_feed: false,
+                    }),
+                    ' '..='~' => heap_tokens.push(Token {
+                        glyph: ch,
+                        advance: 5.0,
+                        space: ch == ' ',
+                        line_feed: false,
+                    }),
+                    _ => {}
+                }
+            }
+            render_tokens(&heap_tokens);
         }
     }
 }
@@ -442,67 +695,66 @@ impl ScreenSink for ScreenRaster {
             return Err(ScreenError::LimitExceeded);
         }
         let offset = f64::from(self.margin);
-        let translated;
-        let command = if self.margin == 0 {
-            command
-        } else {
-            translated = match command {
-                DrawCommand::Line(p) => DrawCommand::Line(p.map(|[x, y]| [x + offset, y + offset])),
-                DrawCommand::Rect(v, fill) => {
-                    let mut v = *v;
-                    v[0] += offset;
-                    v[1] += offset;
-                    DrawCommand::Rect(v, *fill)
-                }
-                DrawCommand::Circle(v, fill) => {
-                    let mut v = *v;
-                    v[0] += offset;
-                    v[1] += offset;
-                    DrawCommand::Circle(v, *fill)
-                }
-                DrawCommand::Triangle(p, fill) => {
-                    DrawCommand::Triangle(p.map(|[x, y]| [x + offset, y + offset]), *fill)
-                }
-                DrawCommand::Text(p, text) => {
-                    DrawCommand::Text([p[0] + offset, p[1] + offset], text.clone())
-                }
-                DrawCommand::TextBox(v, text) => {
-                    let mut v = *v;
-                    v[0] += offset;
-                    v[1] += offset;
-                    DrawCommand::TextBox(v, text.clone())
-                }
-                other => other.clone(),
-            };
-            &translated
-        };
         match command {
             DrawCommand::Map(coordinates) => self.draw_map(*coordinates)?,
             DrawCommand::MapColor(kind, color) => self.map_colors[*kind as usize] = Some(*color),
             DrawCommand::SetColor(color) => self.color = *color,
-            DrawCommand::Clear => {
-                for pixel in self.pixels.chunks_exact_mut(4) {
-                    pixel.copy_from_slice(&self.color.0);
-                }
-            }
-            DrawCommand::Line(p) => self.line(*p),
-            DrawCommand::Rect(v, fill) => self.rectangle(*v, *fill),
-            DrawCommand::Circle(v, fill) => self.circle(*v, *fill),
-            DrawCommand::Triangle(p, fill) => {
-                if *fill {
-                    self.convex(p, 1.0, -1.0);
+            DrawCommand::Clear => fill_opaque_slice(&mut self.pixels, self.color.0),
+            DrawCommand::Line(p) => {
+                if self.margin == 0 {
+                    self.line(*p);
                 } else {
-                    self.outline(p);
+                    self.line(p.map(|[x, y]| [x + offset, y + offset]));
                 }
             }
-            DrawCommand::Text(p, text) => self.text(
-                *p,
-                std::str::from_utf8(text).map_err(|_| ScreenError::InvalidText)?,
-            ),
-            DrawCommand::TextBox(v, text) => self.textbox(
-                *v,
-                std::str::from_utf8(text).map_err(|_| ScreenError::InvalidText)?,
-            ),
+            DrawCommand::Rect(v, fill) => {
+                let mut v = *v;
+                if self.margin != 0 {
+                    v[0] += offset;
+                    v[1] += offset;
+                }
+                self.rectangle(v, *fill);
+            }
+            DrawCommand::Circle(v, fill) => {
+                let mut v = *v;
+                if self.margin != 0 {
+                    v[0] += offset;
+                    v[1] += offset;
+                }
+                self.circle(v, *fill);
+            }
+            DrawCommand::Triangle(p, fill) => {
+                let p = if self.margin == 0 {
+                    *p
+                } else {
+                    p.map(|[x, y]| [x + offset, y + offset])
+                };
+                if *fill {
+                    let shifted =
+                        p.map(|[px, py]| [f64::from(px as f32), f64::from((py as f32) - 1.0)]);
+                    self.convex(&shifted, 0.0, -1.0);
+                } else {
+                    self.outline(&p);
+                }
+            }
+            DrawCommand::Text(p, text) => {
+                let text = std::str::from_utf8(text).map_err(|_| ScreenError::InvalidText)?;
+                let p = if self.margin == 0 {
+                    *p
+                } else {
+                    [p[0] + offset, p[1] + offset]
+                };
+                self.text(p, text);
+            }
+            DrawCommand::TextBox(v, text) => {
+                let text = std::str::from_utf8(text).map_err(|_| ScreenError::InvalidText)?;
+                let mut v = *v;
+                if self.margin != 0 {
+                    v[0] += offset;
+                    v[1] += offset;
+                }
+                self.textbox(v, text);
+            }
         }
         Ok(())
     }
@@ -519,15 +771,7 @@ fn js_round(v: f64) -> f64 {
     }
 }
 /// 1/256px単位の頂点スナップ。`size`はxなら画面幅、yなら画面高さです。
-///
-/// 格子点どうしのちょうど中間（k+1/512）に乗った値は上下の格子点までの距離が等しく、
-/// スクリプト座標上の丸め規則ではなく、画面へ届くまでのf32演算で丸める向きが決まります。
-/// 投影（半画素オフセットを含む）、viewportの乗算と加算、最近接偶数丸めの固定小数点化を
-/// 順に再現します。同じ値でも画面の大きさで向きが変わります
-/// （幅64では59+1/512が下へ、幅96では上へ丸まります）。
-/// f32へ収まらない値は画面から遠く、丸める向きが結果に影響しないため従来の丸めを使います。
 fn snap_units(v: f64, size: u32) -> f64 {
-    // 辺長は4096以下なのでf32で正確です。
     let size = size as f32;
     let scale = 2.0_f32 / size;
     let half = size / 2.0;
@@ -536,7 +780,6 @@ fn snap_units(v: f64, size: u32) -> f64 {
     if !screen.is_finite() {
         return js_round(v * 256.0);
     }
-    // f32の値を256倍して128を引く演算はf64で正確です。
     let units = f64::from(screen) * 256.0 - 128.0;
     let low = units.floor();
     let fraction = units - low;
@@ -612,7 +855,7 @@ fn meets([x1, y1, x2, y2]: [f64; 4], cx: f64, cy: f64) -> bool {
 
 impl ScreenRaster {
     /// 任意のホスト地形プロバイダを差し替えます。通常のジオメトリ描画はプロバイダから独立しています。
-    pub fn set_map_provider(&mut self, provider: Option<Rc<dyn MapProvider>>) {
+    pub fn set_map_provider(&mut self, provider: Option<Arc<dyn MapProvider + Send + Sync>>) {
         self.map_provider = provider;
     }
     fn draw_map(&mut self, coordinates: [f64; 3]) -> Result<(), ScreenError> {
@@ -650,6 +893,121 @@ impl ScreenRaster {
         Ok(())
     }
 }
+/// Owned continuation data for one raster: dimensions, margin, the full
+/// pixel buffer, the current draw colour and the map colour slots. The
+/// host terrain map provider is a process-local service, not data: a
+/// raster that has one installed is outside this inverse (see
+/// `ScreenRaster::continuation`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenRasterContinuation {
+    /// Total backing width in pixels, including any margin.
+    pub width: u32,
+    /// Total backing height in pixels, including any margin.
+    pub height: u32,
+    /// Overflow margin in pixels.
+    pub margin: u32,
+    /// Raw RGBA8 backing bytes, row-major.
+    pub pixels: Vec<u8>,
+    /// Current draw colour.
+    pub color: [u8; 4],
+    /// Map colour slots.
+    pub map_colors: [Option<[u8; 4]>; 8],
+}
+
+impl ScreenRaster {
+    /// Whether a host terrain map provider is installed on this raster.
+    pub fn has_map_provider(&self) -> bool {
+        self.map_provider.is_some()
+    }
+
+    /// Capture the complete retained raster state. Fails while a map
+    /// provider is installed: provider output is host service state and
+    /// has no data inverse.
+    pub fn continuation(&self) -> Result<ScreenRasterContinuation, ScreenError> {
+        if self.map_provider.is_some() {
+            return Err(ScreenError::Host(
+                "raster with a map provider has no continuation inverse".into(),
+            ));
+        }
+        Ok(ScreenRasterContinuation {
+            width: self.width,
+            height: self.height,
+            margin: self.margin,
+            pixels: self.pixels.clone(),
+            color: self.color.0,
+            map_colors: self.map_colors.map(|slot| slot.map(|rgba| rgba.0)),
+        })
+    }
+
+    /// Construct a raster from continuation data, without a map provider.
+    pub fn from_continuation(image: ScreenRasterContinuation) -> Result<Self, ScreenError> {
+        if image.margin != 0 {
+            // The doubled margin is untrusted input: check the multiply
+            // itself before either subtraction (R6-31).
+            let twice = image
+                .margin
+                .checked_mul(2)
+                .ok_or(ScreenError::InvalidSize)?;
+            image
+                .width
+                .checked_sub(twice)
+                .ok_or(ScreenError::InvalidSize)?;
+            image
+                .height
+                .checked_sub(twice)
+                .ok_or(ScreenError::InvalidSize)?;
+        }
+        let len = (image.width as usize)
+            .checked_mul(image.height as usize)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or(ScreenError::InvalidSize)?;
+        if image.width == 0
+            || image.height == 0
+            || image.width > 4096
+            || image.height > 4096
+            || len > MAX_RASTER_BYTES
+            || image.pixels.len() != len
+        {
+            return Err(ScreenError::InvalidSize);
+        }
+        Ok(Self {
+            width: image.width,
+            height: image.height,
+            margin: image.margin,
+            pixels: image.pixels,
+            color: Rgba8(image.color),
+            map_provider: None,
+            #[cfg(test)]
+            reference_paths: false,
+            map_colors: image.map_colors.map(|slot| slot.map(Rgba8)),
+        })
+    }
+
+    /// Overlay continuation data onto a raster the host constructed with
+    /// identical geometry. The raster must not have a map provider.
+    pub fn restore_continuation(
+        &mut self,
+        image: ScreenRasterContinuation,
+    ) -> Result<(), ScreenError> {
+        if self.map_provider.is_some() {
+            return Err(ScreenError::Host(
+                "raster with a map provider has no continuation inverse".into(),
+            ));
+        }
+        if image.width != self.width
+            || image.height != self.height
+            || image.margin != self.margin
+            || image.pixels.len() != self.pixels.len()
+        {
+            return Err(ScreenError::InvalidSize);
+        }
+        self.pixels = image.pixels;
+        self.color = Rgba8(image.color);
+        self.map_colors = image.map_colors.map(|slot| slot.map(Rgba8));
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for ScreenRaster {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScreenRaster")
@@ -661,8 +1019,63 @@ impl std::fmt::Debug for ScreenRaster {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// R6-31: `margin * 2` overflowed before the checked subtraction could
+    /// guard it. A margin of 0x8000_0000 must yield InvalidSize, not a
+    /// panic, under checked arithmetic (dev/test profiles).
+    #[test]
+    fn from_continuation_rejects_margin_whose_double_overflows() {
+        let image = ScreenRasterContinuation {
+            width: 1,
+            height: 1,
+            margin: 0x8000_0000,
+            pixels: Vec::new(),
+            color: [0; 4],
+            map_colors: [None; 8],
+        };
+        assert!(matches!(
+            ScreenRaster::from_continuation(image),
+            Err(ScreenError::InvalidSize)
+        ));
+    }
+
+    /// A valid margined raster still round-trips through continuation.
+    #[test]
+    fn continuation_round_trip_with_margin() {
+        let raster = ScreenRaster::with_margin(4, 3, 2).unwrap();
+        let image = raster.continuation().unwrap();
+        let ptr = image.pixels.as_ptr();
+        let restored = ScreenRaster::from_continuation(image).unwrap();
+        assert_eq!(restored.margin(), 2);
+        assert_eq!(restored.pixels().as_ptr(), ptr);
+    }
+
+    #[test]
+    fn alpha_zero_still_validates_utf8_and_clear_replaces_pixels() {
+        let mut raster = ScreenRaster::new(8, 8).unwrap();
+        raster
+            .submit(&DrawCommand::SetColor(Rgba8([10, 20, 30, 0])))
+            .unwrap();
+        assert_eq!(
+            raster.submit(&DrawCommand::Text([0.0, 0.0], vec![0xff])),
+            Err(ScreenError::InvalidText)
+        );
+        assert_eq!(
+            raster.submit(&DrawCommand::TextBox(
+                [0.0, 0.0, 8.0, 8.0, 0.0, 0.0],
+                vec![0xff]
+            )),
+            Err(ScreenError::InvalidText)
+        );
+        raster.submit(&DrawCommand::Clear).unwrap();
+        assert!(raster
+            .pixels()
+            .chunks_exact(4)
+            .all(|px| px == [10, 20, 30, 0]));
+    }
 
     /// 依存を増やさない決定的な擬似乱数（SplitMix64）。
     struct Random(u64);
@@ -847,7 +1260,8 @@ mod tests {
         assert_eq!(written, 6);
         raster.submit(&DrawCommand::SetColor(Rgba8([200, 100, 50, 128])))?;
         raster.submit(&DrawCommand::Rect([0.0, 0.0, 8.0, 4.0], true))?;
-        let expected = blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([10, 20, 30, 255]));
+        let expected =
+            crate::blend::blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([10, 20, 30, 255]));
         let blended = raster
             .pixels()
             .chunks_exact(4)
@@ -856,7 +1270,7 @@ mod tests {
         assert_eq!(blended, 6);
         assert_eq!(
             &raster.pixels()[..4],
-            &blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([0; 4])).0
+            &crate::blend::blend_pixel(Rgba8([200, 100, 50, 128]), Rgba8([0; 4])).0
         );
         Ok(())
     }

@@ -15,27 +15,54 @@ pub struct HostBindings {
     pub values: BTreeMap<String, LuaValue>,
     /// Explicit functions, including replacements for existing builtin functions.
     pub functions: BTreeMap<String, HostFunction>,
+    /// Snapshot-only lookup paths after a trusted host bootstrap moves bindings.
+    /// Keys are the original registered paths; values are their live capture paths.
+    /// Images retain the original symbols and restore against freshly seeded bindings,
+    /// before heap reconciliation reinstates the captured namespace layout.
+    /// This does not install/expose bindings or execute code, and is allowed in Game.
+    pub snapshot_capture_paths: BTreeMap<Vec<String>, Vec<String>>,
 }
 impl std::fmt::Debug for HostBindings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HostBindings")
             .field("values", &self.values)
             .field("functions", &self.functions.keys().collect::<Vec<_>>())
+            .field("snapshot_capture_paths", &self.snapshot_capture_paths)
             .finish()
     }
 }
 impl HostBindings {
-    /// Whether this host leaves the selected builtin surface unchanged.
+    /// Whether no host bindings or snapshot lookup configuration are supplied.
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty() && self.functions.is_empty()
+        self.values.is_empty()
+            && self.functions.is_empty()
+            && self.snapshot_capture_paths.is_empty()
     }
     /// Reject conflicting paths before any user code or host callback is executed.
     pub fn validate(&self, profile: EnvironmentProfile) -> Result<(), VmError> {
-        if !self.is_empty() && profile != EnvironmentProfile::Extended {
+        if (!self.values.is_empty() || !self.functions.is_empty())
+            && profile != EnvironmentProfile::Extended
+        {
             return Err(VmError::new(
                 ErrorKind::InvalidArgument,
                 "host bindings require the extended environment",
             ));
+        }
+        if self.snapshot_capture_paths.len() > 512 {
+            return Err(VmError::new(
+                ErrorKind::Limit,
+                "too many snapshot capture paths",
+            ));
+        }
+        for (registered, live) in &self.snapshot_capture_paths {
+            for path in [registered, live] {
+                if path.is_empty() || path.iter().any(String::is_empty) {
+                    return Err(VmError::new(
+                        ErrorKind::InvalidArgument,
+                        "snapshot capture paths must have non-empty segments",
+                    ));
+                }
+            }
         }
         let mut seen = BTreeSet::new();
         for path in self.values.keys().chain(self.functions.keys()) {
@@ -71,20 +98,34 @@ impl Vm {
         bindings.validate(self.environment_profile)?;
         for (path, value) in &bindings.values {
             let mut encoded = crate::value::encode(&self.lua, std::slice::from_ref(value))?;
-            let value = encoded.pop_front().ok_or_else(|| {
+            let encoded = encoded.pop_front().ok_or_else(|| {
                 VmError::new(ErrorKind::InvalidArgument, "missing encoded host value")
             })?;
-            self.set_path(path, value)?;
+            self.set_path(path, encoded)?;
+            let segments: Vec<String> = path.split('.').map(str::to_owned).collect();
+            for prefix_len in 1..segments.len() {
+                self.note_host_path(segments[..prefix_len].to_vec());
+            }
+            self.unregister_host_prefix(&segments);
+            if matches!(value, LuaValue::Table(_)) {
+                self.note_host_path(segments);
+            }
         }
         for (path, handler) in &bindings.functions {
-            let handler = std::rc::Rc::clone(handler);
+            let handler = std::sync::Arc::clone(handler);
             let function = self.lua.create_function(move |lua, args: MultiValue| {
                 let args = crate::value::decode(args).map_err(mlua::Error::external)?;
                 let result = handler(&args).map_err(mlua::Error::external)?;
                 crate::value::encode(lua, &result).map_err(mlua::Error::external)
             })?;
             self.set_path(path, Value::Function(function))?;
+            let segments: Vec<String> = path.split('.').map(str::to_owned).collect();
+            self.unregister_host_prefix(&segments);
+            for prefix_len in 1..=segments.len() {
+                self.note_host_path(segments[..prefix_len].to_vec());
+            }
         }
+        self.snapshot_capture_paths = bindings.snapshot_capture_paths.clone();
         Ok(())
     }
     fn set_path(&self, path: &str, value: Value) -> Result<(), VmError> {

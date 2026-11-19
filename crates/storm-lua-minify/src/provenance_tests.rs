@@ -353,7 +353,8 @@ fn copy_through_paths_do_not_erase_an_untouched_program() {
 
 #[test]
 fn a_full_search_preserves_moved_definition_and_related_use_sites() {
-    let source = "local signal=input.getNumber(1) output.setNumber(1,signal+2 * 3)";
+    let source =
+        "function onTick() local signal=input.getNumber(1) output.setNumber(1,signal+2 * 3) end";
     let result = compile_code(
         source,
         &CompileOptions {
@@ -363,7 +364,10 @@ fn a_full_search_preserves_moved_definition_and_related_use_sites() {
     )
     .unwrap();
     let origins = result.origins.unwrap();
-    assert_eq!(result.code, "output.setNumber(1,input.getNumber(1)+6)");
+    assert_eq!(
+        result.code,
+        "function\nonTick()output.setNumber(1,input.getNumber(1)+6)end"
+    );
     assert_eq!(origins.unknown_bytes(), 0);
     let constant = origins
         .mappings

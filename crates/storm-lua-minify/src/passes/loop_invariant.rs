@@ -61,16 +61,23 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use storm_lua_analysis::effects::{mutated_builtin_roots, EffectAnalyzer};
+use storm_lua_analysis::effects::{mutated_builtin_roots, CallbackPhase, EffectAnalyzer};
 use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, SymbolId};
 use storm_lua_syntax::ast_utils;
 
-/// Pure host reads that may be hoisted, with their literal-argument rule.
-fn pure_read_key(source: &Ast, builtin: &str, args: &[NodeId]) -> Option<String> {
+/// Pure host reads that may be hoisted, with their literal-argument and
+/// callback-phase rules (v0.5.0 `E4`: `input.*` throws outside `onTick`,
+/// `screen.*` throws outside `onDraw`, `property.*` has no phase restriction).
+fn pure_read_key(
+    source: &Ast,
+    builtin: &str,
+    args: &[NodeId],
+    phase: CallbackPhase,
+) -> Option<String> {
     match builtin {
         "input.getNumber" | "input.getBool" => {
-            if args.len() != 1 {
+            if phase != CallbackPhase::TickOnly || args.len() != 1 {
                 return None;
             }
             let Node::Num(text) = source.node(args[0]) else {
@@ -88,7 +95,7 @@ fn pure_read_key(source: &Ast, builtin: &str, args: &[NodeId]) -> Option<String>
             Some(format!("{builtin}({text})"))
         }
         "screen.getWidth" | "screen.getHeight" => {
-            if args.is_empty() {
+            if phase == CallbackPhase::DrawOnly && args.is_empty() {
                 Some(builtin.to_string())
             } else {
                 None
@@ -245,7 +252,8 @@ impl<'a> NameOperandProof<'a> {
                         if self.mutated.contains(pure_read_root(b)) {
                             return false;
                         }
-                        pure_read_key(self.source, b, args).is_some()
+                        pure_read_key(self.source, b, args, self.analyzer.callback_phase(node))
+                            .is_some()
                     }
                     _ => {
                         if self.mutated.contains("math") || !math_arity_ok(b, args.len()) {
@@ -300,7 +308,7 @@ fn math_operand_key(proof: &NameOperandProof<'_>, node: NodeId) -> Option<String
                     if proof.mutated.contains(pure_read_root(b)) {
                         return None;
                     }
-                    pure_read_key(proof.source, b, args)
+                    pure_read_key(proof.source, b, args, proof.analyzer.callback_phase(node))
                 }
                 _ => {
                     if proof.mutated.contains("math") || !math_arity_ok(b, args.len()) {
@@ -389,7 +397,7 @@ fn arith_key(proof: &NameOperandProof<'_>, node: NodeId, depth: usize) -> Option
                     if proof.mutated.contains(pure_read_root(b)) {
                         return None;
                     }
-                    pure_read_key(proof.source, b, args)
+                    pure_read_key(proof.source, b, args, proof.analyzer.callback_phase(node))
                 }
                 _ => math_call_key(proof, node),
             }
@@ -516,7 +524,7 @@ fn collect_candidates(
     if let Node::Call(function, args, _) = ctx.source.node(node) {
         if let Some(builtin) = ctx.analyzer.resolve_builtin_reference(*function) {
             let b: &str = &builtin;
-            let key = pure_read_key(ctx.source, b, args)
+            let key = pure_read_key(ctx.source, b, args, ctx.analyzer.callback_phase(node))
                 .filter(|_| !ctx.mutated.contains(pure_read_root(b)))
                 .or_else(|| math_call_key(ctx.proof, node));
             if let Some(key) = key {
@@ -621,7 +629,7 @@ fn analyze_loop(
                     disqualified = true;
                     return;
                 }
-                if pure_read_key(source, &builtin, args).is_some() {
+                if pure_read_key(source, &builtin, args, analyzer.callback_phase(node)).is_some() {
                     return;
                 }
                 for arg in args {
@@ -686,7 +694,9 @@ fn analyze_loop(
                 header_bad = true;
                 return;
             };
-            if pure_read_key(source, &builtin, args).is_none() && !is_pure_math(&builtin) {
+            if pure_read_key(source, &builtin, args, analyzer.callback_phase(node)).is_none()
+                && !is_pure_math(&builtin)
+            {
                 header_bad = true;
             }
         });
@@ -1443,11 +1453,11 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local function big({params}) local s = 0 for i = 1, 3 do s = s + input.getNumber(1) end return s end"
+            "local function big({params}) local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") end return s end"
         );
         let (code, hoisted) = run(&source);
         assert_eq!(hoisted, 0);
-        assert!(code.contains("input.getNumber(1)"));
+        assert!(code.contains("property.getNumber"));
     }
 
     #[test]
@@ -1459,7 +1469,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local function big({params}) local s = 0 for i = 1, 3 do s = s + input.getNumber(1) end return s end"
+            "local function big({params}) local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") end return s end"
         );
         let (_, hoisted) = run(&source);
         assert_eq!(hoisted, 1);
@@ -1473,7 +1483,8 @@ mod tests {
             .map(|i| format!("local c{i} = {i}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let source = format!("{decls} local s = 0 for i = 1, 3 do s = s + input.getNumber(1) end");
+        let source =
+            format!("{decls} local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") end");
         let (_, hoisted) = run(&source);
         assert_eq!(hoisted, 0);
     }
@@ -1487,7 +1498,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local function big({params}) local s = 0 for i = 1, 3 do s = s + input.getNumber(1) + input.getNumber(2) end return s end"
+            "local function big({params}) local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") + property.getNumber(\"b\") end return s end"
         );
         let (_, hoisted) = run(&source);
         assert_eq!(hoisted, 1);
@@ -1511,7 +1522,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local obj = {{}} function obj:m({params}) local s = 0 for i = 1, 3 do s = s + input.getNumber(1) end return s end"
+            "local obj = {{}} function obj:m({params}) local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") end return s end"
         );
         let (_, hoisted) = run(&source);
         assert_eq!(hoisted, 0);
@@ -1524,9 +1535,31 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local obj = {{}} function obj:m({params}) local s = 0 for i = 1, 3 do s = s + input.getNumber(1) end return s end"
+            "local obj = {{}} function obj:m({params}) local s = 0 for i = 1, 3 do s = s + property.getNumber(\"a\") end return s end"
         );
         let (_, hoisted) = run(&source);
         assert_eq!(hoisted, 1);
+    }
+
+    #[test]
+    fn skips_wrong_phase_host_reads_and_hoists_certified_phase_helpers() {
+        // Wrong phase: `input.getNumber` inside `onDraw` or at chunk top-level must NOT hoist.
+        let (_, hoisted_draw) =
+            run("function onDraw() local s=0 for i=1,n do s=s+input.getNumber(1) end end");
+        assert_eq!(hoisted_draw, 0);
+        let (_, hoisted_top) = run("local s=0 for i=1,n do s=s+input.getNumber(1) end");
+        assert_eq!(hoisted_top, 0);
+        // `screen.getWidth` inside `onTick` must NOT hoist, while inside `onDraw` it DOES hoist.
+        let (_, hoisted_tick_screen) =
+            run("function onTick() local s=0 for i=1,n do s=s+screen.getWidth() end end");
+        assert_eq!(hoisted_tick_screen, 0);
+        let (_, hoisted_draw_screen) =
+            run("function onDraw() local s=0 for i=1,n do s=s+screen.getWidth() end end");
+        assert_eq!(hoisted_draw_screen, 1);
+        // Helper called exclusively from `onTick` inherits `TickOnly` and hoists `input.getNumber`.
+        let (_, hoisted_tick_helper) = run(
+            "local function step(n) local s=0 for i=1,n do s=s+input.getNumber(1) end return s end function onTick() output.setNumber(1,step(3)) end",
+        );
+        assert_eq!(hoisted_tick_helper, 1);
     }
 }

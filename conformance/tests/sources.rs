@@ -1,9 +1,11 @@
 //! Actual Lua execution for host-supplied modules and multi-chunk replay.
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, clippy::unwrap_used)]
 use std::{
-    cell::{Cell, RefCell},
     collections::BTreeMap,
-    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use storm_lua_addon::{Addon, AddonConfig};
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
@@ -14,7 +16,7 @@ use storm_lua_vm::{
     value::LuaValue,
 };
 
-fn loader(entries: &[(&str, &str, &str)], calls: Rc<RefCell<Vec<String>>>) -> RequireLoader {
+fn loader(entries: &[(&str, &str, &str)], calls: Arc<Mutex<Vec<String>>>) -> RequireLoader {
     let sources: BTreeMap<_, _> = entries
         .iter()
         .map(|(key, name, source)| {
@@ -28,7 +30,10 @@ fn loader(entries: &[(&str, &str, &str)], calls: Rc<RefCell<Vec<String>>>) -> Re
         })
         .collect();
     RequireLoader::new(move |name| {
-        calls.borrow_mut().push(name.to_owned());
+        calls
+            .lock()
+            .map_err(|_| VmError::new(ErrorKind::Host, "load log is poisoned"))?
+            .push(name.to_owned());
         sources
             .get(name)
             .cloned()
@@ -45,24 +50,24 @@ fn configured(loader: RequireLoader) -> MicrocontrollerConfig {
 #[test]
 fn include_once_shares_globals_but_not_locals_and_discards_returns(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
-    let sources=loader(&[("lib", "@lib/init.lua", "loads=(loads or 0)+1 local private=4 function helper()return shared+private end return 7,nil,9")],Rc::clone(&calls));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let sources=loader(&[("lib", "@lib/init.lua", "loads=(loads or 0)+1 local private=4 function helper()return shared+private end return 7,nil,9")],Arc::clone(&calls));
     let mut vm = Microcontroller::new(configured(sources))?;
     vm.load(b"shared=10; local r=require('lib'); require('lib'); function onTick()output.setNumber(1,helper());output.setNumber(2,loads);output.setBool(1,r==nil and private==nil);output.setNumber(3,select('#',require('lib')))end", "@main.lua")?;
     vm.tick(&CompositeSignal::default())?;
     assert_eq!(&vm.output().numbers[..3], &[14.0, 1.0, 0.0]);
     assert!(vm.output().booleans[0]);
-    assert_eq!(&*calls.borrow(), &["lib"]);
+    assert_eq!(&*calls.lock().unwrap(), &["lib"]);
     vm.reset()?;
     vm.tick(&Default::default())?;
     assert_eq!(vm.output().numbers[0], 14.0);
-    assert_eq!(&*calls.borrow(), &["lib", "lib"]);
+    assert_eq!(&*calls.lock().unwrap(), &["lib", "lib"]);
     Ok(())
 }
 #[test]
 fn nested_cycles_mark_before_execution_and_cache_logical_names(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
+    let calls = Arc::new(Mutex::new(Vec::new()));
     let sources = loader(
         &[
             (
@@ -77,7 +82,7 @@ fn nested_cycles_mark_before_execution_and_cache_logical_names(
             ),
             ("alias", "@a.lua", "trace=trace..'x'"),
         ],
-        Rc::clone(&calls),
+        Arc::clone(&calls),
     );
     let mut vm = Microcontroller::new(configured(sources))?;
     vm.load(
@@ -85,20 +90,20 @@ fn nested_cycles_mark_before_execution_and_cache_logical_names(
         "@main.lua",
     )?;
     assert_eq!(vm.drain_logs(), vec![b"abBAx".to_vec()]);
-    assert_eq!(&*calls.borrow(), &["a", "b", "alias"]);
+    assert_eq!(&*calls.lock().unwrap(), &["a", "b", "alias"]);
     Ok(())
 }
 #[test]
 fn required_chunk_breakpoint_resumes_inside_same_coroutine(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
+    let calls = Arc::new(Mutex::new(Vec::new()));
     let mut vm = Microcontroller::new(configured(loader(
         &[(
             "lib",
             "@lib/helper.lua",
             "local captured=4\nshared=captured+3\nfunction helper()return shared end",
         )],
-        Rc::clone(&calls),
+        Arc::clone(&calls),
     )))?;
     vm.set_breakpoints(vec![("@lib/helper.lua".into(), 2)])?;
     assert_eq!(
@@ -121,17 +126,17 @@ fn required_chunk_breakpoint_resumes_inside_same_coroutine(
     assert_eq!(vm.resume(StepMode::Continue)?, RunOutcome::Completed);
     vm.tick(&Default::default())?;
     assert_eq!(vm.output().numbers[0], 7.0);
-    assert_eq!(&*calls.borrow(), &["lib"]);
+    assert_eq!(&*calls.lock().unwrap(), &["lib"]);
     vm.reset()?;
     vm.tick(&Default::default())?;
     assert_eq!(vm.output().numbers[0], 7.0);
-    assert_eq!(&*calls.borrow(), &["lib", "lib"]);
+    assert_eq!(&*calls.lock().unwrap(), &["lib", "lib"]);
     Ok(())
 }
 #[test]
 fn source_failures_are_explicit_and_only_started_chunks_remain_cached(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
+    let calls = Arc::new(Mutex::new(Vec::new()));
     let sources = loader(
         &[
             (
@@ -141,12 +146,12 @@ fn source_failures_are_explicit_and_only_started_chunks_remain_cached(
             ),
             ("syntax", "@syntax.lua", "local ="),
         ],
-        Rc::clone(&calls),
+        Arc::clone(&calls),
     );
     let mut vm = Microcontroller::new(configured(sources))?;
     vm.load(b"local a=pcall(require,'missing');local b=pcall(require,'missing');local c=pcall(require,'syntax');local d=pcall(require,'syntax');local e,msg=pcall(require,'runtime');local f=pcall(require,'runtime');assert(not a and not b and not c and not d and not e and f);assert(runs==1);assert(msg:find('runtime.lua'));debug.log(runs)","@main.lua")?;
     assert_eq!(
-        &*calls.borrow(),
+        &*calls.lock().unwrap(),
         &["missing", "missing", "syntax", "syntax", "runtime"]
     );
     assert_eq!(vm.drain_logs(), vec![b"1".to_vec()]);
@@ -155,7 +160,7 @@ fn source_failures_are_explicit_and_only_started_chunks_remain_cached(
 #[test]
 fn loader_is_opt_in_and_cannot_conflict_with_host_bindings(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let l = loader(&[], Rc::default());
+    let l = loader(&[], Arc::default());
     assert!(Microcontroller::new(MicrocontrollerConfig {
         require_loader: Some(l.clone()),
         ..Default::default()
@@ -171,7 +176,7 @@ fn loader_is_opt_in_and_cannot_conflict_with_host_bindings(
     };
     a.bindings
         .functions
-        .insert("require.foo".into(), Rc::new(|_| Ok(vec![])));
+        .insert("require.foo".into(), Arc::new(|_| Ok(vec![])));
     assert!(Addon::new(a).is_err());
     let mut plain = Microcontroller::new(MicrocontrollerConfig {
         environment: EnvironmentProfile::Extended,
@@ -193,7 +198,7 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
         })
     });
     let mut c = configured(l);
-    c.limits.instruction_budget = std::num::NonZeroU64::MIN.saturating_add(1999);
+    c.limits.instruction_budget = Some(std::num::NonZeroU64::MIN.saturating_add(1999));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"while true do pcall(require,'loop')end", "@main.lua")
@@ -221,10 +226,10 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
             "@alloc.lua",
             "local t={}for i=1,10000 do t[i]=string.rep('x',1024)end",
         )],
-        Rc::default(),
+        Arc::default(),
     );
     let mut c = configured(allocation);
-    c.limits.lua_memory_bytes = std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1);
+    c.limits.lua_memory_bytes = Some(std::num::NonZeroUsize::MIN.saturating_add(256 * 1024 - 1));
     let mut vm = Microcontroller::new(c)?;
     assert_eq!(
         vm.load(b"require('alloc')", "@main.lua")
@@ -237,10 +242,10 @@ fn nested_require_never_resets_instruction_budget_or_escapes_memory_limits(
 #[test]
 fn invalid_module_names_and_bytecode_do_not_turn_into_empty_sources(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(Cell::new(0));
-    let counter = Rc::clone(&calls);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
     let l = RequireLoader::new(move |_| {
-        counter.set(counter.get() + 1);
+        counter.fetch_add(1, Ordering::Relaxed);
         Ok(SourceChunk {
             name: "@binary.lua".into(),
             source: b"\x1bLua\0\0".to_vec(),
@@ -248,18 +253,18 @@ fn invalid_module_names_and_bytecode_do_not_turn_into_empty_sources(
     });
     let mut vm = Microcontroller::new(configured(l))?;
     vm.load(b"for _,v in ipairs({true,1,{},'',string.char(0)})do assert(not pcall(require,v))end;assert(not pcall(require,'binary'))","@main.lua")?;
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     Ok(())
 }
 #[test]
 fn loader_cache_is_per_vm_not_per_source_provider() -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
-    let c = configured(loader(&[("a", "@a.lua", "value=7")], Rc::clone(&calls)));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let c = configured(loader(&[("a", "@a.lua", "value=7")], Arc::clone(&calls)));
     for _ in 0..2 {
         let mut vm = Microcontroller::new(c.clone())?;
         vm.load(b"require('a');require('a')", "@main.lua")?;
     }
-    assert_eq!(&*calls.borrow(), &["a", "a"]);
+    assert_eq!(&*calls.lock().unwrap(), &["a", "a"]);
     Ok(())
 }
 #[test]
@@ -308,16 +313,16 @@ fn failed_or_abandoned_load_does_not_enter_reset_program() -> Result<(), Box<dyn
 #[test]
 fn completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let fail = Rc::new(Cell::new(false));
-    let flag = Rc::clone(&fail);
+    let fail = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&fail);
     let mut c = MicrocontrollerConfig {
         environment: EnvironmentProfile::Extended,
         ..Default::default()
     };
     c.bindings.functions.insert(
         "host.check".into(),
-        Rc::new(move |_| {
-            if flag.get() {
+        Arc::new(move |_| {
+            if flag.load(Ordering::Relaxed) {
                 Err(VmError::new(ErrorKind::Host, "replay failed"))
             } else {
                 Ok(vec![])
@@ -336,11 +341,11 @@ fn completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm(
     );
     vm.set_breakpoints(vec![])?;
     vm.resume(StepMode::Continue)?;
-    fail.set(true);
+    fail.store(true, Ordering::Relaxed);
     assert!(vm.reset().is_err());
     vm.tick(&Default::default())?;
     assert_eq!(vm.output().numbers[0], 7.0);
-    fail.set(false);
+    fail.store(false, Ordering::Relaxed);
     vm.reset()?;
     vm.tick(&Default::default())?;
     assert_eq!(vm.output().numbers[0], 7.0);
@@ -348,7 +353,10 @@ fn completed_suspended_load_is_replayed_and_failed_replay_keeps_old_vm(
 }
 #[test]
 fn load_history_is_bounded_before_source_executes() -> Result<(), Box<dyn std::error::Error>> {
-    let mut vm = Microcontroller::new(Default::default())?;
+    // 保持履歴の上限は、ホストがソース長制限を有効化した場合に適用されます（J1）。
+    let mut config = MicrocontrollerConfig::default();
+    config.limits.max_source_bytes = Some(std::num::NonZeroUsize::new(1024).ok_or("nonzero")?);
+    let mut vm = Microcontroller::new(config)?;
     for _ in 0..128 {
         vm.load(b"counter=(counter or 0)+1", "@same.lua")?;
     }
@@ -365,14 +373,14 @@ fn load_history_is_bounded_before_source_executes() -> Result<(), Box<dyn std::e
 #[test]
 fn addon_keeps_single_entry_lifecycle_with_named_requires_and_reload(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let calls = Rc::new(RefCell::new(Vec::new()));
+    let calls = Arc::new(Mutex::new(Vec::new()));
     let sources = loader(
         &[(
             "prefix",
             "@prefix.lua",
             "local n=7;function helper()return n end",
         )],
-        Rc::clone(&calls),
+        Arc::clone(&calls),
     );
     let c = AddonConfig {
         environment: EnvironmentProfile::Extended,
@@ -406,6 +414,6 @@ fn addon_keeps_single_entry_lifecycle_with_named_requires_and_reload(
     assert!(entries
         .iter()
         .any(|(k, v)| k == &LuaValue::Bytes(b"new".to_vec()) && v == &LuaValue::Bool(false)));
-    assert_eq!(&*calls.borrow(), &["prefix", "prefix"]);
+    assert_eq!(&*calls.lock().unwrap(), &["prefix", "prefix"]);
     Ok(())
 }

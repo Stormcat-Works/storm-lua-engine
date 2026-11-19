@@ -15,6 +15,9 @@ def validate_architecture(metadata, policy):
         raise ValueError("workspace membership does not match architecture policy")
     edges = {name: set() for name in packages}
     for name, package in packages.items():
+        seen_normal = set()
+        seen_dev = set()
+        seen_external = set()
         for dep in package["dependencies"]:
             target = dep["name"]  # 依存関係のエイリアスではなく、Cargoの実際のパッケージ名。
             kind = dep.get("kind") or "normal"
@@ -29,13 +32,21 @@ def validate_architecture(metadata, policy):
                 if policy[target]["role"] in ("test", "tool"):
                     raise ValueError("test/tool crates cannot be dependency targets")
                 edges[name].add(target)
+                (seen_normal if kind == "normal" else seen_dev).add(target)
             elif target not in policy[name]["external"] or dep.get("path"):
                 raise ValueError(f"forbidden external dependency: {name} -> {target}")
+            else:
+                seen_external.add(target)
             allowed_features = policy[name].get("features", {}).get(target, [])
             unregistered = sorted(set(dep.get("features") or []) - set(allowed_features))
             if unregistered:
                 raise ValueError(
                     f"unregistered feature activation: {name} -> {target}: {unregistered}")
+        for section, seen in (("normal", seen_normal), ("dev", seen_dev), ("external", seen_external)):
+            stale = sorted(set(policy[name][section]) - seen)
+            if stale:
+                raise ValueError(
+                    f"stale {section} dependency in architecture policy for {name}: {stale}")
     active, done = set(), set()
     def visit(name):
         if name in active: raise ValueError("dependency cycle, including dev edges")

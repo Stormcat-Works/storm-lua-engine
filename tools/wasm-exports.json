@@ -36,7 +36,9 @@
     "sle_set_map_host",
     "sle_mode",
     "sle_new_vehicle",
-    "sle_vehicle"
+    "sle_vehicle",
+    "sle_new_component",
+    "sle_component"
   ],
   "sls": [
     "sls_abi_version",

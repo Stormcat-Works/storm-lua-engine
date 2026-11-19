@@ -220,3 +220,10 @@ export interface AddonBuildOptions {
   /** First line of a leading long comment used for metadata. */
   metadataTag?: string;
 }
+
+/** Component Mod include-once linking only; no optimizer or Vehicle size assumptions. */
+export interface ComponentBuildOptions {
+  environment?: EnvironmentProfile;
+  /** First line of a leading long comment used for metadata. */
+  metadataTag?: string;
+}

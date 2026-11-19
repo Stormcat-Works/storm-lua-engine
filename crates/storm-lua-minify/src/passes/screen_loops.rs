@@ -1302,15 +1302,10 @@ fn transform_node(
                 Vec::new()
             };
             let mut accepted: Option<(BuiltRun, usize)> = None;
+            let mut paused_origins = target.nodes.suspend_origins();
             let mut stop = end;
             while stop >= cursor + 4 {
                 let slice = &calls[cursor - index..stop - index];
-                // O(1) arity/effect precheck over the prefix sums above.
-                // A failing slice is exactly what build_candidate used to
-                // reject by rescanning it. The bad check runs first, so a
-                // slice reaching the arity check holds only genuine Call
-                // nodes and its prefix differences are real argument counts
-                // (a non-Call entry is always marked bad).
                 let start = cursor - index;
                 let stop_rel = stop - index;
                 if bad_prefix[stop_rel] - bad_prefix[start] > 0 {
@@ -1324,18 +1319,6 @@ fn transform_node(
                     stop -= 1;
                     continue;
                 }
-                // Consume exactly one symbol pair per attempt reaching
-                // build_candidate, in attempt order, exactly as the old
-                // per-attempt fresh() calls did (see next_screen_symbol).
-                // Snapshot the arena length and the interner before this
-                // attempt interns its symbol pair, so a failed trial can
-                // roll both back: a failed trial otherwise leaves its pushed
-                // nodes dead in the target arena and interns 2 fresh symbols,
-                // so the arena grows ~16 nodes and the symbol table 2 entries
-                // per attempt, and downstream passes pay copy-on-write copies
-                // of both. Surviving nodes never reference rolled-back
-                // symbols (their nodes are truncated on failure, and the
-                // symbol cursors only move forward).
                 let checkpoint = target.nodes.len();
                 let strings_checkpoint = target.strings.clone();
                 if screen_serial != Some(*serial) {
@@ -1343,6 +1326,8 @@ fn transform_node(
                     index_next = 0;
                     table_next = 0;
                 }
+                let index_next_before = index_next;
+                let table_next_before = table_next;
                 let index_symbol = next_screen_symbol(
                     target,
                     &format!("__stormmin_screen_index_{}", *serial),
@@ -1354,7 +1339,7 @@ fn transform_node(
                     &mut table_next,
                 );
                 plan.clear();
-                if let Some(built) = build_candidate(
+                if let Some(mut built) = build_candidate(
                     source,
                     target,
                     res,
@@ -1365,15 +1350,47 @@ fn transform_node(
                     &columns,
                     &mut plan,
                 ) {
-                    plan.apply(target, source);
+                    if paused_origins.is_some() {
+                        target.nodes.truncate(checkpoint);
+                        target.strings = strings_checkpoint;
+                        index_next = index_next_before;
+                        table_next = table_next_before;
+                        target.nodes.resume_origins(paused_origins.take());
+                        let index_symbol = next_screen_symbol(
+                            target,
+                            &format!("__stormmin_screen_index_{}", *serial),
+                            &mut index_next,
+                        );
+                        let table_symbol = next_screen_symbol(
+                            target,
+                            &format!("__stormmin_screen_values_{}", *serial),
+                            &mut table_next,
+                        );
+                        plan.clear();
+                        if let Some(tracked_built) = build_candidate(
+                            source,
+                            target,
+                            res,
+                            analyzer,
+                            slice,
+                            (index_symbol, table_symbol),
+                            periodic,
+                            &columns,
+                            &mut plan,
+                        ) {
+                            plan.apply(target, source);
+                            built = tracked_built;
+                        }
+                    }
                     accepted = Some((built, stop));
                     break;
                 }
-                // Roll back the failed trial's dead nodes and its interned
-                // symbols (see the checkpoint above).
                 target.nodes.truncate(checkpoint);
                 target.strings = strings_checkpoint;
                 stop -= 1;
+            }
+            if paused_origins.is_some() {
+                target.nodes.resume_origins(paused_origins);
             }
             if let Some((built, candidate_end)) = accepted {
                 let _ = (
@@ -1447,11 +1464,19 @@ mod tests {
 
     #[test]
     fn periodic_coordinates_can_be_synthesized() {
-        let source = "function onDraw()screen.drawText(0,0,input.getNumber(1))screen.drawText(0,6,input.getNumber(2))screen.drawText(0,18,input.getNumber(3))screen.drawText(0,24,input.getNumber(4))screen.drawText(0,30,input.getNumber(5))screen.drawText(0,42,input.getNumber(6))screen.drawText(0,48,input.getNumber(7))screen.drawText(0,54,input.getNumber(8))end";
+        let source = "function onDraw()screen.drawText(0,0,property.getNumber('a'))screen.drawText(0,6,property.getNumber('b'))screen.drawText(0,18,property.getNumber('c'))screen.drawText(0,24,property.getNumber('d'))screen.drawText(0,30,property.getNumber('e'))screen.drawText(0,42,property.getNumber('f'))screen.drawText(0,48,property.getNumber('g'))screen.drawText(0,54,property.getNumber('h'))end";
         let (mut ast, root) = parse_source(source).unwrap();
         synthesize_screen_loops(&mut ast, root, true);
         let out = Printer::new(&ast, false).output(root);
         assert!(out.contains("for "), "{out}");
+
+        // v0.5.0 (`E4`): `input.getNumber` inside `onDraw` throws a phase error, so it must NOT
+        // be hoisted into a table ahead of preceding draws.
+        let wrong_phase = "function onDraw()screen.drawText(0,0,1)screen.drawText(0,6,input.getNumber(2))screen.drawText(0,18,input.getNumber(3))screen.drawText(0,24,input.getNumber(4))screen.drawText(0,30,input.getNumber(5))screen.drawText(0,42,input.getNumber(6))screen.drawText(0,48,input.getNumber(7))screen.drawText(0,54,input.getNumber(8))end";
+        let (mut bad_ast, bad_root) = parse_source(wrong_phase).unwrap();
+        synthesize_screen_loops(&mut bad_ast, bad_root, true);
+        let bad_out = Printer::new(&bad_ast, false).output(bad_root);
+        assert!(!bad_out.contains("for "), "{bad_out}");
     }
 }
 

@@ -1,8 +1,16 @@
 # Implementation tasks
 
-v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、GitHub Releaseとnpmの公開を完了した。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
+v0.4.1は2026-11-04に公開済み。mainは`88ec6f0`、タグは`v0.4.1`で、GitHub Releaseとnpmの公開を完了した。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
 
 ## 未完了の作業
+
+### v0.5.0のローカル公開候補（2026-11-16、準備完了・公開工程は残る）
+
+Component Modプロファイルの追加と、Vehicle／Addon意味論の実ゲーム整合、依存関係の更新を一つの公開候補にまとめ、版番号を0.5.0へ更新した。残る公開工程は、検査済みツリーの候補スカッシュ再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認で、[リリース手順](docs/release.md)に従い管理者の最終確認後に行う。
+
+### Component Mod の TypeScript SDK 公開（2026-11-16、実施済み）
+
+Rust側（`storm-lua-component`）に続き、TS SDK への公開を実施した。WASM セッションへの Component モード（mode 3）と制御アクション（parse / add_to_simulation / tick / render / remove_from_simulation / status）、`packages/lua-engine/src/component.ts`（`AddonVm` と同型の `ComponentVm`）、生成カタログへの Component 項目（`COMPONENT_API_CATALOG` と environment の `componentRoots` / `componentCallbacks`）、ホスト提供ドメイン（47関数＋parser 3関数）を TS ホストから供給するブリッジが入った。ブリッジは addon の `server.*` 登録とは形が異なり、ドメイン単位の型付きプロバイダと固定署名の同期コールバック群として設計した（セッション設定にはドメイン名だけを渡し、実体はホスト登録側に置く）。build/minify パイプラインの Component 入口（`storm-lua-build` の `build_component` と compiler の `buildComponent`）も併せて実施した。詳細は[Component Mod仕様](docs/specs/component.md)の TypeScript SDK の節を参照する。
 
 ### v0.4.1のローカル公開候補（2026-11-04、準備完了・公開工程は残る）
 
@@ -10,9 +18,9 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 
 残る公開工程は、検査済みツリーの候補スカッシュ再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認。
 
-### phase外の呼び出しの残りの実機測定（2026-11-15）
+### phase外の呼び出しの残りの実機測定（2026-11-15、解決済み）
 
-- [ ] トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの実ゲームの挙動を測る。測定するまでは、0/falseを返し書き込みと描画を無視する従来の挙動を維持する。
+トップレベルと`httpReply`の中で`input`、`output`、`screen`を呼んだときの挙動は、v1.15.26の実ゲームでも同じoutsideエラーになることを確認し、2026-11-16にv0.5.0で実装した。実機測定は不要になったため本項目は閉じる。
 
 ### npmパッケージが求めるNodeの版（2026-11-15）
 
@@ -23,6 +31,8 @@ v0.4.0は2026-11-04に公開済み。mainは`f26c9b3`、タグは`v0.4.0`で、G
 - [ ] docs.makkii.jpのガイドへ、CommonJSからの読み込み方と、ホスト関数に届くLuaの文字列が`Uint8Array`であることを追記する。ガイドの本文は本リポジトリの外で管理する。実行して確かめた例は`examples/consumer`の`commonjs.cjs`、`commonjs-types.cts`、`host-bindings-bytes.mjs`にある。
 
 ### AD-01/AD-02 host接続（2026-10-17）
+
+`HostCall::truthy`で呼出し中の値をowned dataへ変換せずにLua truthinessを読みます。循環tableや関数の値を保持・実行しない引数参照APIです。hostの設定・同期・永続化はconsumerが所有し、公開工程とは区別します。
 
 `HostCall::truthy`で呼出し中の値をowned dataへ変換せずにLua truthinessを読みます。循環tableや関数の値を保持・実行しない引数参照APIです。hostの設定・同期・永続化はconsumerが所有し、公開工程とは区別します。
 

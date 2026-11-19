@@ -1,0 +1,524 @@
+{
+  "callbacks": [
+    "onParse",
+    "onAddToSimulation",
+    "onTick",
+    "onRender",
+    "onRemoveFromSimulation"
+  ],
+  "functions": [
+    {
+      "availability": "implemented",
+      "effect": "log",
+      "parameters": "message: string | number",
+      "path": "debug.log",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "parse-definition",
+      "parameters": "key: string, value: boolean",
+      "path": "parser.parseBool",
+      "phase": "any",
+      "returns": "boolean, boolean"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "parse-definition",
+      "parameters": "key: string, value: number",
+      "path": "parser.parseNumber",
+      "phase": "any",
+      "returns": "number, boolean"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "parse-definition",
+      "parameters": "key: string, value: string",
+      "path": "parser.parseString",
+      "phase": "any",
+      "returns": "string, boolean"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "a: table, b: table",
+      "path": "matrix.multiply",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "matrix: table, x: number, y: number, z: number, w: number",
+      "path": "matrix.multiplyXYZW",
+      "phase": "any",
+      "returns": "number, number, number, number"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "matrix: table",
+      "path": "matrix.invert",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "matrix: table",
+      "path": "matrix.transpose",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "",
+      "path": "matrix.identity",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "x: number, y: number, z: number",
+      "path": "matrix.scale",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "angle: number",
+      "path": "matrix.rotationX",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "angle: number",
+      "path": "matrix.rotationY",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "angle: number",
+      "path": "matrix.rotationZ",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "x: number, y: number, z: number",
+      "path": "matrix.translation",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "matrix: table",
+      "path": "matrix.position",
+      "phase": "any",
+      "returns": "number, number, number"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "a: table, b: table",
+      "path": "matrix.distance",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "implemented",
+      "effect": "matrix",
+      "parameters": "x: number, z: number",
+      "path": "matrix.rotationToFaceXZ",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer, value: boolean",
+      "path": "component.setOutputLogicSlotBool",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer, value: number",
+      "path": "component.setOutputLogicSlotFloat",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer, value: table",
+      "path": "component.setOutputLogicSlotComposite",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer",
+      "path": "component.getInputLogicSlotBool",
+      "phase": "any",
+      "returns": "boolean"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer",
+      "path": "component.getInputLogicSlotFloat",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "logic-slot",
+      "parameters": "slot: integer",
+      "path": "component.getInputLogicSlotComposite",
+      "phase": "any",
+      "returns": "table"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "slot: integer",
+      "path": "component.slotTorqueIsConnected",
+      "phase": "any",
+      "returns": "boolean"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "slot: integer, value: number, dt: number",
+      "path": "component.slotTorqueApplyMomentum",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "integer, integer",
+      "path": "component.slotTorqueCreateBridge",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "slot: integer",
+      "path": "component.slotTorqueDestroyBridge",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "integer, number",
+      "path": "component.slotTorqueSetBridgeFactor",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "torque-slot",
+      "parameters": "integer, number",
+      "path": "component.slotTorqueSetBridgeRatio",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-slot",
+      "parameters": "integer, integer, number, number, integer, integer, integer, integer",
+      "path": "component.slotFluidResolveFlow",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-slot",
+      "parameters": "integer, integer, number, number, integer, integer, integer",
+      "path": "component.slotFluidResolveFlowToSlot",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "electric-slot",
+      "parameters": "slot: integer",
+      "path": "component.slotElectricIsConnected",
+      "phase": "any",
+      "returns": "boolean"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "electric-slot",
+      "parameters": "slot: integer, charge: number",
+      "path": "component.slotElectricAddCharge",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "electric-slot",
+      "parameters": "slot: integer, charge: number",
+      "path": "component.slotElectricRemoveCharge",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "electric-slot",
+      "parameters": "slot: integer",
+      "path": "component.slotElectricGetChargeFactor",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "sound",
+      "parameters": "integer, integer, number, number, number, number, number, number, number, number",
+      "path": "component.sfxPlayOnce",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "sound",
+      "parameters": "integer, integer, number, number, number, number, number, number, number, number",
+      "path": "component.sfxPlayLoop",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "sound",
+      "parameters": "integer, number, number, number, number, number, number, number",
+      "path": "component.sfxUpdate",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "sound",
+      "parameters": "integer",
+      "path": "component.sfxStop",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "from: integer, to: integer, volume: number",
+      "path": "component.fluidContentsTransferVolume",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "from: integer, to: integer, volume: number, exceptType: integer",
+      "path": "component.fluidContentsTransferVolumeExceptType",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer, fluidType: integer, volume: number",
+      "path": "component.fluidContentsSetFluidTypeVolume",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer, fluidType: integer",
+      "path": "component.fluidContentsGetFluidTypeVolume",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer",
+      "path": "component.fluidContentsGetVolume",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer, capacity: number",
+      "path": "component.fluidContentsSetCapacity",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer",
+      "path": "component.fluidContentsGetCapacity",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "fluid-contents",
+      "parameters": "slot: integer",
+      "path": "component.fluidContentsGetPressure",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "heat",
+      "parameters": "x: number, y: number, z: number, radius: number, temperature: number",
+      "path": "component.heaterSetSphere",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "heat",
+      "parameters": "matrix: table, number, number, number, number",
+      "path": "component.heaterSetOrientedBox",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "heat",
+      "parameters": "temperature: number",
+      "path": "component.heaterSetTemperature",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "heat",
+      "parameters": "integer, number",
+      "path": "component.heaterSetFactor",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "render",
+      "parameters": "matrix: table",
+      "path": "component.renderMesh0",
+      "phase": "draw",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "render",
+      "parameters": "matrix: table",
+      "path": "component.renderMesh1",
+      "phase": "draw",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "render",
+      "parameters": "matrix: table",
+      "path": "component.renderMesh2",
+      "phase": "draw",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "render",
+      "parameters": "number, number, number, number, number, number, number, boolean, boolean",
+      "path": "component.renderLight",
+      "phase": "draw",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "render",
+      "parameters": "matrix: table, number, number",
+      "path": "component.renderLaser",
+      "phase": "draw",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "x: number, y: number, z: number, fx: number, fy: number, fz: number, local: boolean",
+      "path": "component.physicsImpulse",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "x: number, y: number, z: number, dx: number, dy: number, dz: number",
+      "path": "component.physicsRaycast",
+      "phase": "any",
+      "returns": "any"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "",
+      "path": "component.physicsGetLinearVelocity",
+      "phase": "any",
+      "returns": "number, number, number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "x: number, y: number, z: number",
+      "path": "component.physicsGetLinearVelocityAtPoint",
+      "phase": "any",
+      "returns": "number, number, number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "",
+      "path": "component.physicsGetAngularVelocity",
+      "phase": "any",
+      "returns": "number, number, number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "physics",
+      "parameters": "integer, integer, number, number, number, number, number, number",
+      "path": "component.spawnProjectile",
+      "phase": "any",
+      "returns": ""
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "environment-query",
+      "parameters": "number, number, number, number",
+      "path": "component.getSubmergenceFactor",
+      "phase": "any",
+      "returns": "number"
+    },
+    {
+      "availability": "requires-provider",
+      "effect": "environment-query",
+      "parameters": "",
+      "path": "component.getWindVelocity",
+      "phase": "any",
+      "returns": "number, number, number"
+    }
+  ],
+  "profile": "component"
+}

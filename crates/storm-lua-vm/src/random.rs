@@ -1,6 +1,9 @@
 //! Host-owned Windows CRT context shared with non-Lua simulation consumers.
 use mlua::{Lua, MultiValue, Table, Value};
-use std::rc::Rc;
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 /// One native CRT random context. The host owns/checkpoints its state and shares
 /// the same instance with every consumer running in that simulation context.
@@ -12,7 +15,66 @@ pub trait CrtRandomSource {
     fn seed(&self, seed: u32) -> Result<(), String>;
 }
 /// A shared execution-context resource, retained through addon savedata reload.
-pub type SharedCrtRandom = Rc<dyn CrtRandomSource>;
+pub type SharedCrtRandom = Arc<dyn CrtRandomSource + Send + Sync>;
+
+/// エンジン組み込みのMSVC CRT互換ストリーム。実ゲームが使うCRTの
+/// `rand`/`srand`（乗算214013・加算2531011、上位ビットから15bitを取り出す方式）
+/// そのもので、初期状態はsrand前の1です。
+pub struct MsvcCrtRandom {
+    state: AtomicU32,
+}
+impl MsvcCrtRandom {
+    /// 初期状態（1）で作成します。
+    pub fn new() -> Self {
+        Self {
+            state: AtomicU32::new(1),
+        }
+    }
+    /// 現在の内部32bit状態ワードを返します（continuation用）。
+    pub fn state(&self) -> u32 {
+        self.state.load(Ordering::Relaxed)
+    }
+    /// 破棄ドローを伴わずに内部32bit状態ワードを直接設定します（continuation用）。
+    pub fn set_state(&self, state: u32) {
+        self.state.store(state, Ordering::Relaxed);
+    }
+}
+impl Default for MsvcCrtRandom {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl CrtRandomSource for MsvcCrtRandom {
+    fn draw(&self) -> Result<u32, String> {
+        let mut prev = self.state.load(Ordering::Relaxed);
+        loop {
+            let next = prev.wrapping_mul(214013).wrapping_add(2531011);
+            match self
+                .state
+                .compare_exchange_weak(prev, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return Ok((next >> 16) & 0x7FFF),
+                Err(actual) => prev = actual,
+            }
+        }
+    }
+    fn seed(&self, seed: u32) -> Result<(), String> {
+        self.state.store(seed, Ordering::Relaxed);
+        Ok(())
+    }
+}
+pub(crate) fn shared_builtin_crt_arc() -> Arc<MsvcCrtRandom> {
+    thread_local! {
+        static SHARED: Arc<MsvcCrtRandom> = Arc::new(MsvcCrtRandom::new());
+    }
+    SHARED.with(Arc::clone)
+}
+/// プロセス共有の組み込みCRTストリームを返します。実ゲームではCRT乱数は
+/// プロセス全体で1本の列を共有するため、Gameプロファイルの既定はこちらです。
+/// 構築時の共有単位はホストスレッドごとであり、返されるインスタンス自体は `Send + Sync` です。
+pub fn shared_builtin_crt() -> SharedCrtRandom {
+    shared_builtin_crt_arc()
+}
 
 fn draw(source: &dyn CrtRandomSource) -> mlua::Result<u32> {
     let value = source.draw().map_err(mlua::Error::RuntimeError)?;
@@ -43,7 +105,7 @@ fn seed_word(value: f64) -> u32 {
     integer as u32
 }
 pub(crate) fn install(lua: &Lua, math: &Table, source: SharedCrtRandom) -> mlua::Result<()> {
-    let seed_source = Rc::clone(&source);
+    let seed_source = Arc::clone(&source);
     math.raw_set(
         "randomseed",
         lua.create_function(move |lua, args: MultiValue| {
@@ -93,32 +155,39 @@ pub(crate) fn install(lua: &Lua, math: &Table, source: SharedCrtRandom) -> mlua:
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use std::{cell::RefCell, collections::VecDeque};
+    use std::{collections::VecDeque, sync::Mutex};
     #[derive(Default)]
     struct Tape {
-        values: RefCell<VecDeque<u32>>,
-        seeds: RefCell<Vec<u32>>,
-        draws: RefCell<Vec<u32>>,
+        values: Mutex<VecDeque<u32>>,
+        seeds: Mutex<Vec<u32>>,
+        draws: Mutex<Vec<u32>>,
     }
     impl CrtRandomSource for Tape {
         fn draw(&self) -> Result<u32, String> {
             let value = self
                 .values
-                .borrow_mut()
+                .lock()
+                .map_err(|_| "random tape is poisoned")?
                 .pop_front()
                 .ok_or("random tape exhausted")?;
-            self.draws.borrow_mut().push(value);
+            self.draws
+                .lock()
+                .map_err(|_| "random tape is poisoned")?
+                .push(value);
             Ok(value)
         }
         fn seed(&self, value: u32) -> Result<(), String> {
-            self.seeds.borrow_mut().push(value);
+            self.seeds
+                .lock()
+                .map_err(|_| "random tape is poisoned")?
+                .push(value);
             Ok(())
         }
     }
-    fn setup(values: &[u32]) -> (Lua, Rc<Tape>) {
+    fn setup(values: &[u32]) -> (Lua, Arc<Tape>) {
         let lua = Lua::new();
-        let tape = Rc::new(Tape {
-            values: RefCell::new(values.iter().copied().collect()),
+        let tape = Arc::new(Tape {
+            values: Mutex::new(values.iter().copied().collect()),
             ..Default::default()
         });
         let provider: SharedCrtRandom = tape.clone();
@@ -153,8 +222,8 @@ mod tests {
         for i in 6..10 {
             assert_eq!(output[i], Value::Boolean(false));
         }
-        assert_eq!(tape.draws.borrow().len(), 10);
-        assert!(tape.values.borrow().is_empty());
+        assert_eq!(tape.draws.lock().unwrap().len(), 10);
+        assert!(tape.values.lock().unwrap().is_empty());
     }
     #[test]
     fn seed_uses_number_conversion_native_indefinite_integer_and_one_discard() {
@@ -172,10 +241,31 @@ mod tests {
         .exec()
         .unwrap();
         assert_eq!(
-            *tape.seeds.borrow(),
+            *tape.seeds.lock().unwrap(),
             [1, u32::MAX, 1, 0, 0, 0, 0, 0, u32::MAX - 11, 0]
         );
-        assert_eq!(tape.draws.borrow().len(), 10);
+        assert_eq!(tape.draws.lock().unwrap().len(), 10);
+    }
+    #[test]
+    fn builtin_stream_matches_the_msvc_crt_sequence() {
+        // MSVC CRT rand の既知の列（srand(1) 後: 41, 18467, 6334, 26500, 19169, ...）。
+        let source = MsvcCrtRandom::new();
+        // 初期状態はsrand(1)と同じ1のため、seedなしでも同じ列から始まります。
+        assert_eq!(source.draw().unwrap(), 41);
+        source.seed(1).unwrap();
+        let draws: Vec<u32> = (0..5).map(|_| source.draw().unwrap()).collect();
+        assert_eq!(draws, [41, 18467, 6334, 26500, 19169]);
+        // 共有インスタンスは同一スレッド内で同じ列を返し続けます。
+        let shared = shared_builtin_crt();
+        shared.seed(7).unwrap();
+        let first = shared.draw().unwrap();
+        assert_eq!(shared_builtin_crt().draw().unwrap(), {
+            let expect = MsvcCrtRandom::new();
+            expect.seed(7).unwrap();
+            let _ = expect.draw().unwrap();
+            let _ = first;
+            expect.draw().unwrap()
+        });
     }
     #[test]
     fn invalid_provider_output_and_exhausted_source_are_explicit_errors() {

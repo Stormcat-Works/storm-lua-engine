@@ -57,4 +57,5 @@ pub const FUNCTIONS: &[&str] = &[
     "matrix.rotationX",
     "matrix.rotationY",
     "matrix.rotationZ",
+    "matrix.rotationToFaceXZ",
 ];

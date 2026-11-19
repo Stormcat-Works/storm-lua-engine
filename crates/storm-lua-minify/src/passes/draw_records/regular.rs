@@ -228,28 +228,51 @@ fn cost(source: &Ast, plan: &Loop) -> usize {
             .sum::<usize>()
 }
 
+enum RegularSegment {
+    PassThrough {
+        start: usize,
+        len: usize,
+    },
+    Cluster {
+        calls: Vec<Call>,
+        choices: Vec<Option<Loop>>,
+    },
+}
+
+struct RegularBlockPlan {
+    block: NodeId,
+    segments: Vec<RegularSegment>,
+}
+
+pub(super) struct RegularPlan {
+    blocks: Vec<RegularBlockPlan>,
+}
+
+#[cfg(test)]
 pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &SharedInput) -> usize {
+    match plan(input) {
+        Some(reg_plan) => apply_plan(ast, root, rename, &reg_plan),
+        None => 0,
+    }
+}
+
+pub(super) fn plan(input: &SharedInput) -> Option<RegularPlan> {
     // pack_impl already applies these guards, but this precursor runs first.
     // Budget conservatively for the numeric loop's control registers.
     if input.facts().jumps || !input.closed_key_space() {
-        return 0;
+        return None;
     }
     if input.max_inherited() >= 175 {
-        return 0;
+        return None;
     }
     let source = input.source();
-    let mut taken = source
-        .strings
-        .all_strings()
-        .into_iter()
-        .collect::<HashSet<_>>();
-    let mut serial = 0;
-    let mut loops = 0;
+    let mut blocks = Vec::new();
+    let mut any_loop = false;
     for block in input.blocks().iter().copied() {
         let Node::Block(stmts) = source.node(block) else {
             unreachable!()
         };
-        let mut output = Vec::new();
+        let mut segments = Vec::new();
         let mut cursor = 0;
         while cursor < stmts.len() {
             let mut calls = Vec::new();
@@ -262,14 +285,13 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
             }
             if calls.len() < 4 {
                 let length = calls.len().max(1);
-                output.extend_from_slice(&stmts[cursor..cursor + length]);
+                segments.push(RegularSegment::PassThrough {
+                    start: cursor,
+                    len: length,
+                });
                 cursor += length;
                 continue;
             }
-            // Integer values of every argument in this run segment,
-            // parsed once: the DP's per-window column extraction reads
-            // them via precompute_columns instead of re-parsing the same
-            // atoms for every (at, period) window they appear in.
             let ints: Vec<Vec<Option<i64>>> = calls
                 .iter()
                 .map(|c| c.args.iter().map(|a| a.integer()).collect())
@@ -277,15 +299,11 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
             let n = calls.len();
             let mut costs = vec![0usize; n + 1];
             let mut choices = vec![None; n];
-            // Classifier-normalized callee and argument-count signatures must
-            // match at every row. No color or statement boundary is crossed.
             for at in (0..n).rev() {
                 costs[at] = measure_stmt(source, calls[at].statement) + costs[at + 1];
                 for period in 1..=MAX_PERIOD.min((n - at) / 4) {
                     let slice = &calls[at..];
                     let mut count = 1;
-                    // Bounded work at interior starts; a whole-cluster model
-                    // is also considered at its beginning for very long runs.
                     let cap = if at == 0 {
                         slice.len() / period
                     } else {
@@ -312,44 +330,100 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
                         let Some((shape, targets)) = predicted(&columns, period, count) else {
                             continue;
                         };
-                        let plan = Loop {
+                        let loop_plan = Loop {
                             stop: at + count * period,
                             count,
                             shape,
                             targets,
                         };
-                        let size = cost(source, &plan) + costs[plan.stop];
+                        let size = cost(source, &loop_plan) + costs[loop_plan.stop];
                         if size < costs[at] {
                             costs[at] = size;
-                            choices[at] = Some(plan);
+                            choices[at] = Some(loop_plan);
                         }
                     }
                 }
             }
             let mut at = 0;
             while at < n {
-                if let Some(plan) = &choices[at] {
-                    let index = fresh(ast, &mut taken, "draw_row", &mut serial);
-                    output.push(emit(source, ast, plan, index, &calls[at..plan.stop]));
-                    loops += 1;
-                    at = plan.stop;
+                if let Some(loop_plan) = &choices[at] {
+                    any_loop = true;
+                    at = loop_plan.stop;
                 } else {
-                    output.push(calls[at].statement);
                     at += 1;
                 }
             }
+            segments.push(RegularSegment::Cluster { calls, choices });
             cursor += n;
         }
-        ast.nodes
-            .rewrite(block, Node::Block(output), "regular-draw-run-replacement");
+        blocks.push(RegularBlockPlan { block, segments });
+    }
+    if !any_loop {
+        return None;
+    }
+    Some(RegularPlan { blocks })
+}
+
+pub(super) fn apply_plan(
+    ast: &mut Ast,
+    root: NodeId,
+    rename: bool,
+    reg_plan: &RegularPlan,
+) -> usize {
+    let source = ast.clone();
+    let mut taken = source
+        .strings
+        .all_strings()
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let mut serial = 0;
+    let mut loops = 0;
+    for block_plan in &reg_plan.blocks {
+        let Node::Block(stmts) = source.node(block_plan.block) else {
+            unreachable!()
+        };
+        let mut output = Vec::new();
+        for segment in &block_plan.segments {
+            match segment {
+                RegularSegment::PassThrough { start, len } => {
+                    output.extend_from_slice(&stmts[*start..*start + *len]);
+                }
+                RegularSegment::Cluster { calls, choices } => {
+                    let n = calls.len();
+                    let mut at = 0;
+                    while at < n {
+                        if let Some(loop_plan) = &choices[at] {
+                            let index = fresh(ast, &mut taken, "draw_row", &mut serial);
+                            output.push(emit(
+                                &source,
+                                ast,
+                                loop_plan,
+                                index,
+                                &calls[at..loop_plan.stop],
+                            ));
+                            loops += 1;
+                            at = loop_plan.stop;
+                        } else {
+                            output.push(calls[at].statement);
+                            at += 1;
+                        }
+                    }
+                }
+            }
+        }
+        ast.nodes.rewrite(
+            block_plan.block,
+            Node::Block(output),
+            "regular-draw-run-replacement",
+        );
     }
     if loops > 0 {
         remove_unused_forwarders(ast, root);
         if rename {
             *ast = scope_rename_fast(ast, root).ast;
         }
-        if measure_size(ast, root) >= measure_size(source, root) {
-            *ast = source.clone();
+        if measure_size(ast, root) >= measure_size(&source, root) {
+            *ast = source;
             return 0;
         }
     }

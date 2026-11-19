@@ -9,7 +9,7 @@ function create(offset=1024) {
 }
 test('ABI is the generated 320-byte binary32 contract',()=>{
   assert.equal(ABI.ioByteLength,320); assert.equal(ABI.numberBytes,4);
-  assert.equal(ABI.capabilities,31);
+  assert.equal(ABI.capabilities,63);
 });
 test('I/O is a live view, not a copy',()=>{
   const {memory,io}=create(); const views=io.borrow();

@@ -13,6 +13,7 @@ storm-lua-analysis = { workspace = true }
 storm-lua-build = { workspace = true }
 storm-lua-minify = { workspace = true }
 storm-lua-addon = { workspace = true, features = ["debug"] }
+storm-lua-component = { workspace = true, features = ["debug"] }
 storm-lua-spec = { workspace = true }
 storm-screen-raster = { workspace = true }
 storm-lua-vm = { workspace = true, features = ["backend-mlua", "debug"] }

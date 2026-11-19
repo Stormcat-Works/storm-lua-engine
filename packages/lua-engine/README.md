@@ -6,7 +6,7 @@
 
 ## インストール
 
-`npm install @stormcat-works/storm-lua-engine@0.4.1`
+`npm install @stormcat-works/storm-lua-engine@0.5.0`
 
 WASMと型定義は同梱済みです。利用時にRustやEmscriptenをインストールする必要はありません。
 

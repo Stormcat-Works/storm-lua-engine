@@ -267,13 +267,26 @@ fn candidates(runs: &[Run], indices: &[usize]) -> Vec<Candidate> {
     out
 }
 
+pub(super) struct SharedPlan {
+    runs: Vec<Run>,
+    selected: Vec<Candidate>,
+}
+
+#[cfg(test)]
 pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &SharedInput) -> usize {
+    match plan(input) {
+        Some(shared_plan) => apply_plan(ast, root, rename, &shared_plan),
+        None => 0,
+    }
+}
+
+pub(super) fn plan(input: &SharedInput) -> Option<SharedPlan> {
     if input.facts().jumps || input.chunk_locals() > 145 || !input.closed_key_space() {
-        return 0;
+        return None;
     }
     // Match the record planner's conservative upvalue/temporary headroom.
     if input.max_inherited() > 200 {
-        return 0;
+        return None;
     }
     let source = input.source();
     let mut runs = Vec::new();
@@ -344,8 +357,20 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
     selected.sort_by_key(|b| std::cmp::Reverse(b.gain));
     selected.truncate(4);
     if selected.is_empty() {
-        return 0;
+        return None;
     }
+    Some(SharedPlan { runs, selected })
+}
+
+pub(super) fn apply_plan(
+    ast: &mut Ast,
+    root: NodeId,
+    rename: bool,
+    shared_plan: &SharedPlan,
+) -> usize {
+    let source = ast.clone();
+    let runs = &shared_plan.runs;
+    let selected = &shared_plan.selected;
     let mut target = source.clone();
     let mut taken = source
         .strings
@@ -355,7 +380,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
     let mut serial = 0;
     let mut definitions = Vec::new();
     let mut edits = BTreeMap::<NodeId, BTreeMap<usize, (usize, NodeId)>>::new();
-    for c in &selected {
+    for c in selected {
         let symbol = fresh(&mut target, &mut taken, "shared_draw", &mut serial);
         let first = target.nodes.len();
         let mut trace = source.nodes.tracks_origins().then(|| {
@@ -369,13 +394,13 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
         let definition =
             encoding::emit_helper_recording(&mut target, &c.shape, symbol, serial, &mut trace);
         if let Some(t) = trace {
-            t.finish(&mut target, source, first, definition);
+            t.finish(&mut target, &source, first, definition);
         }
         definitions.push(definition);
         for (i, payload) in &c.payloads {
             let run = &runs[*i];
             let f = name(&mut target, symbol);
-            let callee = copy_callee(source, &mut target, run.calls[0].callee);
+            let callee = copy_callee(&source, &mut target, run.calls[0].callee);
             let data = payload.emit(&mut target);
             let call = target.push(Node::Call(f, vec![callee, data], None));
             let stmt = target.push(Node::Callstat(call));
@@ -388,7 +413,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
                 provenance::derive(
                     &mut target,
                     data,
-                    source,
+                    &source,
                     &inputs,
                     "draw-record-encoded-payload",
                 );
@@ -399,14 +424,14 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
                 provenance::derive(
                     &mut target,
                     call,
-                    source,
+                    &source,
                     &commands,
                     "draw-record-batch-call",
                 );
                 provenance::derive(
                     &mut target,
                     stmt,
-                    source,
+                    &source,
                     &commands,
                     "draw-record-batch-call",
                 );
@@ -446,7 +471,7 @@ pub(super) fn synthesize(ast: &mut Ast, root: NodeId, rename: bool, input: &Shar
     if rename {
         target = scope_rename_fast(&target, root).ast
     }
-    if measure_size(&target, root) >= measure_size(source, root) {
+    if measure_size(&target, root) >= measure_size(&source, root) {
         return 0;
     }
     *ast = target;

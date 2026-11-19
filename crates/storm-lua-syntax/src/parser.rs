@@ -48,14 +48,14 @@ pub struct NodePositions {
     /// index = NodeId。
     positions: Vec<(u32, u32)>,
     spans: Vec<Option<(usize, usize)>>,
-    names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
+    names: Vec<((NodeId, NameSite), (usize, usize))>,
 }
 
 impl NodePositions {
     pub(crate) fn name_spans(
         &self,
     ) -> impl Iterator<Item = ((NodeId, NameSite), (usize, usize))> + '_ {
-        self.names.iter().map(|(key, span)| (*key, *span))
+        self.names.iter().copied()
     }
 
     /// Inclusive/exclusive UTF-8 byte span of a parsed node, valid only on this AST.
@@ -67,7 +67,10 @@ impl NodePositions {
     /// Exact source span of one identifier occurrence inside this parsed node.
     /// Implicit names (such as a method's self argument) have no source occurrence.
     pub fn name_span(&self, id: NodeId, site: NameSite) -> Option<(usize, usize)> {
-        self.names.get(&(id, site)).copied()
+        self.names
+            .binary_search_by_key(&(id, site), |(key, _)| *key)
+            .ok()
+            .map(|index| self.names[index].1)
     }
     /// Return the one-based line and byte-column for a parsed node, or None for an unknown ID.
     pub fn get(&self, id: NodeId) -> Option<(u32, u32)> {
@@ -116,7 +119,7 @@ pub struct Parser {
     capture_ranges: bool,
     positions: Vec<(u32, u32)>,
     spans: Vec<Option<(usize, usize)>>,
-    names: std::collections::BTreeMap<(NodeId, NameSite), (usize, usize)>,
+    names: Vec<((NodeId, NameSite), (usize, usize))>,
 }
 
 const STOPS_END: &[&str] = &["end"];
@@ -172,7 +175,7 @@ impl Parser {
             capture_ranges: false,
             positions: Vec::new(),
             spans: Vec::new(),
-            names: std::collections::BTreeMap::new(),
+            names: Vec::new(),
         })
     }
 
@@ -181,8 +184,12 @@ impl Parser {
     /// 再パース検証等 — に影響を与えないため）。
     pub fn new_capturing_positions(source: &str) -> Result<Self, LexError> {
         let mut parser = Self::new(source)?;
+        let token_count = parser.ts.len();
         parser.capture_positions = true;
         parser.capture_ranges = true;
+        parser.positions.reserve(token_count / 2);
+        parser.spans.reserve(token_count / 2);
+        parser.names.reserve(token_count / 3);
         Ok(parser)
     }
 
@@ -192,7 +199,14 @@ impl Parser {
     }
 
     /// Take the parsed arena and its optional position side table.
-    pub fn into_ast_with_positions(self) -> (Ast, NodePositions) {
+    pub fn into_ast_with_positions(mut self) -> (Ast, NodePositions) {
+        if !self.names.is_empty() {
+            // Preserve BTreeMap::insert last-write-wins semantics on any
+            // duplicate (NodeId, NameSite) key while producing ascending order.
+            self.names.reverse();
+            self.names.sort_by_key(|(key, _)| *key);
+            self.names.dedup_by_key(|(key, _)| *key);
+        }
         (
             self.ast,
             NodePositions {
@@ -231,7 +245,7 @@ impl Parser {
         if self.capture_ranges {
             let token = &self.ts[token];
             debug_assert_eq!(token.k, TokenKind::Id);
-            self.names.insert((id, site), (token.p, token.end));
+            self.names.push(((id, site), (token.p, token.end)));
         }
     }
 
@@ -897,6 +911,66 @@ pub fn parse_source_with_conditional_origins(
     track: impl FnOnce(&Ast) -> bool,
 ) -> Result<(Ast, NodeId), String> {
     parse_source_with_origin_positions(name, source, track).map(|(ast, root, _)| (ast, root))
+}
+
+/// Retained lexer tokens for deferred AST origin seeding after caller gates pass.
+#[doc(hidden)]
+pub struct DeferredOriginSeed {
+    tokens: Vec<ParserToken>,
+}
+
+impl DeferredOriginSeed {
+    /// Populate AST provenance slots once the caller has verified that AST-based
+    /// optimization will proceed.
+    pub fn seed_into(
+        self,
+        ast: &mut Ast,
+        positions: &NodePositions,
+        name: &str,
+        source: &str,
+    ) -> Result<(), String> {
+        let origins = crate::provenance::ArenaOrigins::seed_with_tokens(
+            ast,
+            positions,
+            name,
+            source,
+            &self.tokens,
+        )?;
+        ast.nodes.set_provenance(origins);
+        Ok(())
+    }
+}
+
+/// Parse once while deferring `ArenaOrigins` construction until caller inspection
+/// and legality checks succeed. When `capture_ranges_unless_env` is true and no
+/// `_ENV` identifier token appears in the source, node/name spans are captured
+/// for subsequent `DeferredOriginSeed::seed_into`; when `_ENV` is present, only
+/// diagnostic points are recorded because lexical compilation never uses AST origins.
+#[doc(hidden)]
+pub fn parse_source_for_inspection(
+    source: &str,
+    capture_ranges_unless_env: bool,
+) -> Result<(Ast, NodeId, NodePositions, DeferredOriginSeed), String> {
+    let mut parser = Parser::new(source).map_err(|error| ParserError::Lex(error).to_string())?;
+    let token_count = parser.ts.len();
+    parser.capture_positions = true;
+    parser.positions.reserve(token_count / 2);
+    if capture_ranges_unless_env
+        && !parser
+            .ts
+            .iter()
+            .any(|token| token.k == TokenKind::Id && token.text(source) == "_ENV")
+    {
+        parser.capture_ranges = true;
+        parser.spans.reserve(token_count / 2);
+        parser.names.reserve(token_count / 3);
+    }
+    let root = parser
+        .parse()
+        .map_err(|error| ParserError::Parse(error).to_string())?;
+    let tokens = std::mem::take(&mut parser.ts);
+    let (ast, positions) = parser.into_ast_with_positions();
+    Ok((ast, root, positions, DeferredOriginSeed { tokens }))
 }
 
 /// Parse once, retaining diagnostic points as well as optional source origins.

@@ -1,6 +1,6 @@
 {
   "abiVersion": 1,
-  "capabilities": 31,
+  "capabilities": 63,
   "channelCount": 32,
   "inputBooleansOffset": 128,
   "inputNumbersOffset": 0,

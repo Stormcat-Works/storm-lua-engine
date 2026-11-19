@@ -5,6 +5,7 @@ import { FrameLease } from './frame.js';
 import { decodeProperties, encodeProperties, encodePropertyEntry, encodePropertyLabel, type PropertyEntry, type PropertyInput, type Properties } from './properties.js';
 import { ScriptVm, type ScriptOptions, type LogHandler } from './script.js';
 import { AddonVm, type AddonOptions } from './addon.js';
+import { ComponentVm, type ComponentOptions } from './component.js';
 import { HostDispatcher, type MapProvider } from './host.js';
 import { encodeLuaValue, encodeLuaValues, type LuaValue } from './values.js';
 const encoder = new TextEncoder(), decoder = new TextDecoder('utf-8',{fatal:true});
@@ -131,7 +132,34 @@ export class LuaEngine {
       return vm;
     } catch (error) { try { this.cleanup(handle,key); } catch (cleanupError) { throw new AggregateError([error,cleanupError],'Addon creation and cleanup both failed'); } throw error; }
   }
+  /** コンポーネントモードはライフサイクルとホスト提供ドメインを持ち、Vehicle の I/O や Addon の server とは分離されています。 */
+  createComponent(options: ComponentOptions = {}): ComponentVm {
+    const [instructions,memory] = budgets(options);
+    // Rust の ComponentConfig には require loader の入口が無いため、黙って無視せず明示的に拒否します。
+    if (options.requireLoader !== undefined) throw new TypeError('requireLoader is not supported for component sessions');
+    const environment = environmentWire(options.environment, options.bindings, undefined);
+    if (!(this.bridge.capabilities & 32)) throw new EngineError(6,'Component profile is absent');
+    const providers = options.providers ?? {};
+    const domains = Object.keys(providers);
+    for (const domain of domains) {
+      const provider = providers[domain as keyof typeof providers];
+      if (!COMPONENT_DOMAINS.includes(domain) || typeof provider !== 'object' || provider === null) throw new TypeError(`Invalid component provider domain: ${domain}`);
+    }
+    let key = 0, handle = 0;
+    try {
+      if (domains.length || Object.keys(options.bindings?.functions ?? {}).length) {
+        if (!this.hosts || !(this.bridge.capabilities & 16)) throw new EngineError(6,'This runtime cannot call JS host services');
+        key = this.hosts.register({...(domains.length ? {component: providers} : {}), ...(options.bindings?.functions === undefined ? {} : {functions: options.bindings.functions})});
+      }
+      const config = encoder.encode(JSON.stringify({...environment,providers:domains}));
+      handle = this.bridge.upload(config,(pointer,length) => this.bridge.query('new_component',instructions,memory,key,pointer,length));
+      const vm = new ComponentVm(this.bridge,handle,options.onLog,() => { if (key) this.hosts?.remove(key); });
+      if (options.devLogs) vm.enableLogs();
+      return vm;
+    } catch (error) { try { this.cleanup(handle,key); } catch (cleanupError) { throw new AggregateError([error,cleanupError],'Component creation and cleanup both failed'); } throw error; }
+  }
 }
+const COMPONENT_DOMAINS: readonly string[] = ['logic', 'torque', 'fluid', 'electric', 'sfx', 'fluidContents', 'heater', 'render', 'physics', 'environment', 'parse'];
 export interface RuntimeInitOptions { readonly moduleUrl?: string | URL; readonly wasmBinary?: Uint8Array; readonly wasmUrl?: string | URL }
 const initialized = new WeakMap<object,LuaEngine>();
 /** 注入可能な Emscripten ファクトリ出力により、バンドラや制約のある WebView をサポートします。 */

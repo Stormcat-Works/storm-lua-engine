@@ -1,4 +1,9 @@
-//! 上限付きのHTTPリクエスト／レスポンス管理。ネットワーククライアント、URLリゾルバ、スケジューラは含みません。
+//! ゲーム互換のHTTPリクエスト／レスポンス管理。ネットワーククライアント、URLリゾルバ、スケジューラは含みません。
+//!
+//! 実ゲームの契約に合わせ、ポート・リクエスト・応答への検証は行いません。
+//! ポートはLua側の数値変換で得た符号付き整数を受け取り、下位16bitを保持します。
+//! リクエストbytesはそのまま保持し、応答bytesもサイズで拒否しません。
+//! ここで拒否するのは、世代・IDが一致しないトークンによる精算だけです。
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt,
@@ -18,32 +23,33 @@ pub struct HttpToken {
 pub struct HttpRequest {
     /// レスポンス／キャンセル用トークン。
     pub token: HttpToken,
-    /// 明示的なlocalhostサービスポート。ホストの許可リストの対象となります。
+    /// 接続先ポート。Lua数値を符号付き整数へ変換した値の下位16bitであり、範囲検証はしません。
     pub port: u16,
-    /// origin-form のパス／クエリバイト列。CR、LF、NULは禁止されています。
+    /// リクエストbytes。先頭文字・禁止文字・長さの検証をせず、そのまま保持します。
     pub request: Vec<u8>,
 }
 /// 不正なホストトランスポート操作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpError {
-    /// ポート番号、ターゲット、またはレスポンス長が不正です。
-    Invalid,
-    /// 未処理リクエスト数または識別子の上限を使い果たしました。
+    /// リクエスト識別子の上限を使い果たしました。
     Limit,
     /// 失効したトークン、別VMのトークン、重複トークン、または未送信のトークンです。
     Unknown,
+    /// 継続スナップショットから復元できないカーソル値です。リクエスト自体の
+    /// 検証（E7で撤廃）とは別に、不正な継続データは明示的に拒否します。
+    Invalid,
 }
 impl fmt::Display for HttpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Invalid => "invalid HTTP target, port or reply size",
-            Self::Limit => "HTTP request budget exhausted",
+            Self::Limit => "HTTP request identifier budget exhausted",
             Self::Unknown => "stale, foreign, duplicate or undelivered HTTP token",
+            Self::Invalid => "invalid HTTP continuation cursor",
         })
     }
 }
 impl std::error::Error for HttpError {}
-/// レスポンス待ちの取得済みリクエストを含め、最大128件の未処理リクエストを追跡します。
+/// レスポンス待ちの取得済みリクエストを含め、未処理リクエストを追跡します。件数の上限は設けません。
 pub struct HttpQueue {
     generation: u64,
     next: u32,
@@ -51,6 +57,23 @@ pub struct HttpQueue {
     outbox: VecDeque<u32>,
 }
 impl HttpQueue {
+    /// Capture the allocation cursor only when no external HTTP request is outstanding.
+    /// In-flight transport cannot be resumed by the engine; callers must drain it first.
+    pub fn continuation_cursor(&self) -> Result<u32, HttpError> {
+        if !self.pending.is_empty() || !self.outbox.is_empty() {
+            return Err(HttpError::Unknown);
+        }
+        Ok(self.next)
+    }
+    /// Restore a quiescent queue with a fresh generation, invalidating old host tokens.
+    pub fn from_continuation_cursor(next: u32) -> Result<Self, HttpError> {
+        if next == 0 {
+            return Err(HttpError::Invalid);
+        }
+        let mut queue = Self::new()?;
+        queue.next = next;
+        Ok(queue)
+    }
     /// 独立した世代を作成します。再作成すると以前のすべてのトークンが無効化されます。
     pub fn new() -> Result<Self, HttpError> {
         let generation = NEXT_GENERATION
@@ -63,23 +86,8 @@ impl HttpQueue {
             outbox: VecDeque::new(),
         })
     }
-    /// origin-form ターゲットをキューに追加します。ネットワークポリシーはホスト側の責務です。
+    /// リクエストをキューに追加します。ポートは下位16bitへ切り捨て、リクエストbytesは検証せず保持します。ネットワークポリシーはホスト側の責務です。
     pub fn request(&mut self, port: i64, request: &[u8]) -> Result<(), HttpError> {
-        let port = u16::try_from(port).map_err(|_| HttpError::Invalid)?;
-        if port == 0
-            || request.is_empty()
-            || request.len() > 4096
-            || request[0] != b'/'
-            || request.starts_with(b"//")
-            || request
-                .iter()
-                .any(|b| *b == 0 || *b == b'\r' || *b == b'\n')
-        {
-            return Err(HttpError::Invalid);
-        }
-        if self.pending.len() >= 128 {
-            return Err(HttpError::Limit);
-        }
         let id = self.next;
         self.next = self.next.checked_add(1).ok_or(HttpError::Limit)?;
         let request = HttpRequest {
@@ -87,7 +95,7 @@ impl HttpQueue {
                 generation: self.generation,
                 id,
             },
-            port,
+            port: port as u16,
             request: request.to_vec(),
         };
         self.pending.insert(id, (request, false));
@@ -105,22 +113,8 @@ impl HttpQueue {
         }
         requests
     }
-    /// レスポンスのサイズ境界とIDが検証された後にのみ、送信済みリクエストを消費します。
-    pub fn reply(&mut self, token: HttpToken, bytes: &[u8]) -> Result<HttpRequest, HttpError> {
-        if bytes.len() > 1024 * 1024 {
-            return Err(HttpError::Invalid);
-        }
-        if token.generation != self.generation {
-            return Err(HttpError::Unknown);
-        }
-        let (request, dispatched) = self.pending.get(&token.id).ok_or(HttpError::Unknown)?;
-        if !dispatched {
-            return Err(HttpError::Unknown);
-        }
-        // コールバックのパスとレスポンスは、所有値の合計バイト予算を共有します。
-        if request.request.len() + bytes.len() > 1024 * 1024 {
-            return Err(HttpError::Invalid);
-        }
+    /// トークンが検証された後にのみ、送信済みリクエストを消費します。応答bytesのサイズは検証しません。
+    pub fn reply(&mut self, token: HttpToken, _bytes: &[u8]) -> Result<HttpRequest, HttpError> {
         self.consume(token)
     }
     /// トランスポート失敗後に送信済みリクエストを明示的にキャンセルします（偽のLuaレスポンスは生成しません）。

@@ -117,6 +117,108 @@ impl Serialize for Selection<'_> {
         m.end()
     }
 }
+pub(crate) trait CompilationJson {
+    fn write_compilation_json(&self, out: &mut Vec<u8>) -> Result<(), serde_json::Error>;
+}
+
+impl CompilationJson for serde_json::Value {
+    fn write_compilation_json(&self, out: &mut Vec<u8>) -> Result<(), serde_json::Error> {
+        serde_json::to_writer(&mut *out, self)
+    }
+}
+
+fn default_effective_passes_json(
+    numeric_mode: NumericMode,
+) -> Result<&'static [u8], serde_json::Error> {
+    static TOLERANT: OnceLock<Box<[u8]>> = OnceLock::new();
+    static EXACT: OnceLock<Box<[u8]>> = OnceLock::new();
+    let slot = match numeric_mode {
+        NumericMode::Tolerant => &TOLERANT,
+        NumericMode::Exact => &EXACT,
+    };
+    if let Some(cached) = slot.get() {
+        return Ok(cached);
+    }
+    let opts = CompileOptions {
+        numeric_mode,
+        ..Default::default()
+    };
+    let bytes = serde_json::to_vec(&EffectivePasses(&opts))?.into_boxed_slice();
+    Ok(slot.get_or_init(|| bytes))
+}
+
+impl CompilationJson for Settings<'_> {
+    fn write_compilation_json(&self, out: &mut Vec<u8>) -> Result<(), serde_json::Error> {
+        let o = self.options;
+        out.extend_from_slice(b"{\"effectiveNumericTolerances\":");
+        serde_json::to_writer(&mut *out, &Tolerances(o.numeric_tolerance))?;
+        out.extend_from_slice(b",\"effectivePassToggles\":");
+        if o.pass_toggles.is_empty() {
+            out.extend_from_slice(default_effective_passes_json(o.numeric_mode)?);
+        } else {
+            serde_json::to_writer(&mut *out, &EffectivePasses(o))?;
+        }
+        out.extend_from_slice(b",\"environment\":");
+        serde_json::to_writer(&mut *out, &o.environment)?;
+        out.extend_from_slice(b",\"hostBindings\":");
+        if o.host_bindings.is_empty() {
+            out.extend_from_slice(b"[]");
+        } else {
+            serde_json::to_writer(&mut *out, &o.host_bindings)?;
+        }
+        out.extend_from_slice(if o.mode == CompileMode::Safe {
+            b",\"mode\":\"safe\""
+        } else {
+            b",\"mode\":\"smallest\""
+        });
+        out.extend_from_slice(b",\"numericEncoding\":\"ieee754-binary64-hex\",\"numericMode\":");
+        out.extend_from_slice(if o.numeric_mode == NumericMode::Exact {
+            b"\"exact\""
+        } else {
+            b"\"tolerant\""
+        });
+        out.extend_from_slice(b",\"numericTolerance\":");
+        match o.numeric_tolerance {
+            None => out.extend_from_slice(b"null"),
+            Some(tol) => serde_json::to_writer(&mut *out, &Tolerance(tol))?,
+        }
+        out.extend_from_slice(b",\"passToggles\":");
+        if o.pass_toggles.is_empty() {
+            out.extend_from_slice(b"{}");
+        } else {
+            serde_json::to_writer(&mut *out, &o.pass_toggles)?;
+        }
+        out.extend_from_slice(b",\"property\":");
+        match o.property.as_ref() {
+            None => out.extend_from_slice(b"null"),
+            Some(prop) => serde_json::to_writer(&mut *out, &Property(prop))?,
+        }
+        out.extend_from_slice(b",\"searchBeamWidth\":");
+        serde_json::to_writer(&mut *out, &o.search_beam_width)?;
+        out.extend_from_slice(if o.search_mode == SearchMode::Fast {
+            b",\"searchMode\":\"fast\""
+        } else {
+            b",\"searchMode\":\"exhaustive\""
+        });
+        out.extend_from_slice(b",\"selection\":");
+        match self.stats {
+            None => out.extend_from_slice(b"null"),
+            Some(stats) => serde_json::to_writer(&mut *out, &Selection(stats))?,
+        }
+        out.extend_from_slice(b",\"targetSize\":");
+        match o.target_size {
+            None => out.extend_from_slice(b"null"),
+            Some(target) => serde_json::to_writer(&mut *out, &target)?,
+        }
+        out.extend_from_slice(if o.zero_cost_newlines {
+            b",\"zeroCostNewlines\":true}"
+        } else {
+            b",\"zeroCostNewlines\":false}"
+        });
+        Ok(())
+    }
+}
+
 impl Serialize for Settings<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let o = self.options;

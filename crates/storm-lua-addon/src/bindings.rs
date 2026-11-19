@@ -1,34 +1,25 @@
 //! アドオン専用の名前空間の組み込みおよび新規ワールドのプロパティ宣言。
 use super::{MenuProperty, State};
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex};
 use storm_lua_spec::property::PropertyValue;
 use storm_lua_vm::backend::{BackendError, BackendResult, Lua, LuaString, Table, Value};
 fn invalid(message: &str) -> BackendError {
     BackendError::external(super::invalid(message))
 }
-fn declare(state: &mut State, name: Vec<u8>, definition: MenuProperty) -> BackendResult<()> {
-    if name.len() > 1024 || state.definitions.len() >= 4096 {
-        return Err(invalid("menu property declaration budget exceeded"));
-    }
-    if state
-        .definitions
-        .get(&name)
-        .is_some_and(|old| *old != definition)
-    {
-        return Err(invalid("conflicting menu property declarations"));
-    }
+fn declare(state: &mut State, name: Vec<u8>, definition: MenuProperty) {
+    // 実ゲームの契約: 宣言は名前の長さ・件数・既存宣言との矛盾でエラーを投げません。
+    // 同名の再宣言は最後の宣言が有効です。
     state.definitions.insert(name, definition);
-    Ok(())
 }
-pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> BackendResult<()> {
+pub(super) fn install(lua: &Lua, env: &Table, state: Arc<Mutex<State>>) -> BackendResult<()> {
     let property = lua.create_table()?;
-    let s = Rc::clone(&state);
+    let s = Arc::clone(&state);
     property.raw_set(
         "checkbox",
         lua.create_function(move |_, (label, default): (LuaString, bool)| {
             let name = label.as_bytes().to_vec();
-            let mut state = s.borrow_mut();
-            declare(&mut state, name.clone(), MenuProperty::Checkbox(default))?;
+            let mut state = crate::lock_state(&s);
+            declare(&mut state, name.clone(), MenuProperty::Checkbox(default));
             if !state.new_world {
                 return Ok(Value::Nil);
             }
@@ -39,26 +30,19 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
             }
         })?,
     )?;
-    let s = Rc::clone(&state);
+    let s = Arc::clone(&state);
     property.raw_set(
         "slider",
         lua.create_function(
             move |_, (label, min, max, increment, default): (LuaString, f64, f64, f64, f64)| {
-                if ![min, max, increment, default].iter().all(|n| n.is_finite())
-                    || min > max
-                    || increment <= 0.0
-                    || default < min
-                    || default > max
-                {
-                    return Err(invalid("invalid slider declaration"));
-                }
+                // 実ゲームの契約: 範囲・刻み・既定値の形は検証せず、宣言された値をそのまま保持します。
                 let name = label.as_bytes().to_vec();
-                let mut state = s.borrow_mut();
+                let mut state = crate::lock_state(&s);
                 declare(
                     &mut state,
                     name.clone(),
                     MenuProperty::Slider([min, max, increment, default]),
-                )?;
+                );
                 if !state.new_world {
                     return Ok(Value::Nil);
                 }
@@ -80,8 +64,7 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Rc<RefCell<State>>) -> Back
     server.raw_set(
         "httpGet",
         lua.create_function(move |_, (port, request): (i64, LuaString)| {
-            state
-                .borrow_mut()
+            crate::lock_state(&state)
                 .http
                 .request(port, request.as_bytes().as_ref())
                 .map_err(|e| BackendError::external(super::http_error(e)))

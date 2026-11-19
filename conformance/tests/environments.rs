@@ -1,6 +1,12 @@
 //! Environment, external-name and reflection regressions use real compiler/runtime implementations.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-use std::{cell::Cell, collections::BTreeMap, rc::Rc};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use storm_lua_analysis::project::LuaProject;
 use storm_lua_analysis::{analyze, AnalyzeOptions};
 use storm_lua_build::{build, minify, ApiCompileOptions, ApiProjectCompileOptions};
@@ -59,6 +65,51 @@ fn game_globals_are_absent_and_debug_has_exactly_log() {
     };
     assert!(entries.contains(&(LuaValue::Bytes(b"absent".to_vec()), LuaValue::Bool(true))));
     assert!(entries.contains(&(LuaValue::Bytes(b"members".to_vec()), LuaValue::Integer(1))));
+}
+#[test]
+fn select_is_absent_in_game_and_present_in_extended() {
+    // 実ゲームのbase部分集合は6関数のみで、selectはVehicle/Addonとも不在です（E13）。
+    let mut vm = Microcontroller::new(Default::default()).unwrap();
+    vm.load(
+        br#"function onTick()
+      output.setBool(1, select == nil)
+    end"#,
+        "=game-select",
+    )
+    .unwrap();
+    vm.tick(&Default::default()).unwrap();
+    assert!(vm.output().booleans[0]);
+    let mut addon = storm_lua_addon::Addon::new(Default::default()).unwrap();
+    addon
+        .load(b"g_savedata={absent=select==nil}", "=addon-select")
+        .unwrap();
+    addon.start().unwrap();
+    let LuaValue::Table(entries) = addon.savedata().unwrap() else {
+        panic!("expected table")
+    };
+    assert!(entries.contains(&(LuaValue::Bytes(b"absent".to_vec()), LuaValue::Bool(true))));
+    // Extended（開発用プロファイル）では引き続き利用できます。
+    let mut vm = Microcontroller::new(configured(EnvironmentProfile::Extended)).unwrap();
+    vm.load(
+        br#"function onTick()
+      output.setNumber(1, select('#', 10, 20, 30))
+    end"#,
+        "=extended-select",
+    )
+    .unwrap();
+    vm.tick(&Default::default()).unwrap();
+    assert_eq!(vm.output().numbers[0], 3.0);
+    // analyze による診断も、ゲーム環境でのselect使用を利用不可として報告します。
+    let lint = analyze(
+        &project("function onTick() select('#') end"),
+        &AnalyzeOptions::default(),
+    );
+    assert!(
+        lint.diagnostics
+            .iter()
+            .any(|d| d.code == "sw-unavailable-global"),
+        "{lint:?}"
+    );
 }
 #[test]
 fn builtin_rejections_match_single_source_projects_and_editing_diagnostics() {
@@ -205,14 +256,14 @@ fn unassigned_external_globals_are_not_renamed_or_captured_by_short_names() {
         "function onTick()local quiteLongLocal=3;capture(externalValue+quiteLongLocal+a)end";
     let result = minify(source, &Default::default());
     assert!(result.ok, "{result:?}");
-    let observed = Rc::new(Cell::new(0.0));
-    let clone = Rc::clone(&observed);
+    let observed = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
+    let clone = Arc::clone(&observed);
     let mut vm = Vm::new(ExecutionLimits::default()).unwrap();
     vm.configure(|lua, env| {
         env.set(
             "capture",
             lua.create_function(move |_, v: f64| {
-                clone.set(v);
+                clone.store(v.to_bits(), Ordering::Relaxed);
                 Ok(())
             })?,
         )?;
@@ -223,7 +274,7 @@ fn unassigned_external_globals_are_not_renamed_or_captured_by_short_names() {
     vm.execute(result.code.unwrap().as_bytes(), "=external")
         .unwrap();
     vm.call("onTick").unwrap();
-    assert_eq!(observed.get(), 12.0);
+    assert_eq!(f64::from_bits(observed.load(Ordering::Relaxed)), 12.0);
 }
 #[test]
 fn host_overrides_are_explicit_preserved_on_reset_and_respected_by_compilation() {
@@ -234,9 +285,10 @@ fn host_overrides_are_explicit_preserved_on_reset_and_respected_by_compilation()
         ]),
         functions: BTreeMap::from([(
             "math.abs".into(),
-            Rc::new(|_: &[LuaValue]| Ok(vec![LuaValue::Integer(99)]))
+            Arc::new(|_: &[LuaValue]| Ok(vec![LuaValue::Integer(99)]))
                 as storm_lua_vm::value::HostFunction,
         )]),
+        ..Default::default()
     };
     assert!(Microcontroller::new(MicrocontrollerConfig {
         bindings: bindings.clone(),

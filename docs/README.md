@@ -21,6 +21,7 @@
 | [API surface](specs/api.md) | 公開APIの所有者と保証範囲 |
 | [Numeric I/O](specs/numeric-io.md) | f32/f64の境界・チャネル・出力保持 |
 | [Addon](specs/addon.md) | 独立profile・lifecycle・savedata・host server契約 |
+| [Component Mod](specs/component.md) | 第3profile・lifecycle・host提供ドメイン・lua_filename契約 |
 | [Properties](specs/properties.md) | 型・精度・更新時点・欠損処理 |
 | [Debugger](specs/debugger.md) | ホスト検査・実行制御・値転送・デバッグ拡張 |
 | [Screen](specs/screen.md) | 描画・RGBA・同梱フォント |

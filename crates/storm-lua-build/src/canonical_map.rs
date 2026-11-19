@@ -1,31 +1,48 @@
 //! Write the schema-2 canonical map without allocating a JSON object per record.
 //! Trusted key/delimiter bytes are emitted in canonical order. All caller text,
 //! numbers and dynamic values still pass through serde_json's normal encoder.
+use crate::map_settings::CompilationJson;
 use crate::optimized_source_map::{
-    BufferIdentity, MapDisposition, MapExtension, MapOrigin, MapProducer, SCHEMA_VERSION,
+    BufferIdentity, FastMap, FastSet, MapDisposition, MapExtension, MapOrigin, MapProducer,
+    SCHEMA_VERSION,
 };
 use serde::Serialize;
 #[cfg(test)]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
 use storm_lua_syntax::explanation::{InlineContext, OptimizationReason, SourceRelation};
 use storm_lua_syntax::provenance::{
     CopiedToken, GeneratedConstruct, LexicalCopiedOrigins, Origin, OriginMapping, SourceSpan,
 };
 
 type JsonResult = Result<(), serde_json::Error>;
-type SimpleCopyTokenTable = (Vec<std::sync::Arc<str>>, Vec<Vec<i64>>);
+
+#[derive(Clone, Copy)]
+pub(crate) struct CompactTokenRecord {
+    pub(crate) len: u8,
+    pub(crate) values: [i64; 6],
+}
+
+type SimpleCopyTokenTable = (Vec<std::sync::Arc<str>>, Vec<CompactTokenRecord>);
+
 #[derive(Default)]
-struct Writer {
-    bytes: Vec<u8>,
+pub(crate) struct Writer {
+    pub(crate) bytes: Vec<u8>,
 }
 impl Writer {
-    fn literal(&mut self, text: &'static [u8]) {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(capacity),
+        }
+    }
+    pub(crate) fn literal(&mut self, text: &'static [u8]) {
         self.bytes.extend_from_slice(text);
     }
-    fn value<T: Serialize + ?Sized>(&mut self, value: &T) -> JsonResult {
+    pub(crate) fn value<T: Serialize + ?Sized>(&mut self, value: &T) -> JsonResult {
         serde_json::to_writer(&mut self.bytes, value)
+    }
+    fn compilation<C: CompilationJson + ?Sized>(&mut self, value: &C) -> JsonResult {
+        value.write_compilation_json(&mut self.bytes)
     }
     fn usize_value(&mut self, mut value: usize) {
         let mut digits = [0u8; 20];
@@ -43,6 +60,60 @@ impl Writer {
     fn u32_value(&mut self, value: u32) {
         self.usize_value(value as usize);
     }
+    fn i64_value(&mut self, value: i64) {
+        if value == -1 {
+            self.literal(b"-1");
+        } else if value < 0 {
+            self.literal(b"-");
+            self.usize_value(value.unsigned_abs() as usize);
+        } else {
+            self.usize_value(value as usize);
+        }
+    }
+    fn u32_array(&mut self, items: &[u32]) {
+        self.literal(b"[");
+        for (index, &item) in items.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.u32_value(item);
+        }
+        self.literal(b"]");
+    }
+    fn compact_tokens_array(&mut self, items: &[CompactTokenRecord]) {
+        self.literal(b"[");
+        for (index, record) in items.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.literal(b"[");
+            for (pos, &val) in record.values[..record.len as usize].iter().enumerate() {
+                if pos > 0 {
+                    self.literal(b",");
+                }
+                self.i64_value(val);
+            }
+            self.literal(b"]");
+        }
+        self.literal(b"]");
+    }
+    fn vec_tokens_array(&mut self, items: &[Vec<i64>]) {
+        self.literal(b"[");
+        for (index, record) in items.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.literal(b"[");
+            for (pos, &val) in record.iter().enumerate() {
+                if pos > 0 {
+                    self.literal(b",");
+                }
+                self.i64_value(val);
+            }
+            self.literal(b"]");
+        }
+        self.literal(b"]");
+    }
     fn simple_span(&mut self, value: &SourceSpan) {
         self.literal(b"{\"end\":");
         self.usize_value(value.end);
@@ -53,13 +124,7 @@ impl Writer {
         self.literal(b"}");
     }
     fn span(&mut self, value: &SourceSpan) -> JsonResult {
-        self.literal(b"{\"end\":");
-        self.value(&value.end)?;
-        self.literal(b",\"source\":");
-        self.value(&value.source)?;
-        self.literal(b",\"start\":");
-        self.value(&value.start)?;
-        self.literal(b"}");
+        self.simple_span(value);
         Ok(())
     }
     fn optional_span(&mut self, value: Option<&SourceSpan>) -> JsonResult {
@@ -151,17 +216,9 @@ impl Writer {
         self.literal(b",\"primary\":");
         self.optional_span(value.primary.as_ref())?;
         self.literal(b",\"reasons\":");
-        if value.reasons.is_empty() {
-            self.literal(b"[]");
-        } else {
-            self.value(&value.reasons)?;
-        }
+        self.u32_array(&value.reasons);
         self.literal(b",\"related\":");
-        if value.related.is_empty() {
-            self.literal(b"[]");
-        } else {
-            self.value(&value.related)?;
-        }
+        self.u32_array(&value.related);
         self.literal(b",\"transformation\":");
         match value.transformation.as_ref() {
             None => self.literal(b"null"),
@@ -174,30 +231,29 @@ impl Writer {
         self.literal(b"{\"copied\":");
         self.optional_span(value.copied.as_ref())?;
         self.literal(b",\"end\":");
-        self.value(&value.end)?;
+        self.usize_value(value.end);
         self.literal(b",\"inlineContexts\":");
-        if value.inline_contexts.is_empty() {
-            self.literal(b"[]");
-        } else {
-            self.value(&value.inline_contexts)?;
-        }
+        self.u32_array(&value.inline_contexts);
         self.literal(b",\"origin\":");
         match value.origin {
             None => self.literal(b"null"),
-            Some(_) => self.value(&value.origin)?,
+            Some(id) => self.u32_value(id),
         }
         self.literal(b",\"start\":");
-        self.value(&value.start)?;
+        self.usize_value(value.start);
         self.literal(b"}");
         Ok(())
     }
     fn construct(&mut self, value: &GeneratedConstruct) -> JsonResult {
         self.literal(b"{\"end\":");
-        self.value(&value.end)?;
+        self.usize_value(value.end);
         self.literal(b",\"origin\":");
-        self.value(&value.origin)?;
+        match value.origin {
+            None => self.literal(b"null"),
+            Some(id) => self.u32_value(id),
+        }
         self.literal(b",\"start\":");
-        self.value(&value.start)?;
+        self.usize_value(value.start);
         self.literal(b"}");
         Ok(())
     }
@@ -244,9 +300,9 @@ impl Writer {
     }
     fn disposition(&mut self, value: &MapDisposition) -> JsonResult {
         self.literal(b"{\"original\":");
-        self.span(&value.original)?;
+        self.simple_span(&value.original);
         self.literal(b",\"reason\":");
-        self.value(&value.reason)?;
+        self.u32_value(value.reason);
         self.literal(b",\"replacementSources\":");
         self.array(&value.replacement_sources, Self::span)?;
         self.literal(b"}");
@@ -255,10 +311,11 @@ impl Writer {
     fn extension(
         &mut self,
         value: &MapExtension,
-        compilation: &(impl Serialize + ?Sized),
+        compact_tokens: Option<&[CompactTokenRecord]>,
+        compilation: &(impl CompilationJson + ?Sized),
     ) -> Result<usize, serde_json::Error> {
         self.literal(b"{\"compilation\":");
-        self.value(compilation)?;
+        self.compilation(compilation)?;
         self.literal(b",\"constructs\":");
         self.array(&value.constructs, Self::construct)?;
         self.literal(b",\"contexts\":");
@@ -292,13 +349,78 @@ impl Writer {
         self.literal(b",\"relations\":");
         self.array(&value.relations, Self::relation)?;
         self.literal(b",\"schemaVersion\":");
-        self.value(&value.schema_version)?;
+        self.u32_value(value.schema_version);
         self.literal(b",\"sources\":");
         self.value(&value.sources)?;
         self.literal(b",\"tokenNames\":");
         self.value(&value.token_names)?;
         self.literal(b",\"tokens\":");
-        self.value(&value.tokens)?;
+        match compact_tokens {
+            Some(tokens) => self.compact_tokens_array(tokens),
+            None => self.vec_tokens_array(&value.tokens),
+        }
+        self.literal(b"}");
+        Ok(digest_at)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn composed_lexical_extension(
+        &mut self,
+        producer: &MapProducer,
+        generated: &BufferIdentity,
+        sources: &[BufferIdentity],
+        token_names: &[&str],
+        compact_tokens: &[CompactTokenRecord],
+        residual_mappings: &[OriginMapping],
+        residual_origin_count: usize,
+        compilation: &(impl CompilationJson + ?Sized),
+    ) -> Result<usize, serde_json::Error> {
+        self.literal(b"{\"compilation\":");
+        self.compilation(compilation)?;
+        self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
+        self.value(generated)?;
+        self.literal(b",\"integrity\":\"");
+        let digest_at = self.bytes.len();
+        self.bytes.extend_from_slice(&[b'0'; 64]);
+        if residual_origin_count == 0 {
+            self.literal(b"\",\"mappings\":[],\"origins\":[]");
+        } else {
+            self.literal(b"\",\"mappings\":");
+            self.array(residual_mappings, Self::mapping)?;
+            self.literal(b",\"origins\":[");
+            for idx in 0..residual_origin_count {
+                if idx > 0 {
+                    self.literal(b",");
+                }
+                self.literal(b"{\"kind\":\"synthetic\",\"name\":null,\"precision\":\"group\",\"primary\":null,\"reasons\":[0],\"related\":[],\"transformation\":\"linker-generated\"}");
+            }
+            self.literal(b"]");
+        }
+        self.literal(b",\"producer\":{\"dirty\":");
+        self.value(&producer.dirty)?;
+        self.literal(b",\"name\":");
+        self.value(&producer.name)?;
+        self.literal(b",\"revision\":");
+        self.value(&producer.revision)?;
+        self.literal(b",\"version\":");
+        self.value(&producer.version)?;
+        if residual_origin_count == 0 {
+            self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
+        } else {
+            self.literal(b"},\"reasons\":[{\"after\":null,\"basis\":null,\"before\":null,\"code\":\"linker-generated\",\"facts\":[],\"operation\":\"synthesize\"}],\"relations\":[],\"schemaVersion\":");
+        }
+        self.u32_value(SCHEMA_VERSION);
+        self.literal(b",\"sources\":");
+        self.value(sources)?;
+        self.literal(b",\"tokenNames\":[");
+        for (index, name) in token_names.iter().enumerate() {
+            if index > 0 {
+                self.literal(b",");
+            }
+            self.value(name)?;
+        }
+        self.literal(b"],\"tokens\":");
+        self.compact_tokens_array(compact_tokens);
         self.literal(b"}");
         Ok(digest_at)
     }
@@ -332,20 +454,25 @@ impl Writer {
         self.literal(b"}");
     }
 
-    fn lexical_copy_extension(
+    fn lexical_copy_extension_pooled(
         &mut self,
         producer: &MapProducer,
         generated: &BufferIdentity,
         sources: &[BufferIdentity],
         lexical: &LexicalCopiedOrigins,
-        compilation: &(impl Serialize + ?Sized),
+        pool: LexicalNamePool<'_>,
+        compilation: &(impl CompilationJson + ?Sized),
     ) -> Result<usize, serde_json::Error> {
+        let LexicalNamePool {
+            token_names,
+            per_token_name_id,
+        } = pool;
         // An empty token list cannot carry the unknown gap that spans the
         // whole generated code, so it keeps the materialized layout (with
         // empty token arrays) instead of an empty token table.
         if lexical.tokens.is_empty() {
             self.literal(b"{\"compilation\":");
-            self.value(compilation)?;
+            self.compilation(compilation)?;
             self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
             self.value(generated)?;
             self.literal(b",\"integrity\":\"");
@@ -384,29 +511,16 @@ impl Writer {
             self.literal(b",\"version\":");
             self.value(&producer.version)?;
             self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
-            self.value(&SCHEMA_VERSION)?;
+            self.u32_value(SCHEMA_VERSION);
             self.literal(b",\"sources\":");
             self.value(sources)?;
             self.literal(b",\"tokenNames\":[],\"tokens\":[]}");
             return Ok(digest_at);
         }
-        // Schema-2 token table: the first-appearance name pool plus one
-        // compact record per token. Unknown gaps are omitted; `validate`
-        // restores them from the cursor walk, exactly as the schema-1
-        // writer emitted them.
-        let mut name_ids: HashMap<&str, usize> = HashMap::new();
-        let mut token_names: Vec<&str> = Vec::new();
-        for token in &lexical.tokens {
-            if token.is_name {
-                let text = &lexical.source_text[token.source_start..token.source_end];
-                if !name_ids.contains_key(text) {
-                    name_ids.insert(text, token_names.len());
-                    token_names.push(text);
-                }
-            }
-        }
+        // Schema-2 token table: reuse the first-appearance name pool and
+        // per-token name IDs already computed for the standard map fields.
         self.literal(b"{\"compilation\":");
-        self.value(compilation)?;
+        self.compilation(compilation)?;
         self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
         self.value(generated)?;
         self.literal(b",\"integrity\":\"");
@@ -421,7 +535,7 @@ impl Writer {
         self.literal(b",\"version\":");
         self.value(&producer.version)?;
         self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
-        self.value(&SCHEMA_VERSION)?;
+        self.u32_value(SCHEMA_VERSION);
         self.literal(b",\"sources\":");
         self.value(sources)?;
         self.literal(b",\"tokenNames\":[");
@@ -443,15 +557,13 @@ impl Writer {
             self.literal(b",");
             self.usize_value(token.source_end);
             self.literal(b",");
-            if token.is_name {
-                let text = &lexical.source_text[token.source_start..token.source_end];
-                self.usize_value(name_ids[text]);
+            let nid = per_token_name_id[index];
+            if nid != u32::MAX {
+                self.u32_value(nid);
             } else {
                 self.literal(b"-1");
             }
             if token.renamed {
-                // The generated end differs from the source span length;
-                // expansion needs it explicitly to place the next record.
                 self.literal(b",");
                 self.usize_value(token.end());
             }
@@ -483,7 +595,8 @@ impl Writer {
         if sources_len == 0 || origins.is_empty() || mappings.is_empty() {
             return None;
         }
-        let mut seen_tuples: HashSet<(u32, usize, usize, Option<String>, bool)> = HashSet::new();
+        let mut seen_tuples: FastSet<(u32, usize, usize, Option<&str>, bool)> =
+            FastSet::with_capacity_and_hasher(origins.len(), Default::default());
         for origin in origins {
             if origin.kind != storm_lua_syntax::provenance::OriginKind::Source
                 || origin.transformation.is_some()
@@ -515,14 +628,13 @@ impl Writer {
                 primary.source,
                 primary.start,
                 primary.end,
-                origin.name.as_deref().map(str::to_owned),
+                origin.name.as_deref(),
                 is_name,
             )) {
                 return None;
             }
         }
-        let mut first_order: Vec<u32> = Vec::new();
-        let mut seen_origins: HashSet<u32> = HashSet::new();
+        let mut next_expected_origin = 0u32;
         let mut cursor = 0usize;
         for mapping in mappings {
             if mapping.start != cursor || mapping.end < mapping.start {
@@ -543,12 +655,6 @@ impl Writer {
                             return None;
                         }
                     }
-                    // Renamed token: the origin still names the original
-                    // spelling at its primary span (checked in the origins
-                    // loop above: Name precision implies a name is present),
-                    // but the generated spelling differs, so no exact-copy
-                    // attribution exists. The record below carries the
-                    // generated end explicitly.
                     None => {
                         if !matches!(
                             origin.precision,
@@ -559,36 +665,31 @@ impl Writer {
                         }
                     }
                 }
-                if seen_origins.insert(id) {
-                    first_order.push(id);
-                }
-            } else {
-                if mapping.copied.is_some() {
+                if id == next_expected_origin {
+                    next_expected_origin += 1;
+                } else if id > next_expected_origin {
                     return None;
                 }
+            } else if mapping.copied.is_some() {
+                return None;
             }
         }
-        if cursor != generated_len || seen_origins.len() != origins.len() {
+        if cursor != generated_len || next_expected_origin as usize != origins.len() {
             return None;
         }
-        if first_order
-            .iter()
-            .enumerate()
-            .any(|(i, &id)| id as usize != i)
-        {
-            return None;
-        }
-        let mut name_ids: HashMap<&str, usize> = HashMap::new();
+        let mut name_ids: FastMap<&str, usize> =
+            FastMap::with_capacity_and_hasher(256, Default::default());
         let mut token_names: Vec<std::sync::Arc<str>> = Vec::new();
         for origin in origins {
             if let Some(name) = &origin.name {
-                if !name_ids.contains_key(name.as_ref()) {
-                    name_ids.insert(name.as_ref(), token_names.len());
+                name_ids.entry(name.as_ref()).or_insert_with(|| {
+                    let id = token_names.len();
                     token_names.push(std::sync::Arc::clone(name));
-                }
+                    id
+                });
             }
         }
-        let mut tokens: Vec<Vec<i64>> = Vec::new();
+        let mut tokens: Vec<CompactTokenRecord> = Vec::with_capacity(mappings.len());
         for mapping in mappings {
             if let Some(id) = mapping.origin {
                 let origin = &origins[id as usize];
@@ -599,47 +700,57 @@ impl Writer {
                 match mapping.copied {
                     Some(copied) => {
                         if sources_len == 1 {
-                            tokens.push(vec![
-                                mapping.start as i64,
-                                copied.start as i64,
-                                copied.end as i64,
-                                name_id,
-                            ]);
+                            tokens.push(CompactTokenRecord {
+                                len: 4,
+                                values: [
+                                    mapping.start as i64,
+                                    copied.start as i64,
+                                    copied.end as i64,
+                                    name_id,
+                                    0,
+                                    0,
+                                ],
+                            });
                         } else {
-                            // Multi-source layout: the source index is the
-                            // second element (see `MapExtension::tokens`).
-                            tokens.push(vec![
-                                mapping.start as i64,
-                                copied.source as i64,
-                                copied.start as i64,
-                                copied.end as i64,
-                                name_id,
-                            ]);
+                            tokens.push(CompactTokenRecord {
+                                len: 5,
+                                values: [
+                                    mapping.start as i64,
+                                    copied.source as i64,
+                                    copied.start as i64,
+                                    copied.end as i64,
+                                    name_id,
+                                    0,
+                                ],
+                            });
                         }
                     }
                     None => {
-                        // Renamed token (the gate above already restricted
-                        // this shape to Name origins): the last element
-                        // carries the generated end, which the source span
-                        // length cannot supply.
                         let primary = origin.primary?;
                         if sources_len == 1 {
-                            tokens.push(vec![
-                                mapping.start as i64,
-                                primary.start as i64,
-                                primary.end as i64,
-                                name_id,
-                                mapping.end as i64,
-                            ]);
+                            tokens.push(CompactTokenRecord {
+                                len: 5,
+                                values: [
+                                    mapping.start as i64,
+                                    primary.start as i64,
+                                    primary.end as i64,
+                                    name_id,
+                                    mapping.end as i64,
+                                    0,
+                                ],
+                            });
                         } else {
-                            tokens.push(vec![
-                                mapping.start as i64,
-                                primary.source as i64,
-                                primary.start as i64,
-                                primary.end as i64,
-                                name_id,
-                                mapping.end as i64,
-                            ]);
+                            tokens.push(CompactTokenRecord {
+                                len: 6,
+                                values: [
+                                    mapping.start as i64,
+                                    primary.source as i64,
+                                    primary.start as i64,
+                                    primary.end as i64,
+                                    name_id,
+                                    mapping.end as i64,
+                                ],
+                            });
                         }
                     }
                 }
@@ -655,12 +766,12 @@ impl Writer {
         sources: &[BufferIdentity],
         origins: &[Origin],
         mappings: &[OriginMapping],
-        compilation: &(impl Serialize + ?Sized),
+        compilation: &(impl CompilationJson + ?Sized),
     ) -> Result<usize, serde_json::Error> {
         let token_table =
             Self::simple_copy_token_table(sources.len(), origins, mappings, generated.bytes);
         self.literal(b"{\"compilation\":");
-        self.value(compilation)?;
+        self.compilation(compilation)?;
         self.literal(b",\"constructs\":[],\"contexts\":[],\"coordinateUnit\":\"utf8-bytes\",\"dispositions\":[],\"generated\":");
         self.value(generated)?;
         self.literal(b",\"integrity\":\"");
@@ -683,7 +794,7 @@ impl Writer {
         self.literal(b",\"version\":");
         self.value(&producer.version)?;
         self.literal(b"},\"reasons\":[],\"relations\":[],\"schemaVersion\":");
-        self.value(&SCHEMA_VERSION)?;
+        self.u32_value(SCHEMA_VERSION);
         self.literal(b",\"sources\":");
         self.value(sources)?;
         match &token_table {
@@ -691,7 +802,7 @@ impl Writer {
                 self.literal(b",\"tokenNames\":");
                 self.value(token_names)?;
                 self.literal(b",\"tokens\":");
-                self.value(tokens)?;
+                self.compact_tokens_array(tokens);
             }
             None => {
                 self.literal(b",\"tokenNames\":[],\"tokens\":[]");
@@ -702,7 +813,7 @@ impl Writer {
     }
 }
 
-fn finish(mut writer: Writer, digest_at: usize) -> Result<String, String> {
+pub(crate) fn finish(mut writer: Writer, digest_at: usize) -> Result<String, String> {
     writer.literal(b"}");
     let mut digest = Sha256::new();
     digest.update(&writer.bytes[..digest_at]);
@@ -716,6 +827,7 @@ fn finish(mut writer: Writer, digest_at: usize) -> Result<String, String> {
     String::from_utf8(writer.bytes).map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 fn begin_standard(standard: &(impl Serialize + ?Sized), capacity: usize) -> Result<Writer, String> {
     let mut writer = Writer {
         bytes: Vec::with_capacity(capacity),
@@ -732,63 +844,87 @@ fn begin_standard(standard: &(impl Serialize + ?Sized), capacity: usize) -> Resu
     Ok(writer)
 }
 
-pub(crate) fn encode_lexical_copy_with_settings(
-    standard: &(impl Serialize + ?Sized),
+#[derive(Clone, Copy)]
+pub(crate) struct LexicalNamePool<'a> {
+    pub token_names: &'a [&'a str],
+    pub per_token_name_id: &'a [u32],
+}
+
+pub(crate) fn finish_lexical_copy_with_settings(
+    mut writer: Writer,
     producer: &MapProducer,
     generated: &BufferIdentity,
     sources: &[BufferIdentity],
     lexical: &LexicalCopiedOrigins,
-    compilation: &(impl Serialize + ?Sized),
+    pool: LexicalNamePool<'_>,
+    compilation: &(impl CompilationJson + ?Sized),
 ) -> Result<String, String> {
-    let capacity = 1024usize.saturating_add(lexical.tokens.len().saturating_mul(64));
-    let mut writer = begin_standard(standard, capacity)?;
     let at = writer
-        .lexical_copy_extension(producer, generated, sources, lexical, compilation)
+        .lexical_copy_extension_pooled(producer, generated, sources, lexical, pool, compilation)
         .map_err(|e| e.to_string())?;
     finish(writer, at)
 }
 
-pub(crate) fn encode_simple_copy_with_settings(
-    standard: &(impl Serialize + ?Sized),
+pub(crate) fn finish_simple_copy_with_settings(
+    mut writer: Writer,
     producer: &MapProducer,
     generated: &BufferIdentity,
     sources: &[BufferIdentity],
     origins: &[Origin],
     mappings: &[OriginMapping],
-    compilation: &(impl Serialize + ?Sized),
+    compilation: &(impl CompilationJson + ?Sized),
 ) -> Result<String, String> {
-    let capacity = 1024usize
-        .saturating_add(origins.len().saturating_mul(160))
-        .saturating_add(mappings.len().saturating_mul(112));
-    let mut writer = begin_standard(standard, capacity)?;
     let at = writer
         .simple_copy_extension(producer, generated, sources, origins, mappings, compilation)
         .map_err(|e| e.to_string())?;
     finish(writer, at)
 }
 
-pub(crate) fn encode(
-    standard: &(impl Serialize + ?Sized),
-    mut extension: MapExtension,
-) -> Result<String, String> {
+#[cfg(test)]
+pub(crate) fn encode(standard: &Value, mut extension: MapExtension) -> Result<String, String> {
     let compilation = std::mem::take(&mut extension.compilation);
-    encode_with_settings(standard, extension, &compilation)
-}
-pub(crate) fn encode_with_settings(
-    standard: &(impl Serialize + ?Sized),
-    extension: MapExtension,
-    compilation: &(impl Serialize + ?Sized),
-) -> Result<String, String> {
-    // Reserve a conservative size based only on records already in memory.
-    // Actual dynamic strings can still grow the buffer normally; this is not
-    // an output limit and does not allocate or retain a second JSON copy.
-    let capacity = 1024usize
-        .saturating_add(extension.origins.len().saturating_mul(120))
-        .saturating_add(extension.mappings.len().saturating_mul(64))
-        .saturating_add(extension.constructs.len().saturating_mul(32));
-    let mut writer = begin_standard(standard, capacity)?;
+    let mut writer = begin_standard(standard, 4096)?;
     let at = writer
-        .extension(&extension, compilation)
+        .extension(&extension, None, &compilation)
+        .map_err(|e| e.to_string())?;
+    finish(writer, at)
+}
+
+pub(crate) fn finish_with_compact_tokens(
+    mut writer: Writer,
+    extension: MapExtension,
+    compact_tokens: Option<&[CompactTokenRecord]>,
+    compilation: &(impl CompilationJson + ?Sized),
+) -> Result<String, String> {
+    let at = writer
+        .extension(&extension, compact_tokens, compilation)
+        .map_err(|e| e.to_string())?;
+    finish(writer, at)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish_composed_lexical_with_settings(
+    mut writer: Writer,
+    producer: &MapProducer,
+    generated: &BufferIdentity,
+    sources: &[BufferIdentity],
+    token_names: &[&str],
+    compact_tokens: &[CompactTokenRecord],
+    residual_mappings: &[OriginMapping],
+    residual_origin_count: usize,
+    compilation: &(impl CompilationJson + ?Sized),
+) -> Result<String, String> {
+    let at = writer
+        .composed_lexical_extension(
+            producer,
+            generated,
+            sources,
+            token_names,
+            compact_tokens,
+            residual_mappings,
+            residual_origin_count,
+            compilation,
+        )
         .map_err(|e| e.to_string())?;
     finish(writer, at)
 }

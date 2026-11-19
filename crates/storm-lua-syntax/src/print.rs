@@ -1786,7 +1786,7 @@ fn lexical_minify_renamed_impl(
         let mut end = 0;
         let mut previous = None::<u8>;
         let mut needs_validation = false;
-        let mut copies = Vec::new();
+        let mut copies = Vec::with_capacity(if track { tokens.len() } else { 0 });
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
             let gap = &source.as_bytes()[end..token.p];
             let before = output.len();
@@ -1850,7 +1850,7 @@ fn lexical_minify_renamed_impl(
         // does not pay off either, fall back to the unrenamed output.
         let mut verbatim = String::with_capacity(source.len());
         let mut end = 0;
-        let mut verbatim_copies = Vec::new();
+        let mut verbatim_copies = Vec::with_capacity(if track { tokens.len() } else { 0 });
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
             verbatim.push_str(&source[end..token.p]);
             let renamed_piece = lexical_rename_for(renames, token.p, token.p + token.v.len());
@@ -1891,7 +1891,7 @@ fn lexical_minify_impl(
         let mut end = 0;
         let mut previous = None::<u8>;
         let mut needs_validation = false;
-        let mut copies = Vec::new();
+        let mut copies = Vec::with_capacity(if track { tokens.len() } else { 0 });
         for token in tokens.iter().filter(|t| t.k != TokenKind::Eof) {
             let gap = &source.as_bytes()[end..token.p];
             let before = output.len();

@@ -31,7 +31,7 @@ function tokenWire(token: HttpToken): {generation:string;id:number} {
 }
 /** タイマーやトランスポートは作成されません。ホストがすべてのエントリポイントを明示的に駆動します。 */
 export abstract class ScriptVm {
-  abstract readonly mode: 'vehicle' | 'addon';
+  abstract readonly mode: 'vehicle' | 'addon' | 'component';
   #disposed = false;
   #busy = false;
   constructor(readonly bridge: Bridge, readonly handle: number, private readonly onLog: LogHandler | undefined, private readonly releaseHost: () => void) {}

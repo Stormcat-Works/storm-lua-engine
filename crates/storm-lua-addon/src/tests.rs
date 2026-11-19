@@ -1,5 +1,6 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 use super::*;
-use std::error::Error;
+use std::{cell::RefCell, error::Error, sync::Arc};
 
 fn field(addon: &Addon, name: &str) -> Result<Option<LuaValue>, Box<dyn Error>> {
     let LuaValue::Table(entries) = addon.savedata()? else {
@@ -22,11 +23,8 @@ fn host_can_resolve_http_without_invoking_an_origin_callback() -> Result<(), Box
     )?;
     addon.start()?;
     let request = addon.drain_http_requests().pop().ok_or("missing request")?;
-    // Rejected transport data must leave the token available to the host.
-    assert!(addon
-        .resolve_http_reply(request.token, &vec![0; 1024 * 1024])
-        .is_err());
-    let resolved = addon.resolve_http_reply(request.token, b"response")?;
+    // 応答サイズでは拒否しない。大きな応答でも精算でき、トークンは消費される。
+    let resolved = addon.resolve_http_reply(request.token, &vec![0; 1024 * 1024])?;
     assert_eq!(resolved, request);
     assert_eq!(field(&addon, "replied")?, None);
     assert!(addon
@@ -61,6 +59,60 @@ fn tick_lua_error_retains_globals_and_delivers_events_and_destroy() -> Result<()
     addon.destroy()?;
     assert_eq!(field(&addon, "joined")?, Some(LuaValue::Bool(true)));
     assert_eq!(field(&addon, "destroyed")?, Some(LuaValue::Bool(true)));
+    Ok(())
+}
+
+#[test]
+fn status_five_auto_recovers_on_the_next_tick() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデル（E9）: onTick以外のコールバック失敗はステータス5となり、
+    // 報告後のtickでクリアされてonTickが再開します。onTick失敗（ステータス2）は残ります。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        g_savedata.ticks = 0
+        function onTick() g_savedata.ticks = g_savedata.ticks + 1 end
+        function onPlayerJoin() error('join failed') end
+    "#,
+        "=status-five",
+    )?;
+    addon.start()?;
+    assert_eq!(
+        addon
+            .dispatch("onPlayerJoin", &[])
+            .err()
+            .ok_or("expected Lua error")?
+            .kind,
+        ErrorKind::Lua
+    );
+    assert_eq!(addon.error_status(), 5);
+    assert_eq!(addon.error_log().len(), 1);
+    // 報告済みのため、このtickでステータスはクリアされ、onTickはまだ走りません。
+    assert_eq!(addon.tick(1)?, RunOutcome::Missing);
+    assert_eq!(addon.error_status(), 0);
+    assert!(addon.error_log().is_empty());
+    // 次のtickからonTickが再開します。
+    assert_eq!(addon.tick(1)?, RunOutcome::Completed);
+    assert_eq!(field(&addon, "ticks")?, Some(LuaValue::Integer(1)));
+    Ok(())
+}
+
+#[test]
+fn tick_accepts_zero_and_negative_game_ticks_as_integers() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのonTick引数は符号付き整数で、0以下も拒否されません（E18）。
+    let mut addon = Addon::new(Default::default())?;
+    addon.load(
+        br#"
+        function onTick(game_ticks) g_savedata.seen = game_ticks end
+    "#,
+        "=game-ticks",
+    )?;
+    addon.start()?;
+    addon.tick(0)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(0)));
+    addon.tick(-30)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(-30)));
+    addon.tick(2147483647)?;
+    assert_eq!(field(&addon, "seen")?, Some(LuaValue::Integer(2147483647)));
     Ok(())
 }
 
@@ -135,7 +187,7 @@ fn game_addon_base_globals_do_not_include_select() -> Result<(), Box<dyn Error>>
 fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onTick() while true do end end; function onDestroy() end",
@@ -153,7 +205,7 @@ fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Err
     );
 
     let handler: HostFunction =
-        Rc::new(|_| Err(VmError::new(ErrorKind::Host, "transport failure")));
+        Arc::new(|_| Err(VmError::new(ErrorKind::Host, "transport failure")));
     let mut addon = Addon::new(AddonConfig {
         server: BTreeMap::from([("query".into(), handler)]),
         ..Default::default()
@@ -168,20 +220,32 @@ fn resource_limits_and_host_failures_remain_terminal() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn ordinary_vm_still_fails_closed_after_lua_error() -> Result<(), Box<dyn Error>> {
+fn ordinary_vm_survives_lua_errors_but_limits_fail_closed() -> Result<(), Box<dyn Error>> {
+    // 実ゲームのエラーモデルでは、通常のLuaエラーでVMは失敗状態になりません（E9）。
     let mut vm = Vm::new(Default::default())?;
     assert_eq!(
         vm.execute(b"missing()", "=vehicle-policy")
             .err()
-            .ok_or("expected VM failure")?
+            .ok_or("expected Lua error")?
             .kind,
         ErrorKind::Lua
     );
-    assert!(vm.is_failed());
+    assert!(!vm.is_failed());
+    vm.execute(b"function onTick() end", "=vehicle-policy")?;
+    assert_eq!(vm.call("onTick")?, RunOutcome::Completed);
+    // 制限の超過は従来どおり失敗状態にします。
+    let mut vm = Vm::new(storm_lua_vm::ExecutionLimits {
+        instruction_budget: Some(std::num::NonZeroU64::new(100).ok_or("budget")?),
+        ..Default::default()
+    })?;
     assert_eq!(
-        vm.call("onTick").err().ok_or("expected VM failure")?.kind,
-        ErrorKind::Failed
+        vm.execute(b"while true do end", "=limit")
+            .err()
+            .ok_or("expected limit")?
+            .kind,
+        ErrorKind::Limit
     );
+    assert!(vm.is_failed());
     Ok(())
 }
 
@@ -296,11 +360,46 @@ fn borrowed_host_phase_supports_cached_alias_and_synchronous_callback() -> Resul
 }
 
 #[test]
-fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error>> {
-    let mut addon = Addon::new(AddonConfig {
-        scoped_server: vec!["again".into()],
+fn host_phase_name_validation_accepts_exact_provision_and_rejects_the_rest(
+) -> Result<(), Box<dyn Error>> {
+    // R7-34 の振る舞いピン: 索引化した検証でも、構成済み操作の
+    // ちょうど1回ずつの提供だけが通り、欠落・重複・未知の名前・
+    // 件数不一致は従来と同じエラーで拒否されること。
+    use crate::ScopedServerFunction;
+    let addon = Addon::new(AddonConfig {
+        scoped_server: vec!["alpha".into(), "beta".into()],
         ..Default::default()
     })?;
+    let target = addon.callback_target();
+    let noop = |_: &[LuaValue]| Ok(vec![]);
+    let alpha: ScopedServerFunction<'_> = &noop;
+    let beta: ScopedServerFunction<'_> = &noop;
+    target.with_server_functions(&[("alpha", alpha), ("beta", beta)], || Ok(()))?;
+    let cases: [&[(&str, ScopedServerFunction<'_>)]; 4] = [
+        &[("alpha", alpha)],
+        &[("alpha", alpha), ("alpha", alpha)],
+        &[("alpha", alpha), ("gamma", alpha)],
+        &[("alpha", alpha), ("beta", beta), ("gamma", alpha)],
+    ];
+    for case in cases {
+        let error = target
+            .with_server_functions(case, || Ok(()))
+            .err()
+            .ok_or("expected exactly-once validation error")?;
+        assert_eq!(error.kind, ErrorKind::InvalidArgument);
+        assert!(error.message.contains("exactly once"), "{}", error.message);
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_callback_cannot_reset_instruction_budget() -> Result<(), Box<dyn Error>> {
+    let mut config = AddonConfig {
+        scoped_server: vec!["again".into()],
+        ..Default::default()
+    };
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
+    let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let again = |_: &[LuaValue]| {
         target.dispatch("onVehicleSpawn", &[])?;
@@ -482,7 +581,7 @@ fn borrowed_predicates_share_budget_and_propagate_caught_exhaustion() -> Result<
         scoped_server: vec!["choose".into()],
         ..Default::default()
     };
-    config.limits.instruction_budget = std::num::NonZeroU64::new(2000).ok_or("budget")?;
+    config.limits.instruction_budget = Some(std::num::NonZeroU64::new(2000).ok_or("budget")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let attempts = std::cell::Cell::new(0);
@@ -523,7 +622,7 @@ fn borrowed_predicate_allocator_memory_error_propagates() -> Result<(), Box<dyn 
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -550,7 +649,7 @@ fn borrowed_predicate_c_buffer_runtime_error_rejects_candidate() -> Result<(), B
         ..Default::default()
     };
     config.limits.lua_memory_bytes =
-        std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?;
+        Some(std::num::NonZeroUsize::new(512 * 1024).ok_or("memory limit")?);
     let mut addon = Addon::new(config)?;
     let target = addon.callback_target();
     let choose = |call: HostCall<'_>| {
@@ -653,7 +752,7 @@ fn sdk_http_settlement_is_independent_of_destroyed_vm() -> Result<(), Box<dyn Er
 fn sdk_http_settlement_survives_terminal_instruction_failure() -> Result<(), Box<dyn Error>> {
     let mut config = AddonConfig::default();
     config.limits.instruction_budget =
-        std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?;
+        Some(std::num::NonZeroU64::new(1000).ok_or("nonzero test budget")?);
     let mut addon = Addon::new(config)?;
     addon.load(
         b"function onCreate() server.httpGet(27180,'/pending') end; function onTick() while true do end end",
@@ -732,4 +831,61 @@ fn scoped_integer_coercion_retains_lua_integer_rules_without_owned_decoding(
         ]
     );
     Ok(())
+}
+
+#[test]
+fn called_function_identity_survives_aliases_nested_phases_restore_and_later_global_overwrite() {
+    use storm_lua_vm::host::{HostCall, HostReturn};
+    let config = AddonConfig {
+        scoped_server: vec!["selfValue".into()],
+        ..Default::default()
+    };
+    let mut addon = Addon::new(config.clone()).unwrap();
+    addon
+        .load(
+            br#"local function check(value) if not value then wrong_identity() end end
+
+        local previous
+        local original=server.selfValue
+        function onCustomCommand() server.selfValue=function() wrong_replacement() end end
+        function onTick()
+            local value=original()
+            if previous~=nil then check(previous==value) end
+            previous=value
+            check(table.pack(original()).n==1 and value==original)
+            check(type(value)=='function' and value()==original)
+            g_savedata.ok=true
+        end
+    "#,
+            "self-value",
+        )
+        .unwrap();
+    addon.start().unwrap();
+    let handler = |call: HostCall<'_>| {
+        assert!(call.is_empty());
+        Ok(HostReturn::CalledFunction)
+    };
+    let target = addon.callback_target();
+    target
+        .with_server_calls(&[], &[("selfValue", &handler)], || {
+            target.with_server_calls(&[], &[("selfValue", &handler)], || addon.tick(1))
+        })
+        .unwrap();
+    let bytes = addon.snapshot().unwrap();
+    drop(target);
+    drop(addon);
+    let mut restored = Addon::from_snapshot(config, &bytes).unwrap();
+    restored
+        .callback_target()
+        .with_server_calls(&[], &[("selfValue", &handler)], || restored.tick(1))
+        .unwrap();
+    restored.dispatch("onCustomCommand", &[]).unwrap();
+    restored
+        .callback_target()
+        .with_server_calls(&[], &[("selfValue", &handler)], || restored.tick(1))
+        .unwrap();
+    assert_eq!(
+        restored.savedata().unwrap(),
+        LuaValue::record([("ok", LuaValue::Bool(true))])
+    );
 }

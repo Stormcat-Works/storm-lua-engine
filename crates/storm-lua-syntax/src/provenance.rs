@@ -561,7 +561,7 @@ impl ArenaOrigins {
             slots: Arc::new(OriginSlots::from(slots)),
             dispositions: empty_dispositions(),
         };
-        result.validate(ast.nodes.len())?;
+        debug_assert!(result.validate(ast.nodes.len()).is_ok());
         Ok(result)
     }
     pub fn validate(&self, nodes: usize) -> Result<(), String> {
@@ -690,7 +690,7 @@ impl GeneratedOrigins {
         let max_start = printed.emissions.iter().map(|e| e.start).max().unwrap_or(0);
         let mut shift = 0;
         while (max_start >> shift) != 0 {
-            let mut counts = vec![0usize; 1 << 8];
+            let mut counts = [0usize; 1 << 8];
             for &index in &start_order {
                 counts[(printed.emissions[index].start >> shift) & 0xFF] += 1;
             }
@@ -1744,9 +1744,16 @@ pub struct DeferredGeneratedOrigins {
     input: Option<PendingOriginInput>,
     resolved: std::sync::OnceLock<GeneratedOrigins>,
 }
-struct PendingOriginInput {
-    arena: ArenaOrigins,
-    printed: PrintedSource,
+enum PendingOriginInput {
+    Printed {
+        arena: ArenaOrigins,
+        printed: PrintedSource,
+    },
+    Unprinted {
+        ast: Ast,
+        root: NodeId,
+        zero_cost_newlines: bool,
+    },
 }
 impl DeferredGeneratedOrigins {
     /// Keep only slots actually referenced by this immutable final print.
@@ -1766,7 +1773,22 @@ impl DeferredGeneratedOrigins {
             dispositions: Arc::clone(&original.dispositions),
         };
         Some(Self {
-            input: Some(PendingOriginInput { arena, printed }),
+            input: Some(PendingOriginInput::Printed { arena, printed }),
+            resolved: std::sync::OnceLock::new(),
+        })
+    }
+    /// Defer tracked printing (`output_with_positions`) and slot selection until
+    /// this candidate actually wins selection or crosses a serialization boundary.
+    pub fn from_ast(ast: Ast, root: NodeId, zero_cost_newlines: bool) -> Option<Self> {
+        if !ast.nodes.tracks_origins() {
+            return None;
+        }
+        Some(Self {
+            input: Some(PendingOriginInput::Unprinted {
+                ast,
+                root,
+                zero_cost_newlines,
+            }),
             resolved: std::sync::OnceLock::new(),
         })
     }
@@ -1780,7 +1802,7 @@ impl DeferredGeneratedOrigins {
     /// Resolve once when selected, inspected or sent across a worker boundary.
     #[expect(
         clippy::expect_used,
-        reason = "A deferred value is constructed only from a tracked, immutable print; its referenced slots are retained"
+        reason = "A deferred value is constructed only from a tracked, immutable print or AST; its referenced slots are retained"
     )]
     pub fn get(&self) -> &GeneratedOrigins {
         self.resolved.get_or_init(|| {
@@ -1788,22 +1810,50 @@ impl DeferredGeneratedOrigins {
                 .input
                 .as_ref()
                 .expect("unresolved print has captured origins");
-            GeneratedOrigins::from_arena(&input.arena, &input.printed)
-                .expect("captured print retains its origin table")
+            match input {
+                PendingOriginInput::Printed { arena, printed } => {
+                    GeneratedOrigins::from_arena(arena, printed)
+                        .expect("captured print retains its origin table")
+                }
+                PendingOriginInput::Unprinted {
+                    ast,
+                    root,
+                    zero_cost_newlines,
+                } => {
+                    let printed =
+                        crate::Printer::new(ast, *zero_cost_newlines).output_with_positions(*root);
+                    GeneratedOrigins::from_print(ast, &printed)
+                        .expect("captured AST retains its origin table")
+                }
+            }
         })
     }
     /// Move the selected result without retaining discarded print/slot storage.
     #[expect(
         clippy::expect_used,
-        reason = "Ready values own a result, deferred values own the exact tracked print"
+        reason = "Ready values own a result, deferred values own the exact tracked print or AST"
     )]
     pub fn into_owned(self) -> GeneratedOrigins {
         if let Some(resolved) = self.resolved.into_inner() {
             return resolved;
         }
         let input = self.input.expect("unresolved print has captured origins");
-        GeneratedOrigins::from_arena(&input.arena, &input.printed)
-            .expect("captured print retains its origin table")
+        match input {
+            PendingOriginInput::Printed { arena, printed } => {
+                GeneratedOrigins::from_arena(&arena, &printed)
+                    .expect("captured print retains its origin table")
+            }
+            PendingOriginInput::Unprinted {
+                ast,
+                root,
+                zero_cost_newlines,
+            } => {
+                let printed =
+                    crate::Printer::new(&ast, zero_cost_newlines).output_with_positions(root);
+                GeneratedOrigins::from_print(&ast, &printed)
+                    .expect("captured AST retains its origin table")
+            }
+        }
     }
 }
 impl std::fmt::Debug for DeferredGeneratedOrigins {
@@ -2013,5 +2063,97 @@ mod repeated_lexical_name_tests {
             "interning does not retain user text across compilations"
         );
         assert_eq!(map, independent);
+    }
+
+    #[test]
+    fn deferred_unprinted_origins_match_eager_from_print_and_roundtrip_serde() {
+        let source = "local a = input.getNumber(1)\nlocal b = a + 2\nfunction onTick() output.setNumber(1, b) end\n";
+        for zero_cost_newlines in [false, true] {
+            let (ast, root) = crate::parser::parse_source_with_origins("deferred.lua", source)
+                .expect("valid Lua source");
+            let printed =
+                crate::print::Printer::new(&ast, zero_cost_newlines).output_with_positions(root);
+            let eager = GeneratedOrigins::from_print(&ast, &printed).expect("valid eager origins");
+            let deferred = DeferredGeneratedOrigins::from_ast(ast, root, zero_cost_newlines)
+                .expect("tracked AST returns deferred origins");
+            let serialized = serde_json::to_vec(&deferred).expect("serializes to GeneratedOrigins");
+            let decoded: DeferredGeneratedOrigins =
+                serde_json::from_slice(&serialized).expect("round-trips DeferredGeneratedOrigins");
+            assert_eq!(deferred.get(), &eager);
+            assert_eq!(decoded.into_owned(), eager);
+            eager
+                .validate_for_code(&printed.code)
+                .expect("validates against printed code");
+        }
+    }
+
+    #[test]
+    fn relate_many_from_matches_single_step_attribution() {
+        let calls: String = (0..20)
+            .map(|i| format!("output.setNumber({}, {})\n", (i % 4) + 1, i * 3 + 1))
+            .collect();
+        let source = format!("function onTick()\n{calls}end\n");
+        let (base_ast, _root) =
+            crate::parser::parse_source_with_origins("relate.lua", &source).expect("parses");
+        let num_nodes: Vec<NodeId> = base_ast
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, node)| {
+                matches!(node, crate::ast::Node::Num(_)).then_some(idx as NodeId)
+            })
+            .collect();
+        assert!(num_nodes.len() >= 20);
+
+        let mut batch_ast = base_ast.clone();
+        let batch_call = batch_ast.push(crate::ast::Node::Nil);
+        let batch_stmt = batch_ast.push(crate::ast::Node::Callstat(batch_call));
+        batch_ast
+            .nodes
+            .derive_from(batch_call, &base_ast.nodes, num_nodes[0], "batch-merge");
+        batch_ast.nodes.relate_many_from(
+            batch_call,
+            &base_ast.nodes,
+            &num_nodes[1..],
+            "batch-merge",
+        );
+        batch_ast
+            .nodes
+            .derive_from(batch_stmt, &base_ast.nodes, num_nodes[0], "batch-merge");
+        batch_ast.nodes.relate_many_from(
+            batch_stmt,
+            &base_ast.nodes,
+            &num_nodes[1..],
+            "batch-merge",
+        );
+
+        let mut step_ast = base_ast.clone();
+        let step_call = step_ast.push(crate::ast::Node::Nil);
+        let step_stmt = step_ast.push(crate::ast::Node::Callstat(step_call));
+        step_ast
+            .nodes
+            .derive_from(step_call, &base_ast.nodes, num_nodes[0], "batch-merge");
+        for &n in &num_nodes[1..] {
+            step_ast
+                .nodes
+                .relate_from(step_call, &base_ast.nodes, n, "batch-merge");
+        }
+        step_ast
+            .nodes
+            .derive_from(step_stmt, &base_ast.nodes, num_nodes[0], "batch-merge");
+        for &n in &num_nodes[1..] {
+            step_ast
+                .nodes
+                .relate_from(step_stmt, &base_ast.nodes, n, "batch-merge");
+        }
+
+        assert_eq!(
+            batch_ast.nodes.origin(batch_call),
+            step_ast.nodes.origin(step_call)
+        );
+        assert_eq!(
+            batch_ast.nodes.origin(batch_stmt),
+            step_ast.nodes.origin(step_stmt)
+        );
     }
 }

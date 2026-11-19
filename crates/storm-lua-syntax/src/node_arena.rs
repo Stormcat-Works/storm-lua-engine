@@ -201,6 +201,10 @@ pub struct BorrowedOrigin {
     origin: Arc<NodeOrigin>,
 }
 
+/// Opaque handle returned by [`NodeArena::suspend_origins`].
+#[doc(hidden)]
+pub struct SuspendedOrigins(ArenaOrigins);
+
 /// An explicitly captured slot provenance. It is not inferred from a reused NodeId.
 #[derive(Clone)]
 pub struct OriginSnapshot {
@@ -409,6 +413,27 @@ impl NodeArena {
     /// Whether source provenance is being collected for this arena.
     pub fn tracks_origins(&self) -> bool {
         self.origins.is_some()
+    }
+    /// Temporarily detach provenance during a rollback-guarded speculative trial loop
+    /// whose Arena length will be restored before resuming.
+    #[doc(hidden)]
+    pub fn suspend_origins(&mut self) -> Option<SuspendedOrigins> {
+        self.origins.take().map(SuspendedOrigins)
+    }
+    /// Re-attach provenance previously taken by [`Self::suspend_origins`].
+    #[doc(hidden)]
+    pub fn resume_origins(&mut self, paused: Option<SuspendedOrigins>) {
+        self.origins = paused.map(|SuspendedOrigins(mut origins)| {
+            let values_len = self.values.len();
+            if origins.slots.len() > values_len {
+                Arc::make_mut(&mut origins.slots).truncate(values_len);
+            } else {
+                while origins.slots.len() < values_len {
+                    Arc::make_mut(&mut origins.slots).push(None);
+                }
+            }
+            origins
+        });
     }
     /// Clone syntax for a temporary cost model without carrying debug provenance.
     /// The returned NodeIds and symbol IDs stay identical; optimizers must never
@@ -1234,6 +1259,7 @@ impl NodeArena {
             None,
         );
     }
+
     /// Add an ordered batch of explicit contributors with the same semantics as
     /// repeated `relate_from`. Large merged columns build membership indexes once
     /// rather than rescanning every accumulated source range on every insertion.
@@ -1244,6 +1270,36 @@ impl NodeArena {
         originals: &[NodeId],
         transformation: &str,
     ) {
+        #[derive(Default)]
+        struct FastSpanHasher(u64);
+        impl std::hash::Hasher for FastSpanHasher {
+            #[inline]
+            fn finish(&self) -> u64 {
+                self.0
+            }
+            #[inline]
+            fn write(&mut self, bytes: &[u8]) {
+                for &b in bytes {
+                    self.0 =
+                        (self.0.rotate_left(5) ^ (b as u64)).wrapping_mul(0x517c_c1b7_2722_0a95);
+                }
+            }
+            #[inline]
+            fn write_u8(&mut self, n: u8) {
+                self.0 = (self.0.rotate_left(5) ^ (n as u64)).wrapping_mul(0x517c_c1b7_2722_0a95);
+            }
+            #[inline]
+            fn write_u32(&mut self, n: u32) {
+                self.0 = (self.0.rotate_left(5) ^ (n as u64)).wrapping_mul(0x517c_c1b7_2722_0a95);
+            }
+            #[inline]
+            fn write_usize(&mut self, n: usize) {
+                self.0 = (self.0.rotate_left(5) ^ (n as u64)).wrapping_mul(0x517c_c1b7_2722_0a95);
+            }
+        }
+        type FastSet<T> =
+            std::collections::HashSet<T, std::hash::BuildHasherDefault<FastSpanHasher>>;
+
         let Some(target_origins) = self.origins.as_mut() else {
             return;
         };
@@ -1263,41 +1319,61 @@ impl NodeArena {
         let Some(origin) = Arc::make_mut(slot).origin.as_mut() else {
             return;
         };
-        let mut spans = origin
-            .value
-            .related
-            .iter()
-            .copied()
-            .collect::<std::collections::HashSet<_>>();
-        let mut relations = origin
-            .value
-            .relations
-            .iter()
-            .cloned()
-            .collect::<std::collections::HashSet<_>>();
+        let mut spans = FastSet::with_capacity_and_hasher(
+            origin.value.related.len() + originals.len(),
+            Default::default(),
+        );
+        spans.extend(origin.value.related.iter().copied());
+        let mut relations = FastSet::with_capacity_and_hasher(
+            origin.value.relations.len() + originals.len(),
+            Default::default(),
+        );
+        relations.extend(origin.value.relations.iter().cloned());
+        let mut new_spans: Vec<SourceSpan> = Vec::new();
+        let mut new_relations: Vec<SourceRelation> = Vec::new();
+        let primary = origin.value.primary;
+        let mut contributor_count = 0usize;
         for &original in originals {
             let Some(contributor) = source.origin_record(original) else {
                 continue;
             };
+            contributor_count += 1;
             let contributor = &contributor.value;
-            origin.derive_action(transformation, ReasonOperation::Relate);
             for span in contributor.primary.iter().chain(contributor.related.iter()) {
-                if origin.value.primary != Some(*span) && spans.insert(*span) {
-                    Arc::make_mut(&mut origin.value.related).push(*span);
+                if primary != Some(*span) && spans.insert(*span) {
+                    if new_spans.is_empty() {
+                        new_spans.reserve(originals.len());
+                    }
+                    new_spans.push(*span);
                 }
                 let relation = SourceRelation {
                     role: RelationRole::Contribution,
                     span: *span,
                 };
                 if relations.insert(relation.clone()) {
-                    Arc::make_mut(&mut origin.value.relations).push(relation);
+                    if new_relations.is_empty() {
+                        new_relations.reserve(originals.len());
+                    }
+                    new_relations.push(relation);
                 }
             }
             for relation in contributor.relations.iter() {
                 if relations.insert(relation.clone()) {
-                    Arc::make_mut(&mut origin.value.relations).push(relation.clone());
+                    if new_relations.is_empty() {
+                        new_relations.reserve(originals.len());
+                    }
+                    new_relations.push(relation.clone());
                 }
             }
+        }
+        if contributor_count > 0 {
+            origin.derive_action_many(transformation, ReasonOperation::Relate, contributor_count);
+        }
+        if !new_spans.is_empty() {
+            Arc::make_mut(&mut origin.value.related).extend(new_spans);
+        }
+        if !new_relations.is_empty() {
+            Arc::make_mut(&mut origin.value.relations).extend(new_relations);
         }
     }
 

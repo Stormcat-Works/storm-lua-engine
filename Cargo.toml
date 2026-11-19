@@ -8,11 +8,11 @@ members = [
     "crates/storm-lua-build",
     "crates/storm-lua-spec", "crates/storm-screen-raster", "crates/storm-lua-vm",
     "crates/storm-lua-microcontroller", "crates/storm-lua-wasm", "crates/storm-screen-wasm",
-    "conformance", "xtask", "crates/storm-lua-bridge", "crates/storm-lua-addon",
+    "conformance", "xtask", "crates/storm-lua-bridge", "crates/storm-lua-addon", "crates/storm-lua-component",
 ]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/Stormcat-Works/storm-lua-engine"
@@ -25,13 +25,16 @@ storm-lua-analysis = { path = "crates/storm-lua-analysis" }
 storm-lua-minify = { path = "crates/storm-lua-minify" }
 storm-lua-build = { path = "crates/storm-lua-build" }
 storm-lua-addon = { path = "crates/storm-lua-addon", default-features = false }
+storm-lua-component = { path = "crates/storm-lua-component", default-features = false }
 storm-lua-bridge = { path = "crates/storm-lua-bridge" }
 storm-lua-spec = { path = "crates/storm-lua-spec" }
 storm-screen-raster = { path = "crates/storm-screen-raster" }
 storm-lua-vm = { path = "crates/storm-lua-vm", default-features = false }
 storm-lua-microcontroller = { path = "crates/storm-lua-microcontroller", default-features = false }
-# Keep backend migration separate from extraction. No LuaJIT, Luau, async or send feature.
-mlua = { version = "=0.10.5", default-features = false, features = ["lua53", "vendored"] }
+# Keep backend migration separate from extraction. No LuaJIT, Luau or async.
+# `send` makes mlua handles Thread-safe on paper (XRc = Arc, parking_lot
+# re-entrant mutex); the engine still executes every VM on its owning thread.
+mlua = { version = "=0.10.5", default-features = false, features = ["lua53", "vendored", "send"] }
 serde_json = "1.0"
 smallvec = { version = "1", features = ["serde"] }
 

@@ -12,6 +12,12 @@ pub(crate) fn number(value: &Value) -> Result<u32, BridgeError> {
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| invalid("expected a u32"))
 }
+pub(crate) fn integer(value: &Value) -> Result<i32, BridgeError> {
+    value
+        .as_i64()
+        .and_then(|n| i32::try_from(n).ok())
+        .ok_or_else(|| invalid("expected an i32"))
+}
 pub(crate) fn decimal(value: &Value) -> Result<u64, BridgeError> {
     value
         .as_str()

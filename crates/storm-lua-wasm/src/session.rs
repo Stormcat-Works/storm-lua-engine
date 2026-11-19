@@ -1,6 +1,6 @@
 //! アダプタが所有するI/Oおよびラスタライザの状態。単一のレジストリによりモード間でのハンドルの衝突を防ぎます。
 use crate::script::Script;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, sync::Arc};
 use storm_lua_bridge::{BridgeError, Registry, Status};
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::{
@@ -89,8 +89,9 @@ pub(crate) fn limits(instructions: u32, memory: u32) -> Result<ExecutionLimits, 
         ));
     }
     Ok(ExecutionLimits {
-        instruction_budget,
-        lua_memory_bytes,
+        instruction_budget: Some(instruction_budget),
+        lua_memory_bytes: Some(lua_memory_bytes),
+        ..ExecutionLimits::default()
     })
 }
 pub(crate) fn insert(vm: Script) -> Result<usize, BridgeError> {
@@ -142,8 +143,9 @@ pub(crate) fn dispose(handle: u32) -> Result<Status, BridgeError> {
         Ok(Status::Ok)
     })
 }
-fn map_provider(key: u32) -> Rc<dyn MapProvider> {
-    Rc::new(move |request: &MapRequest| {
+fn map_provider(key: u32) -> Arc<dyn MapProvider + Send + Sync> {
+    // Captures only the numeric host key, so the provider is Send + Sync.
+    Arc::new(move |request: &MapRequest| {
         let value = serde_json::json!({"kind":"map","width":request.width,"height":request.height,"center":request.center,"zoom":request.zoom,"colors":request.colors.map(|color|color.map(|c|c.0))});
         crate::host::call(key, &value).map_err(|e| ScreenError::Host(e.message))
     })

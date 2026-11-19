@@ -1,6 +1,7 @@
 //! 検証済みのWASMアダプタ。生ポインタは所有された安定したバッファに対してのみ返されます。
 use storm_lua_bridge::{self as bridge, BridgeError, Status};
 mod codec;
+mod component_host;
 #[cfg(feature = "debug")]
 mod debug_adapter;
 mod host;
@@ -43,6 +44,7 @@ pub extern "C" fn sle_capabilities() -> u32 {
     storm_lua_spec::abi::CAP_RASTER
         | storm_lua_spec::abi::CAP_RUNTIME
         | storm_lua_spec::abi::CAP_ADDON
+        | storm_lua_spec::abi::CAP_COMPONENT
         | if cfg!(target_os = "emscripten") {
             storm_lua_spec::abi::CAP_HOST_SERVICES
         } else {
@@ -340,7 +342,7 @@ pub extern "C" fn sle_drain_log_records(handle: u32) -> i32 {
 pub extern "C" fn sle_set_map_host(handle: u32, host_key: u32) -> i32 {
     bridge::call(|| session::with(handle, |s| s.set_map_host(host_key)))
 }
-/// プロファイル種別を照会します: 1=vehicle, 2=addon。0は無効なハンドルを示します。
+/// プロファイル種別を照会します: 1=vehicle, 2=addon, 3=component。0は無効なハンドルを示します。
 #[allow(unsafe_code)]
 #[no_mangle]
 pub extern "C" fn sle_mode(handle: u32) -> u32 {
@@ -349,6 +351,7 @@ pub extern "C" fn sle_mode(handle: u32) -> u32 {
             Ok(match s.vm {
                 script::Script::Vehicle(_) => 1,
                 script::Script::Addon(_) => 2,
+                script::Script::Component(_) => 3,
             })
         })
     }) as u32
@@ -369,6 +372,31 @@ pub extern "C" fn sle_new_vehicle(
             services::create_vehicle(instruction_budget, memory_bytes, host_key, bytes)
         })
     }) as u32
+}
+
+/// 明示的な environment/bindings と、名前で指定されたホスト提供ドメインを使用してコンポーネントを生成します。
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_new_component(
+    instructions: u32,
+    memory: u32,
+    host_key: u32,
+    pointer: usize,
+    length: u32,
+) -> u32 {
+    bridge::value(|| {
+        bridge::with_upload(pointer, length, |bytes| {
+            services::create_component(instructions, memory, host_key, bytes)
+        })
+    }) as u32
+}
+/// モードチェックされたコンポーネントのライフサイクル操作またはステータス照会をディスパッチします。
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn sle_component(handle: u32, pointer: usize, length: u32) -> i32 {
+    bridge::call(|| {
+        bridge::with_upload(pointer, length, |bytes| services::component(handle, bytes))
+    })
 }
 
 /// Execute a named Vehicle callback or inspect current typed properties. No source rewriting.

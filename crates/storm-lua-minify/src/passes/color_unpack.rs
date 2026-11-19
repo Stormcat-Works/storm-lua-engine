@@ -3,8 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::pass::PassResult;
-use storm_lua_analysis::effects::EffectAnalyzer;
-use storm_lua_analysis::resolver::{resolve, BindingId, Resolution};
+use storm_lua_analysis::effects::{mutated_builtin_roots, EffectAnalyzer};
+use storm_lua_analysis::resolver::{resolve, BindingId, BindingKind, Resolution};
 use storm_lua_syntax::ast::{Ast, Node, NodeId, TableField};
 use storm_lua_syntax::size::measure_size;
 
@@ -26,21 +26,32 @@ fn clone_ast(source: &Ast) -> Ast {
     ast
 }
 
-fn pure_table_literal(ast: &Ast, node: NodeId) -> bool {
+/// True only when `node` provably evaluates to a single non-nil scalar value
+/// without throwing or running side effects. `nil` elements are excluded because
+/// in Lua 5.3 + v0.5.0 (`E3`), `table.unpack({255, 0, 0, nil})` passes 3 args
+/// (`alpha = 255`), whereas `screen.setColor(255, 0, 0, nil)` passes 4 args with
+/// explicit `nil` (`alpha = 0`), and holes like `{255, nil, nil}` change `#t`.
+fn non_nil_scalar_element(ast: &Ast, node: NodeId) -> bool {
     match ast.node(node) {
-        Node::Num(_) | Node::Str(_) | Node::Bool(_) | Node::Nil => true,
-        Node::Un(_, expression) => pure_table_literal(ast, *expression),
-        Node::Bin(_, left, right) => {
-            pure_table_literal(ast, *left) && pure_table_literal(ast, *right)
-        }
-        Node::Table(fields) => fields.iter().all(|field| match field {
-            TableField::Arr(value) | TableField::Name(_, value) => pure_table_literal(ast, *value),
-            TableField::KVar(key, value) => {
-                pure_table_literal(ast, *key) && pure_table_literal(ast, *value)
+        Node::Num(_) | Node::Str(_) | Node::Bool(_) => true,
+        Node::Paren(inner) => non_nil_scalar_element(ast, *inner),
+        Node::Un(op, inner) if op == "-" => {
+            let mut cur = *inner;
+            while let Node::Paren(next) = ast.node(cur) {
+                cur = *next;
             }
-        }),
+            matches!(ast.node(cur), Node::Num(_))
+        }
+        Node::Un(op, inner) if op == "not" => non_nil_scalar_element(ast, *inner),
         _ => false,
     }
+}
+
+fn valid_color_array_fields(ast: &Ast, fields: &[TableField]) -> bool {
+    fields.iter().all(|field| match field {
+        TableField::Arr(value) => non_nil_scalar_element(ast, *value),
+        _ => false,
+    })
 }
 
 fn functions(ast: &Ast, res: &Resolution) -> Vec<FunctionInfo> {
@@ -73,6 +84,14 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
     let original_size = measure_size(ast, root);
     let source = clone_ast(ast);
     let res = resolve(&source, root);
+    let mutated = mutated_builtin_roots(&source, &res, root);
+    if mutated.contains("screen") || mutated.contains("table") {
+        return PassResult {
+            root,
+            saved: Some(0),
+            details: None,
+        };
+    }
     let analyzer = EffectAnalyzer::new(&source, &res, root, true);
     let infos = functions(&source, &res);
 
@@ -96,10 +115,7 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
                 let Node::Table(fields) = source.node(expression) else {
                     continue;
                 };
-                if fields.iter().all(|field| match field {
-                    TableField::Arr(value) => pure_table_literal(&source, *value),
-                    _ => false,
-                }) {
+                if valid_color_array_fields(&source, fields) {
                     table_bindings.insert(bid, expression);
                 }
             }
@@ -256,9 +272,59 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
         }
     }
 
+    // Probe which call sites resolve a synthesized `screen` identifier to the
+    // unmutated global `screen` binding (rejecting sites shadowed by `local screen`).
+    let mut probe = clone_ast(&source);
+    let probe_screen_sym = probe.strings.intern("screen");
+    let mut site_probes = Vec::<(NodeId, NodeId)>::new();
+    for node in &nodes {
+        let Node::Callstat(call) = source.node(*node) else {
+            continue;
+        };
+        let Node::Call(function, arguments, _) = source.node(*call) else {
+            continue;
+        };
+        if arguments.len() != 1 || !matches!(source.node(*function), Node::Name(_)) {
+            continue;
+        }
+        let Some(bid) = res.node_bid.get(*function as usize).copied().flatten() else {
+            continue;
+        };
+        if !helpers.contains_key(&bid) {
+            continue;
+        }
+        let probe_name = probe.push(Node::Name(probe_screen_sym));
+        let probe_call = probe.push(Node::Call(probe_name, arguments.clone(), None));
+        probe.nodes[*node as usize] = Node::Callstat(probe_call);
+        site_probes.push((*node, probe_name));
+    }
+    let unshadowed_sites: HashSet<NodeId> = if site_probes.is_empty() {
+        HashSet::new()
+    } else {
+        let probe_res = resolve(&probe, root);
+        site_probes
+            .into_iter()
+            .filter_map(|(stmt_node, name_node)| {
+                let bid = probe_res
+                    .node_bid
+                    .get(name_node as usize)
+                    .copied()
+                    .flatten()?;
+                let binding = probe_res.binding(bid);
+                (binding.kind == BindingKind::Global
+                    && probe.strings.get(binding.name) == "screen"
+                    && probe_res.binding_write_counts[bid as usize] == 0)
+                    .then_some(stmt_node)
+            })
+            .collect()
+    };
+
     let mut candidate = clone_ast(&source);
     let mut replaced = HashMap::<BindingId, usize>::new();
     for node in &nodes {
+        if !unshadowed_sites.contains(node) {
+            continue;
+        }
         let Node::Callstat(call) = source.node(*node) else {
             continue;
         };
@@ -276,13 +342,7 @@ pub fn specialize_color_unpack_helpers(ast: &mut Ast, root: NodeId) -> PassResul
         }
         let argument = arguments[0];
         let table = match source.node(argument) {
-            Node::Table(fields)
-                if fields
-                    .iter()
-                    .all(|field| matches!(field, TableField::Arr(_))) =>
-            {
-                Some(argument)
-            }
+            Node::Table(fields) if valid_color_array_fields(&source, fields) => Some(argument),
             Node::Name(_) => res
                 .node_bid
                 .get(argument as usize)

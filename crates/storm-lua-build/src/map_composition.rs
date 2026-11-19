@@ -10,17 +10,113 @@ use storm_lua_syntax::provenance::{
     SourceSpan,
 };
 
-struct Copies<'a> {
-    link: &'a LinkResult,
-    source_ids: BTreeMap<&'a str, u32>,
+#[derive(Clone, Copy)]
+struct ResolvedRange {
+    output_start_byte: usize,
+    output_end_byte: usize,
+    source_id: u32,
+    source_start_byte: usize,
 }
-impl Copies<'_> {
-    fn span(&self, span: SourceSpan) -> Vec<SourceSpan> {
-        let mut output = Vec::new();
-        for range in &self.link.ranges {
-            if range.output_end_byte <= span.start {
+
+pub(crate) struct Copies {
+    ranges: Vec<ResolvedRange>,
+}
+impl Copies {
+    fn new(link: &LinkResult, source_ids: &BTreeMap<&str, u32>) -> Self {
+        let ranges = link
+            .ranges
+            .iter()
+            .map(|range| ResolvedRange {
+                output_start_byte: range.output_start_byte,
+                output_end_byte: range.output_end_byte,
+                source_id: source_ids[range.module.as_str()],
+                source_start_byte: range.source_start_byte,
+            })
+            .collect();
+        Self { ranges }
+    }
+
+    #[inline]
+    fn first_overlapping(&self, start_byte: usize) -> usize {
+        self.ranges
+            .partition_point(|range| range.output_end_byte <= start_byte)
+    }
+
+    /// Stack-only fast path for the common case where `span` maps to 0 or 1
+    /// output `SourceSpan`. Allocates a `Vec` only when `span` splits across
+    /// multiple non-contiguous original ranges.
+    pub(crate) fn span_fast(
+        &self,
+        span: SourceSpan,
+    ) -> Result<Option<SourceSpan>, Vec<SourceSpan>> {
+        let idx = self.first_overlapping(span.start);
+        let mut first: Option<SourceSpan> = None;
+        for range in &self.ranges[idx..] {
+            if range.output_start_byte >= span.end {
+                break;
+            }
+            let start = span.start.max(range.output_start_byte);
+            let end = span.end.min(range.output_end_byte);
+            if start >= end {
                 continue;
             }
+            let value = SourceSpan {
+                source: range.source_id,
+                start: range.source_start_byte + start - range.output_start_byte,
+                end: range.source_start_byte + end - range.output_start_byte,
+            };
+            match &mut first {
+                None => first = Some(value),
+                Some(prev) if prev.source == value.source && prev.end == value.start => {
+                    prev.end = value.end;
+                }
+                Some(prev) if *prev == value => {}
+                Some(_) => return Err(self.span(span)),
+            }
+        }
+        Ok(first)
+    }
+
+    /// Exact single-interval cover check with zero heap allocations.
+    #[inline]
+    pub(crate) fn exact_cover(&self, copy: SourceSpan) -> Option<SourceSpan> {
+        let idx = self.first_overlapping(copy.start);
+        let mut covered: Option<(usize, usize, SourceSpan)> = None;
+        for range in &self.ranges[idx..] {
+            if range.output_start_byte >= copy.end {
+                break;
+            }
+            let start = copy.start.max(range.output_start_byte);
+            let end = copy.end.min(range.output_end_byte);
+            if start >= end {
+                continue;
+            }
+            let source = SourceSpan {
+                source: range.source_id,
+                start: range.source_start_byte + start - range.output_start_byte,
+                end: range.source_start_byte + end - range.output_start_byte,
+            };
+            match &mut covered {
+                None => covered = Some((start, end, source)),
+                Some((_, prev_end, prev_src))
+                    if *prev_end == start
+                        && prev_src.source == source.source
+                        && prev_src.end == source.start =>
+                {
+                    *prev_end = end;
+                    prev_src.end = source.end;
+                }
+                Some(_) => return None,
+            }
+        }
+        let (start, end, source) = covered?;
+        (start == copy.start && end == copy.end).then_some(source)
+    }
+
+    fn span(&self, span: SourceSpan) -> Vec<SourceSpan> {
+        let mut output = Vec::new();
+        let idx = self.first_overlapping(span.start);
+        for range in &self.ranges[idx..] {
             if range.output_start_byte >= span.end {
                 break;
             }
@@ -28,7 +124,7 @@ impl Copies<'_> {
             let end = span.end.min(range.output_end_byte);
             if start < end {
                 let value = SourceSpan {
-                    source: self.source_ids[range.module.as_str()],
+                    source: range.source_id,
                     start: range.source_start_byte + start - range.output_start_byte,
                     end: range.source_start_byte + end - range.output_start_byte,
                 };
@@ -110,18 +206,36 @@ fn is_simple_shape(input: &GeneratedOrigins) -> bool {
 /// one origin per mapping part and append a synthetic origin: the remapped
 /// primaries, names and copied spans agree, only the origin table stays
 /// compact and gate-eligible.
+fn can_compose_simple(copies: &Copies, input: &GeneratedOrigins) -> bool {
+    for origin in &input.origins {
+        let Some(primary) = origin.primary else {
+            return false;
+        };
+        if !matches!(copies.span_fast(primary), Ok(Some(_))) {
+            return false;
+        }
+    }
+    for mapping in &input.mappings {
+        if let Some(copy) = mapping.copied {
+            if copies.exact_cover(copy).is_none() {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn try_compose_simple(
-    copies: &Copies<'_>,
+    copies: &Copies,
     code: &str,
     mut output: GeneratedOrigins,
 ) -> Option<GeneratedOrigins> {
     for origin in &mut output.origins {
         let primary = origin.primary?;
-        let mapped = copies.span(primary);
-        if mapped.len() != 1 {
-            return None;
-        }
-        let first = mapped[0];
+        let first = match copies.span_fast(primary) {
+            Ok(Some(first)) => first,
+            _ => return None,
+        };
         origin.primary = Some(first);
         if origin.name.as_ref().is_some_and(|name| {
             output.sources[first.source as usize]
@@ -136,37 +250,7 @@ fn try_compose_simple(
         let Some(copy) = mapping.copied else {
             continue;
         };
-        // Covered linked intervals, computed exactly like the legacy loop
-        // below: a single interval equal to the whole copied span is the
-        // only case this path accepts.
-        let mut covered: Option<(usize, usize, SourceSpan)> = None;
-        for range in &copies.link.ranges {
-            if range.output_end_byte <= copy.start {
-                continue;
-            }
-            if range.output_start_byte >= copy.end {
-                break;
-            }
-            let start = copy.start.max(range.output_start_byte);
-            let end = copy.end.min(range.output_end_byte);
-            if start >= end {
-                continue;
-            }
-            let source = SourceSpan {
-                source: copies.source_ids[range.module.as_str()],
-                start: range.source_start_byte + start - range.output_start_byte,
-                end: range.source_start_byte + end - range.output_start_byte,
-            };
-            match &mut covered {
-                None => covered = Some((start, end, source)),
-                Some(_) => return None,
-            }
-        }
-        let (start, end, source) = covered?;
-        if start != copy.start || end != copy.end {
-            return None;
-        }
-        mapping.copied = Some(source);
+        mapping.copied = Some(copies.exact_cover(copy)?);
     }
     output.validate_for_code(code).ok()?;
     Some(output)
@@ -202,13 +286,38 @@ fn is_simple_stable(origin: &Origin) -> bool {
 /// input — when no mapping took the fast branch or the result fails
 /// validation, so inputs without preservable mappings compose exactly as
 /// before.
-fn try_compose_partial(
-    copies: &Copies<'_>,
-    code: &str,
-    mut output: GeneratedOrigins,
-    input: &GeneratedOrigins,
-) -> Option<GeneratedOrigins> {
-    for origin in &mut output.origins {
+fn remap_origins_in_place(copies: &Copies, sources: &[SourceSnapshot], origins: &mut [Origin]) {
+    let mut synthesized_template: Option<Origin> = None;
+    for origin in origins {
+        if origin.related.is_empty() && origin.relations.is_empty() {
+            match origin.primary.map(|span| copies.span_fast(span)) {
+                None => continue,
+                Some(Ok(Some(first))) => {
+                    origin.primary = Some(first);
+                    if origin.name.as_ref().is_some_and(|name| {
+                        sources[first.source as usize]
+                            .text
+                            .get(first.start..first.end)
+                            != Some(name.as_ref())
+                    }) {
+                        origin.name = None;
+                    }
+                    continue;
+                }
+                Some(Ok(None)) => {
+                    origin.kind = OriginKind::Synthetic;
+                    origin.primary = None;
+                    origin.name = None;
+                    origin.precision = OriginPrecision::Group;
+                    origin.transformation = Some("linker-generated".into());
+                    let synthesized = synthesized_template
+                        .get_or_insert_with(|| Origin::synthetic("linker-generated"));
+                    Arc::make_mut(&mut origin.reasons).extend(synthesized.reasons.iter().cloned());
+                    continue;
+                }
+                Some(Err(_)) => {}
+            }
+        }
         let primary = origin
             .primary
             .map(|span| copies.span(span))
@@ -242,7 +351,7 @@ fn try_compose_partial(
                 origin.name = None;
             }
             if origin.name.as_ref().is_some_and(|name| {
-                output.sources[first.source as usize]
+                sources[first.source as usize]
                     .text
                     .get(first.start..first.end)
                     != Some(name.as_ref())
@@ -255,14 +364,28 @@ fn try_compose_partial(
             origin.name = None;
             origin.precision = OriginPrecision::Group;
             origin.transformation = Some("linker-generated".into());
-            let synthesized = Origin::synthetic("linker-generated");
+            let synthesized =
+                synthesized_template.get_or_insert_with(|| Origin::synthetic("linker-generated"));
             Arc::make_mut(&mut origin.reasons).extend(synthesized.reasons.iter().cloned());
         }
         related.dedup();
         relations.dedup();
-        origin.related = Arc::new(related);
-        origin.relations = Arc::new(relations);
+        if !related.is_empty() || !origin.related.is_empty() {
+            origin.related = Arc::new(related);
+        }
+        if !relations.is_empty() || !origin.relations.is_empty() {
+            origin.relations = Arc::new(relations);
+        }
     }
+}
+
+fn try_compose_partial(
+    copies: &Copies,
+    code: &str,
+    mut output: GeneratedOrigins,
+    input: &GeneratedOrigins,
+) -> Option<GeneratedOrigins> {
+    remap_origins_in_place(copies, &output.sources, &mut output.origins);
     let mut context_ids = Vec::with_capacity(input.contexts.len());
     output.contexts.clear();
     for context in &input.contexts {
@@ -303,14 +426,19 @@ fn try_compose_partial(
             .collect(),
     );
     output.mappings.clear();
+    output.mappings.reserve(input.mappings.len());
     let mut generated_id: Option<u32> = None;
     let mut fast_mappings = 0usize;
     for mapping in &input.mappings {
-        let contexts = mapping
-            .inline_contexts
-            .iter()
-            .flat_map(|i| context_ids[*i as usize].iter().copied())
-            .collect::<Vec<_>>();
+        let contexts = if mapping.inline_contexts.is_empty() {
+            Vec::new()
+        } else {
+            mapping
+                .inline_contexts
+                .iter()
+                .flat_map(|i| context_ids[*i as usize].iter().copied())
+                .collect::<Vec<_>>()
+        };
         let Some(copy) = mapping.copied else {
             let mut m = mapping.clone();
             m.inline_contexts = contexts;
@@ -324,34 +452,8 @@ fn try_compose_partial(
             if !is_simple_stable(origin) {
                 return None;
             }
-            let mut covered: Option<(usize, usize, SourceSpan)> = None;
-            for range in &copies.link.ranges {
-                if range.output_end_byte <= copy.start {
-                    continue;
-                }
-                if range.output_start_byte >= copy.end {
-                    break;
-                }
-                let start = copy.start.max(range.output_start_byte);
-                let end = copy.end.min(range.output_end_byte);
-                if start >= end {
-                    continue;
-                }
-                let source = SourceSpan {
-                    source: copies.source_ids[range.module.as_str()],
-                    start: range.source_start_byte + start - range.output_start_byte,
-                    end: range.source_start_byte + end - range.output_start_byte,
-                };
-                match &mut covered {
-                    None => covered = Some((start, end, source)),
-                    Some(_) => return None,
-                }
-            }
-            let (start, end, source) = covered?;
-            if start != copy.start || end != copy.end || origin.primary != Some(source) {
-                return None;
-            }
-            Some(source)
+            let source = copies.exact_cover(copy)?;
+            (origin.primary == Some(source)).then_some(source)
         });
         if let Some(source) = fast_source {
             fast_mappings += 1;
@@ -365,10 +467,8 @@ fn try_compose_partial(
             continue;
         }
         let mut cursor = copy.start;
-        for range in &copies.link.ranges {
-            if range.output_end_byte <= copy.start {
-                continue;
-            }
+        let idx = copies.first_overlapping(copy.start);
+        for range in &copies.ranges[idx..] {
             if range.output_start_byte >= copy.end {
                 break;
             }
@@ -389,7 +489,7 @@ fn try_compose_partial(
                 });
             }
             let source = SourceSpan {
-                source: copies.source_ids[range.module.as_str()],
+                source: range.source_id,
                 start: range.source_start_byte + start - range.output_start_byte,
                 end: range.source_start_byte + end - range.output_start_byte,
             };
@@ -456,20 +556,10 @@ fn try_compose_partial(
 /// simple-stable mappings the same way and follows the legacy emission for
 /// the rest. Any input or remapping outside those shapes falls back to
 /// the legacy path below, whose output is unchanged.
-pub(crate) fn compose(
+pub(crate) fn build_project_sources_and_copies(
     project: &LuaProject,
     link: &LinkResult,
-    code: &str,
-    input: &GeneratedOrigins,
-) -> Result<GeneratedOrigins, String> {
-    let linked = link
-        .linked_source
-        .as_deref()
-        .ok_or("cannot compose a failed link")?;
-    input.validate_for_code(code)?;
-    if input.sources.len() != 1 || input.sources[0].text.as_ref() != linked {
-        return Err("optimization map does not belong to this linked source".into());
-    }
+) -> Result<(Vec<SourceSnapshot>, Copies), String> {
     let mut source_ids = BTreeMap::new();
     let mut sources = Vec::new();
     for key in &link.used_modules {
@@ -494,77 +584,59 @@ pub(crate) fn compose(
             source_ids.insert(range.module.as_str(), id);
         }
     }
-    let copies = Copies { link, source_ids };
-    let mut output = input.clone();
-    output.sources = Arc::new(sources);
-    // Simple-shape fast path (see the module docs above). On any failure
-    // the pristine `output` below still runs through the legacy path.
-    if is_simple_shape(&output) {
-        if let Some(simple) = try_compose_simple(&copies, code, output.clone()) {
+    let copies = Copies::new(link, &source_ids);
+    Ok((sources, copies))
+}
+
+pub(crate) fn compose(
+    project: &LuaProject,
+    link: &LinkResult,
+    code: &str,
+    input: &GeneratedOrigins,
+) -> Result<GeneratedOrigins, String> {
+    let linked = link
+        .linked_source
+        .as_deref()
+        .ok_or("cannot compose a failed link")?;
+    input.validate_for_code(code)?;
+    if input.sources.len() != 1 || input.sources[0].text.as_ref() != linked {
+        return Err("optimization map does not belong to this linked source".into());
+    }
+    let (sources, copies) = build_project_sources_and_copies(project, link)?;
+    let shared_sources = Arc::new(sources);
+    // Simple-shape fast path (see the module docs above). Pre-validate without
+    // cloning 40k+ origins/mappings when linker wrapper gaps require partial mode.
+    if is_simple_shape(input) && can_compose_simple(&copies, input) {
+        let mut candidate = input.clone();
+        candidate.sources = Arc::clone(&shared_sources);
+        if let Some(simple) = try_compose_simple(&copies, code, candidate) {
             return Ok(simple);
         }
     }
-    // Partial simple preservation for mixed inputs (see
-    // `try_compose_partial`): also runs on a clone, so a rejection leaves
-    // the pristine `output` for the legacy path below.
-    if let Some(partial) = try_compose_partial(&copies, code, output.clone(), input) {
-        return Ok(partial);
-    }
-    for origin in &mut output.origins {
-        let primary = origin
-            .primary
-            .map(|span| copies.span(span))
-            .unwrap_or_default();
-        let mut related = origin
-            .related
-            .iter()
-            .flat_map(|s| copies.span(*s))
-            .collect::<Vec<_>>();
-        let mut relations = origin
-            .relations
-            .iter()
-            .flat_map(|r| {
-                copies
-                    .span(r.span)
-                    .into_iter()
-                    .map(move |span| SourceRelation { role: r.role, span })
-            })
-            .collect::<Vec<_>>();
-        if let Some(first) = primary.first().copied() {
-            origin.primary = Some(first);
-            for &span in &primary[1..] {
-                related.push(span);
-                relations.push(SourceRelation {
-                    role: RelationRole::Contribution,
-                    span,
-                });
-            }
-            if primary.len() > 1 {
-                origin.precision = OriginPrecision::Group;
-                origin.name = None;
-            }
-            if origin.name.as_ref().is_some_and(|name| {
-                output.sources[first.source as usize]
-                    .text
-                    .get(first.start..first.end)
-                    != Some(name.as_ref())
-            }) {
-                origin.name = None;
-            }
-        } else if origin.primary.is_some() {
-            origin.kind = OriginKind::Synthetic;
-            origin.primary = None;
-            origin.name = None;
-            origin.precision = OriginPrecision::Group;
-            origin.transformation = Some("linker-generated".into());
-            let synthesized = Origin::synthetic("linker-generated");
-            Arc::make_mut(&mut origin.reasons).extend(synthesized.reasons.iter().cloned());
+    // Partial simple preservation for mixed inputs: clone only `origins` (not
+    // `mappings`, since `try_compose_partial` rebuilds `mappings` from `input`).
+    {
+        let partial_seed = GeneratedOrigins {
+            sources: Arc::clone(&shared_sources),
+            origins: input.origins.clone(),
+            mappings: Vec::new(),
+            contexts: Vec::new(),
+            constructs: input.constructs.clone(),
+            dispositions: Arc::clone(&input.dispositions),
+        };
+        if let Some(partial) = try_compose_partial(&copies, code, partial_seed, input) {
+            return Ok(partial);
         }
-        related.dedup();
-        relations.dedup();
-        origin.related = Arc::new(related);
-        origin.relations = Arc::new(relations);
     }
+    let mut output = GeneratedOrigins {
+        sources: shared_sources,
+        origins: input.origins.clone(),
+        mappings: Vec::new(),
+        contexts: Vec::new(),
+        constructs: input.constructs.clone(),
+        dispositions: Arc::clone(&input.dispositions),
+    };
+    remap_origins_in_place(&copies, &output.sources, &mut output.origins);
     let mut context_ids = Vec::with_capacity(input.contexts.len());
     output.contexts.clear();
     for context in &input.contexts {
@@ -622,10 +694,8 @@ pub(crate) fn compose(
             continue;
         };
         let mut cursor = copy.start;
-        for range in &link.ranges {
-            if range.output_end_byte <= copy.start {
-                continue;
-            }
+        let idx = copies.first_overlapping(copy.start);
+        for range in &copies.ranges[idx..] {
             if range.output_start_byte >= copy.end {
                 break;
             }
@@ -641,7 +711,7 @@ pub(crate) fn compose(
                 });
             }
             let source = SourceSpan {
-                source: copies.source_ids[range.module.as_str()],
+                source: range.source_id,
                 start: range.source_start_byte + start - range.output_start_byte,
                 end: range.source_start_byte + end - range.output_start_byte,
             };

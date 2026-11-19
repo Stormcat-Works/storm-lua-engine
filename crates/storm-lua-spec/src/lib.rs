@@ -17,6 +17,9 @@ pub mod http;
 /// アドオン固有のAPIおよびコールバックカタログ。
 pub mod addon;
 
+/// Component Mod固有のAPIおよびコールバックカタログ。
+pub mod component;
+
 /// ホストマップ描画およびパレット契約。
 pub mod map;
 

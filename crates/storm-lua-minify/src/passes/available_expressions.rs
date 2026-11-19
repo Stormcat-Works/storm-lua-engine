@@ -255,6 +255,7 @@ pub(super) fn contains_mutable_index_read(
 /// in the same straight-line block has the same value as the first.
 /// Returns the host root (`input` / `property` / `screen`).
 fn pure_host_read(source: &Ast, analyzer: &EffectAnalyzer<'_>, node: NodeId) -> Option<String> {
+    use storm_lua_analysis::effects::CallbackPhase;
     let Node::Call(function, arguments, method) = source.node(node) else {
         return None;
     };
@@ -264,7 +265,7 @@ fn pure_host_read(source: &Ast, analyzer: &EffectAnalyzer<'_>, node: NodeId) -> 
     let builtin = analyzer.resolve_builtin_reference(*function)?;
     match builtin.as_str() {
         "input.getNumber" | "input.getBool" => {
-            if arguments.len() != 1 {
+            if analyzer.callback_phase(node) != CallbackPhase::TickOnly || arguments.len() != 1 {
                 return None;
             }
             matches!(source.node(arguments[0]), Node::Num(_)).then(|| "input".to_string())
@@ -276,7 +277,8 @@ fn pure_host_read(source: &Ast, analyzer: &EffectAnalyzer<'_>, node: NodeId) -> 
             matches!(source.node(arguments[0]), Node::Str(_)).then(|| "property".to_string())
         }
         "screen.getWidth" | "screen.getHeight" => {
-            arguments.is_empty().then(|| "screen".to_string())
+            (analyzer.callback_phase(node) == CallbackPhase::DrawOnly && arguments.is_empty())
+                .then(|| "screen".to_string())
         }
         _ => None,
     }
@@ -2044,7 +2046,7 @@ mod tests {
         // chunk function is exactly at the active-local limit, so any
         // synthesized carrier would make the output fail to load.
         let decls = (1..=200)
-            .map(|i| format!("local c{i} = input.getNumber({})", i % 25))
+            .map(|i| format!("local c{i} = property.getNumber('k{}')", i % 25))
             .collect::<Vec<_>>()
             .join(" ");
         let source = format!("{decls} R = c1 + c200");
@@ -2057,7 +2059,7 @@ mod tests {
         // Same repeated-call shape with ample local headroom: the
         // carrier is synthesized as before.
         let decls = (1..=64)
-            .map(|i| format!("local c{i} = input.getNumber({})", i % 8))
+            .map(|i| format!("local c{i} = property.getNumber('k{}')", i % 8))
             .collect::<Vec<_>>()
             .join(" ");
         let source = format!("{decls} R = c1 + c64");
@@ -2074,7 +2076,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local function big({params}) local a = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) local b = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) return a + b end"
+            "local function big({params}) local a = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') local b = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') return a + b end"
         );
         let (_, synthesized) = run_synth(&source);
         assert_eq!(synthesized, 0);
@@ -2090,7 +2092,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local function big({params}) local a = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(2) + input.getNumber(2) + input.getNumber(2) + input.getNumber(2) local b = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(2) + input.getNumber(2) + input.getNumber(2) + input.getNumber(2) return a + b end"
+            "local function big({params}) local a = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k2') + property.getNumber('k2') + property.getNumber('k2') + property.getNumber('k2') local b = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k2') + property.getNumber('k2') + property.getNumber('k2') + property.getNumber('k2') return a + b end"
         );
         let (_, synthesized) = run_synth(&source);
         assert_eq!(synthesized, 1);
@@ -2342,7 +2344,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local obj = {{}} function obj:m({params}) local a = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) local b = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) return a + b end"
+            "local obj = {{}} function obj:m({params}) local a = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') local b = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') return a + b end"
         );
         let (_, synthesized) = run_synth(&source);
         assert_eq!(synthesized, 0);
@@ -2355,9 +2357,19 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let source = format!(
-            "local obj = {{}} function obj:m({params}) local a = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) local b = input.getNumber(1) + input.getNumber(1) + input.getNumber(1) + input.getNumber(1) return a + b end"
+            "local obj = {{}} function obj:m({params}) local a = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') local b = property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') + property.getNumber('k1') return a + b end"
         );
         let (_, synthesized) = run_synth(&source);
         assert!(synthesized >= 1);
+    }
+
+    #[test]
+    fn does_not_synthesize_or_reuse_wrong_phase_host_reads() {
+        let tick_screen = "function onTick() local a = g and math.sin(screen.getWidth()) local b = g and math.sin(screen.getWidth()) local c = g and math.sin(screen.getWidth()) output.setBool(1, not a and not b and not c) end";
+        let (_, synth_tick) = run_synth(tick_screen);
+        assert_eq!(synth_tick, 0);
+        let draw_input = "function onDraw() local a = g and math.sin(input.getNumber(1)) local b = g and math.sin(input.getNumber(1)) local c = g and math.sin(input.getNumber(1)) screen.drawClear() end";
+        let (_, synth_draw) = run_synth(draw_input);
+        assert_eq!(synth_draw, 0);
     }
 }

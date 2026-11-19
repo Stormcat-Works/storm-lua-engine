@@ -95,14 +95,20 @@ pub(crate) fn thread_frames(
 
 pub(crate) struct YieldProbe {
     _thread: Thread,
-    state: NonNull<ffi::lua_State>,
+    /// Coroutine state address, kept as an integer so the probe can be captured
+    /// by mlua's `Send` hook callback without an `unsafe impl Send`. The pointer
+    /// itself is owned by `_thread`, which roots the coroutine for this probe.
+    state: usize,
 }
 impl YieldProbe {
     pub(crate) fn new(lua: &Lua, thread: &Thread) -> mlua::Result<Self> {
         Ok(Self {
             _thread: thread.clone(),
-            state: thread_state(lua, thread)?,
+            state: thread_state(lua, thread)?.as_ptr() as usize,
         })
+    }
+    pub(crate) fn state_id(&self) -> usize {
+        self.state
     }
     #[cfg(feature = "debug")]
     pub(crate) fn local_names(&self) -> mlua::Result<Vec<(i32, Vec<u8>)>> {
@@ -111,7 +117,7 @@ impl YieldProbe {
         // ルート化された各ローカル変数名をコピーし、lua_getlocalによってpushされた値を正確にpopします。
         // これにより、yield後のgetlocalが一時変数としてラベル付けする前に、束縛の識別子を捕捉します。
         unsafe {
-            let state = self.state.as_ptr();
+            let state = self.state as *mut ffi::lua_State;
             if ffi::lua_checkstack(state, 1) == 0 {
                 return Err(mlua::Error::RuntimeError(
                     "debug stack capacity exceeded".into(),
@@ -137,13 +143,48 @@ impl YieldProbe {
         // SAFETY: mluaがVMロックを保持している間、このコルーチンのフック内でのみ呼び出されます。
         // ルート化されたThreadがコルーチンを生存させます。コルーチンもそのLua状態もSendではありません。
         // これは読み取り専用のC照会であり、Rustフレームをまたぐyield/longjmpではありません。
-        unsafe { ffi::lua_isyieldable(self.state.as_ptr()) != 0 }
+        unsafe { ffi::lua_isyieldable(self.state as *mut ffi::lua_State) != 0 }
     }
+    pub(crate) fn tighten_count_hook(&self, next_count: u32) {
+        // SAFETY: mluaがVMロックを保持している間、このコルーチン自身のフック内でのみ呼び出されます。
+        // 既存のhook関数・マスクを維持したままbasehookcount/hookcountだけを更新し、Luaスタックには触れません。
+        unsafe {
+            let state = self.state as *mut ffi::lua_State;
+            let func = ffi::lua_gethook(state);
+            let mask = ffi::lua_gethookmask(state);
+            if func.is_some() && (mask & ffi::LUA_MASKCOUNT) != 0 {
+                ffi::lua_sethook(state, func, mask, next_count.max(1) as std::os::raw::c_int);
+            }
+        }
+    }
+}
+
+pub(crate) fn reset_thread_count_hook(
+    lua: &Lua,
+    state_id: usize,
+    count: u32,
+) -> mlua::Result<bool> {
+    let mut updated = false;
+    // SAFETY: 呼び出し側が対応するThreadを保持してコルーチンの生存を保証し、exec_rawがLuaロックを取得します。
+    // 対象スレッドにカウントフックが設定済みの場合のみカウント値を再設定し、Luaスタックは変更しません。
+    unsafe {
+        lua.exec_raw::<()>((), |_| {
+            let state = state_id as *mut ffi::lua_State;
+            let func = ffi::lua_gethook(state);
+            let mask = ffi::lua_gethookmask(state);
+            if func.is_some() && (mask & ffi::LUA_MASKCOUNT) != 0 {
+                ffi::lua_sethook(state, func, mask, count.max(1) as std::os::raw::c_int);
+                updated = true;
+            }
+        })?;
+    }
+    Ok(updated)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     fn lines(lua: &Lua, thread: &Thread, hook_yielded: bool) -> mlua::Result<Vec<(String, i32)>> {
         Ok(thread_frames(lua, thread, 256, hook_yielded)?
@@ -183,13 +224,13 @@ mod tests {
             .set_name("@unit.lua")
             .into_function()?;
         let thread = lua.create_thread(function)?;
-        let count = std::cell::Cell::new(0);
+        let count = AtomicU32::new(0);
         thread.set_hook(
             mlua::HookTriggers::new().every_nth_instruction(1),
             move |_, _| {
-                count.set(count.get() + 1);
+                let current = count.fetch_add(1, Ordering::Relaxed) + 1;
                 // spinの最初の命令（ループのジャンプ）に入ってからyieldします。
-                Ok(if count.get() > 8 {
+                Ok(if current > 8 {
                     mlua::VmState::Yield
                 } else {
                     mlua::VmState::Continue

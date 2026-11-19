@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use sourcemap::SourceMapBuilder;
 #[cfg(test)]
 use std::collections::BTreeMap;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 use storm_lua_minify::search::SearchStats;
 use storm_lua_minify::CompileOptions;
@@ -36,7 +36,7 @@ use storm_lua_syntax::{lexer::Lexer, source_position::LineIndex};
 /// `RandomState` (SipHash) because these keys are short, numerous, and
 /// internal to one compilation; no new dependency is introduced.
 #[derive(Default)]
-struct FastHasher {
+pub(crate) struct FastHasher {
     hash: u64,
 }
 
@@ -89,9 +89,9 @@ impl std::hash::Hasher for FastHasher {
     }
 }
 
-type FastBuildHasher = std::hash::BuildHasherDefault<FastHasher>;
-type FastMap<K, V> = HashMap<K, V, FastBuildHasher>;
-type FastSet<T> = std::collections::HashSet<T, FastBuildHasher>;
+pub(crate) type FastBuildHasher = std::hash::BuildHasherDefault<FastHasher>;
+pub(crate) type FastMap<K, V> = HashMap<K, V, FastBuildHasher>;
+pub(crate) type FastSet<T> = std::collections::HashSet<T, FastBuildHasher>;
 
 /// Encoding version of x_storm, independent of both Source Map and engine versions.
 pub const SCHEMA_VERSION: u32 = 2;
@@ -213,11 +213,14 @@ pub struct MapExtension {
     pub integrity: String,
 }
 fn digest(bytes: &[u8]) -> String {
-    // digest 0.11's output array no longer implements `LowerHex`.
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let raw = Sha256::digest(bytes);
+    let mut out = Vec::with_capacity(64);
+    for &byte in raw.iter() {
+        out.push(HEX[(byte >> 4) as usize]);
+        out.push(HEX[(byte & 15) as usize]);
+    }
+    String::from_utf8(out).unwrap_or_default()
 }
 fn identity(text: &str) -> BufferIdentity {
     BufferIdentity {
@@ -253,7 +256,14 @@ fn reason_id(
         id
     })
 }
-fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapExtension {
+fn extension(
+    code: &str,
+    origins: &GeneratedOrigins,
+    compilation: Value,
+) -> (
+    MapExtension,
+    Option<Vec<crate::canonical_map::CompactTokenRecord>>,
+) {
     let mut reasons = Vec::new();
     let mut ids: FastMap<OptimizationReason, u32> = FastMap::default();
     let mut relation_table = Vec::new();
@@ -302,7 +312,8 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
             }
         })
         .collect();
-    let mut seen = BTreeSet::new();
+    let mut seen: FastSet<(u32, usize, usize, u32)> =
+        FastSet::with_capacity_and_hasher(origins.dispositions.len(), Default::default());
     let dispositions = origins
         .dispositions
         .iter()
@@ -351,10 +362,17 @@ fn extension(code: &str, origins: &GeneratedOrigins, compilation: Value) -> MapE
         tokens: Vec::new(),
         integrity: String::new(),
     };
-    extract_token_table(&mut extension, &source_texts);
-    extension
+    let compact_tokens = extract_token_table(&mut extension, &source_texts);
+    (extension, compact_tokens)
 }
-fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) -> MapExtension {
+fn extension_owned(
+    code: &str,
+    origins: GeneratedOrigins,
+    compilation: Value,
+) -> (
+    MapExtension,
+    Option<Vec<crate::canonical_map::CompactTokenRecord>>,
+) {
     let GeneratedOrigins {
         sources,
         origins,
@@ -410,7 +428,8 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
             }
         })
         .collect();
-    let mut seen = BTreeSet::new();
+    let mut seen: FastSet<(u32, usize, usize, u32)> =
+        FastSet::with_capacity_and_hasher(dispositions.len(), Default::default());
     let dispositions = Arc::unwrap_or_clone(dispositions)
         .into_iter()
         .filter_map(|d| {
@@ -456,8 +475,8 @@ fn extension_owned(code: &str, origins: GeneratedOrigins, compilation: Value) ->
         tokens: Vec::new(),
         integrity: String::new(),
     };
-    extract_token_table(&mut extension, &source_texts);
-    extension
+    let compact_tokens = extract_token_table(&mut extension, &source_texts);
+    (extension, compact_tokens)
 }
 
 /// Upper bound on the residual (non-simple) origin count of a mixed-form
@@ -490,19 +509,22 @@ fn token_table_simple_origin(origin: &MapOrigin) -> bool {
 /// mirrors a check the reader performs on expansion or merge, so the
 /// emitted map always validates against the same generated code and
 /// sources; when any condition fails the extension is left untouched.
-fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
+fn extract_token_table(
+    extension: &mut MapExtension,
+    source_texts: &[&str],
+) -> Option<Vec<crate::canonical_map::CompactTokenRecord>> {
     if !extension.contexts.is_empty()
         || !extension.constructs.is_empty()
         || !extension.dispositions.is_empty()
     {
-        return;
+        return None;
     }
     if extension.origins.is_empty()
         || extension.mappings.is_empty()
         || extension.sources.is_empty()
         || extension.sources.len() != source_texts.len()
     {
-        return;
+        return None;
     }
     let multi_source = extension.sources.len() > 1;
     let simple: Vec<bool> = extension
@@ -516,93 +538,90 @@ fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
         || residual_count > MAX_MIXED_RESIDUAL_ORIGINS
         || residual_count > simple_count
     {
-        return;
+        return None;
     }
     // Simple tuples must be unique (the reader deduplicates by tuple and
     // would silently merge distinct origins), the name of a Name origin
     // must match its primary source slice (the reader rejects mismatches),
     // and primary source references must be in range.
-    let mut seen_tuples: std::collections::HashSet<(u32, usize, usize, Option<String>, bool)> =
-        std::collections::HashSet::new();
+    let mut seen_tuples: FastSet<(u32, usize, usize, Option<&str>, bool)> =
+        FastSet::with_capacity_and_hasher(simple_count, Default::default());
     for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
         if !is_simple {
             continue;
         }
-        let Some(primary) = origin.primary else {
-            return;
-        };
-        let Some(text) = source_texts.get(primary.source as usize) else {
-            return;
-        };
+        let primary = origin.primary?;
+        let text = source_texts.get(primary.source as usize)?;
         if let Some(name) = &origin.name {
             if text.get(primary.start..primary.end) != Some(name.as_ref()) {
-                return;
+                return None;
             }
         }
         if !seen_tuples.insert((
             primary.source,
             primary.start,
             primary.end,
-            origin.name.as_deref().map(str::to_owned),
+            origin.name.as_deref(),
             origin.precision == OriginPrecision::Name,
         )) {
-            return;
+            return None;
         }
     }
     // Name pool in simple-origin order, as the reader reconstructs it.
-    let mut name_ids: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut name_ids: FastMap<&str, usize> =
+        FastMap::with_capacity_and_hasher(256, Default::default());
     let mut token_names: Vec<Arc<str>> = Vec::new();
     for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
         if is_simple {
             if let Some(name) = &origin.name {
-                if !name_ids.contains_key(name.as_ref()) {
-                    name_ids.insert(name.as_ref(), token_names.len());
+                name_ids.entry(name.as_ref()).or_insert_with(|| {
+                    let id = token_names.len();
                     token_names.push(Arc::clone(name));
-                }
+                    id
+                });
             }
         }
     }
     // Residual origin ids in original order.
-    let mut residual_ids: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    let mut residual_ids = vec![0u32; simple.len()];
+    let mut next_residual = 0u32;
     for (index, &is_simple) in simple.iter().enumerate() {
         if !is_simple {
-            residual_ids.insert(index as u32, residual_ids.len() as u32);
+            residual_ids[index] = next_residual;
+            next_residual += 1;
         }
     }
-    let mut tokens: Vec<Vec<i64>> = Vec::new();
-    let mut residual_mappings: Vec<OriginMapping> = Vec::new();
-    let mut first_order: Vec<u32> = Vec::new();
-    let mut seen_simple: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut tokens: Vec<crate::canonical_map::CompactTokenRecord> =
+        Vec::with_capacity(extension.mappings.len());
+    let mut residual_mappings: Vec<OriginMapping> = Vec::with_capacity(residual_count * 2);
+    let mut first_order: Vec<u32> = Vec::with_capacity(simple_count);
+    let mut seen_simple = vec![false; extension.origins.len()];
     let mut cursor = 0usize;
     for mapping in &extension.mappings {
         if mapping.start != cursor || mapping.end < mapping.start {
-            return;
+            return None;
         }
         cursor = mapping.end;
         if !mapping.inline_contexts.is_empty() {
-            return;
+            return None;
         }
         let Some(id) = mapping.origin else {
             if mapping.copied.is_some() {
-                return;
+                return None;
             }
             // Unknown mappings stay residual; the merge splices them into
             // the expansion gaps, which reconstructs them identically.
             residual_mappings.push(mapping.clone());
             continue;
         };
-        let Some(origin) = extension.origins.get(id as usize) else {
-            return;
-        };
+        let origin = extension.origins.get(id as usize)?;
         if !simple[id as usize] {
             let mut mapping = mapping.clone();
-            mapping.origin = Some(residual_ids[&id]);
+            mapping.origin = Some(residual_ids[id as usize]);
             residual_mappings.push(mapping);
             continue;
         }
-        let Some(primary) = origin.primary else {
-            return;
-        };
+        let primary = origin.primary?;
         let name_id = match &origin.name {
             Some(name) => name_ids[name.as_ref()] as i64,
             None => -1,
@@ -612,55 +631,71 @@ fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
                 if Some(copied) != origin.primary
                     || mapping.end - mapping.start != copied.end - copied.start
                 {
-                    return;
+                    return None;
                 }
                 if multi_source {
-                    tokens.push(vec![
-                        mapping.start as i64,
-                        copied.source as i64,
-                        copied.start as i64,
-                        copied.end as i64,
-                        name_id,
-                    ]);
+                    tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 5,
+                        values: [
+                            mapping.start as i64,
+                            copied.source as i64,
+                            copied.start as i64,
+                            copied.end as i64,
+                            name_id,
+                            0,
+                        ],
+                    });
                 } else {
-                    tokens.push(vec![
-                        mapping.start as i64,
-                        copied.start as i64,
-                        copied.end as i64,
-                        name_id,
-                    ]);
+                    tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 4,
+                        values: [
+                            mapping.start as i64,
+                            copied.start as i64,
+                            copied.end as i64,
+                            name_id,
+                            0,
+                            0,
+                        ],
+                    });
                 }
             }
             None => {
                 if origin.precision != OriginPrecision::Name {
-                    return;
+                    return None;
                 }
                 if multi_source {
-                    tokens.push(vec![
-                        mapping.start as i64,
-                        primary.source as i64,
-                        primary.start as i64,
-                        primary.end as i64,
-                        name_id,
-                        mapping.end as i64,
-                    ]);
+                    tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 6,
+                        values: [
+                            mapping.start as i64,
+                            primary.source as i64,
+                            primary.start as i64,
+                            primary.end as i64,
+                            name_id,
+                            mapping.end as i64,
+                        ],
+                    });
                 } else {
-                    tokens.push(vec![
-                        mapping.start as i64,
-                        primary.start as i64,
-                        primary.end as i64,
-                        name_id,
-                        mapping.end as i64,
-                    ]);
+                    tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 5,
+                        values: [
+                            mapping.start as i64,
+                            primary.start as i64,
+                            primary.end as i64,
+                            name_id,
+                            mapping.end as i64,
+                            0,
+                        ],
+                    });
                 }
             }
         }
-        if seen_simple.insert(id) {
+        if !std::mem::replace(&mut seen_simple[id as usize], true) {
             first_order.push(id);
         }
     }
     if cursor != extension.generated.bytes || tokens.is_empty() {
-        return;
+        return None;
     }
     // Every simple origin must be referenced (expansion only creates
     // referenced origins) and first-appearance order must equal the
@@ -669,27 +704,29 @@ fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
         .filter(|&index| simple[index as usize])
         .collect();
     if first_order != simple_in_origin_order {
-        return;
+        return None;
     }
     // Standard names are pooled in the original origin order, but mixed
     // expansion reconstructs the simple origins first and appends the
     // residual origins. Only extract when that regrouping preserves the
-    // unique-name sequence; otherwise the expanded origins would pool the
-    // same names in a different order and the standard mappings' name IDs
-    // would no longer agree with the wire form.
-    let mut original_names: Vec<&str> = Vec::new();
+    // unique-name sequence.
+    let mut original_seen: FastSet<&str> =
+        FastSet::with_capacity_and_hasher(token_names.len() + 16, Default::default());
+    let mut original_names: Vec<&str> = Vec::with_capacity(token_names.len() + 16);
     for origin in &extension.origins {
         if let Some(name) = origin.name.as_deref() {
-            if !original_names.contains(&name) {
+            if original_seen.insert(name) {
                 original_names.push(name);
             }
         }
     }
-    let mut expanded_names: Vec<&str> = Vec::new();
+    let mut expanded_seen: FastSet<&str> =
+        FastSet::with_capacity_and_hasher(original_names.len(), Default::default());
+    let mut expanded_names: Vec<&str> = Vec::with_capacity(original_names.len());
     for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
         if is_simple {
             if let Some(name) = origin.name.as_deref() {
-                if !expanded_names.contains(&name) {
+                if expanded_seen.insert(name) {
                     expanded_names.push(name);
                 }
             }
@@ -698,14 +735,14 @@ fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
     for (origin, &is_simple) in extension.origins.iter().zip(&simple) {
         if !is_simple {
             if let Some(name) = origin.name.as_deref() {
-                if !expanded_names.contains(&name) {
+                if expanded_seen.insert(name) {
                     expanded_names.push(name);
                 }
             }
         }
     }
     if original_names != expanded_names {
-        return;
+        return None;
     }
     let residual_origins: Vec<MapOrigin> = extension
         .origins
@@ -717,7 +754,7 @@ fn extract_token_table(extension: &mut MapExtension, source_texts: &[&str]) {
     extension.origins = residual_origins;
     extension.mappings = residual_mappings;
     extension.token_names = token_names;
-    extension.tokens = tokens;
+    Some(tokens)
 }
 #[cfg(test)]
 fn numeric(value: f64) -> String {
@@ -769,11 +806,19 @@ fn reference_compilation_settings(options: &CompileOptions, stats: Option<&Searc
 pub fn encode(
     code: &str,
     origins: &GeneratedOrigins,
-    compilation: Value,
+    mut compilation: Value,
 ) -> Result<String, String> {
     origins.validate_for_code(code)?;
-    let map = standard_fields(code, origins)?;
-    crate::canonical_map::encode(&map, extension(code, origins, compilation))
+    let capacity = 1024usize
+        .saturating_add(code.len().saturating_mul(2))
+        .saturating_add(origins.origins.len().saturating_mul(120))
+        .saturating_add(origins.mappings.len().saturating_mul(64))
+        .saturating_add(origins.constructs.len().saturating_mul(32));
+    let mut writer = crate::canonical_map::Writer::with_capacity(capacity);
+    write_standard_from_origins(&mut writer, code, origins, lexical_copy_only(code, origins))?;
+    let comp = std::mem::take(&mut compilation);
+    let (ext, compact_tokens) = extension(code, origins, Value::Null);
+    crate::canonical_map::finish_with_compact_tokens(writer, ext, compact_tokens.as_deref(), &comp)
 }
 /// Compiler-owned path writes resolved settings directly into final map JSON.
 /// The public Value-based encode API remains available for arbitrary metadata.
@@ -784,29 +829,69 @@ pub(crate) fn encode_for_options(
     stats: Option<&SearchStats>,
 ) -> Result<String, String> {
     origins.validate_for_code(code)?;
-    let standard = standard_fields(code, origins)?;
-    crate::canonical_map::encode_with_settings(
-        &standard,
-        extension(code, origins, Value::Null),
+    let capacity = 1024usize
+        .saturating_add(code.len().saturating_mul(2))
+        .saturating_add(origins.origins.len().saturating_mul(120))
+        .saturating_add(origins.mappings.len().saturating_mul(64))
+        .saturating_add(origins.constructs.len().saturating_mul(32));
+    let mut writer = crate::canonical_map::Writer::with_capacity(capacity);
+    write_standard_from_origins(&mut writer, code, origins, lexical_copy_only(code, origins))?;
+    let (ext, compact_tokens) = extension(code, origins, Value::Null);
+    crate::canonical_map::finish_with_compact_tokens(
+        writer,
+        ext,
+        compact_tokens.as_deref(),
         &crate::map_settings::Settings { options, stats },
     )
 }
 /// Compiler-owned path consumes provenance discarded after final map encoding.
-/// Moving final arrays avoids cloning every mapping/context/construct immediately
-/// before serializing exactly the same schema-1 JSON.
+#[cfg(test)]
 pub(crate) fn encode_owned_for_options(
     code: &str,
     origins: GeneratedOrigins,
     options: &CompileOptions,
     stats: Option<&SearchStats>,
 ) -> Result<String, String> {
+    encode_owned_for_options_impl(code, origins, options, stats, true)
+}
+
+/// Internal compiler handoff when `select_best_candidates` (and `compose`, if any)
+/// has just run `origins.validate_for_code(code)?` on this exact buffer.
+pub(crate) fn encode_prevalidated_owned_for_options(
+    code: &str,
+    origins: GeneratedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+) -> Result<String, String> {
+    encode_owned_for_options_impl(code, origins, options, stats, false)
+}
+
+fn encode_owned_for_options_impl(
+    code: &str,
+    origins: GeneratedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+    validate_input: bool,
+) -> Result<String, String> {
     let simple_copies = lexical_copy_only(code, &origins);
-    if simple_copies {
+    if simple_copies || !validate_input {
         debug_assert!(origins.validate_for_code(code).is_ok());
     } else {
         origins.validate_for_code(code)?;
     }
-    let standard = standard_fields_with_copy_hint(code, &origins, simple_copies)?;
+    let capacity = if simple_copies {
+        1024usize
+            .saturating_add(code.len().saturating_mul(2))
+            .saturating_add(origins.mappings.len().saturating_mul(48))
+    } else {
+        1024usize
+            .saturating_add(code.len().saturating_mul(2))
+            .saturating_add(origins.origins.len().saturating_mul(120))
+            .saturating_add(origins.mappings.len().saturating_mul(64))
+            .saturating_add(origins.constructs.len().saturating_mul(32))
+    };
+    let mut writer = crate::canonical_map::Writer::with_capacity(capacity);
+    write_standard_from_origins(&mut writer, code, &origins, simple_copies)?;
     if simple_copies {
         let generated = identity(code);
         let sources = origins
@@ -821,8 +906,8 @@ pub(crate) fn encode_owned_for_options(
             })
             .collect::<Vec<_>>();
         let producer = producer();
-        return crate::canonical_map::encode_simple_copy_with_settings(
-            &standard,
+        return crate::canonical_map::finish_simple_copy_with_settings(
+            writer,
             &producer,
             &generated,
             &sources,
@@ -831,35 +916,42 @@ pub(crate) fn encode_owned_for_options(
             &crate::map_settings::Settings { options, stats },
         );
     }
-    crate::canonical_map::encode_with_settings(
-        &standard,
-        extension_owned(code, origins, Value::Null),
+    let (ext, compact_tokens) = extension_owned(code, origins, Value::Null);
+    crate::canonical_map::finish_with_compact_tokens(
+        writer,
+        ext,
+        compact_tokens.as_deref(),
         &crate::map_settings::Settings { options, stats },
     )
 }
-// One producer for the standard view. Validation compares that view with the
-// detailed ranges, rather than trusting a checksum recomputed over mismatches.
-// Standard-map anchors are already unique and sorted by generated position.
-// Encode their deltas directly instead of collecting/sorting another token
-// arena, serializing a temporary JSON object, and immediately parsing it back.
-// The independent SourceMapBuilder reference below checks exact v3 output.
-#[derive(Default)]
-struct MappingEncoder {
-    output: String,
+
+// Stream Base64 VLQ bytes (`;`, `,`, `A-Za-z0-9+/`) directly into the JSON
+// output buffer between `{"mappings":"` and `","names":`, avoiding an
+// intermediate String allocation and serde_json's string-escape pass.
+struct ByteMappingEncoder<'a> {
+    output: &'a mut Vec<u8>,
     previous: [u32; 5],
     line: u32,
     emitted: bool,
 }
-impl MappingEncoder {
+impl<'a> ByteMappingEncoder<'a> {
+    fn new(output: &'a mut Vec<u8>) -> Self {
+        Self {
+            output,
+            previous: [0; 5],
+            line: 0,
+            emitted: false,
+        }
+    }
+    #[inline]
     fn push(&mut self, line: u32, column: u32, source: Option<(u32, u32, u32, Option<u32>)>) {
         if line != self.line {
-            for _ in self.line..line {
-                self.output.push(';');
-            }
+            let count = (line - self.line) as usize;
+            self.output.resize(self.output.len() + count, b';');
             self.line = line;
             self.previous[0] = 0;
         } else if self.emitted {
-            self.output.push(',');
+            self.output.push(b',');
         }
         self.delta(0, column);
         if let Some((source, line, column, name)) = source {
@@ -872,38 +964,33 @@ impl MappingEncoder {
         }
         self.emitted = true;
     }
+    #[inline]
     fn delta(&mut self, index: usize, value: u32) {
         let signed = i64::from(value) - i64::from(self.previous[index]);
         self.previous[index] = value;
-        write_vlq(&mut self.output, signed);
+        write_vlq_bytes(self.output, signed);
     }
 }
-fn write_vlq(output: &mut String, value: i64) {
+#[inline]
+fn write_vlq_bytes(output: &mut Vec<u8>, value: i64) {
     const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    // Deltas are between u32 coordinates/IDs, so this shift cannot overflow.
+    // Deltas are between u32 coordinates/IDs, so this shift cannot overflow;
+    // at most 7 Base64 digits are emitted per 33-bit signed delta.
     let mut bits = (value.unsigned_abs() << 1) | u64::from(value < 0);
+    let mut buf = [0u8; 8];
+    let mut len = 0usize;
     loop {
         let part = (bits & 31) as usize;
         bits >>= 5;
-        output.push(DIGITS[part | if bits == 0 { 0 } else { 32 }] as char);
+        buf[len] = DIGITS[part | if bits == 0 { 0 } else { 32 }];
+        len += 1;
         if bits == 0 {
             break;
         }
     }
+    output.extend_from_slice(&buf[..len]);
 }
 
-// Canonical field order matches the prior sorted Value object. Snapshot text
-// remains borrowed until it is written into the final JSON, without copying it
-// into a temporary Value tree first.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StandardFields {
-    mappings: String,
-    names: Vec<Arc<str>>,
-    sources: Vec<Arc<str>>,
-    sources_content: Vec<Arc<str>>,
-    version: u32,
-}
 fn lexical_copy_only(code: &str, origins: &GeneratedOrigins) -> bool {
     origins.contexts.is_empty()
         && origins.constructs.is_empty()
@@ -933,10 +1020,6 @@ fn lexical_copy_only(code: &str, origins: &GeneratedOrigins) -> bool {
                 mapping.inline_contexts.is_empty()
                     && match (mapping.copied, origin) {
                         (Some(copied), Some(origin)) => origin.primary == Some(copied),
-                        // Renamed token: no exact copy, but the origin still
-                        // names the original spelling at its primary span.
-                        // The token-table gate carries the generated end
-                        // explicitly for this shape.
                         (None, Some(origin)) => {
                             origin.precision == OriginPrecision::Name
                                 && origin.name.as_ref().is_some_and(|name| {
@@ -955,96 +1038,108 @@ fn lexical_copy_only(code: &str, origins: &GeneratedOrigins) -> bool {
         })
 }
 
-fn standard_fields_from_lexical(
+fn write_standard_from_lexical(
+    writer: &mut crate::canonical_map::Writer,
     code: &str,
     lexical: &LexicalCopiedOrigins,
-) -> Result<StandardFields, String> {
-    lexical.validate_for_code(code)?;
+    name_values: &[&str],
+    per_token_name_id: &[u32],
+) -> Result<(), String> {
     let generated = LineIndex::new(code);
     let source_same = lexical.source_text.as_ref() == code;
     let source_index = (!source_same).then(|| LineIndex::new(&lexical.source_text));
     let mut generated_cursor = generated.utf16_cursor();
     let mut source_cursor = source_index.as_ref().map(LineIndex::utf16_cursor);
 
-    let mut names = HashMap::<&str, u32>::new();
-    let mut name_values = Vec::new();
-    for token in &lexical.tokens {
-        if token.is_name {
-            let text = &lexical.source_text[token.source_start..token.source_end];
-            names.entry(text).or_insert_with(|| {
-                let id = name_values.len() as u32;
-                name_values.push(Arc::<str>::from(text));
-                id
-            });
-        }
-    }
-
-    let mut mappings = MappingEncoder::default();
-    let mut boundaries = lexical
-        .tokens
-        .iter()
-        .flat_map(|token| [token.start, token.end()])
-        .peekable();
-    let mut lines = code
-        .bytes()
-        .enumerate()
-        .filter_map(|(i, b)| (b == b'\n').then_some(i + 1))
-        .peekable();
-    let mut byte = 0;
-    let mut current = 0;
-    loop {
-        while current < lexical.tokens.len() && lexical.tokens[current].end() <= byte {
-            current += 1;
-        }
-        let token = lexical
-            .tokens
-            .get(current)
-            .filter(|token| token.start <= byte && byte < token.end());
-        let (line, col) = generated_cursor
-            .position(byte)
-            .ok_or("invalid generated lexical anchor")?;
-        if let Some(token) = token {
-            let offset = token.source_start + byte - token.start;
-            let (src_line, src_col) = if source_same && offset == byte {
-                (line, col)
+    writer.literal(b"{\"mappings\":\"");
+    {
+        let mut mappings = ByteMappingEncoder::new(&mut writer.bytes);
+        let line_starts = &generated.line_starts()[1..];
+        let mut line_idx = 0usize;
+        let mut tok_bound_idx = 0usize;
+        let mut tok_bound_end = false;
+        let mut byte = 0usize;
+        let mut current = 0usize;
+        loop {
+            while current < lexical.tokens.len() && lexical.tokens[current].end() <= byte {
+                current += 1;
+            }
+            let token = lexical
+                .tokens
+                .get(current)
+                .filter(|token| token.start <= byte && byte < token.end());
+            let (line, col) = generated_cursor
+                .position(byte)
+                .ok_or("invalid generated lexical anchor")?;
+            if let Some(token) = token {
+                let offset = token.source_start + byte - token.start;
+                let (src_line, src_col) = if source_same && offset == byte {
+                    (line, col)
+                } else {
+                    source_cursor
+                        .as_mut()
+                        .ok_or("compact lexical source cursor is unavailable")?
+                        .position(offset)
+                        .ok_or("invalid compact lexical source anchor")?
+                };
+                let nid = per_token_name_id[current];
+                let name_id = (nid != u32::MAX).then_some(nid);
+                mappings.push(line, col, Some((0, src_line, src_col, name_id)));
             } else {
-                source_cursor
-                    .as_mut()
-                    .ok_or("compact lexical source cursor is unavailable")?
-                    .position(offset)
-                    .ok_or("invalid compact lexical source anchor")?
+                mappings.push(line, col, None);
+            }
+            if byte == code.len() {
+                break;
+            }
+            while tok_bound_idx < lexical.tokens.len() {
+                let pos = if !tok_bound_end {
+                    lexical.tokens[tok_bound_idx].start
+                } else {
+                    lexical.tokens[tok_bound_idx].end()
+                };
+                if pos > byte {
+                    break;
+                }
+                if !tok_bound_end {
+                    tok_bound_end = true;
+                } else {
+                    tok_bound_end = false;
+                    tok_bound_idx += 1;
+                }
+            }
+            while line_idx < line_starts.len() && line_starts[line_idx] <= byte {
+                line_idx += 1;
+            }
+            let next_tok = if tok_bound_idx < lexical.tokens.len() {
+                if !tok_bound_end {
+                    lexical.tokens[tok_bound_idx].start
+                } else {
+                    lexical.tokens[tok_bound_idx].end()
+                }
+            } else {
+                code.len()
             };
-            let name_id = token.is_name.then(|| {
-                let text = &lexical.source_text[token.source_start..token.source_end];
-                names[text]
-            });
-            mappings.push(line, col, Some((0, src_line, src_col, name_id)));
-        } else {
-            mappings.push(line, col, None);
+            let next_line = line_starts.get(line_idx).copied().unwrap_or(code.len());
+            byte = next_tok.min(next_line);
         }
-        if byte == code.len() {
-            break;
-        }
-        while boundaries.peek().is_some_and(|&position| position <= byte) {
-            boundaries.next();
-        }
-        while lines.peek().is_some_and(|&position| position <= byte) {
-            lines.next();
-        }
-        byte = boundaries
-            .peek()
-            .copied()
-            .unwrap_or(code.len())
-            .min(lines.peek().copied().unwrap_or(code.len()));
     }
-
-    Ok(StandardFields {
-        mappings: mappings.output,
-        names: name_values,
-        sources: vec![Arc::clone(&lexical.source_name)],
-        sources_content: vec![Arc::clone(&lexical.source_text)],
-        version: 3,
-    })
+    writer.literal(b"\",\"names\":[");
+    for (index, name) in name_values.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(name).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"sources\":[");
+    writer
+        .value(lexical.source_name.as_ref())
+        .map_err(|e| e.to_string())?;
+    writer.literal(b"],\"sourcesContent\":[");
+    writer
+        .value(lexical.source_text.as_ref())
+        .map_err(|e| e.to_string())?;
+    writer.literal(b"],\"version\":3,\"x_storm\":");
+    Ok(())
 }
 
 #[doc(hidden)]
@@ -1054,7 +1149,55 @@ pub fn encode_compact_lexical_for_options(
     options: &CompileOptions,
     stats: Option<&SearchStats>,
 ) -> Result<String, String> {
-    let standard = standard_fields_from_lexical(code, lexical)?;
+    encode_compact_lexical_for_options_impl(code, lexical, options, stats, true)
+}
+
+#[doc(hidden)]
+pub fn encode_prevalidated_compact_lexical_for_options(
+    code: &str,
+    lexical: &LexicalCopiedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+) -> Result<String, String> {
+    encode_compact_lexical_for_options_impl(code, lexical, options, stats, false)
+}
+
+fn encode_compact_lexical_for_options_impl<'a>(
+    code: &str,
+    lexical: &'a LexicalCopiedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+    validate_input: bool,
+) -> Result<String, String> {
+    if validate_input {
+        lexical.validate_for_code(code)?;
+    } else {
+        debug_assert!(lexical.validate_for_code(code).is_ok());
+    }
+    let mut name_ids: FastMap<&'a str, u32> =
+        FastMap::with_capacity_and_hasher(256, Default::default());
+    let mut token_names: Vec<&'a str> = Vec::with_capacity(256);
+    let mut per_token_name_id: Vec<u32> = Vec::with_capacity(lexical.tokens.len());
+    for token in &lexical.tokens {
+        if token.is_name {
+            let text = &lexical.source_text[token.source_start..token.source_end];
+            let id = *name_ids.entry(text).or_insert_with(|| {
+                let next = token_names.len() as u32;
+                token_names.push(text);
+                next
+            });
+            per_token_name_id.push(id);
+        } else {
+            per_token_name_id.push(u32::MAX);
+        }
+    }
+
+    let capacity = 1024usize
+        .saturating_add(lexical.source_text.len())
+        .saturating_add(code.len())
+        .saturating_add(lexical.tokens.len().saturating_mul(36));
+    let mut writer = crate::canonical_map::Writer::with_capacity(capacity);
+    write_standard_from_lexical(&mut writer, code, lexical, &token_names, &per_token_name_id)?;
     let generated = identity(code);
     let source = if lexical.source_text.as_ref() == code {
         generated.clone()
@@ -1062,25 +1205,411 @@ pub fn encode_compact_lexical_for_options(
         identity(&lexical.source_text)
     };
     let producer = producer();
-    crate::canonical_map::encode_lexical_copy_with_settings(
-        &standard,
+    crate::canonical_map::finish_lexical_copy_with_settings(
+        writer,
         &producer,
         &generated,
         &[source],
         lexical,
+        crate::canonical_map::LexicalNamePool {
+            token_names: &token_names,
+            per_token_name_id: &per_token_name_id,
+        },
         &crate::map_settings::Settings { options, stats },
     )
 }
 
-fn standard_fields(code: &str, origins: &GeneratedOrigins) -> Result<StandardFields, String> {
-    standard_fields_with_copy_hint(code, origins, lexical_copy_only(code, origins))
+#[derive(Clone, Copy)]
+enum ComposedLexicalOrigin {
+    Simple { span: SourceSpan, name_id: u32 },
+    LinkerGlue { residual_id: u32 },
 }
 
-fn standard_fields_with_copy_hint(
+pub(crate) fn try_encode_composed_lexical_project(
+    project: &storm_lua_analysis::project::LuaProject,
+    link: &crate::link::LinkResult,
     code: &str,
-    origins: &GeneratedOrigins,
+    lexical: &LexicalCopiedOrigins,
+    options: &CompileOptions,
+    stats: Option<&SearchStats>,
+) -> Result<Option<String>, String> {
+    let linked = link
+        .linked_source
+        .as_deref()
+        .ok_or("cannot compose a failed link")?;
+    debug_assert!(lexical.validate_for_code(code).is_ok());
+    if lexical.source_text.as_ref() != linked {
+        return Err("optimization map does not belong to this linked source".into());
+    }
+    let (sources, copies) =
+        crate::map_composition::build_project_sources_and_copies(project, link)?;
+    if lexical.tokens.is_empty() || sources.is_empty() {
+        return Ok(None);
+    }
+    let multi_source = sources.len() > 1;
+    let mut by_linked_key: FastMap<(usize, usize, bool), ComposedLexicalOrigin> =
+        FastMap::with_capacity_and_hasher(lexical.tokens.len(), Default::default());
+    let mut seen_src_tuples: FastSet<(u32, usize, usize, bool)> =
+        FastSet::with_capacity_and_hasher(lexical.tokens.len(), Default::default());
+    let mut name_ids: FastMap<&str, u32> =
+        FastMap::with_capacity_and_hasher(256, Default::default());
+    let mut token_names: Vec<&str> = Vec::with_capacity(256);
+    let mut simple_origin_count = 0usize;
+    let mut residual_origin_count = 0u32;
+    let mut has_unrenamed_linker_gap = false;
+    let mut unrenamed_simple_tokens = 0usize;
+
+    let mut per_token_simple: Vec<Option<(SourceSpan, u32)>> =
+        Vec::with_capacity(lexical.tokens.len());
+    let mut compact_tokens: Vec<crate::canonical_map::CompactTokenRecord> =
+        Vec::with_capacity(lexical.tokens.len());
+    let mut residual_mappings: Vec<OriginMapping> = Vec::new();
+    let mut cursor = 0usize;
+
+    for token in &lexical.tokens {
+        if cursor < token.start {
+            residual_mappings.push(OriginMapping {
+                start: cursor,
+                end: token.start,
+                origin: None,
+                copied: None,
+                inline_contexts: Vec::new(),
+            });
+        }
+        let key = (token.source_start, token.source_end, token.is_name);
+        let entry = match by_linked_key.get(&key).copied() {
+            Some(existing) => existing,
+            None => {
+                let linked_span = SourceSpan {
+                    source: 0,
+                    start: token.source_start,
+                    end: token.source_end,
+                };
+                if let Some(src_span) = copies.exact_cover(linked_span) {
+                    let name_id = if token.is_name {
+                        let slice = &lexical.source_text[token.source_start..token.source_end];
+                        let Some(src_snapshot) = sources.get(src_span.source as usize) else {
+                            return Ok(None);
+                        };
+                        if src_snapshot.text.get(src_span.start..src_span.end) != Some(slice) {
+                            return Ok(None);
+                        }
+                        *name_ids.entry(slice).or_insert_with(|| {
+                            let id = token_names.len() as u32;
+                            token_names.push(slice);
+                            id
+                        })
+                    } else {
+                        u32::MAX
+                    };
+                    if !seen_src_tuples.insert((
+                        src_span.source,
+                        src_span.start,
+                        src_span.end,
+                        token.is_name,
+                    )) {
+                        return Ok(None);
+                    }
+                    simple_origin_count += 1;
+                    let created = ComposedLexicalOrigin::Simple {
+                        span: src_span,
+                        name_id,
+                    };
+                    by_linked_key.insert(key, created);
+                    created
+                } else if matches!(copies.span_fast(linked_span), Ok(None)) {
+                    let id = residual_origin_count;
+                    residual_origin_count += 1;
+                    let created = ComposedLexicalOrigin::LinkerGlue { residual_id: id };
+                    by_linked_key.insert(key, created);
+                    created
+                } else {
+                    return Ok(None);
+                }
+            }
+        };
+
+        match entry {
+            ComposedLexicalOrigin::Simple { span, name_id } => {
+                per_token_simple.push(Some((span, name_id)));
+                let nid_i64 = if name_id != u32::MAX {
+                    name_id as i64
+                } else {
+                    -1
+                };
+                if !token.renamed {
+                    unrenamed_simple_tokens += 1;
+                    if multi_source {
+                        compact_tokens.push(crate::canonical_map::CompactTokenRecord {
+                            len: 5,
+                            values: [
+                                token.start as i64,
+                                span.source as i64,
+                                span.start as i64,
+                                span.end as i64,
+                                nid_i64,
+                                0,
+                            ],
+                        });
+                    } else {
+                        compact_tokens.push(crate::canonical_map::CompactTokenRecord {
+                            len: 4,
+                            values: [
+                                token.start as i64,
+                                span.start as i64,
+                                span.end as i64,
+                                nid_i64,
+                                0,
+                                0,
+                            ],
+                        });
+                    }
+                } else if multi_source {
+                    compact_tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 6,
+                        values: [
+                            token.start as i64,
+                            span.source as i64,
+                            span.start as i64,
+                            span.end as i64,
+                            nid_i64,
+                            token.end() as i64,
+                        ],
+                    });
+                } else {
+                    compact_tokens.push(crate::canonical_map::CompactTokenRecord {
+                        len: 5,
+                        values: [
+                            token.start as i64,
+                            span.start as i64,
+                            span.end as i64,
+                            nid_i64,
+                            token.end() as i64,
+                            0,
+                        ],
+                    });
+                }
+            }
+            ComposedLexicalOrigin::LinkerGlue { residual_id } => {
+                per_token_simple.push(None);
+                let origin_ref = if token.renamed {
+                    residual_id
+                } else {
+                    has_unrenamed_linker_gap = true;
+                    u32::MAX
+                };
+                residual_mappings.push(OriginMapping {
+                    start: token.start,
+                    end: token.end(),
+                    origin: Some(origin_ref),
+                    copied: None,
+                    inline_contexts: Vec::new(),
+                });
+            }
+        }
+        cursor = token.end();
+    }
+    if cursor < code.len() {
+        residual_mappings.push(OriginMapping {
+            start: cursor,
+            end: code.len(),
+            origin: None,
+            copied: None,
+            inline_contexts: Vec::new(),
+        });
+    }
+
+    let total_residuals = residual_origin_count as usize + usize::from(has_unrenamed_linker_gap);
+    if simple_origin_count == 0
+        || compact_tokens.is_empty()
+        || total_residuals > MAX_MIXED_RESIDUAL_ORIGINS
+        || total_residuals > simple_origin_count
+        || (total_residuals > 0 && unrenamed_simple_tokens == 0)
+    {
+        return Ok(None);
+    }
+    if has_unrenamed_linker_gap {
+        let gap_id = residual_origin_count;
+        for mapping in &mut residual_mappings {
+            if mapping.origin == Some(u32::MAX) {
+                mapping.origin = Some(gap_id);
+            }
+        }
+    }
+
+    let source_bytes_total: usize = sources.iter().map(|s| s.text.len()).sum();
+    let capacity = 1024usize
+        .saturating_add(source_bytes_total)
+        .saturating_add(code.len())
+        .saturating_add(lexical.tokens.len().saturating_mul(42));
+    let mut writer = crate::canonical_map::Writer::with_capacity(capacity);
+    write_standard_from_composed_lexical(
+        &mut writer,
+        code,
+        lexical,
+        &sources,
+        &token_names,
+        &per_token_simple,
+    )?;
+    let generated = identity(code);
+    let source_identities: Vec<BufferIdentity> = sources
+        .iter()
+        .map(|s| {
+            if s.text.as_ref() == code {
+                generated.clone()
+            } else {
+                identity(&s.text)
+            }
+        })
+        .collect();
+    let producer = producer();
+    let map = crate::canonical_map::finish_composed_lexical_with_settings(
+        writer,
+        &producer,
+        &generated,
+        &source_identities,
+        &token_names,
+        &compact_tokens,
+        &residual_mappings,
+        total_residuals,
+        &crate::map_settings::Settings { options, stats },
+    )?;
+    Ok(Some(map))
+}
+
+fn write_standard_from_composed_lexical(
+    writer: &mut crate::canonical_map::Writer,
+    code: &str,
+    lexical: &LexicalCopiedOrigins,
+    sources: &[SourceSnapshot],
+    name_values: &[&str],
+    per_token_simple: &[Option<(SourceSpan, u32)>],
+) -> Result<(), String> {
+    let generated = LineIndex::new(code);
+    let indexes = sources
+        .iter()
+        .map(|s| (s.text.as_ref() != code).then(|| LineIndex::new(&s.text)))
+        .collect::<Vec<_>>();
+    let mut generated_cursor = generated.utf16_cursor();
+    let mut copied_cursor = generated.utf16_cursor();
+    let mut source_cursors = indexes
+        .iter()
+        .map(|index| index.as_ref().map(LineIndex::utf16_cursor))
+        .collect::<Vec<_>>();
+
+    writer.literal(b"{\"mappings\":\"");
+    {
+        let mut mappings = ByteMappingEncoder::new(&mut writer.bytes);
+        let line_starts = &generated.line_starts()[1..];
+        let mut line_idx = 0usize;
+        let mut tok_bound_idx = 0usize;
+        let mut tok_bound_end = false;
+        let mut byte = 0usize;
+        let mut current = 0usize;
+        loop {
+            while current < lexical.tokens.len() && lexical.tokens[current].end() <= byte {
+                current += 1;
+            }
+            let active = lexical
+                .tokens
+                .get(current)
+                .filter(|token| token.start <= byte && byte < token.end());
+            let (line, col) = generated_cursor
+                .position(byte)
+                .ok_or("invalid generated lexical anchor")?;
+            if let Some((token, Some((src_span, nid)))) =
+                active.map(|tok| (tok, per_token_simple[current]))
+            {
+                let offset = if !token.renamed {
+                    src_span.start + byte - token.start
+                } else {
+                    src_span.start
+                };
+                let src_idx = src_span.source as usize;
+                let (src_line, src_col) = if indexes[src_idx].is_none() && offset == byte {
+                    (line, col)
+                } else {
+                    source_cursors[src_idx]
+                        .as_mut()
+                        .unwrap_or(&mut copied_cursor)
+                        .position(offset)
+                        .ok_or("invalid composed lexical source anchor")?
+                };
+                let name_id = (nid != u32::MAX).then_some(nid);
+                mappings.push(
+                    line,
+                    col,
+                    Some((src_span.source, src_line, src_col, name_id)),
+                );
+            } else {
+                mappings.push(line, col, None);
+            }
+            if byte == code.len() {
+                break;
+            }
+            while tok_bound_idx < lexical.tokens.len() {
+                let pos = if !tok_bound_end {
+                    lexical.tokens[tok_bound_idx].start
+                } else {
+                    lexical.tokens[tok_bound_idx].end()
+                };
+                if pos > byte {
+                    break;
+                }
+                if !tok_bound_end {
+                    tok_bound_end = true;
+                } else {
+                    tok_bound_end = false;
+                    tok_bound_idx += 1;
+                }
+            }
+            while line_idx < line_starts.len() && line_starts[line_idx] <= byte {
+                line_idx += 1;
+            }
+            let next_tok = if tok_bound_idx < lexical.tokens.len() {
+                if !tok_bound_end {
+                    lexical.tokens[tok_bound_idx].start
+                } else {
+                    lexical.tokens[tok_bound_idx].end()
+                }
+            } else {
+                code.len()
+            };
+            let next_line = line_starts.get(line_idx).copied().unwrap_or(code.len());
+            byte = next_tok.min(next_line);
+        }
+    }
+    writer.literal(b"\",\"names\":[");
+    for (index, name) in name_values.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(name).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"sources\":[");
+    for (index, s) in sources.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(s.name.as_ref()).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"sourcesContent\":[");
+    for (index, s) in sources.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(s.text.as_ref()).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"version\":3,\"x_storm\":");
+    Ok(())
+}
+
+fn standard_mappings_and_names<'a>(
+    code: &str,
+    origins: &'a GeneratedOrigins,
     simple_copies: bool,
-) -> Result<StandardFields, String> {
+    mappings_out: &mut Vec<u8>,
+) -> Result<Vec<&'a str>, String> {
     let generated = LineIndex::new(code);
     let indexes = origins
         .sources
@@ -1095,28 +1624,28 @@ fn standard_fields_with_copy_hint(
         .collect::<Vec<_>>();
     // Deserialized origins do not retain Arc interning. Equal spellings must
     // share one standard name ID regardless of their allocation identity.
-    let mut names = HashMap::new();
-    let mut name_values = Vec::new();
+    let mut names: FastMap<&'a str, u32> =
+        FastMap::with_capacity_and_hasher(128, Default::default());
+    let mut name_values: Vec<&'a str> = Vec::with_capacity(128);
+    let mut origin_name_ids: Vec<u32> = Vec::with_capacity(origins.origins.len());
     for origin in &origins.origins {
         if let Some(name) = &origin.name {
-            names.entry(name.as_ref()).or_insert_with(|| {
+            let id = *names.entry(name.as_ref()).or_insert_with(|| {
                 let id = name_values.len() as u32;
-                name_values.push(Arc::clone(name));
+                name_values.push(name.as_ref());
                 id
             });
+            origin_name_ids.push(id);
+        } else {
+            origin_name_ids.push(u32::MAX);
         }
     }
-    let mut mappings = MappingEncoder::default();
-    let mut boundaries = origins
-        .mappings
-        .iter()
-        .flat_map(|m| [m.start, m.end])
-        .peekable();
-    let mut lines = code
-        .bytes()
-        .enumerate()
-        .filter_map(|(i, b)| (b == b'\n').then_some(i + 1))
-        .peekable();
+
+    let mut mappings = ByteMappingEncoder::new(mappings_out);
+    let line_starts = &generated.line_starts()[1..];
+    let mut line_idx = 0usize;
+    let mut map_bound_idx = 0usize;
+    let mut map_bound_end = false;
     // Pure lexical-copy maps already contain every token boundary as a mapping
     // boundary. Re-lexing the generated source only rediscovers anchors we have.
     let mut lexer = (!simple_copies).then(|| Lexer::new(code));
@@ -1126,8 +1655,8 @@ fn standard_fields_with_copy_hint(
     } else {
         (storm_lua_syntax::lexer::TokenKind::Eof, code.len())
     };
-    let mut byte = 0;
-    let mut current = 0;
+    let mut byte = 0usize;
+    let mut current = 0usize;
     loop {
         while current < origins.mappings.len() && origins.mappings[current].end <= byte {
             current += 1;
@@ -1137,23 +1666,20 @@ fn standard_fields_with_copy_hint(
             .get(current)
             .filter(|m| m.start <= byte && byte < m.end);
         let original = mapping.and_then(|m| {
-            let origin = m.origin.map(|i| &origins.origins[i as usize])?;
+            let id = m.origin? as usize;
+            let origin = &origins.origins[id];
+            let nid = origin_name_ids[id];
+            let name_id = (nid != u32::MAX).then_some(nid);
             if let Some(copy) = m.copied {
-                Some((
-                    copy.source,
-                    copy.start + byte - m.start,
-                    origin.name.as_deref(),
-                ))
+                Some((copy.source, copy.start + byte - m.start, name_id))
             } else {
-                origin
-                    .primary
-                    .map(|s| (s.source, s.start, origin.name.as_deref()))
+                origin.primary.map(|s| (s.source, s.start, name_id))
             }
         });
         let (line, col) = generated_cursor
             .position(byte)
             .ok_or("invalid generated anchor")?;
-        if let Some((source, offset, name)) = original {
+        if let Some((source, offset, name_id)) = original {
             let (src_line, src_col) = if indexes[source as usize].is_none() && offset == byte {
                 (line, col)
             } else {
@@ -1163,7 +1689,6 @@ fn standard_fields_with_copy_hint(
                     .position(offset)
                     .ok_or("invalid original anchor")?
             };
-            let name_id = name.map(|name| names[name]);
             mappings.push(line, col, Some((source, src_line, src_col, name_id)));
         } else {
             mappings.push(line, col, None);
@@ -1171,11 +1696,24 @@ fn standard_fields_with_copy_hint(
         if byte == code.len() {
             break;
         }
-        while boundaries.peek().is_some_and(|&p| p <= byte) {
-            boundaries.next();
+        while map_bound_idx < origins.mappings.len() {
+            let pos = if !map_bound_end {
+                origins.mappings[map_bound_idx].start
+            } else {
+                origins.mappings[map_bound_idx].end
+            };
+            if pos > byte {
+                break;
+            }
+            if !map_bound_end {
+                map_bound_end = true;
+            } else {
+                map_bound_end = false;
+                map_bound_idx += 1;
+            }
         }
-        while lines.peek().is_some_and(|&p| p <= byte) {
-            lines.next();
+        while line_idx < line_starts.len() && line_starts[line_idx] <= byte {
+            line_idx += 1;
         }
         while token.0 != storm_lua_syntax::lexer::TokenKind::Eof && token.1 <= byte {
             let Some(lexer) = lexer.as_mut() else {
@@ -1184,32 +1722,64 @@ fn standard_fields_with_copy_hint(
             let next = lexer.next_borrowed().map_err(|e| e.to_string())?;
             token = (next.k, next.p);
         }
-        // All streams are sorted by construction; repeated boundaries are
-        // removed as they are consumed, with no sort or anchor allocation.
-        byte = token
-            .1
-            .min(boundaries.peek().copied().unwrap_or(code.len()))
-            .min(lines.peek().copied().unwrap_or(code.len()));
+        let next_map = if map_bound_idx < origins.mappings.len() {
+            if !map_bound_end {
+                origins.mappings[map_bound_idx].start
+            } else {
+                origins.mappings[map_bound_idx].end
+            }
+        } else {
+            code.len()
+        };
+        let next_line = line_starts.get(line_idx).copied().unwrap_or(code.len());
+        byte = token.1.min(next_map).min(next_line);
     }
-    Ok(StandardFields {
-        mappings: mappings.output,
-        names: name_values,
-        sources: origins
-            .sources
-            .iter()
-            .map(|s| Arc::clone(&s.name))
-            .collect(),
-        sources_content: origins
-            .sources
-            .iter()
-            .map(|s| Arc::clone(&s.text))
-            .collect(),
-        version: 3,
-    })
+    Ok(name_values)
 }
+
+fn write_standard_from_origins(
+    writer: &mut crate::canonical_map::Writer,
+    code: &str,
+    origins: &GeneratedOrigins,
+    simple_copies: bool,
+) -> Result<(), String> {
+    writer.literal(b"{\"mappings\":\"");
+    let name_values = standard_mappings_and_names(code, origins, simple_copies, &mut writer.bytes)?;
+    writer.literal(b"\",\"names\":[");
+    for (index, name) in name_values.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(name).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"sources\":[");
+    for (index, s) in origins.sources.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(s.name.as_ref()).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"sourcesContent\":[");
+    for (index, s) in origins.sources.iter().enumerate() {
+        if index > 0 {
+            writer.literal(b",");
+        }
+        writer.value(s.text.as_ref()).map_err(|e| e.to_string())?;
+    }
+    writer.literal(b"],\"version\":3,\"x_storm\":");
+    Ok(())
+}
+
 #[cfg(test)]
 fn standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
-    serde_json::to_value(standard_fields(code, origins)?).map_err(|e| e.to_string())
+    let mut writer = crate::canonical_map::Writer::default();
+    write_standard_from_origins(&mut writer, code, origins, lexical_copy_only(code, origins))?;
+    // Trim trailing `,"x_storm":` (11 bytes) and close the JSON object.
+    writer
+        .bytes
+        .truncate(writer.bytes.len() - b",\"x_storm\":".len());
+    writer.literal(b"}");
+    serde_json::from_slice(&writer.bytes).map_err(|e| e.to_string())
 }
 
 /// Expand a schema-2 token table into the materialized mappings and origins
@@ -1597,19 +2167,30 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
     if json.get("sourceRoot").is_some_and(|v| v != "") || json.get("sections").is_some() {
         return Err("unsupported standard source root or indexed map for this extension".into());
     }
-    let expected = standard_fields(code, &generated)?;
-    if json.get("mappings").and_then(Value::as_str) != Some(expected.mappings.as_str()) {
+    let mut expected_mappings = Vec::with_capacity(code.len().saturating_mul(2));
+    let expected_names = standard_mappings_and_names(
+        code,
+        &generated,
+        lexical_copy_only(code, &generated),
+        &mut expected_mappings,
+    )?;
+    if json
+        .get("mappings")
+        .and_then(Value::as_str)
+        .map(str::as_bytes)
+        != Some(expected_mappings.as_slice())
+    {
         return Err("standard mappings do not agree with the detailed origins".into());
     }
     if !json
         .get("names")
         .and_then(Value::as_array)
         .is_some_and(|names| {
-            names.len() == expected.names.len()
+            names.len() == expected_names.len()
                 && names
                     .iter()
-                    .zip(&expected.names)
-                    .all(|(a, b)| a.as_str() == Some(b.as_ref()))
+                    .zip(&expected_names)
+                    .all(|(a, &b)| a.as_str() == Some(b))
         })
     {
         return Err("standard names do not agree with the detailed origins".into());
@@ -1624,6 +2205,7 @@ pub fn validate(code: &str, map: &str) -> Result<MapExtension, String> {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod contiguous_anchor_tests {
     use super::*;
+    use std::collections::BTreeSet;
     use storm_lua_syntax::{parse_source_with_origins, Printer};
     fn reference_standard_map(code: &str, origins: &GeneratedOrigins) -> Result<Value, String> {
         let generated = LineIndex::new(code);
@@ -1805,10 +2387,10 @@ mod direct_mapping_tests {
             65535,
             u32::MAX as i64,
         ] {
-            let mut actual = String::new();
-            write_vlq(&mut actual, value);
+            let mut actual = Vec::new();
+            write_vlq_bytes(&mut actual, value);
             assert_eq!(
-                actual,
+                std::str::from_utf8(&actual).unwrap(),
                 sourcemap::vlq::generate_vlq_segment(&[value]).unwrap()
             );
         }
@@ -1816,7 +2398,8 @@ mod direct_mapping_tests {
     #[test]
     fn direct_delta_stream_matches_library_for_unknowns_names_and_sparse_lines() {
         let mut builder = SourceMapBuilder::new(None);
-        let mut direct = MappingEncoder::default();
+        let mut direct_bytes = Vec::new();
+        let mut direct = ByteMappingEncoder::new(&mut direct_bytes);
         for name in ["one", "two", "three"] {
             builder.add_source(name);
             builder.add_name(name);
@@ -1854,7 +2437,10 @@ mod direct_mapping_tests {
         let mut bytes = Vec::new();
         builder.into_sourcemap().to_writer(&mut bytes).unwrap();
         let expected: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(direct.output, expected["mappings"].as_str().unwrap());
+        assert_eq!(
+            std::str::from_utf8(&direct_bytes).unwrap(),
+            expected["mappings"].as_str().unwrap()
+        );
     }
 }
 
@@ -2198,5 +2784,157 @@ mod compact_lexical_map_tests {
         assert!(!tokens.is_empty());
         assert!(tokens.iter().all(|t| t.as_array().unwrap().len() == 4));
         validate(&code, &map).unwrap();
+    }
+
+    #[test]
+    fn streamed_compilation_json_matches_serde_settings_byte_for_byte() {
+        use crate::map_settings::{CompilationJson, Settings};
+        use storm_lua_minify::config::{NumericTolerance, PropertyConfig, PropertyMode};
+        use storm_lua_spec::environment::EnvironmentProfile;
+
+        let mut custom_opts = CompileOptions {
+            origin_source: Some("main.lua".into()),
+            environment: EnvironmentProfile::Extended,
+            host_bindings: vec!["hostA".into(), "hostB".into()],
+            mode: CompileMode::Safe,
+            numeric_mode: NumericMode::Exact,
+            numeric_tolerance: Some(NumericTolerance {
+                abs: 1e-9,
+                rel: 2.5e-7,
+            }),
+            property: Some(PropertyConfig {
+                mode: PropertyMode::Hardcode,
+                numbers: Some(BTreeMap::from([
+                    ("gain".into(), 0.75),
+                    ("bias".into(), -2.0),
+                ])),
+                bools: Some(BTreeMap::from([("enabled".into(), true)])),
+                texts: Some(BTreeMap::from([("label".into(), "雪😀".into())])),
+            }),
+            search_mode: SearchMode::Fast,
+            search_beam_width: 4,
+            target_size: Some(4096),
+            zero_cost_newlines: true,
+            ..CompileOptions::default()
+        };
+        custom_opts.pass_toggles.insert("constant-folding", false);
+
+        let sample_stats = SearchStats {
+            candidates: 3,
+            attempted: 3,
+            parse_rejected: 0,
+            semantic_rejected: 0,
+            core_variants: 1,
+            structural_variants: 2,
+            structural_explored: 2,
+            structural_names: vec!["optimized:locals".into()],
+            winner_structural: "optimized:locals".into(),
+            winner_layout: "joint-api".into(),
+            candidate_sizes: Vec::new(),
+            target_size: Some(4096),
+            target_met: true,
+            stopped_early: true,
+            checkpoints: 2,
+            stage: Some("candidate".into()),
+        };
+
+        for opts in [CompileOptions::default(), custom_opts] {
+            for stats in [None, Some(&sample_stats)] {
+                let settings = Settings {
+                    options: &opts,
+                    stats,
+                };
+                let mut streamed = Vec::new();
+                settings.write_compilation_json(&mut streamed).unwrap();
+                let expected = serde_json::to_vec(&settings).unwrap();
+                assert_eq!(streamed, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn composed_lexical_project_fast_path_matches_materialized_reference_byte_for_byte() {
+        use crate::lifeboat::link_lifeboat;
+        use crate::link::{analyze_structure, link_analyzed_project};
+        use storm_lua_analysis::project::LuaProject;
+        use storm_lua_spec::environment::EnvironmentProfile;
+
+        let extra_bindings: String = (0..30)
+            .map(|i| format!("local longSeriesItem{i} = {i} + 1\n"))
+            .collect();
+        let env_mod_a = format!(
+            "local env = _ENV\n{extra_bindings}local longAlpha = 10\nlocal longBeta = longAlpha + longSeriesItem0 + longSeriesItem29\nenv.shared = longBeta\nreturn longBeta\n"
+        );
+        let env_mod_b = "-- 雪😀\nlocal gammaValue = 42\nreturn function(deltaInput) return deltaInput + gammaValue end\n";
+        let main_mod = "local a = require('a')\nlocal b = require('b')\nfunction onTick() output.setNumber(1, b(a)) end\n";
+
+        let project_3 = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([
+                ("main".into(), main_mod.into()),
+                ("a".into(), env_mod_a),
+                ("b".into(), env_mod_b.into()),
+            ]),
+            ambient: BTreeMap::new(),
+        };
+        let project_1 = LuaProject {
+            entry: "main".into(),
+            modules: BTreeMap::from([(
+                "main".into(),
+                "local env = _ENV\nlocal longCounter = 1\nfunction onTick() env.output.setNumber(1, longCounter) end\n".into(),
+            )]),
+            ambient: BTreeMap::new(),
+        };
+
+        for (proj, env, is_lifeboat) in [
+            (&project_1, EnvironmentProfile::Game, false),
+            (&project_3, EnvironmentProfile::Game, false),
+            (&project_3, EnvironmentProfile::Extended, false),
+            (&project_3, EnvironmentProfile::Game, true),
+        ] {
+            let link = if is_lifeboat {
+                link_lifeboat(proj)
+            } else {
+                let structural = analyze_structure(proj);
+                link_analyzed_project(proj, structural)
+            };
+            let linked_source = link.linked_source.as_deref().unwrap();
+            let core_opts = CompileOptions {
+                origin_source: Some("linked.lua".into()),
+                environment: env,
+                ..CompileOptions::default()
+            };
+            let result =
+                storm_lua_minify::search::compile_code_compact(linked_source, &core_opts).unwrap();
+            let lexical = result
+                .lexical_origins
+                .as_ref()
+                .expect("lexical origins expected");
+            let fast_map = try_encode_composed_lexical_project(
+                proj,
+                &link,
+                &result.code,
+                lexical,
+                &core_opts,
+                Some(&result.stats),
+            )
+            .unwrap()
+            .expect("fast composed lexical path must accept standard linked lexical project");
+
+            let materialized = lexical.as_ref().clone().into_generated();
+            let composed =
+                crate::map_composition::compose(proj, &link, &result.code, &materialized).unwrap();
+            let reference_map = encode_prevalidated_owned_for_options(
+                &result.code,
+                composed,
+                &core_opts,
+                Some(&result.stats),
+            )
+            .unwrap();
+
+            assert_eq!(fast_map, reference_map);
+            let ext = validate(&result.code, &fast_map).unwrap();
+            assert!(!ext.origins.is_empty());
+        }
     }
 }

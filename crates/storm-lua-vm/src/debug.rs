@@ -143,8 +143,7 @@ impl Vm {
             // Luaがsavedpcを1つ巻き戻しており、関数の最初の命令で止まった場合に"l"の照会が
             // 行情報配列の手前を読むため、そのフレームには"l"を指定しません。
             let hook_line = if level == 0 {
-                self.control
-                    .borrow()
+                crate::runner::lock(&self.control)
                     .last_line
                     .as_ref()
                     .map(|(_, line)| *line)
@@ -175,7 +174,7 @@ impl Vm {
         let get: Function = self.debugger.library.raw_get("getlocal")?;
         let mut result = Vec::new();
         let captured = if level == 0 {
-            self.control.borrow().local_names.clone()
+            crate::runner::lock(&self.control).local_names.clone()
         } else {
             Vec::new()
         };
@@ -283,7 +282,7 @@ impl Vm {
         }
         let getlocal: Function = self.debugger.library.raw_get("getlocal")?;
         let captured = if level == 0 {
-            self.control.borrow().local_names.clone()
+            crate::runner::lock(&self.control).local_names.clone()
         } else {
             Vec::new()
         };
@@ -336,10 +335,11 @@ impl Vm {
         if self.is_failed() {
             return Err(VmError::new(ErrorKind::Failed, "VM has failed"));
         }
-        crate::source::validate_source(source, name)?;
+        crate::source::validate_chunk_name(name)?;
+        self.check_source_len(source.len())?;
         let source = crate::dialect::rewrite(source)
             .map_err(|message| VmError::new(ErrorKind::Lua, message))?;
-        crate::source::validate_source(&source, name)?;
+        self.check_source_len(source.len())?;
         let function = self
             .lua
             .load(source.as_ref())

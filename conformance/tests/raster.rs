@@ -106,6 +106,91 @@ fn errors_do_not_become_empty_successes() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 #[test]
+fn draw_text_matches_bytes_to_glyph_ids_without_advancing_unknown_bytes(
+) -> Result<(), Box<dyn Error>> {
+    // drawTextはbyte単位でglyph IDを照合します（E21）。UTF-8の各byteには
+    // 対応glyphがないため送りも描画もなく、"AéB"は"AB"と同じ画素になります。
+    // glyphが1個もない文字列は何も描きません。
+    let mut with_unknown = ScreenRaster::new(32, 8)?;
+    with_unknown.submit(&DrawCommand::Text([0.0, 0.0], "AéB".as_bytes().to_vec()))?;
+    let mut plain = ScreenRaster::new(32, 8)?;
+    plain.submit(&DrawCommand::Text([0.0, 0.0], b"AB".to_vec()))?;
+    assert_eq!(with_unknown.pixels(), plain.pixels());
+    let mut only_unknown = ScreenRaster::new(32, 8)?;
+    only_unknown.submit(&DrawCommand::Text([0.0, 0.0], "é".as_bytes().to_vec()))?;
+    assert!(only_unknown.pixels().iter().all(|p| *p == 0));
+    Ok(())
+}
+
+#[test]
+fn draw_text_box_wraps_by_tokens_and_handles_tab_and_unknown_codepoints(
+) -> Result<(), Box<dyn Error>> {
+    // 仕様の例: "A BC DE"をwidth 14で分割すると A / BC / 空白 / DE（E22）。
+    let mut boxed = ScreenRaster::new(32, 40)?;
+    boxed.submit(&DrawCommand::TextBox(
+        [0.0, 0.0, 14.0, 30.0, -1.0, -1.0],
+        b"A BC DE".to_vec(),
+    ))?;
+    let mut expected = ScreenRaster::new(32, 40)?;
+    for (y, line) in [(0.0, "A "), (6.0, "BC"), (12.0, " "), (18.0, "DE")] {
+        expected.submit(&DrawCommand::Text([0.0, y], line.as_bytes().to_vec()))?;
+    }
+    assert_eq!(boxed.pixels(), expected.pixels());
+    // TABは空白glyphの送り4倍（20）です。"A\tB"のBはx=25に来ます。
+    let mut tabbed = ScreenRaster::new(64, 8)?;
+    tabbed.submit(&DrawCommand::TextBox(
+        [0.0, 0.0, 100.0, 8.0, -1.0, -1.0],
+        "A\tB".as_bytes().to_vec(),
+    ))?;
+    let mut tab_expected = ScreenRaster::new(64, 8)?;
+    tab_expected.submit(&DrawCommand::Text([0.0, 0.0], b"A".to_vec()))?;
+    tab_expected.submit(&DrawCommand::Text([25.0, 0.0], b"B".to_vec()))?;
+    assert_eq!(tabbed.pixels(), tab_expected.pixels());
+    // glyphがないcodepointはトークンにならず送りも生じません。"AéB"のBはx=5です。
+    let mut unknown = ScreenRaster::new(32, 8)?;
+    unknown.submit(&DrawCommand::TextBox(
+        [0.0, 0.0, 100.0, 8.0, -1.0, -1.0],
+        "AéB".as_bytes().to_vec(),
+    ))?;
+    let mut unknown_expected = ScreenRaster::new(32, 8)?;
+    unknown_expected.submit(&DrawCommand::Text([0.0, 0.0], b"AB".to_vec()))?;
+    assert_eq!(unknown.pixels(), unknown_expected.pixels());
+    Ok(())
+}
+
+#[test]
+fn circle_points_follow_f32_sequential_angle_addition() -> Result<(), Box<dyn Error>> {
+    // 円の周辺点はfloat32のtau/分割数を0から逐次加算して作ります（E24）。
+    // 半径31（分割数15）のoutlineは16点になり、仕様どおりに独立に計算した
+    // 線分列と同じ画素になります。
+    let (cx, cy, radius) = (40.0_f64, 40.0_f64, 31.0_f64);
+    let tau: f32 = std::f32::consts::TAU;
+    let step = tau / 15.0_f32;
+    let mut points: Vec<[f64; 2]> = Vec::new();
+    let mut angle: f32 = 0.0;
+    while angle <= tau {
+        let a = f64::from(angle);
+        points.push([
+            f64::from((cx + radius * a.cos()) as f32),
+            f64::from((cy + radius * a.sin()) as f32),
+        ]);
+        angle += step;
+    }
+    assert_eq!(points.len(), 16);
+    let mut expected = ScreenRaster::new(96, 96)?;
+    for i in 0..points.len() {
+        expected.submit(&DrawCommand::Line([
+            points[i],
+            points[(i + 1) % points.len()],
+        ]))?;
+    }
+    let mut circle = ScreenRaster::new(96, 96)?;
+    circle.submit(&DrawCommand::Circle([cx, cy, radius], false))?;
+    assert_eq!(circle.pixels(), expected.pixels());
+    Ok(())
+}
+
+#[test]
 fn enormous_and_nonfinite_shapes_remain_bounded() -> Result<(), Box<dyn Error>> {
     let mut raster = ScreenRaster::new(32, 32)?;
     for n in [1e9, -1e9, f64::MAX, f64::NAN, f64::INFINITY] {

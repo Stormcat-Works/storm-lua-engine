@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use storm_lua_syntax::ast::{Ast, NodeId};
 use storm_lua_syntax::parser::parse_source;
-use storm_lua_syntax::print::{PrintedSource, Printer};
+use storm_lua_syntax::print::Printer;
 use storm_lua_syntax::provenance::{
     DeferredGeneratedOrigins, GeneratedOrigins, LexicalCopiedOrigins,
 };
@@ -262,71 +262,34 @@ fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, Node
         return parse_source(source).map_err(|error| error.to_string());
     }
     if let Some(name) = &options.origin_source {
-        storm_lua_syntax::parser::parse_source_with_conditional_origins(name, source, |ast| {
-            storm_lua_analysis::environment_checks::lexical_reason(
-                ast,
-                options.environment,
-                &options.host_bindings,
-            )
-            .is_none()
-        })
+        let (mut ast, root, positions, seed) =
+            storm_lua_syntax::parser::parse_source_for_inspection(source, true)?;
+        storm_lua_analysis::environment_checks::validate(
+            &ast,
+            root,
+            options.environment,
+            &options.host_bindings,
+        )?;
+        storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
+        if storm_lua_analysis::environment_checks::lexical_reason(
+            &ast,
+            options.environment,
+            &options.host_bindings,
+        )
+        .is_none()
+        {
+            seed.seed_into(&mut ast, &positions, name, source)?;
+        }
+        Ok((ast, root))
     } else {
         parse_source(source).map_err(|error| error.to_string())
     }
 }
 
-enum FinalPrint {
-    Plain {
-        code: String,
-        newline_count: u32,
-    },
-    Tracked {
-        printed: PrintedSource,
-        newline_count: u32,
-    },
-}
-
-impl FinalPrint {
-    fn code(&self) -> &str {
-        match self {
-            Self::Plain { code, .. } => code,
-            Self::Tracked { printed, .. } => &printed.code,
-        }
-    }
-
-    fn finish(self, ast: &Ast) -> (String, u32, Option<DeferredGeneratedOrigins>) {
-        match self {
-            Self::Plain {
-                code,
-                newline_count,
-            } => (code, newline_count, None),
-            Self::Tracked {
-                printed,
-                newline_count,
-            } => {
-                let code = printed.code.clone();
-                let origins = DeferredGeneratedOrigins::from_print(ast, printed);
-                (code, newline_count, origins)
-            }
-        }
-    }
-}
-
-fn print_final(ast: &Ast, root: NodeId, zero: bool) -> FinalPrint {
+fn print_untracked(ast: &Ast, root: NodeId, zero: bool) -> (String, u32) {
     let mut printer = Printer::new(ast, zero);
-    if ast.nodes.tracks_origins() {
-        let printed = printer.output_with_positions(root);
-        FinalPrint::Tracked {
-            printed,
-            newline_count: printer.newline_count(),
-        }
-    } else {
-        let code = printer.output(root);
-        FinalPrint::Plain {
-            code,
-            newline_count: printer.newline_count(),
-        }
-    }
+    let code = printer.output(root);
+    (code, printer.newline_count())
 }
 
 pub fn prepare_search(
@@ -1784,198 +1747,457 @@ fn evaluate_candidate_with_verifier(
                 });
             }
         }
-        let drawing_variants = if aggressive && toggles.enabled("ordered-draw-record-packing") {
-            passes::draw_records::record_variants(
-                &candidate_ast,
-                candidate_root,
-                toggles.enabled("scope-renaming"),
-            )
-        } else {
-            vec![(
-                candidate_ast,
-                crate::pass::PassResult {
-                    root: candidate_root,
-                    saved: Some(0),
-                    details: None,
-                },
-            )]
-        };
-        let mut final_variant = None;
-        let mut final_size = usize::MAX;
-        for (mut candidate_ast, r) in drawing_variants {
-            let mut candidate_root = r.root;
-            let mut candidate_passes = candidate_passes.clone();
-            if r.saved.unwrap_or(0) > 0 {
-                candidate_passes.push(PassRecord {
-                    name: "ordered draw record packing".into(),
-                    saved: r.saved.map(|x| x as i64),
-                    detail: r.details.map(|parts| parts.join(";")),
-                    elapsed_ms: None,
-                });
-            }
-            // Drawing compression creates helpers after structural search. Give
-            // those new bindings the same two existing cleanup opportunities, but
-            // retain the unpolished candidate unless its FINAL renamed text wins.
-            // No recursive compile/search and no additional optimization toggle.
-            let drawing_changed = candidate_passes.iter().any(|p| {
-                p.name == "ordered draw record packing"
-                    || p.name == "repeated draw sequence outlining"
-            });
-            if aggressive && drawing_changed {
-                for (id, display) in [
-                    (
-                        "root-local-globalization",
-                        "post-draw root local globalization",
-                    ),
-                    (
-                        "one-use-function-fusion",
-                        "post-draw single-use function fusion",
-                    ),
-                ] {
-                    if !toggles.enabled(id) {
-                        continue;
-                    }
-                    // A localized alias layout must not be polished back into
-                    // globals: that would silently discard the speed variant
-                    // that target-size selection is about to prefer.
-                    if target_speed
-                        && id == "root-local-globalization"
-                        && (layout == "joint-api-local"
-                            || layout == "joint-api-local-licm"
-                            || layout == "joint-api-local-s1"
-                            || layout == "joint-api-local-licm-s1"
-                            || layout == "joint-api-local-s1-partial"
-                            || layout == "joint-api-local-licm-s1-partial"
-                            || layout == "joint-api-local-mr"
-                            || layout == "joint-api-local-licm-mr"
-                            || layout == "joint-api-local-smc"
-                            || layout == "joint-api-local-licm-smc"
-                            || layout == "joint-api-local-smc-partial"
-                            || layout == "joint-api-local-licm-smc-partial"
-                            || layout == "joint-api-local-s1-smc"
-                            || layout == "joint-api-local-licm-s1-smc"
-                            || layout == "joint-api-local-mr-smc"
-                            || layout == "joint-api-local-licm-mr-smc"
-                            || layout == "joint-api-local-s1-smc-partial"
-                            || layout == "joint-api-local-licm-s1-smc-partial"
-                            || layout == "joint-api-local-mr-smc-partial"
-                            || layout == "joint-api-local-licm-mr-smc-partial")
-                    {
-                        continue;
-                    }
-                    let before = target_char_size(
-                        &Printer::new(&candidate_ast, false).output(candidate_root),
+        let polish_blocks_globalize = target_speed
+            && (layout == "joint-api-local"
+                || layout == "joint-api-local-licm"
+                || layout == "joint-api-local-s1"
+                || layout == "joint-api-local-licm-s1"
+                || layout == "joint-api-local-s1-partial"
+                || layout == "joint-api-local-licm-s1-partial"
+                || layout == "joint-api-local-mr"
+                || layout == "joint-api-local-licm-mr"
+                || layout == "joint-api-local-smc"
+                || layout == "joint-api-local-licm-smc"
+                || layout == "joint-api-local-smc-partial"
+                || layout == "joint-api-local-licm-smc-partial"
+                || layout == "joint-api-local-s1-smc"
+                || layout == "joint-api-local-licm-s1-smc"
+                || layout == "joint-api-local-mr-smc"
+                || layout == "joint-api-local-licm-mr-smc"
+                || layout == "joint-api-local-s1-smc-partial"
+                || layout == "joint-api-local-licm-s1-smc-partial"
+                || layout == "joint-api-local-mr-smc-partial"
+                || layout == "joint-api-local-licm-mr-smc-partial");
+
+        let apply_final_pooling =
+            |ast: &mut Ast, mut root: NodeId, passes: &mut Vec<PassRecord>| -> NodeId {
+                if aggressive && toggles.enabled("exact-numeric-literal-pooling") {
+                    let r = passes::literal_pool::pool_numeric_literals(
+                        ast,
+                        root,
+                        toggles.enabled("scope-renaming"),
                     );
-                    let mut polished = candidate_ast.clone();
-                    let result = if id == "root-local-globalization" {
-                        passes::root_globals::globalize_root_locals(&mut polished, candidate_root)
-                    } else {
-                        passes::inline_functions::inline_one_use_statement_and_tail_functions(
-                            &mut polished,
-                            candidate_root,
-                            32,
-                        )
-                    };
-                    let mut root = result.root;
-                    if toggles.enabled("scope-renaming") {
-                        let renamed = crate::scope_rename::scope_rename_fast(&polished, root);
-                        polished = renamed.ast;
-                        root = renamed.root;
-                    }
-                    let after = target_char_size(&Printer::new(&polished, false).output(root));
-                    if after < before {
-                        candidate_ast = polished;
-                        candidate_root = root;
-                        candidate_passes.push(PassRecord {
-                            name: display.into(),
-                            saved: Some((before - after) as i64),
-                            detail: None,
+                    root = r.root;
+                    if r.saved.unwrap_or(0) > 0 {
+                        passes.push(PassRecord {
+                            name: "exact numeric literal pooling".into(),
+                            saved: r.saved.map(|saved| saved as i64),
+                            detail: r.details.map(|parts| parts.join(";")),
                             elapsed_ms: None,
                         });
                     }
                 }
-            }
-            if aggressive && toggles.enabled("exact-numeric-literal-pooling") {
-                let r = passes::literal_pool::pool_numeric_literals(
+                if aggressive && toggles.enabled("exact-string-literal-pooling") {
+                    let r = passes::string_pool::pool_string_literals(
+                        ast,
+                        root,
+                        toggles.enabled("scope-renaming"),
+                    );
+                    root = r.root;
+                    if r.saved.unwrap_or(0) > 0 {
+                        passes.push(PassRecord {
+                            name: "exact string literal pooling".into(),
+                            saved: r.saved.map(|saved| saved as i64),
+                            detail: r.details.map(|parts| parts.join(";")),
+                            elapsed_ms: None,
+                        });
+                    }
+                }
+                if aggressive && toggles.enabled("adjacent-local-declaration-packing") {
+                    let r = passes::adjacent_locals::pack_adjacent_locals(
+                        ast,
+                        root,
+                        toggles.enabled("scope-renaming"),
+                    );
+                    root = r.root;
+                    if r.saved.unwrap_or(0) > 0 {
+                        passes.push(PassRecord {
+                            name: "adjacent local declaration packing".into(),
+                            saved: r.saved.map(|n| n as i64),
+                            detail: r.details.map(|d| d.join(";")),
+                            elapsed_ms: None,
+                        });
+                    }
+                }
+                root
+            };
+
+        let (candidate_ast, candidate_root, candidate_passes, printed_compact, final_size) =
+            if candidate_ast.nodes.tracks_origins()
+                && aggressive
+                && toggles.enabled("ordered-draw-record-packing")
+                && passes::draw_records::has_eligible_draws(&candidate_ast, candidate_root)
+            {
+                // Evaluate up to 6 draw-record packing variants and post-draw
+                // polish steps on an untracked clone first, then execute only
+                // the single winning variant on the provenance-tracked arena.
+                let untracked_base =
+                    storm_lua_syntax::ast_utils::clone_without_origins(&candidate_ast);
+                let (tagged_variants, replay_cache) = passes::draw_records::record_variants_tagged(
+                    &untracked_base,
+                    candidate_root,
+                    toggles.enabled("scope-renaming"),
+                );
+                let mut best_choice = None;
+                let mut final_size = usize::MAX;
+                for (kind, mut trial_ast, r) in tagged_variants {
+                    let mut trial_root = r.root;
+                    let mut trial_passes = candidate_passes.clone();
+                    if r.saved.unwrap_or(0) > 0 {
+                        trial_passes.push(PassRecord {
+                            name: "ordered draw record packing".into(),
+                            saved: r.saved.map(|x| x as i64),
+                            detail: r.details.map(|parts| parts.join(";")),
+                            elapsed_ms: None,
+                        });
+                    }
+                    let drawing_changed = trial_passes.iter().any(|p| {
+                        p.name == "ordered draw record packing"
+                            || p.name == "repeated draw sequence outlining"
+                    });
+                    let mut globalize_saved = None;
+                    let mut inline_saved = None;
+                    if drawing_changed {
+                        for (id, _display) in [
+                            (
+                                "root-local-globalization",
+                                "post-draw root local globalization",
+                            ),
+                            (
+                                "one-use-function-fusion",
+                                "post-draw single-use function fusion",
+                            ),
+                        ] {
+                            if !toggles.enabled(id)
+                                || (polish_blocks_globalize && id == "root-local-globalization")
+                            {
+                                continue;
+                            }
+                            let before = target_char_size(
+                                &Printer::new(&trial_ast, false).output(trial_root),
+                            );
+                            let mut polished = trial_ast.clone();
+                            let result = if id == "root-local-globalization" {
+                                passes::root_globals::globalize_root_locals(
+                                    &mut polished,
+                                    trial_root,
+                                )
+                            } else {
+                                passes::inline_functions::inline_one_use_statement_and_tail_functions(
+                                    &mut polished,
+                                    trial_root,
+                                    32,
+                                )
+                            };
+                            let mut root = result.root;
+                            if toggles.enabled("scope-renaming") {
+                                let renamed =
+                                    crate::scope_rename::scope_rename_fast(&polished, root);
+                                polished = renamed.ast;
+                                root = renamed.root;
+                            }
+                            let after =
+                                target_char_size(&Printer::new(&polished, false).output(root));
+                            if after < before {
+                                trial_ast = polished;
+                                trial_root = root;
+                                let saved = (before - after) as i64;
+                                if id == "root-local-globalization" {
+                                    globalize_saved = Some(saved);
+                                } else {
+                                    inline_saved = Some(saved);
+                                }
+                            }
+                        }
+                    }
+                    let mut dummy_passes = Vec::new();
+                    trial_root = apply_final_pooling(&mut trial_ast, trial_root, &mut dummy_passes);
+                    let compact = Printer::new(&trial_ast, false).output(trial_root);
+                    let size = target_char_size(&compact);
+                    if size < final_size {
+                        final_size = size;
+                        best_choice = Some((kind, globalize_saved, inline_saved, compact));
+                    }
+                }
+                #[expect(
+                    clippy::expect_used,
+                    reason = "record_variants_tagged always returns at least one variant"
+                )]
+                let (win_kind, globalize_saved, inline_saved, compact) =
+                    best_choice.expect("at least one draw variant");
+                let r = passes::draw_records::apply_variant(
                     &mut candidate_ast,
                     candidate_root,
                     toggles.enabled("scope-renaming"),
+                    win_kind,
+                    replay_cache,
                 );
                 candidate_root = r.root;
                 if r.saved.unwrap_or(0) > 0 {
                     candidate_passes.push(PassRecord {
-                        name: "exact numeric literal pooling".into(),
-                        saved: r.saved.map(|saved| saved as i64),
+                        name: "ordered draw record packing".into(),
+                        saved: r.saved.map(|x| x as i64),
                         detail: r.details.map(|parts| parts.join(";")),
                         elapsed_ms: None,
                     });
                 }
-            }
-            if aggressive && toggles.enabled("exact-string-literal-pooling") {
-                let r = passes::string_pool::pool_string_literals(
-                    &mut candidate_ast,
-                    candidate_root,
-                    toggles.enabled("scope-renaming"),
-                );
-                candidate_root = r.root;
-                if r.saved.unwrap_or(0) > 0 {
+                if let Some(saved) = globalize_saved {
+                    let result = passes::root_globals::globalize_root_locals(
+                        &mut candidate_ast,
+                        candidate_root,
+                    );
+                    candidate_root = result.root;
+                    if toggles.enabled("scope-renaming") {
+                        let renamed =
+                            crate::scope_rename::scope_rename_fast(&candidate_ast, candidate_root);
+                        candidate_ast = renamed.ast;
+                        candidate_root = renamed.root;
+                    }
                     candidate_passes.push(PassRecord {
-                        name: "exact string literal pooling".into(),
-                        saved: r.saved.map(|saved| saved as i64),
-                        detail: r.details.map(|parts| parts.join(";")),
+                        name: "post-draw root local globalization".into(),
+                        saved: Some(saved),
+                        detail: None,
                         elapsed_ms: None,
                     });
                 }
-            }
-            if aggressive && toggles.enabled("adjacent-local-declaration-packing") {
-                let r = passes::adjacent_locals::pack_adjacent_locals(
-                    &mut candidate_ast,
-                    candidate_root,
-                    toggles.enabled("scope-renaming"),
-                );
-                candidate_root = r.root;
-                if r.saved.unwrap_or(0) > 0 {
+                if let Some(saved) = inline_saved {
+                    let result =
+                        passes::inline_functions::inline_one_use_statement_and_tail_functions(
+                            &mut candidate_ast,
+                            candidate_root,
+                            32,
+                        );
+                    candidate_root = result.root;
+                    if toggles.enabled("scope-renaming") {
+                        let renamed =
+                            crate::scope_rename::scope_rename_fast(&candidate_ast, candidate_root);
+                        candidate_ast = renamed.ast;
+                        candidate_root = renamed.root;
+                    }
                     candidate_passes.push(PassRecord {
-                        name: "adjacent local declaration packing".into(),
-                        saved: r.saved.map(|n| n as i64),
-                        detail: r.details.map(|d| d.join(";")),
+                        name: "post-draw single-use function fusion".into(),
+                        saved: Some(saved),
+                        detail: None,
                         elapsed_ms: None,
                     });
                 }
-            }
-            let size =
-                target_char_size(&Printer::new(&candidate_ast, false).output(candidate_root));
-            if size < final_size {
-                final_size = size;
-                final_variant = Some((candidate_ast, candidate_root, candidate_passes));
-            }
-        }
-        #[expect(
-            clippy::expect_used,
-            reason = "The final-variant list includes the unmodified valid candidate; a realizable source size is below usize::MAX"
-        )]
-        let (candidate_ast, candidate_root, candidate_passes) =
-            final_variant.expect("at least one final variant");
-        let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
-        if parse_source(output.code()).is_err() {
+                candidate_root =
+                    apply_final_pooling(&mut candidate_ast, candidate_root, &mut candidate_passes);
+                debug_assert_eq!(
+                    Printer::new(&candidate_ast, false).output(candidate_root),
+                    compact
+                );
+                (
+                    candidate_ast,
+                    candidate_root,
+                    candidate_passes,
+                    compact,
+                    final_size,
+                )
+            } else {
+                let drawing_variants =
+                    if aggressive && toggles.enabled("ordered-draw-record-packing") {
+                        passes::draw_records::record_variants(
+                            &candidate_ast,
+                            candidate_root,
+                            toggles.enabled("scope-renaming"),
+                        )
+                    } else {
+                        vec![(
+                            candidate_ast,
+                            crate::pass::PassResult {
+                                root: candidate_root,
+                                saved: Some(0),
+                                details: None,
+                            },
+                        )]
+                    };
+                let mut final_variant = None;
+                let mut final_size = usize::MAX;
+                for (mut candidate_ast, r) in drawing_variants {
+                    let mut candidate_root = r.root;
+                    let mut candidate_passes = candidate_passes.clone();
+                    if r.saved.unwrap_or(0) > 0 {
+                        candidate_passes.push(PassRecord {
+                            name: "ordered draw record packing".into(),
+                            saved: r.saved.map(|x| x as i64),
+                            detail: r.details.map(|parts| parts.join(";")),
+                            elapsed_ms: None,
+                        });
+                    }
+                    // Drawing compression creates helpers after structural search. Give
+                    // those new bindings the same two existing cleanup opportunities, but
+                    // retain the unpolished candidate unless its FINAL renamed text wins.
+                    // No recursive compile/search and no additional optimization toggle.
+                    let drawing_changed = candidate_passes.iter().any(|p| {
+                        p.name == "ordered draw record packing"
+                            || p.name == "repeated draw sequence outlining"
+                    });
+                    if aggressive && drawing_changed {
+                        for (id, display) in [
+                            (
+                                "root-local-globalization",
+                                "post-draw root local globalization",
+                            ),
+                            (
+                                "one-use-function-fusion",
+                                "post-draw single-use function fusion",
+                            ),
+                        ] {
+                            if !toggles.enabled(id)
+                                || (polish_blocks_globalize && id == "root-local-globalization")
+                            {
+                                continue;
+                            }
+                            let before = target_char_size(
+                                &Printer::new(&candidate_ast, false).output(candidate_root),
+                            );
+                            if candidate_ast.nodes.tracks_origins() {
+                                let mut trial = storm_lua_syntax::ast_utils::clone_without_origins(
+                                    &candidate_ast,
+                                );
+                                let res = if id == "root-local-globalization" {
+                                    passes::root_globals::globalize_root_locals(
+                                        &mut trial,
+                                        candidate_root,
+                                    )
+                                } else {
+                                    passes::inline_functions::inline_one_use_statement_and_tail_functions(
+                                        &mut trial,
+                                        candidate_root,
+                                        32,
+                                    )
+                                };
+                                let mut trial_root = res.root;
+                                if toggles.enabled("scope-renaming") {
+                                    let renamed =
+                                        crate::scope_rename::scope_rename_fast(&trial, trial_root);
+                                    trial = renamed.ast;
+                                    trial_root = renamed.root;
+                                }
+                                let after = target_char_size(
+                                    &Printer::new(&trial, false).output(trial_root),
+                                );
+                                if after < before {
+                                    let result = if id == "root-local-globalization" {
+                                        passes::root_globals::globalize_root_locals(
+                                            &mut candidate_ast,
+                                            candidate_root,
+                                        )
+                                    } else {
+                                        passes::inline_functions::inline_one_use_statement_and_tail_functions(
+                                            &mut candidate_ast,
+                                            candidate_root,
+                                            32,
+                                        )
+                                    };
+                                    candidate_root = result.root;
+                                    if toggles.enabled("scope-renaming") {
+                                        let renamed = crate::scope_rename::scope_rename_fast(
+                                            &candidate_ast,
+                                            candidate_root,
+                                        );
+                                        candidate_ast = renamed.ast;
+                                        candidate_root = renamed.root;
+                                    }
+                                    candidate_passes.push(PassRecord {
+                                        name: display.into(),
+                                        saved: Some((before - after) as i64),
+                                        detail: None,
+                                        elapsed_ms: None,
+                                    });
+                                }
+                            } else {
+                                let mut polished = candidate_ast.clone();
+                                let result = if id == "root-local-globalization" {
+                                    passes::root_globals::globalize_root_locals(
+                                        &mut polished,
+                                        candidate_root,
+                                    )
+                                } else {
+                                    passes::inline_functions::inline_one_use_statement_and_tail_functions(
+                                        &mut polished,
+                                        candidate_root,
+                                        32,
+                                    )
+                                };
+                                let mut root = result.root;
+                                if toggles.enabled("scope-renaming") {
+                                    let renamed =
+                                        crate::scope_rename::scope_rename_fast(&polished, root);
+                                    polished = renamed.ast;
+                                    root = renamed.root;
+                                }
+                                let after =
+                                    target_char_size(&Printer::new(&polished, false).output(root));
+                                if after < before {
+                                    candidate_ast = polished;
+                                    candidate_root = root;
+                                    candidate_passes.push(PassRecord {
+                                        name: display.into(),
+                                        saved: Some((before - after) as i64),
+                                        detail: None,
+                                        elapsed_ms: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    candidate_root = apply_final_pooling(
+                        &mut candidate_ast,
+                        candidate_root,
+                        &mut candidate_passes,
+                    );
+                    let compact = Printer::new(&candidate_ast, false).output(candidate_root);
+                    let size = target_char_size(&compact);
+                    if size < final_size {
+                        final_size = size;
+                        final_variant =
+                            Some((candidate_ast, candidate_root, candidate_passes, compact));
+                    }
+                }
+                #[expect(
+                    clippy::expect_used,
+                    reason = "The final-variant list includes the unmodified valid candidate; a realizable source size is below usize::MAX"
+                )]
+                let (candidate_ast, candidate_root, candidate_passes, compact) =
+                    final_variant.expect("at least one final variant");
+                (
+                    candidate_ast,
+                    candidate_root,
+                    candidate_passes,
+                    compact,
+                    final_size,
+                )
+            };
+
+        let (code, newline_count) = if zero_cost_newlines {
+            print_untracked(&candidate_ast, candidate_root, true)
+        } else {
+            (printed_compact.clone(), 0)
+        };
+        if parse_source(&code).is_err() {
             parse_rejected += 1;
             continue;
         }
         if let Some(verify) = verify_candidate.as_deref_mut() {
             // The external verifier contract uses compact Lua even when the
             // selected output requests zero-cost newlines.
-            let compact = zero_cost_newlines
-                .then(|| Printer::new(&candidate_ast, false).output(candidate_root));
-            if !verify(compact.as_deref().unwrap_or_else(|| output.code())) {
+            if !verify(&printed_compact) {
                 semantic_rejected += 1;
                 continue;
             }
         }
-        let size = target_char_size(output.code());
+        let size = if zero_cost_newlines {
+            target_char_size(&code)
+        } else {
+            final_size
+        };
         if size != final_size {
             return Err("zero-cost newline printer changed size".into());
         }
-        let (code, newline_count, origins) = output.finish(&candidate_ast);
+        let origins =
+            DeferredGeneratedOrigins::from_ast(candidate_ast, candidate_root, zero_cost_newlines);
         if let Some(target) = target_size {
             if size <= target {
                 let rank = target_speed_rank(layout);
@@ -2196,12 +2418,13 @@ fn render_variant_candidate(
     } else {
         (variant.ast.clone(), variant.root)
     };
-    let output = print_final(&candidate_ast, candidate_root, zero_cost_newlines);
-    if parse_source(output.code()).is_err() {
+    let (code, newline_count) = print_untracked(&candidate_ast, candidate_root, zero_cost_newlines);
+    if parse_source(&code).is_err() {
         return Err("satisficing checkpoint failed reparse validation".into());
     }
-    let size = target_char_size(output.code());
-    let (code, newline_count, origins) = output.finish(&candidate_ast);
+    let size = target_char_size(&code);
+    let origins =
+        DeferredGeneratedOrigins::from_ast(candidate_ast, candidate_root, zero_cost_newlines);
     Ok(Candidate {
         origins: origins.map(Arc::new),
         lexical_origins: None,
@@ -2562,6 +2785,16 @@ pub fn encode_candidate_job(job: &CandidateJob) -> Result<Vec<u8>, String> {
 pub fn decode_and_evaluate_candidate_job(bytes: &[u8]) -> Result<CandidateBatch, String> {
     let job: CandidateJob = crate::job_codec::decode(bytes)
         .map_err(|error| format!("failed to decode candidate job: {error}"))?;
+    if (job.variant.root as usize) >= job.variant.ast.nodes.len()
+        || !matches!(
+            job.variant.ast.node(job.variant.root),
+            storm_lua_syntax::ast::Node::Block(_)
+        )
+    {
+        return Err(
+            "failed to decode candidate job: variant root is not a valid Block node".into(),
+        );
+    }
     evaluate_candidate(job)
 }
 
@@ -2633,35 +2866,41 @@ fn finish_target_attempt(
 /// candidate order and final result as `compile_code`. If parsing fails, the
 /// callback is not invoked. No state is cached between compilations.
 #[doc(hidden)]
-pub fn compile_code_with_source_inspection_compact(
+pub fn compile_code_with_fallible_inspection_compact(
     source: &str,
     options: &CompileOptions,
-    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions),
+    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions) -> bool,
 ) -> Result<CompileCodeResult, String> {
     options.validate_pass_toggles()?;
     let lexical_options = options.environment
         == storm_lua_spec::environment::EnvironmentProfile::Extended
         || !options.host_bindings.is_empty();
-    let (ast, root, positions) = if let Some(name) = options
-        .origin_source
-        .as_deref()
-        .filter(|_| !lexical_options)
-    {
-        storm_lua_syntax::parser::parse_source_with_origin_positions(name, source, |ast| {
-            storm_lua_analysis::environment_checks::lexical_reason(
-                ast,
-                options.environment,
-                &options.host_bindings,
-            )
-            .is_none()
-        })?
-    } else {
-        storm_lua_syntax::parser::parse_source_with_diagnostic_positions(source)
-            .map_err(|e| e.to_string())?
-    };
-    inspect(&ast, root, &positions);
+    let want_ast_origins = options.origin_source.is_some() && !lexical_options;
+    let (mut ast, root, positions, origin_seed) =
+        storm_lua_syntax::parser::parse_source_for_inspection(source, want_ast_origins)?;
+    if !inspect(&ast, root, &positions) {
+        return Err("source inspection rejected compilation".into());
+    }
+    storm_lua_analysis::environment_checks::validate(
+        &ast,
+        root,
+        options.environment,
+        &options.host_bindings,
+    )?;
+    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
+    let is_lexical = storm_lua_analysis::environment_checks::lexical_reason(
+        &ast,
+        options.environment,
+        &options.host_bindings,
+    )
+    .is_some();
+    if !is_lexical {
+        if let Some(name) = options.origin_source.as_deref() {
+            origin_seed.seed_into(&mut ast, &positions, name, source)?;
+        }
+    }
     // The origins own their ranges. Do not retain the original diagnostic/name
-    // indexes throughout every candidate search after the host has inspected them.
+    // indexes or lexer tokens throughout every candidate search after seeding.
     drop(positions);
     if let Some(target) = options.target_size {
         finish_target_attempt(
@@ -2676,6 +2915,18 @@ pub fn compile_code_with_source_inspection_compact(
             .collect::<Result<Vec<_>, _>>()?;
         select_best_compact(context, batches)
     }
+}
+
+#[doc(hidden)]
+pub fn compile_code_with_source_inspection_compact(
+    source: &str,
+    options: &CompileOptions,
+    inspect: impl FnOnce(&Ast, NodeId, &storm_lua_syntax::parser::NodePositions),
+) -> Result<CompileCodeResult, String> {
+    compile_code_with_fallible_inspection_compact(source, options, |ast, root, positions| {
+        inspect(ast, root, positions);
+        true
+    })
 }
 
 pub fn compile_code_with_source_inspection(
@@ -2786,7 +3037,7 @@ mod phase7_serialization_tests {
     /// winner, never beats a fitting candidate.
     #[test]
     fn target_size_relaxed_carrier_layout_within_budget() {
-        let source = "function onTick()output.setNumber(1,screen.getHeight()+screen.getHeight()+screen.getHeight())end";
+        let source = "function onDraw()screen.drawText(0,0,screen.getHeight()+screen.getHeight()+screen.getHeight())end";
         let free = compile_code(source, &CompileOptions::default()).unwrap();
         assert_eq!(free.stats.winner_layout, "joint-api");
         let free_size = target_char_size(&free.code);

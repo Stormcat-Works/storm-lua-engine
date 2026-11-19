@@ -1,7 +1,7 @@
 // cargo xtask generate によって自動生成されています。編集しないでください。
 export const ABI = {
   "abiVersion": 1,
-  "capabilities": 31,
+  "capabilities": 63,
   "channelCount": 32,
   "inputBooleansOffset": 128,
   "inputNumbersOffset": 0,

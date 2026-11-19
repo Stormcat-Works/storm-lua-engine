@@ -7,7 +7,7 @@ use crate::{
     runner::{ErrorKind, Vm, VmError},
 };
 use mlua::{ChunkMode, Function, Value};
-use std::{cell::Cell, fmt, rc::Rc};
+use std::{cell::Cell, fmt, sync::Arc};
 use storm_lua_spec::environment::EnvironmentProfile;
 
 /// Maximum source bytes in one user/required chunk.
@@ -37,6 +37,10 @@ pub fn validate_source(source: &[u8], name: &str) -> Result<(), VmError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(VmError::new(ErrorKind::Limit, "Lua source exceeds 1 MiB"));
     }
+    validate_chunk_name(name)
+}
+/// チャンク名だけを検証します。ソース長制限はホスト設定（`ExecutionLimits`）側の責務です。
+pub fn validate_chunk_name(name: &str) -> Result<(), VmError> {
     if name.is_empty() || name.len() > 1024 || name.contains('\0') {
         return Err(VmError::new(
             ErrorKind::InvalidArgument,
@@ -46,12 +50,12 @@ pub fn validate_source(source: &[u8], name: &str) -> Result<(), VmError> {
     Ok(())
 }
 
-type ResolveSource = dyn Fn(&str) -> Result<SourceChunk, VmError>;
+type ResolveSource = dyn Fn(&str) -> Result<SourceChunk, VmError> + Send + Sync;
 /// Synchronous source supplier for the development-only include-once `require`.
 /// This is not package.loaded/module-return-value require. The host owns path
 /// resolution and supplies source, never a Lua Function or a recursive VM call.
 #[derive(Clone)]
-pub struct RequireLoader(Rc<ResolveSource>);
+pub struct RequireLoader(Arc<ResolveSource>);
 impl fmt::Debug for RequireLoader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("RequireLoader(host)")
@@ -59,8 +63,10 @@ impl fmt::Debug for RequireLoader {
 }
 impl RequireLoader {
     /// Register a synchronous resolver. Missing sources must be reported as errors.
-    pub fn new(resolve: impl Fn(&str) -> Result<SourceChunk, VmError> + 'static) -> Self {
-        Self(Rc::new(resolve))
+    pub fn new(
+        resolve: impl Fn(&str) -> Result<SourceChunk, VmError> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(resolve))
     }
     /// Reject ambiguous ownership of require before any user source is executed.
     pub fn validate_configuration(
@@ -103,8 +109,8 @@ impl Vm {
             ));
         }
         let environment = self.environment.clone();
-        let resolve = Rc::clone(&loader.0);
-        let syntax_site = Rc::clone(&self.syntax_site);
+        let resolve = Arc::clone(&loader.0);
+        let syntax_site = Arc::clone(&self.syntax_site);
         let count = Cell::new(0usize);
         let bytes = Cell::new(0usize);
         let compile = self.lua.create_function(move |lua, name: Value| {
@@ -155,7 +161,7 @@ impl Vm {
                 .into_function()
                 .inspect_err(|error| {
                     // メッセージは変えず、省略されていないチャンク名と行だけを別経路で渡します。
-                    *syntax_site.borrow_mut() = crate::runner::syntax_message(error)
+                    *crate::runner::lock(&syntax_site) = crate::runner::syntax_message(error)
                         .and_then(|message| crate::runner::syntax_location(message, &chunk.name));
                 })?;
             count.set(count.get() + 1);
@@ -171,6 +177,7 @@ impl Vm {
             .into_function()?;
         let function: Function = factory.call(compile)?;
         self.environment.raw_set("require", function)?;
+        self.has_require_loader = true;
         Ok(())
     }
 }

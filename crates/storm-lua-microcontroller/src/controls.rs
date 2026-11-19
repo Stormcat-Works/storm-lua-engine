@@ -1,7 +1,7 @@
 //! Explicit, bounded development controls. They mutate the same state read by standard APIs.
 //! Callbacks stay inside the VM; host code never reenters WASM to update an active call.
-use super::State;
-use std::{cell::RefCell, rc::Rc};
+use super::{read_state, write_state, FastIo, State};
+use std::sync::{atomic::Ordering, Arc, RwLock};
 use storm_lua_spec::{
     environment::EnvironmentProfile,
     property::{PropertyBag, PropertyValue},
@@ -76,7 +76,8 @@ pub(super) fn with_controls(
     base: &HostBindings,
     namespace: Option<&str>,
     environment: EnvironmentProfile,
-    state: &Rc<RefCell<State>>,
+    io: &Arc<FastIo>,
+    state: &Arc<RwLock<State>>,
 ) -> Result<HostBindings, VmError> {
     let Some(namespace) = namespace else {
         return Ok(base.clone());
@@ -89,7 +90,7 @@ pub(super) fn with_controls(
     if !storm_lua_spec::environment::valid_binding_path(namespace) || namespace.contains('.') {
         return Err(invalid("controlNamespace must be a root Lua identifier"));
     }
-    validate_properties(&state.borrow().properties)?;
+    validate_properties(&read_state(state).properties)?;
     let mut bindings = base.clone();
     let mut add = |name: &str, callback: HostFunction| -> Result<(), VmError> {
         let path = format!("{namespace}.{name}");
@@ -99,16 +100,16 @@ pub(super) fn with_controls(
         bindings.functions.insert(path, callback);
         Ok(())
     };
-    let s = Rc::clone(state);
+    let s = Arc::clone(state);
     add(
         "setProperty",
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [LuaValue::Bytes(label), value] = args else {
                 return Err(invalid("setProperty expects a byte-string label and value"));
             };
             let value = match value {
                 LuaValue::Nil => {
-                    s.borrow_mut().properties.remove(label);
+                    write_state(&s).properties.remove(label);
                     return Ok(vec![]);
                 }
                 LuaValue::Integer(n) => PropertyValue::Number(*n as f64),
@@ -121,62 +122,60 @@ pub(super) fn with_controls(
                     ))
                 }
             };
-            let mut state = s.borrow_mut();
+            let mut state = write_state(&s);
             validate_property_update(&state.properties, label, &value)?;
             state.properties.insert(label.clone(), value);
             Ok(vec![])
         }),
     )?;
-    let s = Rc::clone(state);
+    let fast_io = Arc::clone(io);
     add(
         "setInputNumber",
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [channel, value] = args else {
                 return Err(invalid("setInputNumber expects channel and value"));
             };
             let channel = index(channel)?;
             let value = numeric(value)? as f32;
-            let mut state = s.borrow_mut();
-            state.input.numbers[channel] = value;
-            state.input_changed = true;
+            fast_io.input_numbers[channel].store(value.to_bits(), Ordering::Relaxed);
+            fast_io.input_changed.store(true, Ordering::Relaxed);
             Ok(vec![])
         }),
     )?;
-    let s = Rc::clone(state);
+    let fast_io = Arc::clone(io);
     add(
         "setInputBool",
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [channel, LuaValue::Bool(value)] = args else {
                 return Err(invalid("setInputBool expects channel and Boolean"));
             };
             let channel = index(channel)?;
-            let mut state = s.borrow_mut();
-            state.input.booleans[channel] = *value;
-            state.input_changed = true;
+            fast_io.input_booleans[channel].store(*value, Ordering::Relaxed);
+            fast_io.input_changed.store(true, Ordering::Relaxed);
             Ok(vec![])
         }),
     )?;
-    let s = Rc::clone(state);
+    let fast_io = Arc::clone(io);
     add(
         "getInputNumber",
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [channel] = args else {
                 return Err(invalid("getInputNumber expects a channel"));
             };
-            Ok(vec![LuaValue::Number(f64::from(
-                s.borrow().input.numbers[index(channel)?],
-            ))])
+            Ok(vec![LuaValue::Number(f64::from(f32::from_bits(
+                fast_io.input_numbers[index(channel)?].load(Ordering::Relaxed),
+            )))])
         }),
     )?;
-    let s = Rc::clone(state);
+    let fast_io = Arc::clone(io);
     add(
         "getInputBool",
-        Rc::new(move |args| {
+        Arc::new(move |args| {
             let [channel] = args else {
                 return Err(invalid("getInputBool expects a channel"));
             };
             Ok(vec![LuaValue::Bool(
-                s.borrow().input.booleans[index(channel)?],
+                fast_io.input_booleans[index(channel)?].load(Ordering::Relaxed),
             )])
         }),
     )?;

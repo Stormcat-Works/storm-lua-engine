@@ -1,10 +1,24 @@
 # Current status
 
-## v0.4.0 公開済み（2026-11-04）
+## v0.5.0 公開候補（2026-11-16、公開工程は残る）
 
-v0.4.0 は 2026-11-04 に公開済み。公開 main のコミットは `f26c9b3`、タグは `v0.4.0`。GitHub Release と npm の公開も完了している。
+v0.5.0の公開候補を統合ブランチ`muse/v050-spec-alignment`の先端で検証し、版番号・変更履歴・状態文書を揃えた。第3のプロファイルComponent Modの追加、Vehicle／Addon意味論の実ゲーム整合（VMコア・matrix・screen/描画・Addonホスト面）、依存関係の更新を含む。公開工程（候補スカッシュの再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認）は[リリース手順](docs/release.md)に従い、管理者の最終確認後に行う。本節の準備だけでは公開済みにしない。
 
-正確性修正、Source Map schema-2、コンパイル性能改善を含む。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
+## v0.4.1 公開済み（2026-11-04）
+
+現在の公開版はv0.4.1（2026-11-04）。公開mainのコミットは`88ec6f0`、タグは`v0.4.1`。GitHub Releaseとnpmの公開も完了している。v0.4.0（`f26c9b3`）は正確性修正、Source Map schema-2、コンパイル性能改善を含む版として公開済み。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
+
+## Component Mod プロファイルの追加（2026-11-16、未公開）
+
+第3のプロファイルとしてComponent Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`がライフサイクル（load→parse→add_to_simulation→tick/render→remove_from_simulation、tickのみステータスゲート）とエラーステータス（0/2/3/5、timeoutは数値を主張しない表現）を所有する。64関数のうち`matrix`13関数と`debug.log`はエンジン実装、残り50関数はホスト提供ドメイン（sub-trait 11種）で、提供された分だけ登録される。引数意味論は実ゲーム v1.15.26 の挙動で確認した内容どおり（個数不一致はLuaエラー（共有matrixのidentityは例外）、型は無言変換、`debug.log`は個数のみエラー）。analysis側にはComponentプロファイルのルート集合・診断・lint経路を足した。契約は[Component Mod仕様](docs/specs/component.md)。
+
+TypeScript SDKへの公開（W9'）は2026-11-16に実施した。WASMセッションにComponentモード（mode 3）と制御アクションを追加し、`ComponentVm`と、ドメイン単位の型付きプロバイダをTSホストから供給するブリッジ、生成カタログへのComponent項目、build/minifyパイプラインのComponent入口（`buildComponent`）を揃えた。ワークスペーステスト1,940件、実WASMテスト112件、TypeScript単体テスト37件が通過している。3ブラウザでの実行は未実施。
+
+## 意味論の実ゲーム整合（2026-11-16、未公開）
+
+Vehicle／Addonの意味論を、実ゲーム v1.15.26 の挙動で確認した仕様へ一括で合わせた。MC APIの引数意味論（個数不一致は無言で戻り値0個、型は変換して変換不能は0）、検査順序（個数→phase→変換）、エラー後の回復モデル（エラーステータスとリング、Addonのステータス5自動復帰）、実行制限の再構成（壁時計1001msが既定、命令数・メモリ・ソース長は既定で無効）、`math.random`既定のCRT互換化、matrixの検証・エラー文字列・`rotationToFaceXZ`、色変換と描画規則（drawMapの1フレーム1回、`map.screenToMap`/`mapToScreen`の追加を含む）、AddonのHTTP・`debug.log`・プロパティ宣言の検証撤廃が対象である。詳細は[CHANGELOG](CHANGELOG.md)の0.5.0節を参照する。
+
+Component ModのTypeScript SDK公開（W9'）は2026-11-16に実施済み（上記Component Modの節を参照）。
 
 ## 実行時の性能調査とラスタライザの高速化（2026-11-16、未公開）
 
@@ -51,7 +65,7 @@ Nativeの適合テスト（`conformance/tests/error_locations.rs`）とTypeScrip
 
 ## phase違反の呼び出しをLuaエラーへ変更（2026-11-15、未公開）
 
-`onDraw`の実行中の`input.*`と`output.*`、`onTick`の実行中の`screen.*`を、実ゲームと同じ文言のLuaエラーにした。従来は0/falseを返すか無視していた。根拠はStormworks v1.15.26での測定で、[検証記録](docs/verification/phase-errors-ingame-20261115.md)に残した。トップレベルと`httpReply`は未測定のため従来の挙動を維持する。契約は[numeric-io](docs/specs/numeric-io.md)。
+`onDraw`の実行中の`input.*`と`output.*`、`onTick`の実行中の`screen.*`を、実ゲームと同じ文言のLuaエラーにした。従来は0/falseを返すか無視していた。根拠はStormworks v1.15.26での測定で、[検証記録](docs/verification/phase-errors-ingame-20261115.md)に残した。トップレベルと`httpReply`は当初未測定のため従来の挙動を維持したが、v1.15.26の実ゲームでも同じoutsideエラーになることを確認し、2026-11-16にv0.5.0で合わせた。契約は[numeric-io](docs/specs/numeric-io.md)。
 
 Nativeの適合テスト（`conformance/tests/phase_errors.rs`）、実WASM（Emscripten 6.0.6）のテスト95件、梱包consumerの検査（`node tools/test-package.mjs`）が通過した。3ブラウザでの実行は未実施。
 

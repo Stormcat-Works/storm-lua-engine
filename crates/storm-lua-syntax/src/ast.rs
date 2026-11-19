@@ -25,10 +25,37 @@ pub struct SymbolId(
 );
 
 /// 識別子のみの interner。pass 実行中に伸びる（scopeRename が新名を生成するため、read-only 文字列スタックでよい）。
-#[derive(Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Interner {
     map: Arc<HashMap<Arc<str>, SymbolId>>,
     strings: Arc<Vec<Arc<str>>>,
+}
+
+impl<'de> Deserialize<'de> for Interner {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct InternerWire {
+            map: HashMap<Arc<str>, SymbolId>,
+            strings: Vec<Arc<str>>,
+        }
+        let InternerWire { map, strings } = InternerWire::deserialize(deserializer)?;
+        if map.len() != strings.len() || strings.len() > u32::MAX as usize {
+            return Err(serde::de::Error::custom(
+                "interner map and strings table lengths disagree",
+            ));
+        }
+        for (index, text) in strings.iter().enumerate() {
+            if map.get(text.as_ref()) != Some(&SymbolId(index as u32)) {
+                return Err(serde::de::Error::custom(
+                    "interner map and strings table are inconsistent",
+                ));
+            }
+        }
+        Ok(Self {
+            map: Arc::new(map),
+            strings: Arc::new(strings),
+        })
+    }
 }
 
 impl Interner {
@@ -434,9 +461,86 @@ impl Serialize for Ast {
         }
     }
 }
+impl Ast {
+    /// Validate that all `NodeId` children and `SymbolId` references are in
+    /// bounds and that the `NodeId` graph contains no cycles.
+    pub fn validate_integrity(&self) -> Result<(), &'static str> {
+        let node_count = self.nodes.len();
+        let sym_count = self.strings.strings.len();
+        let sym_ok = |sym: SymbolId| (sym.0 as usize) < sym_count;
+        let mut children_ok = true;
+        for id in 0..node_count {
+            let syms_valid = match &self.nodes[id] {
+                Node::Goto(s)
+                | Node::Label(s)
+                | Node::Fornum(s, ..)
+                | Node::Localfunc(s, _)
+                | Node::Name(s)
+                | Node::Methodname(_, s) => sym_ok(*s),
+                Node::Forin(syms, ..) | Node::Local(syms, _) | Node::Function(syms, _, _) => {
+                    syms.iter().copied().all(sym_ok)
+                }
+                Node::Table(fields) => fields.iter().all(|f| match f {
+                    TableField::Name(s, _) => sym_ok(*s),
+                    TableField::Arr(_) | TableField::KVar(_, _) => true,
+                }),
+                Node::Call(_, _, method) => method.is_none_or(sym_ok),
+                _ => true,
+            };
+            if !syms_valid {
+                return Err("AST contains out-of-bounds SymbolId");
+            }
+            crate::ast_utils::for_each_child(self, id as NodeId, &mut |child| {
+                if (child as usize) >= node_count {
+                    children_ok = false;
+                }
+            });
+            if !children_ok {
+                return Err("AST contains out-of-bounds child NodeId");
+            }
+        }
+        // Iterative 3-color DFS (0 = unvisited, 1 = visiting, 2 = done) so
+        // cyclic or deeply nested payloads cannot overflow the call stack.
+        let mut state = vec![0_u8; node_count];
+        let mut stack: Vec<(usize, bool)> = Vec::new();
+        for start in 0..node_count {
+            if state[start] != 0 {
+                continue;
+            }
+            stack.push((start, false));
+            while let Some((curr, exiting)) = stack.pop() {
+                if exiting {
+                    state[curr] = 2;
+                    continue;
+                }
+                match state[curr] {
+                    1 => return Err("AST contains a cycle"),
+                    2 => continue,
+                    _ => {}
+                }
+                state[curr] = 1;
+                stack.push((curr, true));
+                let mut cycle = false;
+                crate::ast_utils::for_each_child(self, curr as NodeId, &mut |child| {
+                    let c = child as usize;
+                    match state[c] {
+                        1 => cycle = true,
+                        0 => stack.push((c, false)),
+                        _ => {}
+                    }
+                });
+                if cycle {
+                    return Err("AST contains a cycle");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<'de> Deserialize<'de> for Ast {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        if deserializer.is_human_readable() {
+        let ast = if deserializer.is_human_readable() {
             #[derive(Deserialize)]
             struct Wire {
                 nodes: Vec<Node>,
@@ -446,14 +550,16 @@ impl<'de> Deserialize<'de> for Ast {
             let wire = Wire::deserialize(deserializer)?;
             let nodes = crate::node_arena::NodeArena::from_parts(wire.nodes, wire.origins)
                 .map_err(serde::de::Error::custom)?;
-            Ok(Self {
+            Self {
                 nodes,
                 strings: wire.strings,
-            })
+            }
         } else {
             let (nodes, strings) = Deserialize::deserialize(deserializer)?;
-            Ok(Self { nodes, strings })
-        }
+            Self { nodes, strings }
+        };
+        ast.validate_integrity().map_err(serde::de::Error::custom)?;
+        Ok(ast)
     }
 }
 

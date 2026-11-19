@@ -1,8 +1,11 @@
 //! Borrowed host phases and synchronous callback delivery share one Lua state.
-use super::{invalid, Stage};
+use super::{invalid, stage_of, ErrorState, Stage};
 use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use storm_lua_vm::{
     backend::{self, Function, Lua, MultiValue, Table, Value},
@@ -25,18 +28,23 @@ pub struct AddonCallback {
     synchronous: storm_lua_vm::runner::SynchronousCallbacks,
     lua: Lua,
     slots: Table,
-    names: Rc<Vec<String>>,
-    stage: Rc<Cell<Stage>>,
-    tick_disabled: Rc<Cell<bool>>,
-    depth: Rc<Cell<usize>>,
-    valid: Rc<Cell<bool>>,
+    wrappers: Arc<Vec<Function>>,
+    names: Arc<Vec<String>>,
+    /// 構築時に確定する名前 -> スロット番号（1始まり）の索引。名前集合は
+    /// 構築後に変わらないため、フェーズごとの検証と割当てはこの索引で
+    /// 線形時間に行える。
+    name_slots: Arc<HashMap<String, usize>>,
+    stage: Arc<Mutex<Stage>>,
+    error_state: Arc<ErrorState>,
+    depth: Arc<AtomicUsize>,
+    valid: Arc<AtomicBool>,
     logs: LogReader,
     host_calls: HostCallContext,
 }
-pub(crate) struct ExecutionGuard(Rc<Cell<usize>>);
+pub(crate) struct ExecutionGuard(Arc<AtomicUsize>);
 impl Drop for ExecutionGuard {
     fn drop(&mut self) {
-        self.0.set(self.0.get() - 1);
+        self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 // Slots are preallocated at construction. Restore even when host execution unwinds
@@ -44,58 +52,69 @@ impl Drop for ExecutionGuard {
 struct SlotRestore<'a> {
     slots: &'a Table,
     prior: Vec<(usize, Value)>,
-    stage: &'a Cell<Stage>,
+    stage: &'a Mutex<Stage>,
 }
 impl Drop for SlotRestore<'_> {
     fn drop(&mut self) {
         for (name, value) in self.prior.drain(..) {
             if self.slots.raw_set(name, value).is_err() {
-                self.stage.set(Stage::Failed);
+                *storm_lua_vm::runner::lock(self.stage) = Stage::Failed;
             }
         }
     }
 }
 impl AddonCallback {
     pub(crate) fn new(
-        vm: Rc<RefCell<Vm>>,
-        stage: Rc<Cell<Stage>>,
-        tick_disabled: Rc<Cell<bool>>,
+        vm: &mut Vm,
+        stage: Arc<Mutex<Stage>>,
+        error_state: Arc<ErrorState>,
         names: &[String],
     ) -> Result<Self, VmError> {
-        let (lua, slots) = vm.borrow_mut().configure(|lua, env| {
+        let (lua, slots, wrappers) = vm.configure(|lua, env| {
             let slots = lua.create_table()?;
             let server: Table = env.raw_get("server")?;
+            let mut wrappers = Vec::with_capacity(names.len());
             // Script-held aliases resolve the current phase slot.
             for (index, name) in names.iter().enumerate() {
                 slots.raw_set(index + 1, false)?;
                 let wrapper: Function = lua.load("local slots, name, fail = ...; return function(...) local f = slots[name]; if not f then fail('server operation outside host phase') end; return f(...) end")
                     .set_name("=host server dispatch").call((slots.clone(), index + 1, lua.globals().get::<Function>("error")?))?;
-                server.raw_set(name.as_str(), wrapper)?;
+                server.raw_set(name.as_str(), wrapper.clone())?;
+                wrappers.push(wrapper);
             }
-            Ok((lua.clone(), slots))
+            Ok((lua.clone(), slots, wrappers))
         })?;
-        let logs = vm.borrow().log_reader();
-        let host_calls = vm.borrow().host_call_context();
-        let synchronous = vm.borrow().synchronous_callbacks();
+        let (logs, host_calls, synchronous) = (
+            vm.log_reader(),
+            vm.host_call_context(),
+            vm.synchronous_callbacks(),
+        );
+        let name_slots: HashMap<String, usize> = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index + 1))
+            .collect();
         Ok(Self {
             synchronous,
             lua,
             slots,
-            names: Rc::new(names.to_vec()),
+            wrappers: Arc::new(wrappers),
+            names: Arc::new(names.to_vec()),
+            name_slots: Arc::new(name_slots),
             stage,
-            tick_disabled,
-            depth: Rc::new(Cell::new(0)),
-            valid: Rc::new(Cell::new(true)),
+            error_state,
+            depth: Arc::new(AtomicUsize::new(0)),
+            valid: Arc::new(AtomicBool::new(true)),
             logs,
             host_calls,
         })
     }
     pub(crate) fn enter(&self) -> ExecutionGuard {
-        self.depth.set(self.depth.get() + 1);
-        ExecutionGuard(Rc::clone(&self.depth))
+        self.depth.fetch_add(1, Ordering::Relaxed);
+        ExecutionGuard(Arc::clone(&self.depth))
     }
     pub(crate) fn invalidate(&self) {
-        self.valid.set(false);
+        self.valid.store(false, Ordering::Relaxed);
     }
     /// Names of borrowed server operations required by each host phase.
     pub fn scoped_server_functions(&self) -> &[String] {
@@ -107,7 +126,9 @@ impl AddonCallback {
     }
     /// Deliver an event immediately. Nested events inherit the running coroutine's instruction budget.
     pub fn dispatch(&self, callback: &str, arguments: &[LuaValue]) -> Result<RunOutcome, VmError> {
-        if !self.valid.get() || matches!(self.stage.get(), Stage::Failed | Stage::Destroyed) {
+        if !self.valid.load(Ordering::Relaxed)
+            || matches!(stage_of(&self.stage), Stage::Failed | Stage::Destroyed)
+        {
             return Err(VmError::new(
                 ErrorKind::Failed,
                 "addon callback target is no longer available",
@@ -116,7 +137,7 @@ impl AddonCallback {
         if !storm_lua_spec::addon::EVENTS.contains(&callback) {
             return Err(invalid("unknown or reserved addon callback"));
         }
-        let prior = self.stage.get();
+        let prior = stage_of(&self.stage);
         if matches!(prior, Stage::Empty) {
             return Err(invalid("addon source has not been loaded"));
         }
@@ -125,9 +146,10 @@ impl AddonCallback {
         let result = self.synchronous.call_if_function(callback, arguments);
         if let Err(error) = &result {
             if error.kind == ErrorKind::Lua {
-                self.tick_disabled.set(true);
+                // 通常イベントの失敗はステータス5として記録します（E9）。
+                self.error_state.record(5, &error.message);
             } else {
-                self.stage.set(Stage::Failed);
+                *storm_lua_vm::runner::lock(&self.stage) = Stage::Failed;
             }
         }
         result
@@ -149,16 +171,31 @@ impl AddonCallback {
         calls: &[(&str, ScopedServerCall<'_>)],
         run: impl FnOnce() -> Result<R, VmError>,
     ) -> Result<R, VmError> {
-        if !self.valid.get() {
+        if !self.valid.load(Ordering::Relaxed) {
             return Err(invalid("addon callback target is no longer available"));
         }
-        if functions.len() + calls.len() != self.names.len()
-            || self.names.iter().any(|name| {
-                functions.iter().filter(|(key, _)| *key == name).count()
-                    + calls.iter().filter(|(key, _)| *key == name).count()
-                    != 1
-            })
-        {
+        // 検証は構築時索引で線形時間に行う。意味は従来どおり: 合計数が
+        // 一致し、構成済みの各操作がちょうど1回ずつ提供されること
+        // （未知の名前・重複・欠落はいずれも同じエラーで拒否する）。
+        let mut provided = vec![false; self.names.len()];
+        let mut exact = functions.len() + calls.len() == self.names.len();
+        if exact {
+            for name in functions
+                .iter()
+                .map(|(name, _)| name)
+                .chain(calls.iter().map(|(name, _)| name))
+            {
+                match self.name_slots.get(*name) {
+                    Some(&slot) if !provided[slot - 1] => provided[slot - 1] = true,
+                    _ => {
+                        exact = false;
+                        break;
+                    }
+                }
+            }
+            exact = exact && provided.iter().all(|done| *done);
+        }
+        if !exact {
             return Err(invalid(
                 "host phase must provide each scoped server operation exactly once",
             ));
@@ -178,32 +215,25 @@ impl AddonCallback {
                         backend::encode_values(lua, &output)
                             .map_err(backend::BackendError::external)
                     })?;
-                    let index = self
-                        .names
-                        .iter()
-                        .position(|key| key == name)
-                        .ok_or_else(|| {
-                            backend::BackendError::external(invalid("unknown scoped operation"))
-                        })?
-                        + 1;
+                    // 検証済みのため索引に必ず存在する。防御的に従来と
+                    // 同じエラーを返す経路は残す。
+                    let index = self.name_slots.get(*name).copied().ok_or_else(|| {
+                        backend::BackendError::external(invalid("unknown scoped operation"))
+                    })?;
                     restore
                         .prior
                         .push((index, self.slots.raw_get::<Value>(index)?));
                     self.slots.raw_set(index, function)?;
                 }
                 for (name, handler) in calls {
-                    let context = &self.host_calls;
-                    let function = scope.create_function(move |lua, args: MultiValue| {
-                        context.invoke(lua, args, handler)
+                    let index = self.name_slots.get(*name).copied().ok_or_else(|| {
+                        backend::BackendError::external(invalid("unknown scoped operation"))
                     })?;
-                    let index = self
-                        .names
-                        .iter()
-                        .position(|key| key == name)
-                        .ok_or_else(|| {
-                            backend::BackendError::external(invalid("unknown scoped operation"))
-                        })?
-                        + 1;
+                    let context = &self.host_calls;
+                    let wrapper = &self.wrappers[index - 1];
+                    let function = scope.create_function(move |lua, args: MultiValue| {
+                        context.invoke_with_function(lua, args, wrapper, handler)
+                    })?;
                     restore
                         .prior
                         .push((index, self.slots.raw_get::<Value>(index)?));
@@ -213,7 +243,7 @@ impl AddonCallback {
                 let mut restore_error = None;
                 while let Some((index, value)) = restore.prior.pop() {
                     if let Err(error) = self.slots.raw_set(index, value) {
-                        self.stage.set(Stage::Failed);
+                        *storm_lua_vm::runner::lock(&self.stage) = Stage::Failed;
                         if restore_error.is_none() {
                             restore_error = Some(error);
                         }

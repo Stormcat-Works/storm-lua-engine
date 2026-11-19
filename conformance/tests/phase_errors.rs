@@ -1,5 +1,5 @@
 //! 呼べないphaseでのinput/output/screenは、実ゲームと同じ文言のLuaエラーになる。
-//! 根拠はdocs/verification/phase-errors-ingame-20261115.md。
+//! 根拠はdocs-internalのLua解析（vehicle/io-contract、vehicle/screen、vehicle/lifecycle）。
 use std::error::Error;
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::{environment::EnvironmentProfile, io::CompositeSignal};
@@ -50,8 +50,10 @@ fn input_and_output_inside_on_draw_are_lua_errors_with_the_game_wording() -> Tes
                 "{call}: {}",
                 error.message
             );
-            // スクリプトは止まり、書き込みは起きていない。
-            assert!(vm.is_failed());
+            // スクリプトは止まり、書き込みは起きていない。VMは失敗状態にはならず、
+            // onDraw失敗としてステータス1が記録される（E9）。
+            assert!(!vm.is_failed());
+            assert_eq!(vm.error_status(), 1, "{call}");
             assert_eq!(vm.output().numbers[0], 0.0);
             assert!(!vm.output().booleans[0]);
             assert_eq!(vm.output().numbers[1], 7.0);
@@ -85,7 +87,8 @@ fn screen_inside_on_tick_is_a_lua_error_with_the_game_wording() -> TestResult {
                 "{call}: {}",
                 error.message
             );
-            assert!(vm.is_failed());
+            assert!(!vm.is_failed());
+            assert_eq!(vm.error_status(), 2, "{call}");
         }
     }
     Ok(())
@@ -121,20 +124,40 @@ fn calls_in_their_own_phase_still_work() -> TestResult {
 }
 
 #[test]
-fn unmeasured_phases_keep_the_previous_defaults() -> TestResult {
-    // トップレベルとhttpReplyは実ゲームで未測定。従来の既定値を維持し、エラーにしない。
+fn top_level_and_http_reply_use_the_same_phase_rules() -> TestResult {
+    // トップレベルとhttpReplyでもI/O・描画フラグは0であり、arityが正しければ
+    // outsideエラーになります（E4、Phase 1の静的確定）。
+    for (call, wording) in [
+        ("output.setNumber(1, 9)", OUTPUT),
+        ("output.setBool(1, true)", OUTPUT),
+        ("local x = input.getNumber(1)", INPUT),
+        ("local x = input.getBool(1)", INPUT),
+        ("screen.drawClear()", SCREEN),
+        ("local w = screen.getWidth()", SCREEN),
+    ] {
+        let mut vm = Microcontroller::new(MicrocontrollerConfig::default())?;
+        let error = vm.load(call.as_bytes(), "@main.lua").err().ok_or(call)?;
+        assert_eq!(error.kind, ErrorKind::Lua, "{call}");
+        assert!(error.message.contains(wording), "{call}: {}", error.message);
+        // ロード失敗はステータス3として記録されます（E9）。
+        assert_eq!(vm.error_status(), 3, "{call}");
+        assert!(!vm.is_failed());
+    }
+    // httpReply内でも同じです。
     let mut vm = vehicle(
         EnvironmentProfile::Game,
-        "top = {input.getNumber(1), input.getBool(1), screen.getWidth(), screen.getHeight()}\noutput.setNumber(1, 9)\noutput.setBool(1, true)\nscreen.drawClear()\nfunction onTick()\n  async.httpGet(80, '/x')\n  output.setNumber(2, top[1] + top[3] + top[4] + (top[2] and 1 or 0))\nend\nfunction httpReply(port, request, reply)\n  seen = {input.getNumber(1), screen.getWidth()}\n  output.setNumber(3, 4)\n  screen.drawClear()\nend",
+        "function onTick()\n  async.httpGet(80, '/x')\nend\nfunction httpReply(port, request, reply)\n  output.setNumber(3, 4)\nend",
     )?;
-    assert_eq!(vm.output().numbers[0], 0.0);
-    assert!(!vm.output().booleans[0]);
     vm.tick(&signal())?;
-    assert_eq!(vm.output().numbers[1], 0.0);
     let request = vm.drain_http_requests().pop().ok_or("no request")?;
-    assert_eq!(vm.http_reply(request.token, b"ok")?, RunOutcome::Completed);
+    let error = vm
+        .http_reply(request.token, b"ok")
+        .err()
+        .ok_or("httpReply output")?;
+    assert!(error.message.contains(OUTPUT), "{}", error.message);
+    // httpReply失敗はステータス5として記録されます（E9）。
+    assert_eq!(vm.error_status(), 5);
     assert_eq!(vm.output().numbers[2], 0.0);
-    assert!(!vm.is_failed());
     Ok(())
 }
 
@@ -164,15 +187,24 @@ fn named_callbacks_use_the_phase_of_their_entry() -> TestResult {
 }
 
 #[test]
-fn argument_type_errors_are_reported_before_the_phase() -> TestResult {
-    // 引数の型が不正な呼び出しは、phaseにかかわらず従来どおり型エラーになる。
+fn phase_is_checked_before_argument_conversion() -> TestResult {
+    // 検査順序は arity → phase → 変換 です（E2）。型の合わない引数でも、
+    // phase違反が先に報告されます。変換そのものはphase通過後に行われ、
+    // 変換できない値はエラーではなく0として扱われます（E1）。
     let mut vm = vehicle(
         EnvironmentProfile::Game,
         "function onDraw()\n  input.getNumber({})\nend",
     )?;
-    let error = vm.draw(32, 32).err().ok_or("type error")?;
+    let error = vm.draw(32, 32).err().ok_or("phase error")?;
     assert_eq!(error.kind, ErrorKind::Lua);
-    assert!(!error.message.contains(INPUT), "{}", error.message);
+    assert!(error.message.contains(INPUT), "{}", error.message);
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onTick()\n  output.setNumber(1, input.getNumber({}))\n  output.setNumber(2, input.getNumber(true))\nend",
+    )?;
+    vm.tick(&signal())?;
+    assert_eq!(vm.output().numbers[0], 0.0);
+    assert_eq!(vm.output().numbers[1], 0.0);
     Ok(())
 }
 

@@ -1,6 +1,16 @@
 # Changelog
 
-## 未公開
+## 0.5.0 — 2026-11-16
+
+### Component Mod プロファイルの追加
+
+- 第3のプロファイルとして Component Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`が、順序付きライフサイクル（`load`→`parse`→`add_to_simulation`→`tick`/`render`→`remove_from_simulation`）と実ゲームのエラーステータス（onTick=2、ロード=3、その他=5。timeoutは数値が未確定のため数値を主張しない表現）を所有する。tickだけがステータスゲートを持ち、自動復帰はない。
+- 64関数のうち`matrix`の13関数（Component集合、`scale`を含む）と`debug.log`はエンジン実装で、残り50関数はホスト提供ドメイン（sub-trait 11種、parserを含む）として、提供された分だけ登録される。引数の個数が合わない呼び出しはLuaエラー（`Wrong number of args`）になり、型は無言変換される（共有matrixの`identity`だけは実ゲームに個数検査が無いため例外）。`debug.log`は個数だけがエラーで型は無言という関数単位の例外（Component系統のみ）。
+- スクリプトの読み込みはホスト契約とし、新しいAPIは作らなかった。定義XMLの`lua_filename`属性を、パッケージ内アセット→実ファイルの順で解決し、属性値そのままのチャンク名で読み込む。
+- 解析側にComponentプロファイルの経路（`component_api_roots`、`component_diagnostics`、`lint_module_component`）と、予約語へのComponentコールバック名4件の追加を行った。
+- TypeScript SDKへComponent Modを公開した（W9'）。WASMセッションにComponentモード（mode 3）と制御アクション（parse / add_to_simulation / tick / render / remove_from_simulation / status）を追加し、`AddonVm`と同型の`ComponentVm`と`LuaEngine.createComponent`を提供する。ホスト提供ドメインは、addonの`server.*`登録とは別に、ドメイン単位の型付きプロバイダ（`ComponentProviders`）としてTSホストから供給するブリッジを設けた。値の転送は`value_codec`の型付き形式に揃え、CompositeとmatrixはLuaテーブルと同じ形で運ぶ。parserは専用転送で、方向はRust側のパース状態が決め、TS側はparseハンドラとして応じる。
+- 生成カタログに`COMPONENT_API_CATALOG`とenvironmentの`componentRoots`/`componentCallbacks`を追加した。ABIのcapabilitiesに`CAP_COMPONENT`（32）を追加した（既存ビットは不変）。
+- build/minifyパイプラインにComponent入口を追加した（`storm-lua-build`の`build_component`とcompilerの`buildComponent`）。addonと同じくinclude-onceリンクのみで、最適化（短縮化）は行わない。
 
 ### ラスタライザの高速化
 
@@ -16,6 +26,39 @@
 - `mlua`の0.11/0.12化は見送った。どちらの版でも`Thread::set_hook`の内部実装変更により、addonの`synchronous_events`テスト（`nested_lua_error_restores_debugger_and_preserves_non_tick_callbacks`）がLuaのアサーションで異常終了する。切り分けは済んでおり、`=0.10.5`の固定を維持する。
 - npm側は`vite` 8.3.8、`wrangler` 4.162.0、`playwright` 1.65.1、`@types/node` 26へ上げた。miniflareが厳密に固定する`undici` 7.28.0と`sharp` 0.35.2は、appの`overrides`で7.30.2と0.35.5へ寄せた。
 - `typescript`は5.8.3を維持する。5.9.3と7.0.2では`WebAssembly.instantiate`の戻り値の型が変わり、`packages/lua-engine/src/raster.ts`がTS2339で失敗する。
+
+### matrix の実ゲーム整合
+
+- matrix 実装を `storm-lua-addon` から `storm-lua-vm` の共有モジュールへ移し、addon は re-export で使う。Component Mod と共用する土台になる。
+- `matrix.rotationToFaceXZ` を追加した（式は実ゲームの挙動で確認した）。`matrix.scale` は Component Mod 用の集合にだけ追加し、addon には入れていない。
+- 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も identity を除き完全一致を要求する（`Wrong number of args`）。
+- multiply の合成順序は、実ゲームと現行実装が一致することを乱数行列200ケースの数値比較で確認したため変更していない。
+- `multiplyXYZW` のベクトル成分を、実ゲームどおり f32 へ丸めてから計算するようにした。
+### VMコア意味論の実ゲーム仕様への整合
+
+- MC APIの引数意味論を実ゲームへ合わせた。引数の個数が合わない呼び出しはエラーにならず戻り値0個で無言に戻り、値の型はLuaの変換規則で変換され、変換できない値は0として扱われる。検査の順序は個数→phaseフラグ→変換。トップレベルとhttpReplyでもI/O・描画はoutsideエラーになる。Compositeチャンネルはcvttsd2si相当の変換となり、範囲外の大きな値やNaNでもエラーにならない。
+- エラー後の回復モデルを実ゲームのエラーステータスへ合わせた。通常のLuaエラーではVMは失敗状態にならず、Vehicleはステータス（onDraw=1、onTick=2、ロード=3、httpReply=5）と最大11件のエラーリングを保持し、エラー中はonTick/onDrawをスキップする一方でhttpReplyは配送を続ける。Addonはステータス（onTick=2、ロード=3、それ以外=5）を保持し、ステータス5は報告後のtickで自動復帰する。どちらも`error_status`/`error_log`で参照できる。
+- 実行制限を再構成した。壁時計1001msの時間制限を既定で有効にし、超過は実ゲームと同じ文面のLuaエラーになる。命令数・Luaメモリ・ソース長の上限は既定で無効になり、ホストが明示した場合だけ効く（`ExecutionLimits`の各項目は`Option`になった）。
+- Gameプロファイルの`math.random`の既定を、実ゲームと同じCRT互換のプロセス共有ストリームへ変えた。VMごとの決定的ストリームは`deterministic_random`オプションで選べる。Vehicleの`MicrocontrollerConfig`にもホストCRTコンテキスト（`random`）と`deterministic_random`を追加した。
+- Vehicle/Addon環境から`select`を除き（baseは6関数のみ）、`string.dump`を戻した（stringライブラリは完全版）。
+- 関数でないコールバックは、エラーではなく「不在」として扱う。Addonの`tick(game_ticks)`は符号付き整数を受け付け、0以下でも拒否しない。
+
+### Addonホスト面の実ゲーム整合
+
+- HTTPの検証を実ゲームの契約へ合わせ、検証で弾くことをやめた。ポートは符号付き整数の下位16bitとして扱い（0・負数・65535超も通る）、リクエストは先頭の`/`や長さで制限せずそのまま保持し、未処理件数の上限も外した。応答の1MiB上限（単体・合算）も外し、`reply`の拒否はトークンの不一致だけになった。用途のなくなった`HttpError::Invalid`を削除した（公開APIの変更）。
+- `debug.log`を実ゲームの意味論へ合わせた。引数1個で文字列のときだけ記録し、数値はLuaの文字列変換で通す。それ以外（0個・複数・nil・真偽値・テーブル・関数）は無言で何もしない。1行16KiB・件数と総量の上限と、上限到達時のエラー化を`debug.log`から外した。`print`は従来どおり上限付きの開発用拡張として維持する。
+- プロパティ宣言の検証をやめた。sliderの範囲・刻み・defaultの有限性や範囲は検証せず宣言値をそのまま保持し、名前の長さと件数の予算エラー、同名で定義が異なる場合の競合エラーも外した。再宣言は最後の宣言が有効になる。ホストが設定するoverride値の検証は従来どおり行う。
+
+### screen/描画意味論の実ゲーム整合
+
+- 色変換（`setColor`/`setMapColor*`）を実ゲームへ合わせた。成分はゼロ方向へ切り捨てて下位8bitを格納し（クランプなしのラップ）、NaN・非有限・範囲外は0、非数値は0になる。エラーにはならない。alphaは省略時のみ255で、明示nilは0。
+- `screen.drawTextBox`のalignは省略できるようになった（省略時-1、明示nilは0、[-1, 1]へクランプ）。カタログの必須宣言も合わせた。
+- `screen.drawMap`は1フレーム1回までになった。2回目以降は引数を読む前に無言で戻り、非有限座標でもエラーにならない。
+- `map.screenToMap` / `map.mapToScreen`を追加した（7引数・戻り値2個、仕様の変換式をfloat32の演算順で評価）。
+- `screen.getWidth` / `getHeight`の戻り値をdoubleにした（従来はLua整数）。
+- `reset()`をまたいでもComposite出力が保持されるようになった（従来は再生成で全0に戻っていた）。
+- `drawText`は文字列をbyte単位でglyph IDとして照合するようになった（UTF-8 decodeなし）。対応glyphがないbyteは描画も横送りもしない。`drawTextBox`はUTF-8をdecodeし、glyphがあるcodepoint（32〜126）だけをトークンとするトークン単位の折返し、TABの空白4倍、LFの改行トークンへ合わせた。画面契約の採用ケースは、この規則変更で画素が変わる34ケース（text 1件・textBox 33件）の期待値を、実ゲームの挙動という独立した導出に基づいて更新した（他の709ケースは不変）。
+- 円の周辺点を、float32のtau逐次加算による実ゲームの生成規則へ合わせた（分割数15でoutline 16点・filled 15点になる癖を含む）。塗り三角形は頂点を (f(x), f(f(y)−1)) へ移すwrapper規則へ置き換えた（採用画素は不変）。`drawRectF`のY−1は、現行のsnap+floor境界モデルが実機撮影で検証済みの採用画素と一致しているため、そのままでは適用せず現行維持とした（記録参照）。
 
 ### フレームが変わったかどうかの確かめ方
 
@@ -58,7 +101,7 @@
 ### 実ゲームに合わせた挙動の変更（非互換）
 
 - 呼べないphaseで呼んだ`input`、`output`、`screen`の関数が、実ゲームと同じ文言のLuaエラーになった。対象は、`onDraw`の実行中の`input.*`と`output.*`、`onTick`の実行中の`screen.*`である。従来は読み出しが0または`false`を返し、書き込みと描画は無視されていた。Stormworks v1.15.26の実機ではどれもスクリプトが停止するため、ゲームで止まるスクリプトがエンジンでは動き続けていた。
-- トップレベルと`httpReply`での呼び出しは実機で測定していないので、従来の挙動のままにした。
+- トップレベルと`httpReply`での呼び出しも、v1.15.26の実ゲームでも同じoutsideエラーになることを確認し、本版で合わせた（引数の個数が正しい場合。従来は0/falseを返すか無言で無視していた）。
 - この挙動に依存して`onDraw`から`output`を呼んでいたスクリプトは、エラーで停止するようになる。コンパイラの診断`input-outside-ontick`と`output-outside-ontick`が、該当する呼び出しを事前に報告する。
 
 ## 0.4.1 — 2026-11-04

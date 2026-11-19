@@ -1,12 +1,15 @@
 //! 選択されたLuaバックエンドが実際にWASM上で実行可能であることを証明するためのテスト専用実行可能ファイル。
-use std::{cell::Cell, rc::Rc};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 use storm_lua_vm::backend::Lua;
 
 fn check() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..4 {
         let lua = Lua::new();
-        let captured = Rc::new(Cell::new(0_f32));
-        let target = Rc::clone(&captured);
+        let captured = Arc::new(AtomicU32::new(0_f32.to_bits()));
+        let target = Arc::clone(&captured);
         lua.globals().set(
             "input_number",
             lua.create_function(|_, ()| Ok(16_777_217_f32))?,
@@ -14,7 +17,7 @@ fn check() -> Result<(), Box<dyn std::error::Error>> {
         lua.globals().set(
             "output_number",
             lua.create_function(move |_, n: f64| {
-                target.set(n as f32);
+                target.store((n as f32).to_bits(), Ordering::Relaxed);
                 Ok(())
             })?,
         )?;
@@ -22,7 +25,7 @@ fn check() -> Result<(), Box<dyn std::error::Error>> {
         if difference != 1.0
             || integer != i64::MAX
             || input != 16_777_216.0
-            || captured.get() != 16_777_216_f32
+            || f32::from_bits(captured.load(Ordering::Relaxed)) != 16_777_216_f32
         {
             return Err("numeric contract mismatch".into());
         }

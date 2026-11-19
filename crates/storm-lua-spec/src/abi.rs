@@ -13,8 +13,11 @@ pub const CAP_DEBUG: u32 = 4;
 pub const CAP_ADDON: u32 = 8;
 /// 同期JSホストコールバックがランタイムアダプタにリンクされています。
 pub const CAP_HOST_SERVICES: u32 = 16;
+/// 独立したホスト駆動型Component Modプロファイル。
+pub const CAP_COMPONENT: u32 = 32;
 /// ワークスペースによって実装されている機能群。各モジュールのアクティブなサブセットを照会してください。
-pub const CAPABILITIES: u32 = CAP_RASTER | CAP_RUNTIME | CAP_DEBUG | CAP_ADDON | CAP_HOST_SERVICES;
+pub const CAPABILITIES: u32 =
+    CAP_RASTER | CAP_RUNTIME | CAP_DEBUG | CAP_ADDON | CAP_HOST_SERVICES | CAP_COMPONENT;
 /// 外部関数呼び出しの結果コード。アダプタの`Status`とTypeScriptの`STATUS`はこの値から作ります。
 pub mod status {
     /// 正常に完了。

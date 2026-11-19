@@ -1,9 +1,9 @@
 //! Adopted independent Windows CRT/Lua primitive traces; no native bytes required.
 #![allow(clippy::unwrap_used, clippy::panic)]
 use serde_json::Value as Json;
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 use storm_lua_vm::{
     backend::{MultiValue, Value},
@@ -12,18 +12,20 @@ use storm_lua_vm::{
 };
 struct Tape {
     values: Vec<u32>,
-    cursor: Cell<usize>,
-    seeds: RefCell<Vec<u32>>,
+    cursor: AtomicUsize,
+    seeds: Mutex<Vec<u32>>,
 }
 impl CrtRandomSource for Tape {
     fn draw(&self) -> Result<u32, String> {
-        let i = self.cursor.get();
+        let i = self.cursor.fetch_add(1, Ordering::Relaxed);
         let value = *self.values.get(i).ok_or("native draw tape exhausted")?;
-        self.cursor.set(i + 1);
         Ok(value)
     }
     fn seed(&self, value: u32) -> Result<(), String> {
-        self.seeds.borrow_mut().push(value);
+        self.seeds
+            .lock()
+            .map_err(|_| "seed tape is poisoned")?
+            .push(value);
         Ok(())
     }
 }
@@ -52,10 +54,10 @@ fn original_windows_sampler_120_random_and_27_seed_cases() {
     let mut counts = [0; 2];
     for case in fixture["cases"].as_array().unwrap() {
         let context = format!("{} {}", case["function"], case["name"]);
-        let tape = Rc::new(Tape {
+        let tape = Arc::new(Tape {
             values: serde_json::from_value(case["raw_draws"].clone()).unwrap(),
-            cursor: Cell::new(0),
-            seeds: RefCell::new(Vec::new()),
+            cursor: AtomicUsize::new(0),
+            seeds: Mutex::new(Vec::new()),
         });
         let mut vm = Vm::new(Default::default()).unwrap();
         let source: SharedCrtRandom = tape.clone();
@@ -79,12 +81,12 @@ fn original_windows_sampler_120_random_and_27_seed_cases() {
             "{context}: {result:?}"
         );
         assert_eq!(
-            tape.cursor.get(),
+            tape.cursor.load(Ordering::Relaxed),
             tape.values.len(),
             "{context} consumption"
         );
         let seeds: Vec<u32> = serde_json::from_value(case["seeds"].clone()).unwrap();
-        assert_eq!(*tape.seeds.borrow(), seeds, "{context} seed words");
+        assert_eq!(*tape.seeds.lock().unwrap(), seeds, "{context} seed words");
         if let Ok(values) = result {
             let expected = case["values"].as_array().unwrap();
             assert_eq!(values.len(), expected.len(), "{context} count");

@@ -19,23 +19,19 @@ fn definitely_truthy(ast: &Ast, expression: NodeId, analyzer: &EffectAnalyzer<'_
             op.as_str(),
             "+" | "-" | "*" | "/" | "//" | "%" | "^" | "&" | "|" | "~" | "<<" | ">>" | ".."
         ),
-        Node::Call(function, _, _) => matches!(
-            analyzer.resolve_builtin_reference(*function).as_deref(),
-            Some(
-                "input.getNumber"
-                    | "property.getNumber"
-                    | "math.abs"
-                    | "math.max"
-                    | "math.min"
-                    | "math.floor"
-                    | "math.sin"
-                    | "math.cos"
-                    | "math.tan"
-                    | "math.atan"
-                    | "math.sqrt"
-                    | "string.format"
-            )
-        ),
+        Node::Call(function, args, _) => {
+            match analyzer.resolve_builtin_reference(*function).as_deref() {
+                // v0.5.0 (`E1`): wrong argument count returns 0 values (`nil`), which is falsy.
+                Some("input.getNumber" | "property.getNumber") => {
+                    args.len() == 1 && !matches!(ast.node(args[0]), Node::Call(..) | Node::Vararg)
+                }
+                Some(
+                    "math.abs" | "math.max" | "math.min" | "math.floor" | "math.sin" | "math.cos"
+                    | "math.tan" | "math.atan" | "math.sqrt" | "string.format",
+                ) => true,
+                _ => false,
+            }
+        }
         _ => false,
     }
 }

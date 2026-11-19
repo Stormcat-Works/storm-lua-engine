@@ -80,8 +80,8 @@ pub fn analyze(project: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
         .map_err(|error| JsValue::from_str(&format!("failed to encode analyze result: {error}")))
 }
 
-fn bytes(value: Vec<u8>) -> Uint8Array {
-    Uint8Array::from(value.as_slice())
+fn bytes(value: &[u8]) -> Uint8Array {
+    Uint8Array::from(value)
 }
 
 /// Coarse-grained public WASM boundary: one source/options input, one result output.
@@ -112,11 +112,11 @@ fn encode_prepared_jobs(
 ) -> Result<JsValue, JsValue> {
     let object = Object::new();
     let context = encode_search_context(context).map_err(|error| JsValue::from_str(&error))?;
-    Reflect::set(&object, &JsValue::from_str("context"), &bytes(context))?;
+    Reflect::set(&object, &JsValue::from_str("context"), &bytes(&context))?;
     let encoded_jobs = Array::new();
     for job in jobs {
         let encoded = encode_candidate_job(&job).map_err(|error| JsValue::from_str(&error))?;
-        encoded_jobs.push(&bytes(encoded));
+        encoded_jobs.push(&bytes(&encoded));
     }
     Reflect::set(&object, &JsValue::from_str("jobs"), &encoded_jobs)?;
     Ok(object.into())

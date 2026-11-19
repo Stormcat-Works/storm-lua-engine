@@ -143,11 +143,11 @@ impl HostBridge {
     }
 }
 
-fn integer(value: i64) -> LuaValue {
+const fn integer(value: i64) -> LuaValue {
     LuaValue::Integer(value)
 }
 
-fn number(value: f64) -> LuaValue {
+const fn number(value: f64) -> LuaValue {
     LuaValue::Number(value)
 }
 

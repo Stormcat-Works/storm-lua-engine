@@ -1,6 +1,7 @@
 //! 検出可能なAPIメタデータと実際にインストールされた関数の一致を保証します。
 #[path = "support/assertions.rs"]
 mod assertion_support;
+use std::fmt::Write as _;
 use storm_lua_microcontroller::{Microcontroller, MicrocontrollerConfig};
 use storm_lua_spec::catalog::FUNCTIONS;
 
@@ -18,9 +19,9 @@ fn every_catalog_entry_matches_its_implemented_profile() -> Result<(), Box<dyn s
     for function in FUNCTIONS {
         assert!(seen.insert(function.path));
         if function.availability == "host-extension" {
-            extended.push_str(&format!("assert(type({})=='function')\n", function.path));
+            writeln!(extended, "assert(type({})=='function')", function.path)?;
         } else {
-            regular.push_str(&format!("assert(type({})=='function')\n", function.path));
+            writeln!(regular, "assert(type({})=='function')", function.path)?;
         }
     }
     regular.push_str("assert(print==nil and type(debug.log)=='function' and debug.getinfo==nil)");
@@ -41,7 +42,7 @@ fn addon_catalog_is_distinct_and_all_owned_functions_exist(
     let mut seen = std::collections::HashSet::new();
     for path in storm_lua_spec::addon::FUNCTIONS {
         assert!(seen.insert(path));
-        script.push_str(&format!("assert(type({path})=='function')\n"));
+        writeln!(script, "assert(type({path})=='function')")?;
     }
     addon.load(
         &assertion_support::with_assertions(script.as_bytes()),
@@ -280,7 +281,7 @@ fn component_catalog_matches_provider_availability() -> Result<(), Box<dyn std::
         render: Some(all.clone()),
         physics: Some(all.clone()),
         environment: Some(all.clone()),
-        parse: Some(all.clone()),
+        parse: Some(all),
     };
     let mut component =
         storm_lua_component::Component::new(storm_lua_component::ComponentConfig {
@@ -292,7 +293,7 @@ fn component_catalog_matches_provider_availability() -> Result<(), Box<dyn std::
     let mut seen = std::collections::HashSet::new();
     for function in storm_lua_spec::component::FUNCTIONS {
         assert!(seen.insert(function.path));
-        script.push_str(&format!("assert(type({})=='function')\n", function.path));
+        writeln!(script, "assert(type({})=='function')", function.path)?;
     }
     assert_eq!(seen.len(), 64);
     component.load(
@@ -308,7 +309,7 @@ fn component_catalog_matches_provider_availability() -> Result<(), Box<dyn std::
         } else {
             "nil"
         };
-        script.push_str(&format!("assert(type({})=='{expected}')\n", function.path));
+        writeln!(script, "assert(type({})=='{expected}')", function.path)?;
     }
     bare.load(
         &assertion_support::with_assertions(script.as_bytes()),

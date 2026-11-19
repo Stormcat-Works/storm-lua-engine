@@ -1172,22 +1172,22 @@ pub fn factor_signed_expressions(
     let original = measure_size(ast, root);
     let mut factored = 0usize;
     for _ in 0..max_rounds {
-        let source = clone_ast(ast);
-        let res = resolve(&source, root);
-        let analyzer = EffectAnalyzer::new(&source, &res, root, true);
-        let budgets = block_local_budgets(&source, root);
-        let baseline = measured(&source, root);
-        let mut used_names = HashSet::<String>::new();
-        storm_lua_syntax::ast_utils::walk(&source, root, &mut |id| {
+        let source = &*ast;
+        let res = resolve(source, root);
+        let analyzer = EffectAnalyzer::new(source, &res, root, true);
+        let budgets = block_local_budgets(source, root);
+        let baseline = measured(source, root);
+        let mut used_names = HashSet::<SymbolId>::new();
+        storm_lua_syntax::ast_utils::walk(source, root, &mut |id| {
             if let Node::Name(symbol) = source.node(id) {
-                used_names.insert(source.strings.get(*symbol).to_string());
+                used_names.insert(*symbol);
             }
         });
-        let mut scratch = clone_ast(&source);
+        let mut scratch = clone_ast(source);
         let mut groups = Vec::<Group>::new();
         let mut order = 0usize;
         inspect_block(
-            &source,
+            source,
             &res,
             &analyzer,
             &mut scratch,
@@ -1207,7 +1207,10 @@ pub fn factor_signed_expressions(
         for group in groups {
             let mut serial = 0usize;
             let mut synthetic_name = format!("__stormmin_signed_{serial}");
-            while used_names.contains(&synthetic_name) {
+            while used_names
+                .iter()
+                .any(|id| source.strings.get(*id) == synthetic_name.as_str())
+            {
                 serial += 1;
                 synthetic_name = format!("__stormmin_signed_{serial}");
             }
@@ -1221,6 +1224,13 @@ pub fn factor_signed_expressions(
                 continue;
             };
 
+            // Node set of the group block, collected once per group: the
+            // declaration-inside test below is a pure membership question,
+            // so re-walking the block for every read binding is wasted work.
+            let mut block_nodes = HashSet::<NodeId>::new();
+            storm_lua_syntax::ast_utils::walk(source, group.block, &mut |id| {
+                block_nodes.insert(id);
+            });
             let mut reusable = Vec::<BindingId>::new();
             for bid in group.reads.iter().copied() {
                 let binding = &res.bindings[bid as usize];
@@ -1251,15 +1261,9 @@ pub fn factor_signed_expressions(
                 // the group block in all cases and fall back to the synthetic
                 // local carrier otherwise; same-block reuse (the profitable
                 // case) is unaffected.
-                let decl_inside = binding.decl_node.is_some_and(|decl| {
-                    let mut found = false;
-                    storm_lua_syntax::ast_utils::walk(&source, group.block, &mut |id| {
-                        if id == decl {
-                            found = true;
-                        }
-                    });
-                    found
-                });
+                let decl_inside = binding
+                    .decl_node
+                    .is_some_and(|decl| block_nodes.contains(&decl));
                 if !decl_inside {
                     continue;
                 }
@@ -1267,9 +1271,9 @@ pub fn factor_signed_expressions(
                 let mut matched = 0usize;
                 let mut count_scratch = clone_ast(&scratch);
                 for statement in statements.iter().take(last + 1).skip(first).copied() {
-                    total += count_bid(&source, &res, statement, bid);
+                    total += count_bid(source, &res, statement, bid);
                     matched += count_matched_bid(
-                        &source,
+                        source,
                         &res,
                         &analyzer,
                         &mut count_scratch,
@@ -1280,7 +1284,7 @@ pub fn factor_signed_expressions(
                 }
                 if total == matched
                     && total > 0
-                    && scan_old_value(&source, &res, &analyzer, group.block, last + 1, bid)
+                    && scan_old_value(source, &res, &analyzer, group.block, last + 1, bid)
                         != ScanState::Unsafe
                 {
                     reusable.push(bid);
@@ -1314,7 +1318,7 @@ pub fn factor_signed_expressions(
                     continue;
                 }
                 let size = measure_signed_candidate(
-                    &source,
+                    source,
                     &res,
                     &analyzer,
                     &scratch,
@@ -1342,7 +1346,7 @@ pub fn factor_signed_expressions(
         // Replay the winning candidate on a tracked clone: the origin-less
         // trial above must never be committed (see `apply_signed_candidate`).
         let winner = apply_signed_candidate(
-            &source,
+            source,
             &res,
             &analyzer,
             &scratch,

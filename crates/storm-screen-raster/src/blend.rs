@@ -6,6 +6,13 @@ pub(crate) fn div255(x: u32) -> u8 {
     (((x + 1) * 257) >> 16) as u8
 }
 
+/// `div255(x - 1)` と同じ値。呼び出し側が +1 を係数へ畳み込み済みの場合の形で、
+/// 画素ごとの加算を1つ省けます。
+#[inline]
+pub(crate) fn div255_pre_incremented(x: u32) -> u8 {
+    ((x * 257) >> 16) as u8
+}
+
 #[inline]
 fn channel(source: u8, alpha: u8, destination: u8) -> u8 {
     let a = u32::from(alpha);
@@ -15,7 +22,8 @@ fn channel(source: u8, alpha: u8, destination: u8) -> u8 {
 /// 同一ソース色を複数ピクセルへ連続適用する際の事前計算済みブレンド係数。
 #[derive(Clone, Copy)]
 pub(crate) struct PreparedBlend {
-    base: [u32; 4],
+    /// `div255` の「+1」を畳み込んだ係数（元の base + 1）。
+    base_plus1: [u32; 4],
     inv_a: u32,
 }
 
@@ -24,7 +32,7 @@ impl PreparedBlend {
     pub(crate) fn new(source: Rgba8) -> Self {
         let [r, g, b, a] = source.0.map(u32::from);
         Self {
-            base: [r * a + 127, g * a + 127, b * a + 127, a * a + 127],
+            base_plus1: [r * a + 128, g * a + 128, b * a + 128, a * a + 128],
             inv_a: 255 - a,
         }
     }
@@ -32,10 +40,10 @@ impl PreparedBlend {
     #[inline]
     pub(crate) fn apply(self, pixel: &mut [u8; 4]) {
         let inv_a = self.inv_a;
-        pixel[0] = div255(self.base[0] + u32::from(pixel[0]) * inv_a);
-        pixel[1] = div255(self.base[1] + u32::from(pixel[1]) * inv_a);
-        pixel[2] = div255(self.base[2] + u32::from(pixel[2]) * inv_a);
-        pixel[3] = div255(self.base[3] + u32::from(pixel[3]) * inv_a);
+        pixel[0] = div255_pre_incremented(self.base_plus1[0] + u32::from(pixel[0]) * inv_a);
+        pixel[1] = div255_pre_incremented(self.base_plus1[1] + u32::from(pixel[1]) * inv_a);
+        pixel[2] = div255_pre_incremented(self.base_plus1[2] + u32::from(pixel[2]) * inv_a);
+        pixel[3] = div255_pre_incremented(self.base_plus1[3] + u32::from(pixel[3]) * inv_a);
     }
 }
 

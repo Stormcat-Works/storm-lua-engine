@@ -201,8 +201,15 @@ impl ScreenRaster {
             floor_div
         };
         let (w, h) = (self.width, self.height);
-        let [x1, y1] = [snap_units(p[0][0], w), snap_units(p[0][1], h)];
-        let [x2, y2] = [snap_units(p[1][0], w), snap_units(p[1][1], h)];
+        let (sx, sy) = (snap_scale(w), snap_scale(h));
+        let [x1, y1] = [
+            snap_units_scaled(p[0][0], sx),
+            snap_units_scaled(p[0][1], sy),
+        ];
+        let [x2, y2] = [
+            snap_units_scaled(p[1][0], sx),
+            snap_units_scaled(p[1][1], sy),
+        ];
         if x1 == x2 && y1 == y2 {
             return;
         }
@@ -228,15 +235,71 @@ impl ScreenRaster {
         }
         let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
         let seg = [x1, y1, x2, y2];
+        let (seg_dx, seg_dy) = (x2 - x1, y2 - y1);
         let da_128 = 128.0 * da;
         let da_256 = 256.0 * da;
+        // 商の列は等差数列の床除算なので、初項と終項が整数除算の正確範囲に収まる
+        // 場合は漸化で進めます。収まらない場合と参照経路では従来の毎ステップ除算を
+        // 使うため、どちらの経路でも結果は同じになります。
+        let mut quotients = LineQuotients::PerStep;
+        #[cfg(test)]
+        let reference_paths = self.reference_paths;
+        #[cfg(not(test))]
+        let reference_paths = false;
+        if !reference_paths {
+            let n_lo = b1 * da + (lo * 256.0 - a1) * db;
+            let n_hi = b1 * da + (hi * 256.0 - a1) * db;
+            let (num_lo, num_hi, step) = if xmajor {
+                (n_lo + da_128, n_hi + da_128, 256.0 * db)
+            } else {
+                (da_128 - n_lo, da_128 - n_hi, -256.0 * db)
+            };
+            if da_256 <= EXACT_INTEGER_LIMIT
+                && num_lo.fract() == 0.0
+                && num_hi.fract() == 0.0
+                && num_lo.abs() <= EXACT_INTEGER_LIMIT
+                && num_hi.abs() <= EXACT_INTEGER_LIMIT
+            {
+                let den = da_256 as i64;
+                let num = num_lo as i64;
+                quotients = LineQuotients::Seq {
+                    q: num.div_euclid(den),
+                    rem: num.rem_euclid(den),
+                    den,
+                    step: step as i64,
+                    negate: !xmajor,
+                };
+            }
+        }
         for ip in lo as u32..=hi as u32 {
             let p = f64::from(ip);
-            let n = b1 * da + (p * 256.0 - a1) * db;
-            let q = if xmajor {
-                floor_div(n + da_128, da_256)
-            } else {
-                -floor_div(-(n - da_128), da_256)
+            let q = match &mut quotients {
+                LineQuotients::PerStep => {
+                    let n = b1 * da + (p * 256.0 - a1) * db;
+                    if xmajor {
+                        floor_div(n + da_128, da_256)
+                    } else {
+                        -floor_div(-(n - da_128), da_256)
+                    }
+                }
+                LineQuotients::Seq {
+                    q,
+                    rem,
+                    den,
+                    step,
+                    negate,
+                } => {
+                    let current = if *negate { -*q } else { *q };
+                    *rem += *step;
+                    if *rem >= *den {
+                        *rem -= *den;
+                        *q += 1;
+                    } else if *rem < 0 {
+                        *rem += *den;
+                        *q -= 1;
+                    }
+                    current as f64
+                }
             };
             let (cx, cy) = if xmajor {
                 (p * 256.0, q * 256.0)
@@ -252,10 +315,10 @@ impl ScreenRaster {
             {
                 continue;
             }
-            if meets(seg, cx, cy)
+            if meets(seg, seg_dx, seg_dy, cx, cy)
                 || corners
                     .iter()
-                    .any(|[ox, oy]| on_segment(seg, cx + ox, cy + oy))
+                    .any(|[ox, oy]| on_segment(seg, seg_dx, seg_dy, cx + ox, cy + oy))
             {
                 if xmajor {
                     self.plot_with_blend(p, q, blend);
@@ -281,8 +344,9 @@ impl ScreenRaster {
             return;
         }
         let mut snapped = [[0.0; 2]; 20];
+        let (sx, sy) = (snap_scale(self.width), snap_scale(self.height));
         for (out, point) in snapped.iter_mut().zip(points) {
-            *out = [snap(point[0], self.width), snap(point[1], self.height)];
+            *out = [snap_scaled(point[0], sx), snap_scaled(point[1], sy)];
         }
         let n = points.len().min(snapped.len());
         let pts = &snapped[..n];
@@ -297,15 +361,19 @@ impl ScreenRaster {
             return;
         }
         let blend = (alpha < 255).then(|| PreparedBlend::new(self.color));
+        // 辺ごとの不変量（始点・差分・y範囲）は行ループの前に一度だけ計算します。
+        // 行ごとの交点式そのものは従来どおりで、値は変わりません。
+        let mut edges = [(0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64); 20];
+        for i in 0..n {
+            let [ax, ay] = pts[i];
+            let next = if i + 1 == n { 0 } else { i + 1 };
+            let [bx, by] = pts[next];
+            edges[i] = (ax, ay, bx - ax, by - ay, ay.min(by), ay.max(by));
+        }
         for py in top as u32..=bottom as u32 {
             let y = f64::from(py) + offset;
             let (mut left, mut right) = (f64::INFINITY, f64::NEG_INFINITY);
-            for i in 0..n {
-                let [ax, ay] = pts[i];
-                let next = if i + 1 == n { 0 } else { i + 1 };
-                let [bx, by] = pts[next];
-                let low = ay.min(by);
-                let high = ay.max(by);
+            for &(ax, ay, dx, dy, low, high) in &edges[..n] {
                 if low == high
                     || y < low
                     || y > high
@@ -314,7 +382,7 @@ impl ScreenRaster {
                 {
                     continue;
                 }
-                let x = ax + (bx - ax) * ((y - ay) / (by - ay));
+                let x = ax + dx * ((y - ay) / dy);
                 left = left.min(x);
                 right = right.max(x);
             }
@@ -336,8 +404,9 @@ impl ScreenRaster {
             self.outline(&[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
             return;
         }
-        let (x0, x1) = (snap(x, self.width), snap(x + w, self.width));
-        let (y0, y1) = (snap(y, self.height), snap(y + h, self.height));
+        let (rsx, rsy) = (snap_scale(self.width), snap_scale(self.height));
+        let (x0, x1) = (snap_scaled(x, rsx), snap_scaled(x + w, rsx));
+        let (y0, y1) = (snap_scaled(y, rsy), snap_scaled(y + h, rsy));
         if !finite([x0, x1, y0, y1]) {
             return;
         }
@@ -771,12 +840,23 @@ fn js_round(v: f64) -> f64 {
     }
 }
 /// 1/256px単位の頂点スナップ。`size`はxなら画面幅、yなら画面高さです。
-fn snap_units(v: f64, size: u32) -> f64 {
+/// `snap_units` が画面サイズごとに必要とする尺度と半分。複数の座標を連続して
+/// スナップする呼び出し側で一度だけ計算し、除算の繰り返しを避けます。
+#[derive(Clone, Copy)]
+struct SnapScale {
+    scale: f32,
+    half: f32,
+}
+fn snap_scale(size: u32) -> SnapScale {
     let size = size as f32;
-    let scale = 2.0_f32 / size;
-    let half = size / 2.0;
-    let ndc = (v as f32) * scale + (-1.0 + 0.5 * scale);
-    let screen = ndc * half + half;
+    SnapScale {
+        scale: 2.0_f32 / size,
+        half: size / 2.0,
+    }
+}
+fn snap_units_scaled(v: f64, s: SnapScale) -> f64 {
+    let ndc = (v as f32) * s.scale + (-1.0 + 0.5 * s.scale);
+    let screen = ndc * s.half + s.half;
     if !screen.is_finite() {
         return js_round(v * 256.0);
     }
@@ -789,8 +869,8 @@ fn snap_units(v: f64, size: u32) -> f64 {
         low
     }
 }
-fn snap(v: f64, size: u32) -> f64 {
-    snap_units(v, size) / 256.0
+fn snap_scaled(v: f64, s: SnapScale) -> f64 {
+    snap_units_scaled(v, s) / 256.0
 }
 /// 整数除算で床除算を正確に求められる被演算数の絶対値の上限（2^52）。
 const EXACT_INTEGER_LIMIT: f64 = 4_503_599_627_370_496.0;
@@ -811,24 +891,40 @@ fn floor_div(n: f64, d: f64) -> f64 {
     }
     floor_div_reference(n, d)
 }
+/// 直線ループで各ステップの商を求める方法。`Seq` は分子が等差数列であることを使い、
+/// 初項の除算だけで商と剰余を保持し、以降は加減算だけで進める高速路です。
+enum LineQuotients {
+    /// 従来どおりステップごとに `floor_div` で求める。
+    PerStep,
+    /// 整数の漸化で進める。`negate` は副軸主導（ymajor）の符号反転です。
+    Seq {
+        q: i64,
+        rem: i64,
+        den: i64,
+        step: i64,
+        negate: bool,
+    },
+}
 fn floor_div_reference(n: f64, d: f64) -> f64 {
     let remainder = ((n % d) + d) % d;
     (n - remainder) / d
 }
-fn on_segment([x1, y1, x2, y2]: [f64; 4], px: f64, py: f64) -> bool {
-    (x2 - x1) * (py - y1) == (y2 - y1) * (px - x1)
+fn on_segment([x1, y1, x2, y2]: [f64; 4], dx: f64, dy: f64, px: f64, py: f64) -> bool {
+    dx * (py - y1) == dy * (px - x1)
         && px >= x1.min(x2)
         && px <= x1.max(x2)
         && py >= y1.min(y2)
         && py <= y1.max(y2)
 }
-fn meets([x1, y1, x2, y2]: [f64; 4], cx: f64, cy: f64) -> bool {
-    let dx = x2 - x1;
-    let dy = y2 - y1;
+fn meets([x1, y1, ..]: [f64; 4], dx: f64, dy: f64, cx: f64, cy: f64) -> bool {
     let (mut ln, mut ld, mut hn, mut hd, mut lopen, mut hopen) = (0.0, 1.0, 1.0, 1.0, false, false);
-    for (sx, sy) in [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)] {
-        let a = sx * (x1 - cx) + sy * (y1 - cy);
-        let b = sx * dx + sy * dy;
+    // 符号組合せは u=(x+y) / v=(x-y) への置き換えで同じ値になるため、中心からの
+    // 差は一度だけ計算し、元の走査順 (u, v, -v, -u) のまま適用します。
+    let au = (x1 - cx) + (y1 - cy);
+    let bu = dx + dy;
+    let av = (x1 - cx) - (y1 - cy);
+    let bv = dx - dy;
+    for (a, b) in [(au, bu), (av, bv), (-av, -bv), (-au, -bu)] {
         if b == 0.0 {
             if a >= 128.0 {
                 return false;

@@ -85,6 +85,7 @@ fn map_palette_is_frame_local_and_binary_batches_preserve_the_slot() -> Result<(
     let seen = seen.lock().map_err(|_| "capture is poisoned")?;
     assert!(seen[0][7].is_some());
     assert!(seen[1].iter().all(Option::is_none));
+    drop(seen);
     wire[8] = 8;
     assert!(storm_lua_spec::command_wire::decode(&wire).is_err());
     Ok(())

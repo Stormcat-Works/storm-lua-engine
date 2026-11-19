@@ -15,9 +15,9 @@ fn project(modules: &[(&str, &str)]) -> LuaProject {
         ambient: BTreeMap::new(),
     }
 }
-fn run(project: LuaProject, minify: bool) -> Result<[f32; 3], Box<dyn std::error::Error>> {
+fn run(project: &LuaProject, minify: bool) -> Result<[f32; 3], Box<dyn std::error::Error>> {
     let result = compile_lifeboat(
-        &project,
+        project,
         &ApiProjectCompileOptions {
             metadata_tag: None,
             minify: Some(minify),
@@ -42,7 +42,7 @@ fn include_once_returns_nil_and_has_private_locals_even_with_cycles(
     let p=project(&[("main","local private=9\nlocal value=require('util')\nrequire('util')\nfunction onTick()output.setNumber(1,count);output.setNumber(2,private);output.setNumber(3,value==nil and 1 or 0)end"),
         ("util","local private=3\ncount=(count or 0)+1\nrequire('main')\nreturn 42")]);
     for minify in [false, true] {
-        assert_eq!(run(p.clone(), minify)?, [1.0, 9.0, 1.0]);
+        assert_eq!(run(&p, minify)?, [1.0, 9.0, 1.0]);
     }
     Ok(())
 }
@@ -51,7 +51,7 @@ fn simulator_and_managed_sections_are_removed_without_minify(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let p=project(&[("main","---@section __LB_SIMULATOR_ONLY__\nprint('development')\nrequire('unavailable-dev-tool')\n---@endsection\n-- >>> storm-lua-runner:simio (generated)\ndo sim.setProperty('x',3)end\n-- <<< storm-lua-runner:simio\nfunction onTick()output.setNumber(1,2)end")]);
     for minify in [false, true] {
-        assert_eq!(run(p.clone(), minify)?[0], 2.0);
+        assert_eq!(run(&p, minify)?[0], 2.0);
     }
     Ok(())
 }
@@ -59,7 +59,7 @@ fn simulator_and_managed_sections_are_removed_without_minify(
 fn ordinary_sections_and_pattern_counts_do_not_count_strings_or_comments(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let p=project(&[("main","---@section unused\nfunction unused()missing()end\n---@endsection\n---@section PATTERN used%.%w+ 1 chosen\nused={value=4}\n---@endsection chosen\nlocal text='unused' -- unused\nfunction onTick()output.setNumber(1,used.value)end")]);
-    assert_eq!(run(p, false)?[0], 4.0);
+    assert_eq!(run(&p, false)?[0], 4.0);
     Ok(())
 }
 #[test]
@@ -83,7 +83,7 @@ fn declaration_library_is_injected_but_environment_only_members_fail(
             ]),
         },
     );
-    assert_eq!(run(p.clone(), false)?[0], 7.0);
+    assert_eq!(run(&p, false)?[0], 7.0);
     p.modules
         .insert("main".into(), "sim.setProperty('bad',1)".into());
     assert!(!compile_lifeboat(&p, &Default::default()).ok);

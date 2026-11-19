@@ -140,7 +140,7 @@ fn draw_text_box_wraps_by_tokens_and_handles_tab_and_unknown_codepoints(
     let mut tabbed = ScreenRaster::new(64, 8)?;
     tabbed.submit(&DrawCommand::TextBox(
         [0.0, 0.0, 100.0, 8.0, -1.0, -1.0],
-        "A\tB".as_bytes().to_vec(),
+        b"A\tB".to_vec(),
     ))?;
     let mut tab_expected = ScreenRaster::new(64, 8)?;
     tab_expected.submit(&DrawCommand::Text([0.0, 0.0], b"A".to_vec()))?;

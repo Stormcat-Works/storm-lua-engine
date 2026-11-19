@@ -275,14 +275,14 @@ impl<'a> Ctx<'a> {
         id
     }
 
-    fn lookup(&mut self, name: SymbolId, env: &mut Env) -> BindingId {
+    fn lookup(&mut self, name: SymbolId, env: &Env) -> BindingId {
         if let Some(bid) = env.bindings[name.0 as usize] {
             return bid;
         }
         self.global_bid(name)
     }
 
-    fn mark_name(&mut self, x: NodeId, env: &mut Env, scope: ScopeId, write: bool) {
+    fn mark_name(&mut self, x: NodeId, env: &Env, scope: ScopeId, write: bool) {
         self.pos += 1;
         let name = match &self.ast.nodes[x as usize] {
             Node::Name(s) => *s,

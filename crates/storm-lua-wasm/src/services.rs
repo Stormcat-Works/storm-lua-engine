@@ -395,8 +395,12 @@ pub(crate) fn vehicle(handle: u32, bytes: &[u8]) -> Result<Status, BridgeError> 
     let request = codec::parse(bytes)?;
     if request["action"] == "properties" {
         return session::with(handle, |session| {
-            let properties = session.vm.vehicle()?.properties();
-            let entries: Vec<_> = properties.iter().map(|(label, value)| {
+            let entries: Vec<_> = session
+                .vm
+                .vehicle()?
+                .properties()
+                .iter()
+                .map(|(label, value)| {
                 use storm_lua_spec::property::PropertyValue;
                 match value {
                     PropertyValue::Number(n) => json!({"label":label,"kind":"number","bits":format!("{:016x}",n.to_bits())}),

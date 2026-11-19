@@ -253,36 +253,81 @@ impl PartialEq for SatisficingAttempt {
 // a wall-clock limit. Completed batches stay in the search context.
 const SATISFICING_MAX_CANDIDATE_JOBS: usize = 2;
 
-fn parse_for_search(source: &str, options: &CompileOptions) -> Result<(Ast, NodeId), String> {
+/// 環境検証・ロード合法性検査・字句ルート判定を 1 回だけ実行した結果。
+///
+/// 検査入口と `parse_for_search` は seed 投入の判断のためにこれらの検査を
+/// 先行実行する。結果を下流へ引き渡すことで、`prepare_search_from_parsed` と
+/// `try_satisficing_from_parsed` が同じ検査を再実行せずに済む。特に
+/// `check_load_legality` はソース全体の再パースを伴い、大型ソースでは
+/// コンパイル全体の 4 割前後を占めるため、二重実行は大きな回帰になる。
+#[derive(Clone, Copy)]
+struct SearchPrelude {
+    lexical: bool,
+}
+
+fn run_search_prelude(
+    source: &str,
+    ast: &Ast,
+    root: NodeId,
+    options: &CompileOptions,
+) -> Result<SearchPrelude, String> {
+    storm_lua_analysis::environment_checks::validate(
+        ast,
+        root,
+        options.environment,
+        &options.host_bindings,
+    )?;
+    // Load legality is judged on the source program, before any pass can
+    // remove or move the constructs it depends on (candidates S10/S14).
+    // The verdict mirrors the project VM's load path (dialect rewrite +
+    // PUC parse), so programs the VM accepts pass unchanged.
+    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
+    Ok(SearchPrelude {
+        lexical: storm_lua_analysis::environment_checks::lexical_reason(
+            ast,
+            options.environment,
+            &options.host_bindings,
+        )
+        .is_some(),
+    })
+}
+
+fn search_prelude(
+    source: &str,
+    ast: &Ast,
+    root: NodeId,
+    options: &CompileOptions,
+    prelude: Option<SearchPrelude>,
+) -> Result<SearchPrelude, String> {
+    match prelude {
+        Some(prelude) => Ok(prelude),
+        None => run_search_prelude(source, ast, root, options),
+    }
+}
+
+fn parse_for_search(
+    source: &str,
+    options: &CompileOptions,
+) -> Result<(Ast, NodeId, Option<SearchPrelude>), String> {
     // These options select lexical-only compilation independently of the AST.
     // Keep the normal parse/validation but skip unused source-range collection.
     if options.environment == storm_lua_spec::environment::EnvironmentProfile::Extended
         || !options.host_bindings.is_empty()
     {
-        return parse_source(source).map_err(|error| error.to_string());
+        let (ast, root) = parse_source(source).map_err(|error| error.to_string())?;
+        return Ok((ast, root, None));
     }
     if let Some(name) = &options.origin_source {
         let (mut ast, root, positions, seed) =
             storm_lua_syntax::parser::parse_source_for_inspection(source, true)?;
-        storm_lua_analysis::environment_checks::validate(
-            &ast,
-            root,
-            options.environment,
-            &options.host_bindings,
-        )?;
-        storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
-        if storm_lua_analysis::environment_checks::lexical_reason(
-            &ast,
-            options.environment,
-            &options.host_bindings,
-        )
-        .is_none()
-        {
+        let prelude = run_search_prelude(source, &ast, root, options)?;
+        if !prelude.lexical {
             seed.seed_into(&mut ast, &positions, name, source)?;
         }
-        Ok((ast, root))
+        Ok((ast, root, Some(prelude)))
     } else {
-        parse_source(source).map_err(|error| error.to_string())
+        let (ast, root) = parse_source(source).map_err(|error| error.to_string())?;
+        Ok((ast, root, None))
     }
 }
 
@@ -382,8 +427,15 @@ fn prepare_search_with_dedup(
     deduplicate: bool,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
     options.validate_pass_toggles()?;
-    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
-    prepare_search_from_parsed(source, options, deduplicate, parsed_ast, parsed_root)
+    let (parsed_ast, parsed_root, prelude) = parse_for_search(source, options)?;
+    prepare_search_from_parsed(
+        source,
+        options,
+        deduplicate,
+        parsed_ast,
+        parsed_root,
+        prelude,
+    )
 }
 
 fn prepare_search_from_parsed(
@@ -392,25 +444,10 @@ fn prepare_search_from_parsed(
     deduplicate: bool,
     parsed_ast: Ast,
     parsed_root: NodeId,
+    prelude: Option<SearchPrelude>,
 ) -> Result<(SearchContext, Vec<CandidateJob>), String> {
-    storm_lua_analysis::environment_checks::validate(
-        &parsed_ast,
-        parsed_root,
-        options.environment,
-        &options.host_bindings,
-    )?;
-    // Load legality is judged on the source program, before any pass can
-    // remove or move the constructs it depends on (candidates S10/S14).
-    // The verdict mirrors the project VM's load path (dialect rewrite +
-    // PUC parse), so programs the VM accepts pass unchanged.
-    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
-    if storm_lua_analysis::environment_checks::lexical_reason(
-        &parsed_ast,
-        options.environment,
-        &options.host_bindings,
-    )
-    .is_some()
-    {
+    let prelude = search_prelude(source, &parsed_ast, parsed_root, options, prelude)?;
+    if prelude.lexical {
         return prepare_lexical(source, parsed_ast, parsed_root, options);
     }
     let (base_ast, base_root, property_reads_hardcoded) =
@@ -2500,8 +2537,15 @@ fn try_satisficing_compact(
     // (option B: the fastest fitting optimized candidate wins instead), so
     // always parse for search: the winning optimized candidate needs its
     // tracked origins. Hardcoded properties retain full tracking as before.
-    let (parsed_ast, parsed_root) = parse_for_search(source, options)?;
-    try_satisficing_from_parsed(source, options, max_checkpoints, parsed_ast, parsed_root)
+    let (parsed_ast, parsed_root, prelude) = parse_for_search(source, options)?;
+    try_satisficing_from_parsed(
+        source,
+        options,
+        max_checkpoints,
+        parsed_ast,
+        parsed_root,
+        prelude,
+    )
 }
 pub fn try_satisficing(
     source: &str,
@@ -2519,26 +2563,15 @@ fn try_satisficing_from_parsed(
     max_checkpoints: Option<usize>,
     parsed_ast: Ast,
     parsed_root: NodeId,
+    prelude: Option<SearchPrelude>,
 ) -> Result<SatisficingAttempt, String> {
     let target_size = options
         .target_size
         .ok_or("try_satisficing requires target_size")?;
     let resolved_toggles = resolve_pass_toggles(&options.pass_toggles, options.numeric_mode);
-    storm_lua_analysis::environment_checks::validate(
-        &parsed_ast,
-        parsed_root,
-        options.environment,
-        &options.host_bindings,
-    )?;
-    // Same source-legality gate as prepare_search_from_parsed (S10/S14).
-    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
-    if storm_lua_analysis::environment_checks::lexical_reason(
-        &parsed_ast,
-        options.environment,
-        &options.host_bindings,
-    )
-    .is_some()
-    {
+    // 前段で検査済みなら再実行しない（入口と parse_for_search が引き渡す）。
+    let prelude = search_prelude(source, &parsed_ast, parsed_root, options, prelude)?;
+    if prelude.lexical {
         let (context, jobs) = prepare_lexical(source, parsed_ast, parsed_root, options)?;
         let batches = jobs
             .into_iter()
@@ -2881,20 +2914,8 @@ pub fn compile_code_with_fallible_inspection_compact(
     if !inspect(&ast, root, &positions) {
         return Err("source inspection rejected compilation".into());
     }
-    storm_lua_analysis::environment_checks::validate(
-        &ast,
-        root,
-        options.environment,
-        &options.host_bindings,
-    )?;
-    storm_lua_vm::load_legality::check_load_legality(source.as_bytes())?;
-    let is_lexical = storm_lua_analysis::environment_checks::lexical_reason(
-        &ast,
-        options.environment,
-        &options.host_bindings,
-    )
-    .is_some();
-    if !is_lexical {
+    let prelude = run_search_prelude(source, &ast, root, options)?;
+    if !prelude.lexical {
         if let Some(name) = options.origin_source.as_deref() {
             origin_seed.seed_into(&mut ast, &positions, name, source)?;
         }
@@ -2904,11 +2925,12 @@ pub fn compile_code_with_fallible_inspection_compact(
     drop(positions);
     if let Some(target) = options.target_size {
         finish_target_attempt(
-            try_satisficing_from_parsed(source, options, None, ast, root)?,
+            try_satisficing_from_parsed(source, options, None, ast, root, Some(prelude))?,
             target,
         )
     } else {
-        let (context, jobs) = prepare_search_from_parsed(source, options, true, ast, root)?;
+        let (context, jobs) =
+            prepare_search_from_parsed(source, options, true, ast, root, Some(prelude))?;
         let batches = jobs
             .into_iter()
             .map(evaluate_candidate)

@@ -663,6 +663,57 @@ fn transform_node(
     id
 }
 
+/// Analyzer-free shape gate for the refreshed-analysis path in
+/// `transform_block`. Returns false only when the candidate builder for
+/// `kind` is guaranteed to return None on shape grounds alone (its
+/// analyzer-free early exits): the statement is not an `if`, a required
+/// branch body is not a single statement, or a required branch statement
+/// does not have the single-assignment / call-statement shape. When this
+/// returns true the caller runs the exact original refreshed evaluation,
+/// so pass output is unchanged; the gate only skips building a fresh
+/// whole-arena resolution and effect analysis for statements whose
+/// candidate cannot exist.
+fn candidate_shape_possible(ast: &Ast, statement: NodeId, kind: &ConditionalKind) -> bool {
+    let Node::If(arms, else_block) = ast.node(statement) else {
+        return false;
+    };
+    match kind {
+        ConditionalKind::Calls => {
+            if arms.len() != 1 || else_block.is_none() {
+                return false;
+            }
+            let yes = single_statement(ast, Some(arms[0].body));
+            let no = single_statement(ast, *else_block);
+            matches!(
+                (yes, no),
+                (Some(yes), Some(no))
+                    if matches!(ast.node(yes), Node::Callstat(_))
+                        && matches!(ast.node(no), Node::Callstat(_))
+            )
+        }
+        ConditionalKind::Assignments => {
+            if arms.len() == 1 {
+                if single_assignment(ast, single_statement(ast, Some(arms[0].body))).is_none() {
+                    return false;
+                }
+                if else_block.is_some()
+                    && single_assignment(ast, single_statement(ast, *else_block)).is_none()
+                {
+                    return false;
+                }
+                true
+            } else {
+                if single_assignment(ast, single_statement(ast, *else_block)).is_none() {
+                    return false;
+                }
+                arms.iter().all(|arm| {
+                    single_assignment(ast, single_statement(ast, Some(arm.body))).is_some()
+                })
+            }
+        }
+    }
+}
+
 fn transform_block(
     ast: &mut Ast,
     res: &Resolution,
@@ -679,27 +730,28 @@ fn transform_block(
         let previous = *lowered;
         let statement = transform_node(ast, res, analyzer, statement, pass, lowered);
         let start = ast.nodes.len();
-        let candidate = if *lowered != previous {
-            // Descendant lowering may add expressions referenced by this statement.
-            // The original analyzer owns an older arena and cannot inspect them.
-            let source = ast.clone();
-            let current_resolution = resolve(&source, pass.root);
-            let current_analyzer =
-                EffectAnalyzer::new(&source, &current_resolution, pass.root, true);
-            match pass.kind {
-                ConditionalKind::Calls => {
-                    call_candidate(ast, &current_resolution, &current_analyzer, statement)
+        let candidate =
+            if *lowered != previous && candidate_shape_possible(ast, statement, &pass.kind) {
+                // Descendant lowering may add expressions referenced by this statement.
+                // The original analyzer owns an older arena and cannot inspect them.
+                let source = ast.clone();
+                let current_resolution = resolve(&source, pass.root);
+                let current_analyzer =
+                    EffectAnalyzer::new(&source, &current_resolution, pass.root, true);
+                match pass.kind {
+                    ConditionalKind::Calls => {
+                        call_candidate(ast, &current_resolution, &current_analyzer, statement)
+                    }
+                    ConditionalKind::Assignments => {
+                        assignment_candidate(ast, &current_analyzer, statement)
+                    }
                 }
-                ConditionalKind::Assignments => {
-                    assignment_candidate(ast, &current_analyzer, statement)
+            } else {
+                match pass.kind {
+                    ConditionalKind::Calls => call_candidate(ast, res, analyzer, statement),
+                    ConditionalKind::Assignments => assignment_candidate(ast, analyzer, statement),
                 }
-            }
-        } else {
-            match pass.kind {
-                ConditionalKind::Calls => call_candidate(ast, res, analyzer, statement),
-                ConditionalKind::Assignments => assignment_candidate(ast, analyzer, statement),
-            }
-        };
+            };
         let transformation = match pass.kind {
             ConditionalKind::Calls => "conditional-call-lowering",
             ConditionalKind::Assignments => "conditional-assignment-lowering",

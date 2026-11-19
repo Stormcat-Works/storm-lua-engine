@@ -268,7 +268,8 @@ impl ParseHandlers for MockHost {
             "parseBool({},{value})",
             String::from_utf8_lossy(key)
         ));
-        Ok(match *lock(&self.parse_mode) {
+        let mode = *lock(&self.parse_mode);
+        Ok(match mode {
             ParseMode::Outside => None,
             ParseMode::Echo => Some((value, true)),
             ParseMode::Missing => Some((false, false)),
@@ -279,7 +280,8 @@ impl ParseHandlers for MockHost {
             "parseNumber({},{value})",
             String::from_utf8_lossy(key)
         ));
-        Ok(match *lock(&self.parse_mode) {
+        let mode = *lock(&self.parse_mode);
+        Ok(match mode {
             ParseMode::Outside => None,
             ParseMode::Echo => Some((value, true)),
             ParseMode::Missing => Some((0.0, false)),
@@ -291,7 +293,8 @@ impl ParseHandlers for MockHost {
             String::from_utf8_lossy(key),
             String::from_utf8_lossy(value)
         ));
-        Ok(match *lock(&self.parse_mode) {
+        let mode = *lock(&self.parse_mode);
+        Ok(match mode {
             ParseMode::Outside => None,
             ParseMode::Echo => Some((value.to_vec(), true)),
             ParseMode::Missing => Some((Vec::new(), false)),
@@ -533,6 +536,7 @@ fn measured_argument_shapes_reach_the_host() {
     assert_eq!(mesh.len(), 1);
     assert_eq!((mesh[0][0], mesh[0][5], mesh[0][10]), (1.0, 1.0, 1.0));
     assert_eq!((mesh[0][12], mesh[0][13], mesh[0][14]), (1.0, 2.0, 3.0));
+    drop(mesh);
     assert_eq!(
         lock(&mock.raycast_args).as_slice(),
         &[([1.0, 2.0, 3.0], [0.0, 1.0, 0.0])]
@@ -561,6 +565,7 @@ fn host_forwarding_keeps_values_faithful() {
     assert_eq!(out[0].1.numbers[31], -1.0);
     assert_eq!(out[0].1.numbers[1], 0.0);
     assert!(out[0].1.booleans[0] && out[0].1.booleans[1] && !out[0].1.booleans[2]);
+    drop(out);
     assert_eq!(global(&component, "__n1"), LuaValue::Number(1.5));
     assert_eq!(global(&component, "__b1"), LuaValue::Bool(true));
     // 引数は欠けずに届く。

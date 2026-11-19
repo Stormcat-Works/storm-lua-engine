@@ -89,10 +89,10 @@ pub fn effect_key(e: &Effects) -> String {
         "{}|{}|{}{}{}{}",
         reads.join(","),
         writes.join(","),
-        e.calls as u8,
-        e.ordered as u8,
-        e.may_throw as u8,
-        e.stable as u8
+        u8::from(e.calls),
+        u8::from(e.ordered),
+        u8::from(e.may_throw),
+        u8::from(e.stable)
     )
 }
 
@@ -2194,6 +2194,7 @@ impl<'a> EffectAnalyzer<'a> {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod construction_reuse_tests {
     use super::*;
+    use std::fmt::Write as _;
     fn compare(source: &str) {
         let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
         let res = crate::resolver::resolve(&ast, root);
@@ -2255,7 +2256,10 @@ mod construction_reuse_tests {
             ));
             compare(&format!(
                 "{}function f(x)return x end function onTick()output.setNumber(1,f(2))end",
-                (0..n).map(|i| format!("v{i}={i} ")).collect::<String>()
+                (0..n).fold(String::new(), |mut acc, i| {
+                    write!(acc, "v{i}={i} ").unwrap();
+                    acc
+                })
             ));
         }
     }
@@ -2452,6 +2456,7 @@ mod borrowed_builtin_tests {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod summary_dependency_tests {
     use super::*;
+    use std::fmt::Write as _;
     fn compare(source: &str) {
         let (ast, root) = storm_lua_syntax::parse_source(source).unwrap();
         let res = crate::resolver::resolve(&ast, root);
@@ -2523,9 +2528,11 @@ mod summary_dependency_tests {
         for n in [1, 8, 48] {
             let mut source = String::new();
             for i in 0..n {
-                source.push_str(&format!(
+                write!(
+                    source,
                     "function f{i}(x)do local v=x+{i} if v then output.setNumber(1,v)end end end "
-                ));
+                )
+                .unwrap();
             }
             source.push_str("function onTick()f0(2)end");
             compare(&source);

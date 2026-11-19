@@ -3768,13 +3768,13 @@ pub fn inline_one_use_statement_and_tail_functions(
     let mut details = Vec::new();
 
     for _ in 0..max_rounds {
-        let source = clone_ast(ast);
-        let res = resolve(&source, root);
-        let budgets = block_local_budgets(&source, root);
-        let enclosing = block_enclosing_functions(&source, root);
-        let infos = function_infos(&source, &res, root);
+        let source = &*ast;
+        let res = resolve(source, root);
+        let budgets = block_local_budgets(source, root);
+        let enclosing = block_enclosing_functions(source, root);
+        let infos = function_infos(source, &res, root);
         let functions = info_map(&infos);
-        let (call_counts, bad_refs) = one_use_reference_sets(&source, root, &res, &functions);
+        let (call_counts, bad_refs) = one_use_reference_sets(source, root, &res, &functions);
         let mut applied = false;
 
         for info in &infos {
@@ -3788,7 +3788,7 @@ pub fn inline_one_use_statement_and_tail_functions(
             {
                 continue;
             }
-            let body_nodes = walk_nodes(&source, info.body);
+            let body_nodes = walk_nodes(source, info.body);
             if body_nodes.iter().any(|node| {
                 matches!(
                     source.node(*node),
@@ -3822,7 +3822,7 @@ pub fn inline_one_use_statement_and_tail_functions(
             // at the same point as before, so candidates that pass
             // still receive the same generated names.
             let Some(site) =
-                find_fusion_site_block(&source, &res, root, info.bid, statement_mode, tail_mode)
+                find_fusion_site_block(source, &res, root, info.bid, statement_mode, tail_mode)
             else {
                 continue;
             };
@@ -3830,7 +3830,7 @@ pub fn inline_one_use_statement_and_tail_functions(
             // order unless it denotes a caller register; splicing the
             // body first would locate it after the body instead.
             if matches!(site.kind, FusionKind::TailAssign)
-                && !tail_assign_target_safe(&source, &res, &site, info, &enclosing)
+                && !tail_assign_target_safe(source, &res, &site, info, &enclosing)
             {
                 continue;
             }
@@ -3849,7 +3849,7 @@ pub fn inline_one_use_statement_and_tail_functions(
                     )
                 });
             if splice_declares_locals
-                && fusion_site_jumps_into_new_locals(&source, &enclosing, &site)
+                && fusion_site_jumps_into_new_locals(source, &enclosing, &site)
             {
                 continue;
             }
@@ -3859,12 +3859,7 @@ pub fn inline_one_use_statement_and_tail_functions(
                 .copied()
                 .flatten()
                 .unwrap_or(0);
-            let mut trial = clone_ast(&source);
-            let mut taken = source
-                .strings
-                .all_strings()
-                .into_iter()
-                .collect::<HashSet<_>>();
+            let mut trial = clone_ast(source);
             let mut renamed = HashMap::<BindingId, SymbolId>::new();
             for (bid, binding) in res.bindings.iter().enumerate().skip(1) {
                 if binding.kind != storm_lua_analysis::resolver::BindingKind::Global
@@ -3873,7 +3868,7 @@ pub fn inline_one_use_statement_and_tail_functions(
                     let base = format!("__i{serial}_{bid}");
                     let mut name = base.clone();
                     let mut suffix = 0;
-                    while !taken.insert(name.clone()) {
+                    while trial.strings.contains(&name) {
                         suffix += 1;
                         name = format!("{base}_{suffix}");
                     }
@@ -3885,7 +3880,7 @@ pub fn inline_one_use_statement_and_tail_functions(
             let first_alpha_node = trial.nodes.len();
             let alpha_function = alpha_clone_node(
                 &mut trial,
-                &source,
+                source,
                 &res,
                 info.function,
                 &renamed,
@@ -3918,7 +3913,7 @@ pub fn inline_one_use_statement_and_tail_functions(
             // already counted in the caller's maximum.)
             let caller_max = budgets.get(&site.block).copied().unwrap_or(0);
             let callee_peak = super::single_member_cache::max_active_locals(
-                &source,
+                source,
                 info.parameters.len(),
                 info.body,
             );
@@ -4052,16 +4047,17 @@ pub fn inline_one_use_statement_and_tail_functions(
                 }
             }
 
-            let old_len = measure_size(&source, root);
+            let old_len = measure_size(source, root);
             let new_len = measure_size(&trial, root);
             let allowance = 4000.0f64.max(old_len as f64 * 0.4);
             if (new_len as f64) < old_len as f64 + allowance {
-                *ast = trial;
-                details.push(format!(
+                let detail = format!(
                     "function={binding_name};mode={};delta={}",
                     if statement_mode { "statement" } else { "tail" },
                     old_len as isize - new_len as isize
-                ));
+                );
+                *ast = trial;
+                details.push(detail);
                 applied = true;
                 break;
             }

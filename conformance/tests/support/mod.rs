@@ -1,5 +1,6 @@
 use serde_json::Value;
 use std::error::Error;
+use std::fmt::Write as _;
 use storm_lua_spec::{draw::DrawCommand, screen::Rgba8};
 pub fn command(v: &Value) -> Result<DrawCommand, Box<dyn Error>> {
     let n = |key: &str| -> Result<f64, Box<dyn Error>> {
@@ -85,10 +86,10 @@ pub fn lua_source(ops: &[Value]) -> Result<String, Box<dyn Error>> {
         }
         if kind == "text" || kind == "textBox" {
             let bytes = op["text"].as_str().ok_or("text missing")?.as_bytes();
-            let escaped = bytes
-                .iter()
-                .map(|byte| format!("\\{byte:03}"))
-                .collect::<String>();
+            let mut escaped = String::new();
+            for byte in bytes {
+                write!(escaped, "\\{byte:03}")?;
+            }
             args.push(format!("\"{escaped}\""));
         }
         if kind == "textBox" {
@@ -99,7 +100,7 @@ pub fn lua_source(ops: &[Value]) -> Result<String, Box<dyn Error>> {
                 ));
             }
         }
-        source.push_str(&format!("screen.{name}({})\n", args.join(",")));
+        writeln!(source, "screen.{name}({})", args.join(","))?;
     }
     source.push_str("end");
     Ok(source)

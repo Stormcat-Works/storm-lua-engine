@@ -18,7 +18,12 @@ fn esc(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            _ if cp < 0x20 => out.push_str(&format!("\\u00{:02x}", cp)),
+            _ if cp < 0x20 => {
+                const HEX: &[u8; 16] = b"0123456789abcdef";
+                out.push_str("\\u00");
+                out.push(char::from(HEX[(cp >> 4) as usize]));
+                out.push(char::from(HEX[(cp & 0xF) as usize]));
+            }
             _ => out.push(c),
         }
     }
@@ -389,7 +394,7 @@ impl<'a> ResolveDumper<'a> {
                 "{}:name={} kind={} scope={} fixed={} decl={} last={} freq={} group={} fn={}",
                 id,
                 esc(self.ast.strings.get(b.name)),
-                kind_str(&b.kind),
+                kind_str(b.kind),
                 b.scope,
                 t(b.fixed),
                 b.decl,
@@ -446,7 +451,7 @@ impl<'a> ResolveDumper<'a> {
     }
 }
 
-fn kind_str(k: &BindingKind) -> &'static str {
+const fn kind_str(k: BindingKind) -> &'static str {
     match k {
         BindingKind::Global => "global",
         BindingKind::Local => "local",

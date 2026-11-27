@@ -10,7 +10,7 @@ use super::{read_state, write_state, FastIo, Phase, State};
 use std::sync::{atomic::Ordering, Arc, RwLock};
 use storm_lua_spec::{draw::DrawCommand, property::PropertyValue, screen::Rgba8};
 use storm_lua_vm::{
-    backend::{BackendError, BackendResult, FromLua, Lua, LuaString, MultiValue, Table, Value},
+    backend::{BackendError, BackendResult, FromLua, Lua, MultiValue, Table, Value},
     runner::{ErrorKind, VmError},
 };
 
@@ -753,16 +753,33 @@ pub(super) fn install(
             )?,
         )?;
     }
+    // async.httpGet（2引数）。個数が合わない場合はエラーにならず戻り値0個です。
     let http = lua.create_table()?;
     let requests = Arc::clone(&state);
     http.raw_set(
         "httpGet",
-        lua.create_function(move |_, (port, request): (i64, LuaString)| {
-            write_state(&requests)
-                .http
-                .request(port, request.as_bytes().as_ref())
-                .map_err(|error| BackendError::external(super::http_error(error)))
-        })?,
+        lua.create_function(
+            move |lua, (port_arg, request_arg, extra): (StackArg, StackArg, StackArg)| {
+                let (
+                    StackArg::Present(port_value),
+                    StackArg::Present(request_value),
+                    StackArg::Missing,
+                ) = (port_arg, request_arg, extra)
+                else {
+                    return Ok(MultiValue::new());
+                };
+                let port = match port_value {
+                    Value::Integer(n) => n,
+                    other => coerced_number_val(lua, other) as i64,
+                };
+                let request = coerced_text_val(lua, request_value);
+                write_state(&requests)
+                    .http
+                    .request(port, &request)
+                    .map_err(|error| BackendError::external(super::http_error(error)))?;
+                Ok(MultiValue::new())
+            },
+        )?,
     )?;
     env.raw_set("async", http)?;
     env.raw_set("map", map)?;

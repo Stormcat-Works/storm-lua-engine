@@ -108,6 +108,28 @@ fn large_reply_is_accepted_and_consumes_the_request() -> Result<(), Box<dyn std:
 }
 
 #[test]
+fn addon_http_get_arity_mismatch_is_wrong_number_of_args() -> Result<(), Box<dyn Error>> {
+    // Addon: server.httpGet は個数が合わない呼び出しが実ゲームと同じ文言の
+    // Lua エラー（Wrong number of args）になり、リクエストは投入されません。
+    for source in [
+        "function onCreate() server.httpGet() end",
+        "function onCreate() server.httpGet(8080) end",
+        "function onCreate() server.httpGet(8080, '/x', 'extra') end",
+    ] {
+        let mut addon = Addon::new(Default::default())?;
+        addon.load(source.as_bytes(), "=http-arity")?;
+        let error = addon.start().err().ok_or("expected Lua error")?;
+        assert!(
+            error.message.contains("Wrong number of args"),
+            "unexpected error message: {}",
+            error.message
+        );
+        assert!(addon.drain_http_requests().is_empty());
+    }
+    Ok(())
+}
+
+#[test]
 fn http_get_never_rejects_what_the_game_accepts() -> Result<(), Box<dyn Error>> {
     // Addon: server.httpGet はポート・リクエストの形でエラーを投げない。
     let mut addon = Addon::new(Default::default())?;

@@ -44,6 +44,23 @@ fn arity_mismatch_returns_silently_with_no_values() -> TestResult {
 }
 
 #[test]
+fn http_get_arity_mismatch_returns_silently_and_queues_nothing() -> TestResult {
+    // async.httpGetも他のMC APIと同じく、個数が合わない呼び出しはエラーに
+    // ならず戻り値0個で無言に戻り、リクエストは投入されません。
+    let mut vm = vehicle(
+        EnvironmentProfile::Game,
+        "function onTick()\n  async.httpGet()\n  async.httpGet(8080)\n  async.httpGet(8080, '/extra', 'too many')\n  async.httpGet(8080, '/ok')\nend",
+    )?;
+    vm.tick(&signal())?;
+    assert_eq!(vm.error_status(), 0);
+    let requests = vm.drain_http_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].port, 8080);
+    assert_eq!(requests[0].request, b"/ok");
+    Ok(())
+}
+
+#[test]
 fn arity_is_checked_before_the_phase_flag() -> TestResult {
     // output系はarity不一致ならphaseフラグを見ません（E2）。onDraw中の
     // arity違いは無言で、arityが正しい呼び出しだけがoutsideエラーになります。

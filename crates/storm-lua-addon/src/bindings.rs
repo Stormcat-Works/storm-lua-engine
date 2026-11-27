@@ -2,9 +2,16 @@
 use super::{MenuProperty, State};
 use std::sync::{Arc, Mutex};
 use storm_lua_spec::property::PropertyValue;
-use storm_lua_vm::backend::{BackendError, BackendResult, Lua, LuaString, Table, Value};
+use storm_lua_vm::backend::{
+    BackendError, BackendResult, FromLua, Lua, LuaString, Table, Value, Variadic,
+};
 fn invalid(message: &str) -> BackendError {
     BackendError::external(super::invalid(message))
+}
+/// 実ゲームの arity エラー。呼び出した Lua コード側の通常エラーとして扱うため、
+/// ErrorKind::Lua になる RuntimeError で送出します。
+fn wrong_args() -> BackendError {
+    BackendError::RuntimeError("Wrong number of args".into())
 }
 fn declare(state: &mut State, name: Vec<u8>, definition: MenuProperty) {
     // 実ゲームの契約: 宣言は名前の長さ・件数・既存宣言との矛盾でエラーを投げません。
@@ -63,7 +70,13 @@ pub(super) fn install(lua: &Lua, env: &Table, state: Arc<Mutex<State>>) -> Backe
     let server = lua.create_table()?;
     server.raw_set(
         "httpGet",
-        lua.create_function(move |_, (port, request): (i64, LuaString)| {
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            // 個数が合わない呼び出しは実ゲームと同じ文言の Lua エラーです。
+            if args.len() != 2 {
+                return Err(wrong_args());
+            }
+            let port = i64::from_lua(args[0].clone(), lua)?;
+            let request = LuaString::from_lua(args[1].clone(), lua)?;
             crate::lock_state(&state)
                 .http
                 .request(port, request.as_bytes().as_ref())

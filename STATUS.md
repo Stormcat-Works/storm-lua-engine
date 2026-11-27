@@ -1,14 +1,14 @@
 # Current status
 
-## v0.5.0 公開候補（2026-11-16、公開工程は残る）
+## v0.5.0 公開済み（2026-11-27）
 
-v0.5.0の公開候補を統合ブランチ`muse/v050-spec-alignment`の先端で検証し、版番号・変更履歴・状態文書を揃えた。第3のプロファイルComponent Modの追加、Vehicle／Addon意味論の実ゲーム整合（VMコア・matrix・screen/描画・Addonホスト面）、依存関係の更新を含む。公開工程（候補スカッシュの再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認）は[リリース手順](docs/release.md)に従い、管理者の最終確認後に行う。本節の準備だけでは公開済みにしない。
+現在の公開版はv0.5.0（2026-11-27）。公開mainのコミットは`e7f0e0e`、タグは`v0.5.0`。GitHub Releaseとnpmの公開、Playgroundのデプロイ確認まで完了している。第3のプロファイルComponent Modの追加、Vehicle／Addon意味論の実ゲーム整合（VMコア・matrix・screen/描画・Addonホスト面）、スナップショットと継続、依存関係の更新を含む。公開の記録は[release-0.5.0](docs/verification/release-0.5.0.md)を参照する。
 
 ## v0.4.1 公開済み（2026-11-04）
 
-現在の公開版はv0.4.1（2026-11-04）。公開mainのコミットは`88ec6f0`、タグは`v0.4.1`。GitHub Releaseとnpmの公開も完了している。v0.4.0（`f26c9b3`）は正確性修正、Source Map schema-2、コンパイル性能改善を含む版として公開済み。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
+v0.4.1は2026-11-04に公開した版で、公開mainのコミットは`88ec6f0`、タグは`v0.4.1`。GitHub Releaseとnpmの公開も完了している。v0.4.0（`f26c9b3`）は正確性修正、Source Map schema-2、コンパイル性能改善を含む版として公開済み。現在の契約と設計は[文書索引](docs/README.md)、未完了作業は[TASKS.md](TASKS.md)、版ごとの変更点は[CHANGELOG.md](CHANGELOG.md)を参照する。
 
-## Component Mod プロファイルの追加（2026-11-16、未公開）
+## Component Mod プロファイルの追加（2026-11-16、v0.5.0で公開）
 
 第3のプロファイルとしてComponent Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`がライフサイクル（load→parse→add_to_simulation→tick/render→remove_from_simulation、tickのみステータスゲート）とエラーステータス（0/2/3/5、timeoutは数値を主張しない表現）を所有する。64関数のうち`matrix`13関数と`debug.log`はエンジン実装、残り50関数はホスト提供ドメイン（sub-trait 11種）で、提供された分だけ登録される。引数意味論は実ゲーム v1.15.26 の挙動で確認した内容どおり（個数不一致はLuaエラー（共有matrixのidentityは例外）、型は無言変換、`debug.log`は個数のみエラー）。analysis側にはComponentプロファイルのルート集合・診断・lint経路を足した。契約は[Component Mod仕様](docs/specs/component.md)。
 

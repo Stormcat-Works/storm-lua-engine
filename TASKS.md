@@ -1,12 +1,12 @@
 # Implementation tasks
 
-v0.4.1は2026-11-04に公開済み。mainは`88ec6f0`、タグは`v0.4.1`で、GitHub Releaseとnpmの公開を完了した。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
+v0.5.0は2026-11-27に公開済み。mainは`e7f0e0e`、タグは`v0.5.0`で、GitHub Releaseとnpmの公開を完了した（前版v0.4.1は2026-11-04公開）。現在地は[STATUS](STATUS.md)を参照する。本番配備とregistry再導入の検証結果は、SDKの公開状態と分けて記録する。
 
 ## 未完了の作業
 
-### v0.5.0のローカル公開候補（2026-11-16、準備完了・公開工程は残る）
+### v0.5.0の公開（2026-11-27、完了）
 
-Component Modプロファイルの追加と、Vehicle／Addon意味論の実ゲーム整合、依存関係の更新を一つの公開候補にまとめ、版番号を0.5.0へ更新した。残る公開工程は、検査済みツリーの候補スカッシュ再構築、3 OS CI、タグ・GitHub Release・npm・Playground確認で、[リリース手順](docs/release.md)に従い管理者の最終確認後に行う。
+Component Modプロファイルの追加と、Vehicle／Addon意味論の実ゲーム整合、依存関係の更新を一つの公開候補にまとめ、版番号を0.5.0へ更新した。公開工程（CI、タグ・GitHub Release・npm・Playground確認）は[リリース手順](docs/release.md)に従い2026-11-27に完了した。記録は[release-0.5.0](docs/verification/release-0.5.0.md)を参照する。
 
 ### Component Mod の TypeScript SDK 公開（2026-11-16、実施済み）
 

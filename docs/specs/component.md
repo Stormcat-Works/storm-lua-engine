@@ -14,7 +14,7 @@ Empty → Loading → Loaded → Parsing → Parsed → Adding → InSimulation�
 
 駆動は`load` → `parse`（`onParse`）→ `add_to_simulation`（`onAddToSimulation`）→ `tick(game_ticks)`（`onTick`）/ `render`（`onRender`）→ `remove_from_simulation`（`onRemoveFromSimulation`）。`game_ticks`は整数で渡し、0も拒否しない。コールバックが未定義、または関数でない場合は「不在」として扱い、ステータスは変わらない。
 
-通常のLuaエラーは呼び出し元へ返し、実ゲームのエラーステータスを`ComponentStatus`に記録する（onTick失敗=2、ロード失敗=3、それ以外のコールバック失敗=5）。実行時間制限の超過は数値コードが確定していないため、数値を主張しない`TimedOut`として表す。Addonと違いステータスの自動復帰はない。失敗したインスタンスはホストが作り直す。tickだけがステータスゲートを持ち、ステータスが正常でない間は`onTick`を実行せずMissingを返す。renderとremove_from_simulationにゲートはなく、tick失敗後も`onRemoveFromSimulation`は配送される。命令数・メモリ制限やホスト境界の失敗はVMを失敗状態にし、そのインスタンスは再利用しない。
+通常のLuaエラーは呼び出し元へ返し、実ゲームのエラーステータスを`ComponentStatus`に記録する（onTick失敗=2、ロード失敗=3、それ以外のコールバック失敗=5）。実行時間制限の超過のうち、tick（`onTick`）の実行中に起きたものだけは数値を主張しない`TimedOut`として表し、load・parse・add_to_simulation・render・remove_from_simulationの実行中に起きたものは各段階の失敗ステータス（ロード=3、その他=5）で表す。Addonと違いステータスの自動復帰はない。失敗したインスタンスはホストが作り直す。tickだけがステータスゲートを持ち、ステータスが正常でない間は`onTick`を実行せずMissingを返す。renderとremove_from_simulationにゲートはなく、tick失敗後も`onRemoveFromSimulation`は配送される。命令数・メモリ制限やホスト境界の失敗はVMを失敗状態にし、そのインスタンスは再利用しない。
 
 ## lua_filename のホスト契約
 
@@ -36,7 +36,7 @@ Composite信号のLua表現は`number_values`と`bool_values`のサブテーブ�
 
 ## TypeScript SDK（WASM）
 
-TypeScript SDK では `LuaEngine.createComponent({providers})` が WASM セッションの Component モード（mode 3）を作り、`ComponentVm` が `load` → `parse()` → `addToSimulation()` → `tick(gameTicks)` / `render()` → `removeFromSimulation()` と `status()` を駆動する。`tick` の `gameTicks` は Rust 側 `Component::tick` に合わせて符号なし整数である（Addon の符号付きとは異なる）。`status()` は `{status, code}` を返し、timeout のときだけ `code` が null になる。
+TypeScript SDK では `LuaEngine.createComponent({providers})` が WASM セッションの Component モード（mode 3）を作り、`ComponentVm` が `load` → `parse()` → `addToSimulation()` → `tick(gameTicks)` / `render()` → `removeFromSimulation()` と `status()` を駆動する。`tick` の `gameTicks` は Rust 側 `Component::tick` に合わせて符号なし整数である（Addon の符号付きとは異なる）。`status()` は `{status, code}` を返し、tick の timeout（`TimedOut`）のときだけ `code` が null になる。
 
 ホスト提供ドメインは、addon の `server.*` のような名前登録ではなく、ドメイン単位の型付きプロバイダとして供給する。セッション設定にはドメイン名（`logic`、`torque`、`fluid`、`electric`、`sfx`、`fluidContents`、`heater`、`render`、`physics`、`environment`、`parse`）だけを渡し、実体はホスト登録側に置く。WASM 境界では固定署名の同期コールバックとして転送され、値の転送は `value_codec` の型付き形式に揃える。Composite と matrix は Lua テーブルと同じ形（`number_values` / `bool_values` サブテーブル、キー 1〜16）で運び、TS 側では `CompositeSignal`（32 number + 32 bool）と 16 数値の配列に変換する。`physicsRaycast` の返値はホスト所有の値をそのまま運ぶ。
 

@@ -4,7 +4,7 @@
 
 ### Component Mod プロファイルの追加
 
-- 第3のプロファイルとして Component Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`が、順序付きライフサイクル（`load`→`parse`→`add_to_simulation`→`tick`/`render`→`remove_from_simulation`）と実ゲームのエラーステータス（onTick=2、ロード=3、その他=5。timeoutは数値が未確定のため数値を主張しない表現）を所有する。tickだけがステータスゲートを持ち、自動復帰はない。
+- 第3のプロファイルとして Component Mod（コンポーネント埋め込みLua）を追加した。新クレート`storm-lua-component`が、順序付きライフサイクル（`load`→`parse`→`add_to_simulation`→`tick`/`render`→`remove_from_simulation`）と実ゲームのエラーステータス（onTick=2、ロード=3、その他=5。tickのtimeoutだけは数値を主張しない`TimedOut`で表し、それ以外の入口のtimeoutは各入口の失敗ステータスで表す）を所有する。tickだけがステータスゲートを持ち、自動復帰はない。
 - 64関数のうち`matrix`の13関数（Component集合、`scale`を含む）と`debug.log`はエンジン実装で、残り50関数はホスト提供ドメイン（sub-trait 11種、parserを含む）として、提供された分だけ登録される。引数の個数が合わない呼び出しはLuaエラー（`Wrong number of args`）になり、型は無言変換される（共有matrixの`identity`だけは実ゲームに個数検査が無いため例外）。`debug.log`は個数だけがエラーで型は無言という関数単位の例外（Component系統のみ）。
 - スクリプトの読み込みはホスト契約とし、新しいAPIは作らなかった。定義XMLの`lua_filename`属性を、パッケージ内アセット→実ファイルの順で解決し、属性値そのままのチャンク名で読み込む。
 - 解析側にComponentプロファイルの経路（`component_api_roots`、`component_diagnostics`、`lint_module_component`）と、予約語へのComponentコールバック名4件の追加を行った。
@@ -34,18 +34,19 @@
 - 行列引数の検証とエラー文字列を実ゲームに合わせた（数値キー16件の完全一致、`bad matrix size`、`matrix was nil`、`bad matrix input type`、`matrix index out of range`、`bad value in matrix`）。有限性は要求しない。引数の個数も identity を除き完全一致を要求する（`Wrong number of args`）。
 - multiply の合成順序は、実ゲームと現行実装が一致することを乱数行列200ケースの数値比較で確認したため変更していない。
 - `multiplyXYZW` のベクトル成分を、実ゲームどおり f32 へ丸めてから計算するようにした。
+
 ### VMコア意味論の実ゲーム仕様への整合
 
 - MC APIの引数意味論を実ゲームへ合わせた。引数の個数が合わない呼び出しはエラーにならず戻り値0個で無言に戻り、値の型はLuaの変換規則で変換され、変換できない値は0として扱われる。検査の順序は個数→phaseフラグ→変換。トップレベルとhttpReplyでもI/O・描画はoutsideエラーになる。Compositeチャンネルはcvttsd2si相当の変換となり、範囲外の大きな値やNaNでもエラーにならない。
 - エラー後の回復モデルを実ゲームのエラーステータスへ合わせた。通常のLuaエラーではVMは失敗状態にならず、Vehicleはステータス（onDraw=1、onTick=2、ロード=3、httpReply=5）と最大11件のエラーリングを保持し、エラー中はonTick/onDrawをスキップする一方でhttpReplyは配送を続ける。Addonはステータス（onTick=2、ロード=3、それ以外=5）を保持し、ステータス5は報告後のtickで自動復帰する。どちらも`error_status`/`error_log`で参照できる。
-- 実行制限を再構成した。壁時計1001msの時間制限を既定で有効にし、超過は実ゲームと同じ文面のLuaエラーになる。命令数・Luaメモリ・ソース長の上限は既定で無効になり、ホストが明示した場合だけ効く（`ExecutionLimits`の各項目は`Option`になった）。
-- Gameプロファイルの`math.random`の既定を、実ゲームと同じCRT互換のプロセス共有ストリームへ変えた。VMごとの決定的ストリームは`deterministic_random`オプションで選べる。Vehicleの`MicrocontrollerConfig`にもホストCRTコンテキスト（`random`）と`deterministic_random`を追加した。
+- 実行制限を再構成した。壁時計1001msの時間制限を既定で有効にし、超過は実ゲームと同じ文面のLuaエラーになる。命令数・Luaメモリ・ソース長の上限は既定で無効になり、ホストが明示した場合だけ効く（`ExecutionLimits`の各項目は`Option`になった）。ただしWASM／TypeScript SDK経由では従来どおり、命令数100万・Luaメモリ8MiBの上限が既定で適用される（SDKのオプションで変更できる）。
+- Gameプロファイルの`math.random`の既定を、CRT互換のホストスレッド共有ストリームへ変えた。VMごとの決定的ストリームは`deterministic_random`オプションで選べる。Vehicleの`MicrocontrollerConfig`にもホストCRTコンテキスト（`random`）と`deterministic_random`を追加した。
 - Vehicle/Addon環境から`select`を除き（baseは6関数のみ）、`string.dump`を戻した（stringライブラリは完全版）。
 - 関数でないコールバックは、エラーではなく「不在」として扱う。Addonの`tick(game_ticks)`は符号付き整数を受け付け、0以下でも拒否しない。
 
 ### Addonホスト面の実ゲーム整合
 
-- HTTPの検証を実ゲームの契約へ合わせ、検証で弾くことをやめた。ポートは符号付き整数の下位16bitとして扱い（0・負数・65535超も通る）、リクエストは先頭の`/`や長さで制限せずそのまま保持し、未処理件数の上限も外した。応答の1MiB上限（単体・合算）も外し、`reply`の拒否はトークンの不一致だけになった。用途のなくなった`HttpError::Invalid`を削除した（公開APIの変更）。
+- HTTPの検証を実ゲームの契約へ合わせ、検証で弾くことをやめた。ポートは符号付き整数の下位16bitとして扱い（0・負数・65535超も通る）、リクエストは先頭の`/`や長さで制限せずそのまま保持し、未処理件数の上限も外した。応答の1MiB上限（単体・合算）も外し、`reply`の拒否はトークンの不一致だけになった。リクエスト検証に使っていた`HttpError::Invalid`はその用途を失ったが、Variantは削除しておらず、不正な継続カーソルを表す用途に変わった。
 - `debug.log`を実ゲームの意味論へ合わせた。引数1個で文字列のときだけ記録し、数値はLuaの文字列変換で通す。それ以外（0個・複数・nil・真偽値・テーブル・関数）は無言で何もしない。1行16KiB・件数と総量の上限と、上限到達時のエラー化を`debug.log`から外した。`print`は従来どおり上限付きの開発用拡張として維持する。
 - プロパティ宣言の検証をやめた。sliderの範囲・刻み・defaultの有限性や範囲は検証せず宣言値をそのまま保持し、名前の長さと件数の予算エラー、同名で定義が異なる場合の競合エラーも外した。再宣言は最後の宣言が有効になる。ホストが設定するoverride値の検証は従来どおり行う。
 
@@ -64,6 +65,7 @@
 
 - 描画の結果が前回と同じかどうかを確かめる例（`examples/consumer/frame-changes.mjs`）を追加した。`frame().pixels`の借用ビューを前回の写しと比べ、変わったときだけ`copy()`する。エンジンのAPIは変えていない。
 - フレームのダイジェストを返すAPIと、エンジンが前回フレームを保持して比べるAPIは、試作して実WASMで測定し、上の手順より速くならなかったので追加を見送った。
+
 ### 必要なNodeのバージョン
 
 - npmパッケージの`engines`を、`>=22.18`から`^18.19.0 || >=20.6.0`へ下げた。梱包したパッケージを独立consumerへ導入し、consumerを18.19.0、18.20.8、20.6.0、20.20.2、21.7.3、22.0.0、22.18.0で実行して確かめた。22.18以降という条件は、本リポジトリの開発とビルドだけに残る。
@@ -95,6 +97,7 @@
 - スクリプトの読み込みと実行で失敗したエラーが、メッセージとは別に位置情報を持つようになった。省略されていないチャンク名と行、呼び出し履歴、構文エラーと実行時エラーの区別を返す。Luaはメッセージの中のチャンク名を60バイトに切り詰めるため、従来は長いパスのファイルをメッセージから特定できなかった。
 - Rustは`VmError.trace`、TypeScriptは`EngineError.detail`で受け取る。命令数の上限に達したエラーにも、実行していた行と呼び出し履歴が付く。debug featureは要らない。
 - 結果コードの名前付き定数`STATUS`をTypeScriptへ公開した。`EngineError.code`と比較する数値を直接書かずに済む。
+- Rust側にも、結果コードの名前付き定数を集めた`storm-lua-spec`の`abi::status`モジュールを新設した。
 - runtimeのWASMに`error_detail_ptr`と`error_detail_len`を追加した。既存のexportとABI番号は変えていない。
 - Rustで`VmError`または`BridgeError`をstruct literalで構成している利用者は、追加したフィールド（`trace`、`detail`）を指定する必要がある。`VmError::new`と`BridgeError::new`の呼び出しは変更不要。
 

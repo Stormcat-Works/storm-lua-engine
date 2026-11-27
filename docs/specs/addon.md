@@ -79,11 +79,6 @@ nil and boolean false are false; zero, empty strings, functions and cyclic table
 are true. It neither decodes owned data nor invokes the value. A missing argument
 index remains an explicit error.
 
-`HostCall::truthy` reads Lua truthiness directly from a borrowed argument. Only
-nil and boolean false are false; zero, empty strings, functions and cyclic tables
-are true. It neither decodes owned data nor invokes the value. A missing argument
-index remains an explicit error.
-
 `HostCall::predicate` invokes the original function in the same VM and coroutine,
 without resetting the instruction budget. Only a first result of boolean true is
 accepted. Ordinary protected Lua errors and other result types reject a candidate;

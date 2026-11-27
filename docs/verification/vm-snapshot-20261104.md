@@ -146,6 +146,9 @@ Closure/HostRef/HostEntry）。復号は検査付きカーソルで行い、blob
   storm-lua-vm に種の取得・設定 API を足すフォローアップとする。
   compat はホスト所有の scene CRT random を使うため本件の影響を受けない
   （その状態はワールド側スナップショットが持つ）。
+  （2026-11-27 追記：v0.5.0 で storm-lua-vm に `random_stream_state` /
+  `set_random_stream_state` が実装され、このフォローアップは完了した。
+  上記は当時の記録として残す。）
 - **復元はトランザクションではない**：復元途中でエラーになった VM は
   破棄すること（メソッドの doc に明記）。捕捉側は無変更。
 - パスの要素は UTF-8 文字列のみ登録可能（非 UTF-8 キーは対象外）。
